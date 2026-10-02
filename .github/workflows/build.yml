@@ -32,7 +32,7 @@ jobs:
         if: always()
         run: |
           shopt -s globstar nullglob
-          for f in **/screenshots/maro-*.png; do
+          for f in **/screenshots/*.png; do
             convert "$f" -resize 960x540 -quality 72 /tmp/preview.jpg
             echo "PREVIEW_BEGIN $(basename "$f")"
             base64 -w 0 /tmp/preview.jpg; echo

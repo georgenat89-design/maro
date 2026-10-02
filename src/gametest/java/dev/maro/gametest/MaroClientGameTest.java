@@ -24,9 +24,21 @@ public class MaroClientGameTest implements FabricClientGameTest {
         try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
             singleplayer.getClientWorld().waitForChunksRender();
 
+            // make sure nothing (pause menu, toasts...) is in the way before testing the keybind
+            context.setScreen(() -> null);
+            context.waitTicks(5);
+            String before = context.computeOnClient(client -> describe(client));
+            context.takeScreenshot("maro-00-world");
+
             // open through the real keybind path (KeyboardMixin -> Maro.onKey)
             context.getInput().pressKey(GLFW.GLFW_KEY_RIGHT_SHIFT);
-            context.waitForScreen(ClickGuiScreen.class);
+            context.waitTicks(5);
+            boolean opened = context.computeOnClient(client -> client.currentScreen instanceof ClickGuiScreen);
+            if (!opened) {
+                String after = context.computeOnClient(client -> describe(client));
+                context.takeScreenshot("maro-00-keybind-failed");
+                throw new AssertionError("Right Shift did not open the menu. before=[" + before + "] after=[" + after + "]");
+            }
             settle(context);
             context.takeScreenshot("maro-01-open");
 
@@ -56,6 +68,11 @@ public class MaroClientGameTest implements FabricClientGameTest {
             context.getInput().pressKey(GLFW.GLFW_KEY_ESCAPE); // close
             context.waitForScreen(null);
         }
+    }
+
+    private static String describe(net.minecraft.client.MinecraftClient client) {
+        return "screen=" + (client.currentScreen == null ? "none" : client.currentScreen.getClass().getName())
+                + " player=" + (client.player != null) + " world=" + (client.world != null);
     }
 
     /** Lets time-based animations finish (the game only advances inside wait calls). */
