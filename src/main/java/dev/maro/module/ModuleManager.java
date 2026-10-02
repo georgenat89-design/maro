@@ -17,6 +17,8 @@ public final class ModuleManager {
     }
 
     public static void init() {
+        register(new dev.maro.module.impl.visuals.StretchRes());
+
         // Register your modules here, e.g.
         // register(new dev.maro.module.impl.ExampleModule());
     }
