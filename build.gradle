@@ -48,7 +48,7 @@ tasks.register('gametestJar', Jar) {
 
 tasks.register('remapGametestJar', net.fabricmc.loom.task.RemapJarTask) {
     dependsOn gametestJar
-    input = gametestJar.flatMap { it.archiveFile }
+    input = tasks.named("gametestJar", Jar).flatMap { it.archiveFile }
     archiveClassifier = "gametest"
     addNestedDependencies = false
     classpath.from(sourceSets.gametest.compileClasspath)
@@ -56,7 +56,7 @@ tasks.register('remapGametestJar', net.fabricmc.loom.task.RemapJarTask) {
 
 tasks.register('runProductionClientGameTest', net.fabricmc.loom.task.prod.ClientProductionRunTask) {
     dependsOn remapJar, remapGametestJar
-    mods.from(configurations.productionMods, remapJar.archiveFile, remapGametestJar.archiveFile)
+    mods.from(configurations.productionMods, remapJar.archiveFile, tasks.named("remapGametestJar").flatMap { it.archiveFile })
     jvmArgs.addAll([
             "-Dfabric.client.gametest",
             "-Dfabric.client.gametest.disableNetworkSynchronizer=true"
