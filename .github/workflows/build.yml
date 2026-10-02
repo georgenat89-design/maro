@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -15,8 +15,35 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
+
       - name: Build
         run: ./gradlew build --no-daemon
+
+      # Launch the real 1.21.11 client with the production jar and drive the GUI.
+      # Any mixin failure, crash or render exception fails the build.
+      - name: In-game test
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb > /dev/null
+          ./gradlew runProductionClientGameTest --no-daemon --stacktrace
+
+      - name: Print screenshot previews
+        if: always()
+        run: |
+          shopt -s globstar nullglob
+          for f in **/screenshots/maro-*.png; do
+            convert "$f" -resize 960x540 -quality 72 /tmp/preview.jpg
+            echo "PREVIEW_BEGIN $(basename "$f")"
+            base64 -w 0 /tmp/preview.jpg; echo
+            echo "PREVIEW_END"
+          done
+
+      - name: Upload test screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-screenshots-build-${{ github.run_number }}
+          path: "**/screenshots/*.png"
+
       - name: Upload mod jar
         uses: actions/upload-artifact@v4
         with:
@@ -24,3 +51,4 @@ jobs:
           path: |
             build/libs/*.jar
             !build/libs/*-sources.jar
+            !build/libs/*-gametest.jar

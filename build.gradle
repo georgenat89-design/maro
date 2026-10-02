@@ -13,11 +13,54 @@ base {
 repositories {
 }
 
+// ---- in-game tests -------------------------------------------------------------------------
+// src/gametest is a tiny test mod that drives the real client: it opens the menu through the
+// keybind, visits every page and takes screenshots. CI runs it against the *production* jar.
+sourceSets {
+    gametest {
+        compileClasspath += main.compileClasspath + main.output
+        runtimeClasspath += main.runtimeClasspath + main.output
+    }
+}
+
+configurations {
+    productionMods {
+        transitive = false
+    }
+}
+
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    // test-only: compile the gametest source set and add the API to the production test run
+    modCompileOnly "net.fabricmc.fabric-api:fabric-client-gametest-api-v1:${project.client_gametest_api_version}"
+    productionMods "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    productionMods "net.fabricmc.fabric-api:fabric-client-gametest-api-v1:${project.client_gametest_api_version}"
+}
+
+tasks.register('gametestJar', Jar) {
+    from sourceSets.gametest.output
+    destinationDirectory = layout.buildDirectory.dir("devlibs")
+    archiveClassifier = "gametest-dev"
+}
+
+tasks.register('remapGametestJar', net.fabricmc.loom.task.RemapJarTask) {
+    dependsOn gametestJar
+    input = gametestJar.flatMap { it.archiveFile }
+    archiveClassifier = "gametest"
+    addNestedDependencies = false
+    classpath.from(sourceSets.gametest.compileClasspath)
+}
+
+tasks.register('runProductionClientGameTest', net.fabricmc.loom.task.prod.ClientProductionRunTask) {
+    dependsOn remapJar, remapGametestJar
+    mods.from(configurations.productionMods, remapJar.archiveFile, remapGametestJar.archiveFile)
+    jvmArgs.addAll([
+            "-Dfabric.client.gametest",
+            "-Dfabric.client.gametest.disableNetworkSynchronizer=true"
+    ])
 }
 
 processResources {

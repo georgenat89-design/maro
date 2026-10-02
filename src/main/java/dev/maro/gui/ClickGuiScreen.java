@@ -240,6 +240,13 @@ public class ClickGuiScreen extends Screen {
         entries.get(index).page().onOpen();
     }
 
+    /** Jumps to a module's category and opens its settings view. */
+    public void openModuleSettings(dev.maro.module.Module module) {
+        int index = module.getCategory().ordinal();
+        openPage(index);
+        if (entries.get(index).page() instanceof ModulesPage page) page.openSettings(module);
+    }
+
     private Page currentPage() {
         return search.getText().isEmpty() ? entries.get(selected).page() : searchPage;
     }

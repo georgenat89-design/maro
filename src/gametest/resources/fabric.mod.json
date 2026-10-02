@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "maro-gametest",
+  "version": "1.0.0",
+  "name": "maro.gg gametest",
+  "environment": "client",
+  "entrypoints": {
+    "fabric-client-gametest": ["dev.maro.gametest.MaroClientGameTest"]
+  },
+  "depends": {
+    "maro": "*"
+  }
+}
