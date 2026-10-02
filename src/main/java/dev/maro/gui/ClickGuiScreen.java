@@ -76,7 +76,7 @@ public class ClickGuiScreen extends Screen {
         }
     }
 
-    private record Entry(String label, Icons.Icon icon, Page page, Category category) {
+    private record Entry(String label, Icons.Icon icon, Page page, Category category, String subtitle) {
     }
 
     private static final Object WINDOW = new Object();
@@ -120,12 +120,12 @@ public class ClickGuiScreen extends Screen {
 
     public ClickGuiScreen() {
         super(Text.literal(Maro.NAME));
-        for (Category c : Category.values()) entries.add(new Entry(c.getDisplayName(), c.getIcon(), new ModulesPage(this, c), c));
+        for (Category c : Category.values()) entries.add(new Entry(c.getDisplayName(), c.getIcon(), new ModulesPage(this, c), c, null));
         moduleEntries = entries.size();
-        entries.add(new Entry("Settings", Icons.SETTINGS, new SettingsPage(this), null));
-        entries.add(new Entry("Configs", Icons.CONFIGS, new ConfigsPage(this), null));
-        entries.add(new Entry("Theme", Icons.THEME, new ThemePage(this), null));
-        entries.add(new Entry("Socials", Icons.SOCIALS, new SocialsPage(this), null));
+        entries.add(new Entry("Settings", Icons.SETTINGS, new SettingsPage(this), null, "Menu, input and behaviour options"));
+        entries.add(new Entry("Configs", Icons.CONFIGS, new ConfigsPage(this), null, "Save and switch module setups"));
+        entries.add(new Entry("Theme", Icons.THEME, new ThemePage(this), null, "Accent, colours and window style"));
+        entries.add(new Entry("Socials", Icons.SOCIALS, new SocialsPage(this), null, "Friends and online players"));
         searchPage = new ModulesPage(this, null);
         search = new TextField("Search modules...", 32);
         selected = Math.max(0, Math.min(lastEntry, entries.size() - 1));
@@ -305,12 +305,14 @@ public class ClickGuiScreen extends Screen {
             Render2D.shadow(ctx, wx, wy + 2, ww, wh, r, 22f, 0x70000000);
             if (Theme.glow()) Render2D.shadow(ctx, wx, wy, ww, wh, r, 40f, Theme.accent(0x14));
         }
-        Render2D.roundRect(ctx, wx, wy, ww, wh, r, Theme.windowBg());
-        Render2D.roundOutline(ctx, wx, wy, ww, wh, r, 1f, 0xFF1A2130);
+        int bg = Theme.windowBg();
+        Render2D.roundGradientV(ctx, wx, wy, ww, wh, r, ColorUtil.shade(bg, 0.025f), bg);
+        Render2D.roundRect(ctx, wx, wy, ww, wh, r, Theme.accent(0x1A), 0x00000000, 0x00000000, 0x00000000);
+        Render2D.roundOutline(ctx, wx, wy, ww, wh, r, 1f, 0xFF2A2936, 0xFF201F2A, 0xFF1A1922, 0xFF201F2A);
 
         renderSidebar(ctx, wx + 6, wy + 6, SIDEBAR_W, wh - 12);
 
-        float hx = wx + 6 + SIDEBAR_W + 6, hy = wy + 6, hw = wx + ww - 6 - hx;
+        float hx = wx + 6 + SIDEBAR_W + 12, hy = wy + 8, hw = wx + ww - 10 - hx;
         renderHeader(ctx, hx, hy, hw, HEADER_H);
 
         // page
@@ -321,7 +323,7 @@ public class ClickGuiScreen extends Screen {
             if (searching) searchPage.onOpen();
             else entries.get(selected).page().onOpen();
         }
-        float py = hy + HEADER_H + 6, ph = wy + wh - 6 - py;
+        float py = hy + HEADER_H + 9, ph = wy + wh - 8 - py;
         float t = Easing.outCubic((System.currentTimeMillis() - pageSwitchedAt) / (260f / ClientSettings.animationSpeed()));
         Render2D.setAlpha(p * t);
         pushClip(hx - 2, py, hw + 4, ph);
@@ -336,9 +338,10 @@ public class ClickGuiScreen extends Screen {
     }
 
     private void renderSidebar(DrawContext ctx, float x, float y, float w, float h) {
-        float r = Theme.radius() + 1f;
-        Render2D.roundRect(ctx, x, y, w, h, r, Theme.panelBg());
-        Render2D.roundOutline(ctx, x, y, w, h, r, 1f, Theme.BORDER);
+        // soft vertical divider instead of a boxed panel
+        float dx = x + w + 3;
+        Render2D.rectGradient(ctx, dx, y + 6, Render2D.px(), h / 2 - 6, 0x0023232F, 0x0023232F, 0xFF2A2A38, 0xFF2A2A38);
+        Render2D.rectGradient(ctx, dx, y + h / 2, Render2D.px(), h / 2 - 6, 0xFF2A2A38, 0xFF2A2A38, 0x0023232F, 0x0023232F);
 
         // logo
         boolean logoHover = hovered(x, y, w, 36);
@@ -352,7 +355,7 @@ public class ClickGuiScreen extends Screen {
         Fonts.draw(ctx, "maro", x + 34, y + 10.5f, Theme.TEXT, true, 1.3f);
         Fonts.draw(ctx, ".gg", x + 34 + tw, y + 10.5f, Theme.accent(), true, 1.3f);
         Fonts.draw(ctx, "v" + Maro.VERSION, x + 34.5f, y + 22.5f, Theme.TEXT_MUTED, false, 0.7f);
-        Render2D.rectGradient(ctx, x + 8, y + 35, w - 16, Render2D.px(), 0x00253049, 0xFF253049, 0xFF253049, 0x00253049);
+        Render2D.rectGradient(ctx, x + 8, y + 35, w - 16, Render2D.px(), 0x0039364A, 0xFF39364A, 0xFF39364A, 0x0039364A);
 
         // entries
         float itemH = 17f, stride = 18f;
@@ -378,7 +381,9 @@ public class ClickGuiScreen extends Screen {
         Render2D.roundGradientH(ctx, ix, indY, iw, itemH, 5, Theme.accent(Math.round(0x40 * indA)), Theme.accent2(Math.round(0x0C * indA)));
         Render2D.roundOutline(ctx, ix, indY, iw, itemH, 5, 1f, Theme.accent(Math.round(0x45 * indA)), Theme.accent2(Math.round(0x10 * indA)),
                 Theme.accent2(Math.round(0x10 * indA)), Theme.accent(Math.round(0x45 * indA)));
-        Render2D.roundRect(ctx, ix - 1, indY + 4, 2.4f, itemH - 8, 1.2f, Theme.accent(Math.round(0xFF * indA)));
+        float dotX = ix + iw - 7, dotY = indY + itemH / 2f;
+        if (Theme.glow()) Render2D.shadow(ctx, dotX - 2, dotY - 2, 4, 4, 2, 4, Theme.accent(Math.round(0x60 * indA)));
+        Render2D.circle(ctx, dotX, dotY, 2f, Theme.accent(Math.round(0xFF * indA)));
 
         for (int i = 0; i < entries.size(); i++) {
             Entry e = entries.get(i);
@@ -397,7 +402,7 @@ public class ClickGuiScreen extends Screen {
                 if (ba > 0.01f) {
                     String n = String.valueOf(on);
                     float bw = Math.max(11, Fonts.width(n, true, 0.62f) + 6);
-                    float bx = ix + iw - bw - 4, by = ey + itemH / 2f - 4.5f;
+                    float bx = ix + iw - bw - 14, by = ey + itemH / 2f - 4.5f;
                     float prev = Render2D.getAlpha();
                     Render2D.setAlpha(prev * ba);
                     Render2D.roundRect(ctx, bx, by, bw, 9, 4.5f, Theme.accent(0x40));
@@ -416,7 +421,7 @@ public class ClickGuiScreen extends Screen {
     }
 
     private void renderProfile(DrawContext ctx, float x, float y, float w, float h) {
-        Render2D.roundRect(ctx, x, y, w, h, Theme.radius(), 0xFF111725);
+        Render2D.roundRect(ctx, x, y, w, h, Theme.radius(), 0xFF1C1B26);
         Render2D.roundOutline(ctx, x, y, w, h, Theme.radius(), 1f, Theme.BORDER);
         String name = client != null ? client.getSession().getUsername() : "Player";
         SkinTextures skin = null;
@@ -428,7 +433,7 @@ public class ClickGuiScreen extends Screen {
         float hs = 18;
         if (skin != null) Widgets.head(ctx, skin, x + 5, y + (h - hs) / 2f, (int) hs);
         else Widgets.avatar(ctx, name, x + 5, y + (h - hs) / 2f, hs);
-        Render2D.circle(ctx, x + 5 + hs - 1, y + (h + hs) / 2f - 1, 2.6f, 0xFF111725);
+        Render2D.circle(ctx, x + 5 + hs - 1, y + (h + hs) / 2f - 1, 2.6f, 0xFF1C1B26);
         Render2D.circle(ctx, x + 5 + hs - 1, y + (h + hs) / 2f - 1, 1.8f, Theme.GREEN);
 
         String sub;
@@ -442,10 +447,6 @@ public class ClickGuiScreen extends Screen {
     }
 
     private void renderHeader(DrawContext ctx, float x, float y, float w, float h) {
-        float r = Theme.radius() + 1f;
-        Render2D.roundRect(ctx, x, y, w, h, r, Theme.panelBg());
-        Render2D.roundOutline(ctx, x, y, w, h, r, 1f, Theme.BORDER);
-
         // drag the window by the header (registered first so the search box wins)
         hit(x, y, w, h, (button, mx, my) -> {
             if (button != 0) return;
@@ -457,31 +458,43 @@ public class ClickGuiScreen extends Screen {
             });
         });
 
-        String name = client != null ? client.getSession().getUsername() : "Player";
-        float cy = y + h / 2f;
-        Fonts.drawV(ctx, "Hello, ", x + 10, cy, Theme.TEXT_DIM, false, 0.9f);
-        float gw = Fonts.width("Hello, ", false, 0.9f);
-        Fonts.drawV(ctx, name, x + 10 + gw, cy, Theme.TEXT, true, 0.9f);
-        float greetEnd = x + 10 + gw + Fonts.width(name, true, 0.9f);
-
-        float sw = Math.min(160f, w * 0.38f), sh = 17f;
-        float sx = x + w - sw - 5;
+        // page title + live subtitle
+        boolean searching = !search.getText().isEmpty();
+        Entry e = entries.get(selected);
+        String title = searching ? "Search" : e.label();
+        String subtitle;
+        if (searching) {
+            int n = ModuleManager.search(search.getText()).size();
+            subtitle = n + (n == 1 ? " match" : " matches") + " across all categories";
+        } else if (e.category() != null) {
+            int total = ModuleManager.byCategory(e.category()).size();
+            subtitle = total + (total == 1 ? " module" : " modules") + "  \u2022  " + ModuleManager.enabledCount(e.category()) + " enabled";
+        } else {
+            subtitle = e.subtitle();
+        }
+        float sw = Math.min(150f, w * 0.34f), sh = 18f;
+        float sx = x + w - sw;
         String time = LocalTime.now().format(CLOCK);
-        float clockX = (greetEnd + sx) / 2f;
-        if (Fonts.width(time, true, 0.9f) + 20 < sx - greetEnd) Fonts.drawCentered(ctx, time, clockX, cy, Theme.accent(), true, 0.9f);
+        float cw = Fonts.width(time, false, 0.8f) + 16;
+        float cx = sx - cw - 5;
+        float titleMax = cx - x - 8;
+        Fonts.draw(ctx, Fonts.trim(title, titleMax, true, 1.3f), x + 2, y + 3.5f, Theme.TEXT, true, 1.3f);
+        Fonts.draw(ctx, Fonts.trim(subtitle, titleMax, false, 0.72f), x + 2.5f, y + 17f, Theme.TEXT_MUTED, false, 0.72f);
 
-        search.render(this, ctx, sx, y + (h - sh) / 2f, sw, sh, Icons.SEARCH, focused == search ? null : "Ctrl K");
+        // clock chip
+        float cy = y + (h - sh) / 2f;
+        Render2D.roundRect(ctx, cx, cy, cw, sh, Math.min(sh / 2, Theme.radius()), Theme.INPUT);
+        Render2D.roundOutline(ctx, cx, cy, cw, sh, Math.min(sh / 2, Theme.radius()), 1f, Theme.BORDER);
+        float pulse = 0.5f + 0.5f * (float) Math.sin(System.currentTimeMillis() / 500.0);
+        Render2D.circle(ctx, cx + 6.5f, cy + sh / 2f, 1.6f, Theme.accent(0x80 + Math.round(0x7F * pulse)));
+        Fonts.drawV(ctx, time, cx + 10.5f, cy + sh / 2f, Theme.TEXT_DIM, false, 0.8f);
 
-        // accent line with a travelling shimmer
-        float ly = y + h - 1.2f, lx = x + 12, lw = w - 24;
-        Render2D.rectGradient(ctx, lx, ly, lw / 2, 1.2f, Theme.accent(0), Theme.accent(0xD0), Theme.accent(0xD0), Theme.accent(0));
-        Render2D.rectGradient(ctx, lx + lw / 2, ly, lw / 2, 1.2f, Theme.accent2(0xD0), Theme.accent2(0), Theme.accent2(0), Theme.accent2(0xD0));
-        float phase = (System.currentTimeMillis() % 3200L) / 3200f;
-        float shX = lx + (lw + 60) * phase - 60;
-        pushClip(lx, ly - 1, lw, 3);
-        Render2D.rectGradient(ctx, shX, ly, 30, 1.2f, 0x00FFFFFF, 0xB0FFFFFF, 0xB0FFFFFF, 0x00FFFFFF);
-        Render2D.rectGradient(ctx, shX + 30, ly, 30, 1.2f, 0xB0FFFFFF, 0x00FFFFFF, 0x00FFFFFF, 0xB0FFFFFF);
-        popClip();
+        search.render(this, ctx, sx, cy, sw, sh, Icons.SEARCH, focused == search ? null : "Ctrl K");
+
+        // divider under the header
+        float ly = y + h + 2;
+        Render2D.rectGradient(ctx, x, ly, w / 2, Render2D.px(), 0x0023232F, 0xFF2A2A38, 0xFF2A2A38, 0x0023232F);
+        Render2D.rectGradient(ctx, x + w / 2, ly, w / 2, Render2D.px(), 0xFF2A2A38, 0x0023232F, 0x0023232F, 0xFF2A2A38);
     }
 
     private void renderTooltip(DrawContext ctx, float p) {
@@ -502,8 +515,8 @@ public class ClickGuiScreen extends Screen {
         if (y + h > height - 4) y = (float) mouseYd - h - 6;
         Render2D.setAlpha(p * a);
         Render2D.shadow(ctx, x, y, w, h, 4, 6, 0x60000000);
-        Render2D.roundRect(ctx, x, y, w, h, 4, 0xF5151C2A);
-        Render2D.roundOutline(ctx, x, y, w, h, 4, 1f, 0xFF27324A);
+        Render2D.roundRect(ctx, x, y, w, h, 4, 0xF5211F2B);
+        Render2D.roundOutline(ctx, x, y, w, h, 4, 1f, 0xFF3B384B);
         for (int i = 0; i < lines.size(); i++) Fonts.draw(ctx, lines.get(i), x + 6, y + 5 + i * 8.5f, Theme.TEXT_DIM, false, 0.75f);
     }
 

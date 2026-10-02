@@ -35,6 +35,8 @@ public final class ConfigManager {
     public static final Path CONFIG_DIR = DIR.resolve("configs");
     private static final Path CLIENT_FILE = DIR.resolve("client.json");
 
+    /** Bumped when defaults change in a way old files should not override (v2: new theme). */
+    private static final int CLIENT_VERSION = 2;
     private static String current = "default";
 
     public record ConfigInfo(String name, long lastModified) {
@@ -73,6 +75,7 @@ public final class ConfigManager {
         FriendManager.list().forEach(friends::add);
         root.add("friends", friends);
         root.addProperty("config", current);
+        root.addProperty("version", CLIENT_VERSION);
         write(CLIENT_FILE, root);
     }
 
@@ -81,7 +84,12 @@ public final class ConfigManager {
         if (root == null) return;
         if (root.has("settings") && root.get("settings").isJsonObject()) {
             JsonObject settings = root.getAsJsonObject("settings");
-            for (SettingSection section : ClientSettings.ALL) readSettings(settings, section.getSettings());
+            int version = root.has("version") ? root.get("version").getAsInt() : 1;
+            for (SettingSection section : ClientSettings.ALL) {
+                // files from before the redesign keep their behaviour settings but get the new look
+                if (version < CLIENT_VERSION && ClientSettings.THEME_PAGE.contains(section)) continue;
+                readSettings(settings, section.getSettings());
+            }
         }
         if (root.has("friends") && root.get("friends").isJsonArray()) {
             FriendManager.clear();

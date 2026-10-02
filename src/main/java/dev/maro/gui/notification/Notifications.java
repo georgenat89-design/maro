@@ -103,7 +103,7 @@ public final class Notifications {
 
             Render2D.setAlpha(e);
             Render2D.shadow(ctx, x, y + 1, w, h, 6, 8, 0x60000000);
-            Render2D.roundRect(ctx, x, y, w, h, 6, 0xF20E131D);
+            Render2D.roundRect(ctx, x, y, w, h, 6, 0xF216151E);
             Render2D.roundOutline(ctx, x, y, w, h, 6, 1f, Theme.BORDER);
 
             float ix = x + 15, iy = y + h / 2f;

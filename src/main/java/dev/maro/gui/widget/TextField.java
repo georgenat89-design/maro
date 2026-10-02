@@ -70,8 +70,8 @@ public class TextField {
         float r = Math.min(h / 2f, Theme.radius());
 
         if (f > 0.01f && Theme.glow()) Render2D.shadow(ctx, x, y, w, h, r, 5f, Theme.accent(Math.round(0x40 * f)));
-        Render2D.roundRect(ctx, x, y, w, h, r, ColorUtil.lerp(Theme.INPUT, 0xFF0F1521, hv * 0.6f));
-        Render2D.roundOutline(ctx, x, y, w, h, r, 1f, ColorUtil.lerp(ColorUtil.lerp(Theme.BORDER, 0xFF26304A, hv), Theme.accent(0xC0), f));
+        Render2D.roundRect(ctx, x, y, w, h, r, ColorUtil.lerp(Theme.INPUT, 0xFF191822, hv * 0.6f));
+        Render2D.roundOutline(ctx, x, y, w, h, r, 1f, ColorUtil.lerp(ColorUtil.lerp(Theme.BORDER, 0xFF3A374B, hv), Theme.accent(0xC0), f));
 
         float tx = x + 7;
         if (icon != null) {
@@ -82,7 +82,7 @@ public class TextField {
         if (hint != null && text.isEmpty()) {
             float hw = Fonts.width(hint, false, 0.7f) + 8;
             float hx = x + w - hw - 4;
-            Render2D.roundRect(ctx, hx, y + h / 2f - 5, hw, 10, 3, 0xFF161D2B);
+            Render2D.roundRect(ctx, hx, y + h / 2f - 5, hw, 10, 3, 0xFF22202C);
             Render2D.roundOutline(ctx, hx, y + h / 2f - 5, hw, 10, 3, 1f, Theme.BORDER);
             Fonts.drawCentered(ctx, hint, hx + hw / 2f, y + h / 2f, Theme.TEXT_MUTED, false, 0.7f);
             right = hx - 4;

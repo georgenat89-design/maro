@@ -109,7 +109,7 @@ public class SettingsList {
         String value = n.format();
         float vw = Fonts.width(value, false, 0.8f) + 8;
         float vx = x + w - 10 - vw;
-        Render2D.roundRect(ctx, vx, y + 6, vw, 11, 3, 0xFF0D121C);
+        Render2D.roundRect(ctx, vx, y + 6, vw, 11, 3, 0xFF15141D);
         Fonts.drawCentered(ctx, value, vx + vw / 2f, y + 11.5f, Theme.accent(), false, 0.8f);
 
         float tx = x + 10, tw = w - 20, ty = y + 28.5f;
@@ -153,7 +153,7 @@ public class SettingsList {
         if (total + 4 <= w * 0.5f) {
             // segmented control
             float bx = x + w - 10 - total - 4;
-            Render2D.roundRect(ctx, bx, cy - h / 2, total + 4, h, Math.min(h / 2, Theme.radius()), 0xFF0D121C);
+            Render2D.roundRect(ctx, bx, cy - h / 2, total + 4, h, Math.min(h / 2, Theme.radius()), 0xFF15141D);
             Render2D.roundOutline(ctx, bx, cy - h / 2, total + 4, h, Math.min(h / 2, Theme.radius()), 1f, Theme.BORDER);
             float sx = bx + 2;
             float selX = 0, selW = 0;
@@ -187,7 +187,7 @@ public class SettingsList {
             float px = x + w - 10 - pw;
             boolean hov = gui.hovered(px, cy - h / 2, pw, h);
             float hv = Anims.of(m, "pill", hov);
-            Render2D.roundRect(ctx, px, cy - h / 2, pw, h, Math.min(h / 2, Theme.radius()), ColorUtil.lerp(0xFF0D121C, 0xFF161D2B, hv));
+            Render2D.roundRect(ctx, px, cy - h / 2, pw, h, Math.min(h / 2, Theme.radius()), ColorUtil.lerp(0xFF15141D, 0xFF22202C, hv));
             Render2D.roundOutline(ctx, px, cy - h / 2, pw, h, Math.min(h / 2, Theme.radius()), 1f, ColorUtil.lerp(Theme.BORDER, Theme.accent(0x90), hv));
             Icons.BACK.draw(ctx, px + 8, cy, 6, Theme.TEXT_MUTED, 0);
             Icons.CHEVRON_RIGHT.draw(ctx, px + pw - 8, cy, 6, Theme.TEXT_MUTED, 0);

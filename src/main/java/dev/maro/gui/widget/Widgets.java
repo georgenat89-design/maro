@@ -21,7 +21,7 @@ public final class Widgets {
 
     /** iOS-style switch. {@code t} is the animated on-progress (0..1). */
     public static void toggle(DrawContext ctx, float x, float y, float w, float h, float t, float hover) {
-        int offL = ColorUtil.lerp(Theme.TOGGLE_OFF, 0xFF2D3548, hover);
+        int offL = ColorUtil.lerp(Theme.TOGGLE_OFF, 0xFF3C3A49, hover);
         if (t > 0.01f && Theme.glow()) Render2D.shadow(ctx, x, y, w, h, h / 2f, 4f, Theme.accent(Math.round(0x55 * t)));
         Render2D.roundGradientH(ctx, x, y, w, h, h / 2f, ColorUtil.lerp(offL, Theme.accent(), t), ColorUtil.lerp(offL, Theme.accent2(), t));
         float r = h / 2f - 1.6f + hover * 0.3f;
@@ -57,12 +57,12 @@ public final class Widgets {
                 fg = ColorUtil.lerp(0xFFFF8A8E, 0xFFFFFFFF, hv);
             }
             case GHOST -> {
-                Render2D.roundRect(ctx, bx, by, bw, bh, r, ColorUtil.withAlpha(0xFF1A2232, Math.round(0xFF * hv)));
+                Render2D.roundRect(ctx, bx, by, bw, bh, r, ColorUtil.withAlpha(0xFF272633, Math.round(0xFF * hv)));
                 fg = ColorUtil.lerp(Theme.TEXT_DIM, Theme.TEXT, hv);
             }
             default -> {
-                Render2D.roundRect(ctx, bx, by, bw, bh, r, ColorUtil.lerp(0xFF161D2B, 0xFF1D2639, hv));
-                Render2D.roundOutline(ctx, bx, by, bw, bh, r, 1f, ColorUtil.lerp(Theme.BORDER, 0xFF2C3750, hv));
+                Render2D.roundRect(ctx, bx, by, bw, bh, r, ColorUtil.lerp(0xFF22202C, 0xFF2D2A3A, hv));
+                Render2D.roundOutline(ctx, bx, by, bw, bh, r, 1f, ColorUtil.lerp(Theme.BORDER, 0xFF403D52, hv));
                 fg = ColorUtil.lerp(Theme.TEXT_DIM, Theme.TEXT, hv);
             }
         }
@@ -99,8 +99,8 @@ public final class Widgets {
         float ls = Anims.of(bind, "listen", listening);
         float pulse = listening ? 0.5f + 0.5f * (float) Math.sin(System.currentTimeMillis() / 160.0) : 0f;
 
-        Render2D.roundRect(ctx, x, y, w, h, 3f, ColorUtil.lerp(ColorUtil.lerp(0xFF0D121C, 0xFF1A2232, hv), Theme.accent(0x30), ls));
-        Render2D.roundOutline(ctx, x, y, w, h, 3f, 1f, ColorUtil.lerp(ColorUtil.lerp(Theme.BORDER, 0xFF2C3750, hv), Theme.accent(0x80 + Math.round(0x7F * pulse)), ls));
+        Render2D.roundRect(ctx, x, y, w, h, 3f, ColorUtil.lerp(ColorUtil.lerp(0xFF15141D, 0xFF272633, hv), Theme.accent(0x30), ls));
+        Render2D.roundOutline(ctx, x, y, w, h, 3f, 1f, ColorUtil.lerp(ColorUtil.lerp(Theme.BORDER, 0xFF403D52, hv), Theme.accent(0x80 + Math.round(0x7F * pulse)), ls));
         int fg = listening ? Theme.accent() : bind.isBound() ? ColorUtil.lerp(Theme.TEXT_DIM, Theme.TEXT, hv) : Theme.TEXT_MUTED;
         Fonts.drawCentered(ctx, label, x + w / 2f, cy, fg, false, 0.72f);
 

@@ -5,35 +5,35 @@ import dev.maro.util.ColorUtil;
 
 /** Central palette. The accent is animated so preset changes fade smoothly. */
 public final class Theme {
-    public static final int BG = 0xFF0A0E16;
-    public static final int PANEL = 0xFF0E131D;
-    public static final int CARD = 0xFF121826;
-    public static final int CARD_HOVER = 0xFF182033;
-    public static final int BORDER = 0xFF1C2433;
-    public static final int INPUT = 0xFF0B1019;
-    public static final int TEXT = 0xFFE8ECF4;
-    public static final int TEXT_DIM = 0xFF9AA3B5;
-    public static final int TEXT_MUTED = 0xFF5D667A;
-    public static final int TOGGLE_OFF = 0xFF252C3C;
-    public static final int KNOB_OFF = 0xFF8C95A8;
+    public static final int BG = 0xFF0B0B12;
+    public static final int PANEL = 0xFF101019;
+    public static final int CARD = 0xFF15151F;
+    public static final int CARD_HOVER = 0xFF1C1C29;
+    public static final int BORDER = 0xFF23232F;
+    public static final int INPUT = 0xFF0D0D15;
+    public static final int TEXT = 0xFFEDEDF5;
+    public static final int TEXT_DIM = 0xFFA3A3B8;
+    public static final int TEXT_MUTED = 0xFF63637A;
+    public static final int TOGGLE_OFF = 0xFF272737;
+    public static final int KNOB_OFF = 0xFF8E8EA6;
     public static final int RED = 0xFFE5484D;
     public static final int GREEN = 0xFF30C77B;
     public static final int YELLOW = 0xFFF5A524;
 
     /** Accent presets shown on the Theme page. */
     public static final int[] PRESETS = {
-            0xFF2F7BFF, // blue
-            0xFF5B5CFF, // indigo
-            0xFF9B5CFF, // purple
-            0xFFE14BD0, // pink
-            0xFFFF4D6D, // red
-            0xFFFF7A2F, // orange
-            0xFFF5B82E, // amber
-            0xFF2FD07A, // green
-            0xFF1FC8B0, // teal
-            0xFF22B8F0, // cyan
+            0xFF8B5CF6, // violet
+            0xFF6366F1, // indigo
+            0xFF3B82F6, // blue
+            0xFF06B6D4, // cyan
+            0xFF14B8A6, // teal
+            0xFF22C55E, // green
+            0xFFF59E0B, // amber
+            0xFFF97316, // orange
+            0xFFF43F5E, // rose
+            0xFFEC4899, // pink
     };
-    public static final String[] PRESET_NAMES = {"Blue", "Indigo", "Purple", "Pink", "Red", "Orange", "Amber", "Green", "Teal", "Cyan"};
+    public static final String[] PRESET_NAMES = {"Violet", "Indigo", "Blue", "Cyan", "Teal", "Green", "Amber", "Orange", "Rose", "Pink"};
 
     private static float r = -1, g, b;
     private static long last = System.nanoTime();

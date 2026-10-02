@@ -39,9 +39,9 @@ public final class ClientSettings {
     // ---- Theme page --------------------------------------------------------------------
 
     public static final SettingSection ACCENT = new SettingSection("Accent");
-    public static final ColorSetting accent = ACCENT.add(new ColorSetting("Accent Color", "Main highlight colour", 0xFF2F7BFF));
+    public static final ColorSetting accent = ACCENT.add(new ColorSetting("Accent Color", "Main highlight colour", 0xFF8B5CF6));
     public static final BooleanSetting gradient = ACCENT.add(new BooleanSetting("Gradient", "Blend the accent into a second hue", true));
-    public static final NumberSetting gradientShift = ACCENT.add(new NumberSetting("Gradient Shift", "Hue distance of the second colour", 0.08, 0.02, 0.4, 0.01)
+    public static final NumberSetting gradientShift = ACCENT.add(new NumberSetting("Gradient Shift", "Hue distance of the second colour", 0.1, 0.02, 0.4, 0.01)
             .visible(gradient::get));
     public static final BooleanSetting rainbow = ACCENT.add(new BooleanSetting("Rainbow", "Cycle the accent through every hue", false));
     public static final NumberSetting rainbowSpeed = ACCENT.add(new NumberSetting("Rainbow Speed", "Seconds per full cycle", 8, 2, 30, 1).suffix("s")

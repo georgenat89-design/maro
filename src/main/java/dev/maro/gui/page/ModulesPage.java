@@ -25,7 +25,7 @@ import java.util.Map;
 
 /** Module grid for a category (or search results when {@code category == null}) plus a per-module settings view. */
 public class ModulesPage extends Page {
-    private static final float CARD_H = 36f;
+    private static final float CARD_H = 40f;
     private static final float GAP = 5f;
 
     private final Category category;
@@ -143,34 +143,16 @@ public class ModulesPage extends Page {
         if (on > 0.01f && Theme.glow()) Render2D.shadow(ctx, x, y, w, h, r, 7f, Theme.accent(Math.round(0x26 * on)));
         Render2D.roundRect(ctx, x, y, w, h, r, ColorUtil.lerp(Theme.CARD, Theme.CARD_HOVER, hv));
         if (on > 0.01f) {
-            Render2D.roundGradientH(ctx, x, y, w, h, r, Theme.accent(Math.round(0x26 * on)), Theme.accent2(Math.round(0x04 * on)));
+            Render2D.roundRect(ctx, x, y, w, h, r, Theme.accent(Math.round(0x34 * on)), Theme.accent2(Math.round(0x0A * on)), 0x00000000, Theme.accent(Math.round(0x10 * on)));
         }
-        int border = ColorUtil.lerp(ColorUtil.lerp(Theme.BORDER, 0xFF263049, hv), Theme.accent(0x70), on);
+        int border = ColorUtil.lerp(ColorUtil.lerp(Theme.BORDER, 0xFF3A374A, hv), Theme.accent(0x70), on);
         Render2D.roundOutline(ctx, x, y, w, h, r, 1f, border, ColorUtil.lerp(border, Theme.BORDER, on * 0.7f),
                 ColorUtil.lerp(border, Theme.BORDER, on * 0.7f), border);
 
-        // left accent bar for enabled modules
-        if (on > 0.01f) Render2D.roundRect(ctx, x + 1.5f, y + h / 2f - 7 * on, 2f, 14 * on, 1f, Theme.accent());
-
-        // name + info + warning
-        float nx = x + 10;
+        float nx = x + 11;
         float toggleX = x + w - 32;
         boolean hasSettings = !m.getSettings().isEmpty();
-        float nameMax = toggleX - nx - (hasSettings ? 18 : 6) - 22;
-        String name = Fonts.trim(m.getName(), nameMax, false, 0.95f);
-        Fonts.draw(ctx, name, nx, y + 7.5f, ColorUtil.lerp(Theme.TEXT, 0xFFFFFFFF, hv), false, 0.95f);
-        float ix = nx + Fonts.width(name, false, 0.95f) + 7;
-        Widgets.info(gui, ctx, m, ix, y + 11f, m.getDescription());
-        if (m.isExperimental()) {
-            boolean wh = gui.hovered(ix + 5, y + 6, 10, 10);
-            Icons.WARNING.draw(ctx, ix + 11, y + 11f, 8f, Theme.RED, 0);
-            if (wh) gui.tooltip("Experimental - may be unstable or detectable");
-        }
-
-        // keybind line
-        float ky = y + 25f;
-        Fonts.drawV(ctx, "KeyBind:", nx, ky, Theme.TEXT_MUTED, false, 0.78f);
-        float kx = nx + Fonts.width("KeyBind:", false, 0.78f) + 4;
+        float dotsX = toggleX - 13;
 
         // whole card: left = toggle, right = settings, middle = bind
         gui.hit(x, y, w, h, (button, mx, my) -> {
@@ -183,16 +165,36 @@ public class ModulesPage extends Page {
                 gui.listening = m.getBind();
             }
         });
-        Widgets.bindChip(gui, ctx, m.getBind(), kx, ky, 1f);
+
+        // keybind chip, right-aligned next to the controls
+        String bindLabel = gui.listening == m.getBind() ? "Press a key" : m.getBind().getKeyName();
+        float chipW = Fonts.width(bindLabel, false, 0.72f) + 9;
+        float chipRight = hasSettings ? dotsX - 9 : toggleX - 7;
+        float chipX = chipRight - chipW;
+        Widgets.bindChip(gui, ctx, m.getBind(), chipX, y + h / 2f, 1f);
+
+        // name + description
+        float textMax = chipX - nx - 8;
+        String name = Fonts.trim(m.getName(), textMax - (m.isExperimental() ? 12 : 0), false, 0.95f);
+        Fonts.draw(ctx, name, nx, y + 9f, ColorUtil.lerp(ColorUtil.lerp(Theme.TEXT_DIM, Theme.TEXT, hv), 0xFFFFFFFF, on), false, 0.95f);
+        if (m.isExperimental()) {
+            float wx = nx + Fonts.width(name, false, 0.95f) + 7;
+            Icons.WARNING.draw(ctx, wx, y + 12.5f, 7.5f, Theme.RED, 0);
+            if (gui.hovered(wx - 5, y + 7.5f, 10, 10)) gui.tooltip("Experimental - may be unstable or detectable");
+        }
+        String desc = m.getDescription();
+        String shown = Fonts.trim(desc, textMax, false, 0.7f);
+        Fonts.draw(ctx, shown, nx, y + 22.5f, ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT_DIM, hv * 0.6f), false, 0.7f);
+        if (!shown.equals(desc) && gui.hovered(nx, y + 20, textMax, 10)) gui.tooltip(desc);
 
         // settings button
         if (hasSettings) {
-            float dx = toggleX - 15, dy = y + h / 2f;
-            boolean dh = gui.hovered(dx - 7, dy - 7, 14, 14);
+            float dy = y + h / 2f;
+            boolean dh = gui.hovered(dotsX - 7, dy - 7, 14, 14);
             float dhv = Anims.of(m, "dots", dh);
-            if (dhv > 0.01f) Render2D.roundRect(ctx, dx - 7, dy - 7, 14, 14, 4, ColorUtil.withAlpha(0xFF222B3E, Math.round(0xFF * dhv)));
-            Icons.DOTS.draw(ctx, dx, dy, 8f, ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT, Math.max(dhv, hv * 0.5f)), dhv);
-            gui.hit(dx - 7, dy - 7, 14, 14, (button, mx, my) -> openSettings(m));
+            if (dhv > 0.01f) Render2D.roundRect(ctx, dotsX - 7, dy - 7, 14, 14, 4, ColorUtil.withAlpha(0xFF2A2938, Math.round(0xFF * dhv)));
+            Icons.DOTS.draw(ctx, dotsX, dy, 8f, ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT, Math.max(dhv, hv * 0.5f)), dhv);
+            gui.hit(dotsX - 7, dy - 7, 14, 14, (button, mx, my) -> openSettings(m));
             if (dh) gui.tooltip("Settings (or right-click the card)");
         }
 

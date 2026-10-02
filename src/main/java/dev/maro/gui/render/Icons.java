@@ -178,7 +178,7 @@ public final class Icons {
 
     public static final Icon INFO = (ctx, cx, cy, s, c, h) -> {
         Render2D.circle(ctx, cx, cy, s * 0.5f, c);
-        int hole = 0xFF0E131D;
+        int hole = 0xFF16151E;
         Render2D.roundRect(ctx, cx - s * 0.07f, cy - s * 0.08f, s * 0.14f, s * 0.36f, s * 0.07f, hole);
         Render2D.circle(ctx, cx, cy - s * 0.24f, s * 0.08f, hole);
     };
