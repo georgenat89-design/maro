@@ -2,11 +2,12 @@ plugins {
     id 'fabric-loom' version "${loom_version}"
 }
 
-version = project.mod_version
+def buildNumber = System.getenv("GITHUB_RUN_NUMBER")
+version = project.mod_version + (buildNumber ? "+build.${buildNumber}" : "+local")
 group = project.maven_group
 
 base {
-    archivesName = project.archives_base_name
+    archivesName = "${project.archives_base_name}-mc${project.minecraft_version}"
 }
 
 repositories {

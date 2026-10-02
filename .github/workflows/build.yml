@@ -20,7 +20,7 @@ jobs:
       - name: Upload mod jar
         uses: actions/upload-artifact@v4
         with:
-          name: maro-gg
+          name: maro-gg-mc1.21.11-build-${{ github.run_number }}
           path: |
             build/libs/*.jar
             !build/libs/*-sources.jar
