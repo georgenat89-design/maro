@@ -41,7 +41,8 @@ public class SettingsPage extends Page {
         Render2D.roundOutline(ctx, x, cy, lw, ch, r, 1f, Theme.BORDER);
         Icons.SETTINGS.draw(ctx, x + 16, cy + 15, 12, Theme.accent(), (System.currentTimeMillis() % 6000) / 6000f * 6f);
         Fonts.draw(ctx, Maro.NAME, x + 30, cy + 8, Theme.TEXT, true, 1f);
-        Fonts.draw(ctx, "v" + Maro.VERSION + "  •  Fabric " + mcVersion + "  •  Config: " + ConfigManager.getCurrent(),
+        String update = dev.maro.util.Updater.pendingBuild() > 0 ? "  •  Build " + dev.maro.util.Updater.pendingBuild() + " installs on restart" : "";
+        Fonts.draw(ctx, "v" + Maro.VERSION + update + "  •  Fabric " + mcVersion + "  •  Config: " + ConfigManager.getCurrent(),
                 x + 30, cy + 19, Theme.TEXT_MUTED, false, 0.7f);
 
         float bx = x + 10, by = cy + 33, bh = 16;

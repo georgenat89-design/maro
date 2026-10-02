@@ -36,6 +36,7 @@ public final class ClientSettings {
     public static final ModeSetting notificationPos = BEHAVIOUR.add(new ModeSetting("Toast Position", "Where notifications appear", "Bottom", "Top", "Bottom")
             .visible(notifications::get));
     public static final BooleanSetting pauseGame = BEHAVIOUR.add(new BooleanSetting("Pause Game", "Pause singleplayer while the menu is open", false));
+    public static final BooleanSetting autoUpdate = BEHAVIOUR.add(new BooleanSetting("Auto Update", "Download new builds in the background and install them when the game closes", true));
     public static final BooleanSetting autoSave = BEHAVIOUR.add(new BooleanSetting("Auto Save", "Save the active config whenever the menu closes", true));
 
     // ---- Theme page --------------------------------------------------------------------
