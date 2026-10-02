@@ -35,9 +35,9 @@ dependencies {
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
     // test-only: compile the gametest source set and add the API to the production test run
-    modCompileOnly "net.fabricmc.fabric-api:fabric-client-gametest-api-v1:${project.client_gametest_api_version}"
+    modCompileOnly fabricApi.module("fabric-client-gametest-api-v1", project.fabric_version)
     productionMods "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-    productionMods "net.fabricmc.fabric-api:fabric-client-gametest-api-v1:${project.client_gametest_api_version}"
+    productionMods fabricApi.module("fabric-client-gametest-api-v1", project.fabric_version)
 }
 
 tasks.register('gametestJar', Jar) {
