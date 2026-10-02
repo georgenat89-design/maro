@@ -12,8 +12,8 @@ public final class Theme {
     public static final int BORDER = 0xFF1E1E27;
     public static final int INPUT = 0xFF09090C;
     public static final int TEXT = 0xFFEDEDF5;
-    public static final int TEXT_DIM = 0xFFA3A3B8;
-    public static final int TEXT_MUTED = 0xFF63637A;
+    public static final int TEXT_DIM = 0xFFB4B4C8;
+    public static final int TEXT_MUTED = 0xFF7C7C94;
     public static final int TOGGLE_OFF = 0xFF272737;
     public static final int KNOB_OFF = 0xFF8E8EA6;
     public static final int RED = 0xFFE5484D;

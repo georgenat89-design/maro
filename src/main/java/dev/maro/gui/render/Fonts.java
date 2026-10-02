@@ -20,11 +20,22 @@ import java.util.List;
  * otherwise the vanilla font. Supports fractional positions, scaling and global alpha.
  */
 public final class Fonts {
-    public static final Identifier REGULAR = Identifier.of(Maro.MOD_ID, "inter");
-    public static final Identifier BOLD = Identifier.of(Maro.MOD_ID, "inter_bold");
-    private static final Style REGULAR_STYLE = Style.EMPTY.withFont(new StyleSpriteSource.Font(REGULAR));
-    private static final Style BOLD_STYLE = Style.EMPTY.withFont(new StyleSpriteSource.Font(BOLD));
+    /**
+     * Inter SemiBold / ExtraBold, each defined once per oversample factor (1x..6x). The variant whose
+     * oversample matches the real pixel size of the text is picked at draw time, so glyphs are
+     * rasterised 1:1 with the screen instead of being resampled, which keeps them sharp.
+     */
+    private static final int MAX_OVERSAMPLE = 6;
+    private static final Style[] REGULAR = new Style[MAX_OVERSAMPLE + 1];
+    private static final Style[] BOLD = new Style[MAX_OVERSAMPLE + 1];
     private static final Style VANILLA_BOLD = Style.EMPTY.withBold(true);
+
+    static {
+        for (int i = 1; i <= MAX_OVERSAMPLE; i++) {
+            REGULAR[i] = Style.EMPTY.withFont(new StyleSpriteSource.Font(Identifier.of(Maro.MOD_ID, "inter_semibold_x" + i)));
+            BOLD[i] = Style.EMPTY.withFont(new StyleSpriteSource.Font(Identifier.of(Maro.MOD_ID, "inter_extrabold_x" + i)));
+        }
+    }
 
     private Fonts() {
     }
@@ -33,13 +44,26 @@ public final class Fonts {
         return MinecraftClient.getInstance().textRenderer;
     }
 
+    /** Oversample whose glyph pixels map 1:1 to screen pixels for text drawn at {@code scale}. */
+    private static int oversample(float scale) {
+        double px = MinecraftClient.getInstance().getWindow().getScaleFactor() * scale;
+        return (int) Math.max(1, Math.min(MAX_OVERSAMPLE, Math.ceil(px - 0.15)));
+    }
+
     public static Text text(String s, boolean bold) {
-        if (ClientSettings.customFont.get()) return Text.literal(s).setStyle(bold ? BOLD_STYLE : REGULAR_STYLE);
+        return text(s, bold, 1f);
+    }
+
+    public static Text text(String s, boolean bold, float scale) {
+        if (ClientSettings.customFont.get()) {
+            int o = oversample(scale);
+            return Text.literal(s).setStyle(bold ? BOLD[o] : REGULAR[o]);
+        }
         return bold ? Text.literal(s).setStyle(VANILLA_BOLD) : Text.literal(s);
     }
 
     public static float width(String s, boolean bold, float scale) {
-        return tr().getWidth(text(s, bold)) * scale;
+        return tr().getWidth(text(s, bold, scale)) * scale;
     }
 
     public static float width(String s) {
@@ -63,7 +87,7 @@ public final class Fonts {
         ms.pushMatrix();
         ms.translate(x, y);
         if (scale != 1f) ms.scale(scale, scale);
-        ctx.drawText(tr(), text(s, bold), 0, 0, c, false);
+        ctx.drawText(tr(), text(s, bold, scale), 0, 0, c, false);
         ms.popMatrix();
     }
 

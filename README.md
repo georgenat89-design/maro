@@ -98,8 +98,8 @@ The mod jar is written to `build/libs/`. Run the dev client with `./gradlew runC
 
 ## Tweaks
 
-- **Font alignment:** if text sits slightly high or low on your setup, change `"shift"` / `"size"` in `assets/maro/font/inter.json` and `inter_bold.json`.
+- **Font:** Inter SemiBold / ExtraBold. Each weight has one definition per GUI scale (`assets/maro/font/inter_*_x1..x6.json`) so text is rasterised pixel-perfect; change `"shift"` / `"size"` there if text sits slightly high or low.
 - **Colours:** see `gui/theme/Theme.java`.
 - **Window size:** see the layout block at the top of `ClickGuiScreen#render`.
 
-Inter font © The Inter Project Authors, SIL Open Font License 1.1 (`assets/maro/font/INTER_LICENSE.txt`).
+Inter font © The Inter Project Authors, SIL Open Font License 1.1 (`INTER_LICENSE.txt` in the jar).
