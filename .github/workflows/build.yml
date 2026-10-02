@@ -28,17 +28,6 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq xvfb imagemagick > /dev/null
           ./gradlew runProductionClientGameTest --no-daemon --stacktrace
 
-      - name: Inspect GameRenderer (temporary)
-        if: always()
-        run: |
-          JAR=$(find ~/.gradle/caches .gradle -path '*minecraft*' -name '*.jar' 2>/dev/null | xargs -I{} sh -c 'unzip -l "{}" 2>/dev/null | grep -q "net/minecraft/client/render/GameRenderer.class" && echo "{}"' | head -1)
-          echo "named jar: $JAR"
-          javap -c -p -cp "$JAR" net.minecraft.client.render.GameRenderer > /tmp/gr.txt
-          echo "=== renderWorld"
-          awk '/ renderWorld\(/,/^$/' /tmp/gr.txt | grep -E "invoke|getfield|putfield" | sed 's/^ *//' | head -150
-          echo "=== getProjectionMatrix / getBasicProjectionMatrix"
-          awk '/ get(Basic)?ProjectionMatrix\(/,/^$/' /tmp/gr.txt | grep -E "invoke|getfield" | sed 's/^ *//'
-
       - name: Print screenshot previews
         if: always()
         run: |

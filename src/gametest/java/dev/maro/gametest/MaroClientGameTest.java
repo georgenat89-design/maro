@@ -72,7 +72,11 @@ public class MaroClientGameTest implements FabricClientGameTest {
             }
             context.waitForScreen(null);
 
-            // Stretch Res must actually change the world projection
+            // Stretch Res must actually change the world projection. Build a brick wall in front of
+            // the camera so the horizontal stretch is obvious in the screenshots.
+            singleplayer.getServer().runCommand("execute as @a at @s run fill ^-6 ^-1 ^7 ^6 ^5 ^7 minecraft:bricks");
+            singleplayer.getServer().runCommand("execute as @a at @s run fill ^-1 ^1 ^7 ^1 ^3 ^7 minecraft:gold_block");
+            settle(context);
             settle(context);
             context.takeScreenshot("maro-stretch-off");
             float[] m00 = context.computeOnClient(client -> {
@@ -83,6 +87,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             if (Math.abs(m00[0] - m00[1]) < 1e-4f) {
                 throw new AssertionError("Stretch Res did not change the projection (m00 " + m00[0] + " -> " + m00[1] + ")");
             }
+            settle(context);
             settle(context);
             context.takeScreenshot("maro-stretch-on");
             context.runOnClient(client -> ModuleManager.get(StretchRes.class).setEnabled(false));
