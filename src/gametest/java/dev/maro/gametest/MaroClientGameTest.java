@@ -5,6 +5,8 @@ import dev.maro.module.Module;
 import dev.maro.module.ModuleManager;
 import dev.maro.module.impl.ExampleModule;
 import dev.maro.module.impl.visuals.StretchRes;
+import dev.maro.module.impl.player.FastPlace;
+import dev.maro.mixin.MinecraftClientAccessor;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
@@ -91,6 +93,21 @@ public class MaroClientGameTest implements FabricClientGameTest {
             settle(context);
             context.takeScreenshot("maro-stretch-on");
             context.runOnClient(client -> ModuleManager.get(StretchRes.class).setEnabled(false));
+
+            // Fast Place: with a block in hand the vanilla 4-tick cooldown is cut to the delay (0)
+            singleplayer.getServer().runCommand("give @a minecraft:stone 64");
+            settle(context);
+            int cooldown = context.computeOnClient(client -> {
+                client.player.getInventory().setSelectedSlot(0);
+                FastPlace fastPlace = ModuleManager.get(FastPlace.class);
+                fastPlace.setEnabled(true);
+                ((MinecraftClientAccessor) client).maro$setItemUseCooldown(4);
+                fastPlace.onTick();
+                int value = ((MinecraftClientAccessor) client).maro$getItemUseCooldown();
+                fastPlace.setEnabled(false);
+                return value;
+            });
+            if (cooldown != 0) throw new AssertionError("Fast Place did not shorten the cooldown (got " + cooldown + ")");
         }
     }
 
