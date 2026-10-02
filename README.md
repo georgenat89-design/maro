@@ -8,8 +8,8 @@ Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 ## Features
 
 **GUI**
-- Sidebar + header + card-grid layout with a dark navy theme
-- Smooth, frame-rate independent animations everywhere: menu open/close, page transitions, staggered card entrances, the sliding sidebar indicator, toggles, sliders, hovers and accent colour fades
+- Floating top-bar navigation (category tabs with a sliding pill, icon buttons for general pages) over a black, top-lit window
+- Smooth, frame-rate independent animations everywhere: menu open/close, page transitions, staggered card entrances, the sliding tab indicator, toggles, sliders, hovers and accent colour fades
 - Anti-aliased vector renderer (rounded rects, outlines, gradients, soft shadows/glow, arcs, lines). Pure geometry, no textures or shaders, and it stays crisp at every GUI scale
 - Vector icon set (combat, movement, player, visuals, misc, settings, configs, theme, socials, search...)
 - Bundled **Inter** font (SIL OFL), with a toggle back to the vanilla font
@@ -21,7 +21,7 @@ Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 **Module cards**
 - Left-click toggles, right-click (or the `⋯` button) opens settings, middle-click starts rebinding
 - Keybind chip: click to rebind (keyboard or mouse buttons 3+), `Del`/`Backspace` unbinds, right-click resets
-- Red marker for experimental modules, badge in the sidebar with the enabled count per category
+- Red marker for experimental modules, green dot on a category tab when something in it is enabled
 
 **Settings widgets**
 - Boolean (switch), Number (animated slider; scroll on the value, right-click resets), Mode (segmented control or cycling pill), Color (HSV picker with hue/alpha bars and presets), Keybind
@@ -30,7 +30,7 @@ Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 **Pages**
 - **Settings**: menu key, font, animation speed, dim, tooltips, sounds, notifications, pause, auto-save
 - **Configs**: create / load / save / delete (with confirmation), open folder, active-config badge
-- **Theme**: 10 accent presets, custom colour, gradient accents, rainbow mode, opacity, corner radius, glow, shadow
+- **Theme**: 10 accent presets, custom colour, gradient accents, rainbow mode, background colour + opacity, corner radius, glow, shadow
 - **Socials**: friend list with quick-add from the server player list, plus player heads. Use `FriendManager.isFriend(name)` in your modules
 
 Everything is saved to `.minecraft/maro/`: `client.json` holds GUI settings and friends, and `configs/*.json` holds modules.
