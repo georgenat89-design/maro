@@ -7,7 +7,6 @@ import dev.maro.gui.notification.Notifications;
 import dev.maro.gui.theme.Theme;
 import dev.maro.module.ModuleManager;
 import dev.maro.util.KeyUtil;
-import dev.maro.util.Updater;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -37,11 +36,7 @@ public class Maro implements ClientModInitializer {
             ModuleManager.onRender2D(context, tickCounter.getTickProgress(false));
             if (!(MinecraftClient.getInstance().currentScreen instanceof ClickGuiScreen)) Notifications.render(context);
         });
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
-            ConfigManager.saveAll();
-            Updater.applyOnExit();
-        });
-        Updater.checkAsync();
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> ConfigManager.saveAll());
 
         LOGGER.info("{} {} loaded", NAME, VERSION);
     }

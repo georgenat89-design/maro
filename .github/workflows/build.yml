@@ -55,7 +55,7 @@ jobs:
             !build/libs/*-sources.jar
             !build/libs/*-gametest.jar
 
-      # Only builds that passed the in-game test become releases; the in-mod updater installs these.
+      # Only builds that passed the in-game test become releases.
       - name: Publish release
         if: github.event_name == 'push'
         env:
