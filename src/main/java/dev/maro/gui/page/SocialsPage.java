@@ -14,7 +14,7 @@ import dev.maro.util.ColorUtil;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.client.util.SkinTextures;
+import net.minecraft.entity.player.SkinTextures;
 import net.minecraft.client.gui.DrawContext;
 
 import java.util.ArrayList;
@@ -61,7 +61,7 @@ public class SocialsPage extends Page {
         String self = mc.getSession().getUsername();
         if (net != null) {
             for (PlayerListEntry e : net.getPlayerList()) {
-                String n = e.getProfile().getName();
+                String n = e.getProfile().name();
                 if (n == null || n.isEmpty()) continue;
                 skins.put(n.toLowerCase(Locale.ROOT), e.getSkinTextures());
                 if (!n.equalsIgnoreCase(self)) online.add(n);

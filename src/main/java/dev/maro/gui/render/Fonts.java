@@ -6,10 +6,11 @@ import dev.maro.util.ColorUtil;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.Style;
+import net.minecraft.text.StyleSpriteSource;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
+import org.joml.Matrix3x2fStack;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,8 +22,8 @@ import java.util.List;
 public final class Fonts {
     public static final Identifier REGULAR = Identifier.of(Maro.MOD_ID, "inter");
     public static final Identifier BOLD = Identifier.of(Maro.MOD_ID, "inter_bold");
-    private static final Style REGULAR_STYLE = Style.EMPTY.withFont(REGULAR);
-    private static final Style BOLD_STYLE = Style.EMPTY.withFont(BOLD);
+    private static final Style REGULAR_STYLE = Style.EMPTY.withFont(new StyleSpriteSource.Font(REGULAR));
+    private static final Style BOLD_STYLE = Style.EMPTY.withFont(new StyleSpriteSource.Font(BOLD));
     private static final Style VANILLA_BOLD = Style.EMPTY.withBold(true);
 
     private Fonts() {
@@ -58,12 +59,12 @@ public final class Fonts {
         float p = Render2D.px();
         x = Math.round(x / p) * p;
         y = Math.round(y / p) * p;
-        MatrixStack ms = ctx.getMatrices();
-        ms.push();
-        ms.translate(x, y, 0f);
-        if (scale != 1f) ms.scale(scale, scale, 1f);
+        Matrix3x2fStack ms = ctx.getMatrices();
+        ms.pushMatrix();
+        ms.translate(x, y);
+        if (scale != 1f) ms.scale(scale, scale);
         ctx.drawText(tr(), text(s, bold), 0, 0, c, false);
-        ms.pop();
+        ms.popMatrix();
     }
 
     public static void draw(DrawContext ctx, String s, float x, float y, int color) {

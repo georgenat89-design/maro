@@ -4,6 +4,7 @@
   "package": "dev.maro.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
+    "DrawContextAccessor",
     "KeyboardMixin",
     "MouseMixin"
   ],

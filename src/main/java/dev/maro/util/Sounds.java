@@ -20,6 +20,6 @@ public final class Sounds {
     private static void play(float pitch) {
         if (!ClientSettings.uiSounds.get()) return;
         MinecraftClient mc = MinecraftClient.getInstance();
-        mc.getSoundManager().play(PositionedSoundInstance.master(SoundEvents.UI_BUTTON_CLICK.value(), pitch, 0.35f));
+        mc.getSoundManager().play(PositionedSoundInstance.ui(SoundEvents.UI_BUTTON_CLICK.value(), pitch, 0.35f));
     }
 }

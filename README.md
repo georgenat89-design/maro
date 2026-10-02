@@ -1,6 +1,6 @@
 # maro.gg
 
-A clean **Fabric 1.21.4** client base: a smooth, modern ClickGUI and the plumbing behind it.
+A clean **Fabric 1.21.11** client base: a smooth, modern ClickGUI and the plumbing behind it.
 It ships with **no modules** so you can add your own.
 
 Open the menu in-game with **Right Shift** (you can change this in *Settings*).

@@ -2,8 +2,7 @@ package dev.maro.gui.render;
 
 import dev.maro.util.ColorUtil;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.math.RotationAxis;
+import org.joml.Matrix3x2fStack;
 
 /** Vector icons drawn with {@link Render2D}; crisp at every GUI scale, no textures needed. */
 public final class Icons {
@@ -24,13 +23,13 @@ public final class Icons {
     }
 
     private static void rotated(DrawContext ctx, float cx, float cy, float degrees, Runnable draw) {
-        MatrixStack ms = ctx.getMatrices();
-        ms.push();
-        ms.translate(cx, cy, 0f);
-        ms.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(degrees));
-        ms.translate(-cx, -cy, 0f);
+        Matrix3x2fStack ms = ctx.getMatrices();
+        ms.pushMatrix();
+        ms.translate(cx, cy);
+        ms.rotate((float) Math.toRadians(degrees));
+        ms.translate(-cx, -cy);
         draw.run();
-        ms.pop();
+        ms.popMatrix();
     }
 
     public static final Icon COMBAT = (ctx, cx, cy, s, c, h) -> rotated(ctx, cx, cy, h * 45f, () -> {

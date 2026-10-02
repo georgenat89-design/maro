@@ -1,6 +1,5 @@
 package dev.maro.gui.widget;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import dev.maro.gui.ClickGuiScreen;
 import dev.maro.gui.render.Fonts;
 import dev.maro.gui.render.Icons;
@@ -11,7 +10,7 @@ import dev.maro.util.ColorUtil;
 import dev.maro.util.Sounds;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.PlayerSkinDrawer;
-import net.minecraft.client.util.SkinTextures;
+import net.minecraft.entity.player.SkinTextures;
 
 /** Reusable immediate-mode controls. */
 public final class Widgets {
@@ -139,11 +138,9 @@ public final class Widgets {
     /** Player face (with hat layer). Respects the global fade alpha. */
     public static void head(DrawContext ctx, SkinTextures skin, float x, float y, int size) {
         if (skin == null) return;
-        ctx.draw();
-        RenderSystem.setShaderColor(1f, 1f, 1f, Render2D.getAlpha());
-        PlayerSkinDrawer.draw(ctx, skin, Math.round(x), Math.round(y), size);
-        ctx.draw();
-        RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
+        int a = Math.round(255 * Render2D.getAlpha());
+        if (a < 4) return;
+        PlayerSkinDrawer.draw(ctx, skin, Math.round(x), Math.round(y), size, ColorUtil.withAlpha(0xFFFFFFFF, a));
     }
 
     /** Coloured circle with the first letter of a name, used when no skin is available. */

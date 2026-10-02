@@ -10,8 +10,9 @@ import dev.maro.util.KeyUtil;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,9 +29,9 @@ public class Maro implements ClientModInitializer {
         ConfigManager.init();
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> ModuleManager.onTick());
-        HudRenderCallback.EVENT.register((context, tickCounter) -> {
+        HudElementRegistry.addLast(Identifier.of(MOD_ID, "hud"), (context, tickCounter) -> {
             Theme.update();
-            ModuleManager.onRender2D(context, tickCounter.getTickDelta(false));
+            ModuleManager.onRender2D(context, tickCounter.getTickProgress(false));
             if (!(MinecraftClient.getInstance().currentScreen instanceof ClickGuiScreen)) Notifications.render(context);
         });
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> ConfigManager.saveAll());

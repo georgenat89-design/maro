@@ -24,10 +24,14 @@ import dev.maro.util.ColorUtil;
 import dev.maro.util.Easing;
 import dev.maro.util.KeyUtil;
 import dev.maro.util.Sounds;
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.ScreenRect;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.network.ServerInfo;
-import net.minecraft.client.util.SkinTextures;
+import net.minecraft.client.input.CharInput;
+import net.minecraft.client.input.KeyInput;
+import net.minecraft.entity.player.SkinTextures;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 
@@ -170,6 +174,7 @@ public class ClickGuiScreen extends Screen {
         else if (scissorActive) {
             currentContext().disableScissor();
             scissorActive = false;
+            Render2D.setScissor(null);
         }
     }
 
@@ -183,7 +188,10 @@ public class ClickGuiScreen extends Screen {
         DrawContext ctx = currentContext();
         // DrawContext scissors stack; we manage our own stack so always replace the top one
         if (scissorActive) ctx.disableScissor();
-        ctx.enableScissor((int) Math.floor(r.x), (int) Math.floor(r.y), (int) Math.ceil(r.x + r.w), (int) Math.ceil(r.y + r.h));
+        int x1 = (int) Math.floor(r.x), y1 = (int) Math.floor(r.y);
+        int x2 = (int) Math.ceil(r.x + r.w), y2 = (int) Math.ceil(r.y + r.h);
+        ctx.enableScissor(x1, y1, x2, y2);
+        Render2D.setScissor(new ScreenRect(x1, y1, Math.max(0, x2 - x1), Math.max(0, y2 - y1)));
         scissorActive = true;
     }
 
@@ -259,6 +267,7 @@ public class ClickGuiScreen extends Screen {
         scrollHits.clear();
         clips.clear();
         scissorActive = false;
+        Render2D.setScissor(null);
         tooltip = null;
         interactive = true;
         Theme.update();
@@ -312,6 +321,7 @@ public class ClickGuiScreen extends Screen {
         popClip();
         interactive = true;
 
+        ctx.createNewRootLayer(); // overlays always above the menu
         renderTooltip(ctx, p);
         Render2D.setAlpha(1f);
         Notifications.render(ctx);
@@ -403,8 +413,7 @@ public class ClickGuiScreen extends Screen {
         String name = client != null ? client.getSession().getUsername() : "Player";
         SkinTextures skin = null;
         try {
-            if (client != null && client.player != null) skin = client.player.getSkinTextures();
-            else if (client != null) skin = client.getSkinProvider().getSkinTextures(client.getGameProfile());
+            if (client != null) skin = client.getSkinProvider().supplySkinTextures(client.getGameProfile(), false).get();
         } catch (Throwable ignored) {
         }
         float hs = 18;
@@ -498,7 +507,9 @@ public class ClickGuiScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    public boolean mouseClicked(Click click, boolean doubled) {
+        double mouseX = click.x(), mouseY = click.y();
+        int button = click.button();
         mouseXd = mouseX;
         mouseYd = mouseY;
         if (closingAt >= 0) return true;
@@ -524,7 +535,7 @@ public class ClickGuiScreen extends Screen {
     }
 
     @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+    public boolean mouseReleased(Click click) {
         mouseDown = false;
         drag = null;
         dragOwner = null;
@@ -532,10 +543,10 @@ public class ClickGuiScreen extends Screen {
     }
 
     @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-        mouseXd = mouseX;
-        mouseYd = mouseY;
-        if (drag != null) drag.drag(mouseX, mouseY);
+    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+        mouseXd = click.x();
+        mouseYd = click.y();
+        if (drag != null) drag.drag(mouseXd, mouseYd);
         return true;
     }
 
@@ -553,7 +564,8 @@ public class ClickGuiScreen extends Screen {
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+    public boolean keyPressed(KeyInput input) {
+        int keyCode = input.key(), modifiers = input.modifiers();
         if (closingAt >= 0 || justOpened()) return true;
         if (listening != null) {
             if (keyCode == GLFW.GLFW_KEY_DELETE || keyCode == GLFW.GLFW_KEY_BACKSPACE) listening.set(KeyUtil.NONE);
@@ -562,7 +574,7 @@ public class ClickGuiScreen extends Screen {
             Sounds.click();
             return true;
         }
-        boolean ctrl = hasControlDown();
+        boolean ctrl = (modifiers & (GLFW.GLFW_MOD_CONTROL | GLFW.GLFW_MOD_SUPER)) != 0;
         if (ctrl && (keyCode == GLFW.GLFW_KEY_K || keyCode == GLFW.GLFW_KEY_F)) {
             focused = search;
             return true;
@@ -590,7 +602,7 @@ public class ClickGuiScreen extends Screen {
             return true;
         }
         if (keyCode == GLFW.GLFW_KEY_TAB) {
-            int dir = hasShiftDown() ? -1 : 1;
+            int dir = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0 ? -1 : 1;
             openPage(Math.floorMod(selected + dir, entries.size()));
             Sounds.click();
             return true;
@@ -599,7 +611,9 @@ public class ClickGuiScreen extends Screen {
     }
 
     @Override
-    public boolean charTyped(char chr, int modifiers) {
+    public boolean charTyped(CharInput input) {
+        if (input.codepoint() > Character.MAX_VALUE) return true;
+        char chr = (char) input.codepoint();
         if (closingAt >= 0 || listening != null || justOpened()) return true;
         if (focused != null) return focused.charTyped(chr);
         if (ClientSettings.typeToSearch.get() && currentPage().typeToSearch() && Character.isLetterOrDigit(chr)) {
@@ -633,6 +647,7 @@ public class ClickGuiScreen extends Screen {
     @Override
     public void removed() {
         Render2D.setAlpha(1f);
+        Render2D.setScissor(null);
         ConfigManager.saveClient();
         if (ClientSettings.autoSave.get()) ConfigManager.save(ConfigManager.getCurrent());
     }

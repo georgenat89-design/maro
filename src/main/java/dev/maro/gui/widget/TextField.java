@@ -8,7 +8,6 @@ import dev.maro.gui.theme.Theme;
 import dev.maro.util.ColorUtil;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.function.Consumer;
@@ -127,7 +126,7 @@ public class TextField {
 
     public boolean keyPressed(int key, int mods) {
         lastInput = System.currentTimeMillis();
-        boolean ctrl = Screen.hasControlDown();
+        boolean ctrl = (mods & (GLFW.GLFW_MOD_CONTROL | GLFW.GLFW_MOD_SUPER)) != 0;
         switch (key) {
             case GLFW.GLFW_KEY_BACKSPACE -> {
                 if (cursor == 0) return true;
