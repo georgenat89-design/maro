@@ -64,8 +64,11 @@ public class MaroClientGameTest implements FabricClientGameTest {
             settle(context);
             context.takeScreenshot("maro-search");
 
-            context.getInput().pressKey(GLFW.GLFW_KEY_ESCAPE); // clear search
-            context.getInput().pressKey(GLFW.GLFW_KEY_ESCAPE); // close
+            // Escape clears the search, then unfocuses it, then closes the menu
+            for (int i = 0; i < 4 && context.computeOnClient(client -> client.currentScreen instanceof ClickGuiScreen); i++) {
+                context.getInput().pressKey(GLFW.GLFW_KEY_ESCAPE);
+                settle(context);
+            }
             context.waitForScreen(null);
         }
     }
