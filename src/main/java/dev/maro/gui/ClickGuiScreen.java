@@ -82,8 +82,8 @@ public class ClickGuiScreen extends Screen {
     private static final Object WINDOW = new Object();
     private static final Object INDICATOR = new Object();
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm");
-    private static final float SIDEBAR_W = 120f;
-    private static final float HEADER_H = 26f;
+    private static final float BAR_H = 26f;
+    private static final float HEADER_H = 24f;
 
     // remembered between openings
     private static int lastEntry = 0;
@@ -288,31 +288,38 @@ public class ClickGuiScreen extends Screen {
         }
         Render2D.setAlpha(p);
         if (ClientSettings.backgroundDim.get()) {
-            Render2D.rectGradient(ctx, 0, 0, width, height, Theme.accent(0x22), 0x90000000, 0xB0000000, 0xA0000000);
+            int dim = Math.round(255 * ClientSettings.dimAmount.getFloat() / 100f);
+            Render2D.rectGradient(ctx, 0, 0, width, height, ColorUtil.withAlpha(0, Math.round(dim * 0.85f)), ColorUtil.withAlpha(0, Math.round(dim * 0.85f)),
+                    ColorUtil.withAlpha(0, dim), ColorUtil.withAlpha(0, dim));
         }
 
         // window layout
-        float ww = Math.min(width - 10f, Math.max(400f, Math.min(620f, width - 50f)));
-        float wh = Math.min(height - 10f, Math.max(282f, Math.min(370f, height - 50f)));
+        float ww = Math.min(width - 10f, Math.max(420f, Math.min(660f, width - 40f)));
+        float wh = Math.min(height - 10f, Math.max(250f, Math.min(380f, height - 40f)));
         float baseX = (width - ww) / 2f, baseY = (height - wh) / 2f;
         dragX = Math.max(-baseX + 2, Math.min(baseX - 2, dragX));
         dragY = Math.max(-baseY + 2, Math.min(baseY - 2, dragY));
         float wx = baseX + dragX;
         float wy = baseY + dragY + (1f - p) * 18f;
-        float r = Theme.radius() + 2f;
+        float r = Theme.radius() + 3f;
 
         if (ClientSettings.shadow.get()) {
-            Render2D.shadow(ctx, wx, wy + 2, ww, wh, r, 22f, 0x70000000);
-            if (Theme.glow()) Render2D.shadow(ctx, wx, wy, ww, wh, r, 40f, Theme.accent(0x14));
+            Render2D.shadow(ctx, wx, wy + 3, ww, wh, r, 24f, 0x80000000);
+            if (Theme.glow()) Render2D.shadow(ctx, wx, wy, ww, wh, r, 36f, Theme.accent(0x12));
         }
-        int bg = Theme.windowBg();
-        Render2D.roundGradientV(ctx, wx, wy, ww, wh, r, ColorUtil.shade(bg, 0.025f), bg);
-        Render2D.roundRect(ctx, wx, wy, ww, wh, r, Theme.accent(0x1A), 0x00000000, 0x00000000, 0x00000000);
-        Render2D.roundOutline(ctx, wx, wy, ww, wh, r, 1f, 0xFF2A2936, 0xFF201F2A, 0xFF1A1922, 0xFF201F2A);
+        Render2D.roundRect(ctx, wx, wy, ww, wh, r, Theme.windowBg());
+        // soft accent light falling from the top edge
+        Render2D.roundRect(ctx, wx, wy, ww, Math.min(110f, wh), r, Theme.accent(0x18), Theme.accent2(0x18), 0x00000000, 0x00000000);
+        Render2D.roundOutline(ctx, wx, wy, ww, wh, r, 1f, 0xFF24242E, 0xFF24242E, 0xFF15151B, 0xFF15151B);
+        float hl = ww * 0.5f, hlx = wx + (ww - hl) / 2f;
+        Render2D.rectGradient(ctx, hlx, wy + 0.5f, hl / 2, 1f, Theme.accent(0), Theme.accent(0xE0), Theme.accent(0xE0), Theme.accent(0));
+        Render2D.rectGradient(ctx, hlx + hl / 2, wy + 0.5f, hl / 2, 1f, Theme.accent2(0xE0), Theme.accent2(0), Theme.accent2(0), Theme.accent2(0xE0));
 
-        renderSidebar(ctx, wx + 6, wy + 6, SIDEBAR_W, wh - 12);
-
-        float hx = wx + 6 + SIDEBAR_W + 12, hy = wy + 8, hw = wx + ww - 10 - hx;
+        float pad = 10f;
+        float hx = wx + pad, hw = ww - pad * 2;
+        float barY = wy + 9;
+        renderTopBar(ctx, hx, barY, hw, BAR_H);
+        float hy = barY + BAR_H + 10;
         renderHeader(ctx, hx, hy, hw, HEADER_H);
 
         // page
@@ -323,7 +330,7 @@ public class ClickGuiScreen extends Screen {
             if (searching) searchPage.onOpen();
             else entries.get(selected).page().onOpen();
         }
-        float py = hy + HEADER_H + 9, ph = wy + wh - 8 - py;
+        float py = hy + HEADER_H + 9, ph = wy + wh - 9 - py;
         float t = Easing.outCubic((System.currentTimeMillis() - pageSwitchedAt) / (260f / ClientSettings.animationSpeed()));
         Render2D.setAlpha(p * t);
         pushClip(hx - 2, py, hw + 4, ph);
@@ -337,117 +344,8 @@ public class ClickGuiScreen extends Screen {
         Notifications.render(ctx);
     }
 
-    private void renderSidebar(DrawContext ctx, float x, float y, float w, float h) {
-        // soft vertical divider instead of a boxed panel
-        float dx = x + w + 3;
-        Render2D.rectGradient(ctx, dx, y + 6, Render2D.px(), h / 2 - 6, 0x0023232F, 0x0023232F, 0xFF2A2A38, 0xFF2A2A38);
-        Render2D.rectGradient(ctx, dx, y + h / 2, Render2D.px(), h / 2 - 6, 0xFF2A2A38, 0xFF2A2A38, 0x0023232F, 0x0023232F);
-
-        // logo
-        boolean logoHover = hovered(x, y, w, 36);
-        float lh = Anims.of(WINDOW, "logo", logoHover);
-        logoSpin = (logoSpin + 1.5f + lh * 9f) % 360f;
-        float lcx = x + 19, lcy = y + 19;
-        if (Theme.glow()) Render2D.shadow(ctx, lcx - 9, lcy - 9, 18, 18, 9, 6 + lh * 4, Theme.accent(0x30));
-        Render2D.arc(ctx, lcx, lcy, 9f, 3.2f, logoSpin, 290f, Theme.accent2(), Theme.accent());
-        Render2D.circle(ctx, lcx, lcy, 1.8f + lh * 0.6f, Theme.accent());
-        float tw = Fonts.width("maro", true, 1.3f);
-        Fonts.draw(ctx, "maro", x + 34, y + 10.5f, Theme.TEXT, true, 1.3f);
-        Fonts.draw(ctx, ".gg", x + 34 + tw, y + 10.5f, Theme.accent(), true, 1.3f);
-        Fonts.draw(ctx, "v" + Maro.VERSION, x + 34.5f, y + 22.5f, Theme.TEXT_MUTED, false, 0.7f);
-        Render2D.rectGradient(ctx, x + 8, y + 35, w - 16, Render2D.px(), 0x0039364A, 0xFF39364A, 0xFF39364A, 0x0039364A);
-
-        // entries
-        float itemH = 17f, stride = 18f;
-        float[] ys = new float[entries.size()];
-        float cy = y + 42;
-        Widgets.sectionLabel(ctx, "Modules", x + 9, cy, w - 18);
-        cy += 11;
-        for (int i = 0; i < entries.size(); i++) {
-            if (i == moduleEntries) {
-                cy += 5;
-                Widgets.sectionLabel(ctx, "General", x + 9, cy, w - 18);
-                cy += 11;
-            }
-            ys[i] = cy;
-            cy += stride;
-        }
-
-        boolean searching = !search.getText().isEmpty();
-        float indY = Anims.of(INDICATOR, "y", ys[selected], 16f);
-        float indA = Anims.of(INDICATOR, "a", searching ? 0.35f : 1f);
-        float ix = x + 5, iw = w - 10;
-        if (Theme.glow()) Render2D.shadow(ctx, ix, indY, iw, itemH, 5, 6, Theme.accent(Math.round(0x22 * indA)));
-        Render2D.roundGradientH(ctx, ix, indY, iw, itemH, 5, Theme.accent(Math.round(0x40 * indA)), Theme.accent2(Math.round(0x0C * indA)));
-        Render2D.roundOutline(ctx, ix, indY, iw, itemH, 5, 1f, Theme.accent(Math.round(0x45 * indA)), Theme.accent2(Math.round(0x10 * indA)),
-                Theme.accent2(Math.round(0x10 * indA)), Theme.accent(Math.round(0x45 * indA)));
-        float dotX = ix + iw - 7, dotY = indY + itemH / 2f;
-        if (Theme.glow()) Render2D.shadow(ctx, dotX - 2, dotY - 2, 4, 4, 2, 4, Theme.accent(Math.round(0x60 * indA)));
-        Render2D.circle(ctx, dotX, dotY, 2f, Theme.accent(Math.round(0xFF * indA)));
-
-        for (int i = 0; i < entries.size(); i++) {
-            Entry e = entries.get(i);
-            float ey = ys[i];
-            boolean hov = hovered(ix, ey, iw, itemH);
-            float hv = Anims.of(e, "hover", hov);
-            float sel = Anims.of(e, "sel", i == selected && !searching);
-            int iconColor = ColorUtil.lerp(ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT_DIM, hv), Theme.accent(), sel);
-            e.icon().draw(ctx, x + 17, ey + itemH / 2f, 9f, iconColor, Math.max(hv, sel));
-            int textColor = ColorUtil.lerp(ColorUtil.lerp(Theme.TEXT_DIM, Theme.TEXT, hv), ColorUtil.shade(Theme.accent(), 0.3f), sel);
-            Fonts.drawV(ctx, e.label(), x + 29 + hv * 1.5f, ey + itemH / 2f, textColor, false, 0.9f);
-
-            if (e.category() != null) {
-                long on = ModuleManager.enabledCount(e.category());
-                float ba = Anims.of(e, "badge", on > 0);
-                if (ba > 0.01f) {
-                    String n = String.valueOf(on);
-                    float bw = Math.max(11, Fonts.width(n, true, 0.62f) + 6);
-                    float bx = ix + iw - bw - 14, by = ey + itemH / 2f - 4.5f;
-                    float prev = Render2D.getAlpha();
-                    Render2D.setAlpha(prev * ba);
-                    Render2D.roundRect(ctx, bx, by, bw, 9, 4.5f, Theme.accent(0x40));
-                    Fonts.drawCentered(ctx, n, bx + bw / 2f, by + 4.5f, ColorUtil.shade(Theme.accent(), 0.4f), true, 0.62f);
-                    Render2D.setAlpha(prev);
-                }
-            }
-            final int index = i;
-            hit(ix, ey, iw, itemH, (button, mx, my) -> {
-                if (index != selected || searching) Sounds.click();
-                openPage(index);
-            });
-        }
-
-        if (y + h - 33 > cy + 2) renderProfile(ctx, x + 5, y + h - 33, w - 10, 28);
-    }
-
-    private void renderProfile(DrawContext ctx, float x, float y, float w, float h) {
-        Render2D.roundRect(ctx, x, y, w, h, Theme.radius(), 0xFF1C1B26);
-        Render2D.roundOutline(ctx, x, y, w, h, Theme.radius(), 1f, Theme.BORDER);
-        String name = client != null ? client.getSession().getUsername() : "Player";
-        SkinTextures skin = null;
-        try {
-            if (skinSupplier == null && client != null) skinSupplier = client.getSkinProvider().supplySkinTextures(client.getGameProfile(), false);
-            if (skinSupplier != null) skin = skinSupplier.get();
-        } catch (Throwable ignored) {
-        }
-        float hs = 18;
-        if (skin != null) Widgets.head(ctx, skin, x + 5, y + (h - hs) / 2f, (int) hs);
-        else Widgets.avatar(ctx, name, x + 5, y + (h - hs) / 2f, hs);
-        Render2D.circle(ctx, x + 5 + hs - 1, y + (h + hs) / 2f - 1, 2.6f, 0xFF1C1B26);
-        Render2D.circle(ctx, x + 5 + hs - 1, y + (h + hs) / 2f - 1, 1.8f, Theme.GREEN);
-
-        String sub;
-        ServerInfo server = client != null ? client.getCurrentServerEntry() : null;
-        if (server != null) sub = server.address;
-        else if (client != null && client.isInSingleplayer()) sub = "Singleplayer";
-        else sub = "Offline";
-        float tx = x + 5 + hs + 6, maxW = w - (tx - x) - 4;
-        Fonts.draw(ctx, Fonts.trim(name, maxW, true, 0.82f), tx, y + 6.5f, Theme.TEXT, true, 0.82f);
-        Fonts.draw(ctx, Fonts.trim(sub, maxW, false, 0.68f), tx, y + 16.5f, Theme.TEXT_MUTED, false, 0.68f);
-    }
-
-    private void renderHeader(DrawContext ctx, float x, float y, float w, float h) {
-        // drag the window by the header (registered first so the search box wins)
+    private void renderTopBar(DrawContext ctx, float x, float y, float w, float h) {
+        // drag the window by the bar (registered first so every control on it wins)
         hit(x, y, w, h, (button, mx, my) -> {
             if (button != 0) return;
             final float sx = dragX, sy = dragY;
@@ -458,7 +356,140 @@ public class ClickGuiScreen extends Screen {
             });
         });
 
-        // page title + live subtitle
+        Render2D.roundRect(ctx, x, y, w, h, h / 2f, Theme.panelBg());
+        Render2D.roundOutline(ctx, x, y, w, h, h / 2f, 1f, Theme.BORDER);
+        float cy = y + h / 2f;
+
+        // logo
+        boolean logoHover = hovered(x, y, 70, h);
+        float lh = Anims.of(WINDOW, "logo", logoHover);
+        logoSpin = (logoSpin + 1.2f + lh * 9f) % 360f;
+        float lcx = x + h / 2f + 1;
+        if (Theme.glow()) Render2D.shadow(ctx, lcx - 7, cy - 7, 14, 14, 7, 5 + lh * 4, Theme.accent(0x30));
+        Render2D.arc(ctx, lcx, cy, 7f, 2.6f, logoSpin, 290f, Theme.accent2(), Theme.accent());
+        Render2D.circle(ctx, lcx, cy, 1.5f + lh * 0.5f, Theme.accent());
+        float tx = lcx + 11;
+        float tw = Fonts.width("maro", true, 1.05f);
+        Fonts.drawV(ctx, "maro", tx, cy, Theme.TEXT, true, 1.05f);
+        Fonts.drawV(ctx, ".gg", tx + tw, cy, Theme.accent(), true, 1.05f);
+        float logoEnd = tx + tw + Fonts.width(".gg", true, 1.05f) + 12;
+
+        // right side: profile + general pages
+        float bs = h - 6;
+        float ax = x + w - 3 - bs, ay = y + 3;
+        renderAvatar(ctx, ax, ay, bs);
+        boolean searching = !search.getText().isEmpty();
+        float gx = ax - 6;
+        for (int i = entries.size() - 1; i >= moduleEntries; i--) {
+            gx -= bs;
+            Entry e = entries.get(i);
+            boolean hov = hovered(gx, ay, bs, bs);
+            float hv = Anims.of(e, "hover", hov);
+            float sel = Anims.of(e, "sel", i == selected && !searching);
+            if (sel > 0.01f && Theme.glow()) Render2D.shadow(ctx, gx, ay, bs, bs, bs / 2f, 5, Theme.accent(Math.round(0x40 * sel)));
+            Render2D.roundRect(ctx, gx, ay, bs, bs, bs / 2f, ColorUtil.lerp(ColorUtil.withAlpha(0xFF1E1E28, Math.round(0xFF * hv)), Theme.accent(0x40), sel));
+            if (sel > 0.01f) Render2D.roundOutline(ctx, gx, ay, bs, bs, bs / 2f, 1f, Theme.accent(Math.round(0x90 * sel)));
+            e.icon().draw(ctx, gx + bs / 2f, ay + bs / 2f, 8.5f,
+                    ColorUtil.lerp(ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT, hv), ColorUtil.shade(Theme.accent(), 0.45f), sel), Math.max(hv, sel));
+            final int index = i;
+            hit(gx, ay, bs, bs, (button, mx, my) -> {
+                if (index != selected || searching) Sounds.click();
+                openPage(index);
+            });
+            if (hov) tooltip(e.label());
+            gx -= 3;
+        }
+        float tabsEnd = gx - 6;
+        Render2D.rect(ctx, tabsEnd + 2, y + 7, Render2D.px(), h - 14, Theme.BORDER);
+
+        // category tabs (labels collapse to icons when space is tight)
+        float labelScale = 0.82f, tabH = h - 6, tabPad = 8;
+        float[] widths = new float[moduleEntries];
+        float total = 0;
+        for (int i = 0; i < moduleEntries; i++) {
+            widths[i] = tabPad * 2 + 9 + 5 + Fonts.width(entries.get(i).label(), false, labelScale);
+            total += widths[i] + 2;
+        }
+        boolean labels = total <= tabsEnd - logoEnd;
+        if (!labels) for (int i = 0; i < moduleEntries; i++) widths[i] = tabH + 4;
+        float sx = logoEnd;
+        float selX = sx, selW = widths[0];
+        float[] xs = new float[moduleEntries];
+        for (int i = 0; i < moduleEntries; i++) {
+            xs[i] = sx;
+            if (i == selected) {
+                selX = sx;
+                selW = widths[i];
+            }
+            sx += widths[i] + 2;
+        }
+        boolean tabSelected = selected < moduleEntries && !searching;
+        float ix = Anims.of(INDICATOR, "x", selX, 16f), iw = Anims.of(INDICATOR, "w", selW, 16f);
+        float ia = Anims.of(INDICATOR, "a", tabSelected ? 1f : 0f);
+        if (ia > 0.01f) {
+            if (Theme.glow()) Render2D.shadow(ctx, ix, ay, iw, tabH, tabH / 2f, 6, Theme.accent(Math.round(0x38 * ia)));
+            Render2D.roundGradientH(ctx, ix, ay, iw, tabH, tabH / 2f, Theme.accent(Math.round(0x50 * ia)), Theme.accent2(Math.round(0x30 * ia)));
+            Render2D.roundOutline(ctx, ix, ay, iw, tabH, tabH / 2f, 1f, Theme.accent(Math.round(0x80 * ia)), Theme.accent2(Math.round(0x40 * ia)),
+                    Theme.accent2(Math.round(0x40 * ia)), Theme.accent(Math.round(0x80 * ia)));
+        }
+        for (int i = 0; i < moduleEntries; i++) {
+            Entry e = entries.get(i);
+            float ex = xs[i], ew = widths[i];
+            boolean hov = hovered(ex, ay, ew, tabH);
+            float hv = Anims.of(e, "hover", hov);
+            float sel = Anims.of(e, "sel", i == selected && !searching);
+            if (hv > 0.01f && sel < 0.99f) Render2D.roundRect(ctx, ex, ay, ew, tabH, tabH / 2f, ColorUtil.withAlpha(0xFF1A1A23, Math.round(0xFF * hv * (1 - sel))));
+            int fg = ColorUtil.lerp(ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT, hv), 0xFFFFFFFF, sel);
+            if (labels) {
+                e.icon().draw(ctx, ex + tabPad + 4.5f, cy, 8.5f, ColorUtil.lerp(fg, ColorUtil.shade(Theme.accent(), 0.5f), sel), Math.max(hv, sel));
+                Fonts.drawV(ctx, e.label(), ex + tabPad + 14, cy, fg, sel > 0.5f, labelScale);
+            } else {
+                e.icon().draw(ctx, ex + ew / 2f, cy, 8.5f, fg, Math.max(hv, sel));
+                if (hov) tooltip(e.label());
+            }
+            long on = ModuleManager.enabledCount(e.category());
+            float ba = Anims.of(e, "badge", on > 0);
+            if (ba > 0.01f) {
+                float prev = Render2D.getAlpha();
+                Render2D.setAlpha(prev * ba);
+                Render2D.circle(ctx, ex + ew - 5, ay + 4, 2.4f, Theme.panelBg());
+                Render2D.circle(ctx, ex + ew - 5, ay + 4, 1.7f, Theme.GREEN);
+                Render2D.setAlpha(prev);
+            }
+            final int index = i;
+            hit(ex, ay, ew, tabH, (button, mx, my) -> {
+                if (index != selected || searching) Sounds.click();
+                openPage(index);
+            });
+        }
+    }
+
+    private void renderAvatar(DrawContext ctx, float x, float y, float s) {
+        String name = client != null ? client.getSession().getUsername() : "Player";
+        SkinTextures skin = null;
+        try {
+            if (skinSupplier == null && client != null) skinSupplier = client.getSkinProvider().supplySkinTextures(client.getGameProfile(), false);
+            if (skinSupplier != null) skin = skinSupplier.get();
+        } catch (Throwable ignored) {
+        }
+        boolean hov = hovered(x, y, s, s);
+        float hv = Anims.of(WINDOW, "avatar", hov);
+        Render2D.ring(ctx, x + s / 2f, y + s / 2f, s / 2f, 1f, ColorUtil.lerp(Theme.BORDER, Theme.accent(), hv));
+        float hs = s - 6;
+        if (skin != null) Widgets.head(ctx, skin, x + 3, y + 3, (int) hs);
+        else Widgets.avatar(ctx, name, x + 3, y + 3, hs);
+        Render2D.circle(ctx, x + s - 3, y + s - 3, 2.6f, Theme.panelBg());
+        Render2D.circle(ctx, x + s - 3, y + s - 3, 1.8f, Theme.GREEN);
+        if (hov) {
+            ServerInfo server = client != null ? client.getCurrentServerEntry() : null;
+            String where = server != null ? server.address : client != null && client.isInSingleplayer() ? "Singleplayer" : "Offline";
+            tooltip(name + " \u2022 " + where);
+        }
+        hit(x, y, s, s, (button, mx, my) -> {
+        });
+    }
+
+    private void renderHeader(DrawContext ctx, float x, float y, float w, float h) {
         boolean searching = !search.getText().isEmpty();
         Entry e = entries.get(selected);
         String title = searching ? "Search" : e.label();
@@ -472,29 +503,26 @@ public class ClickGuiScreen extends Screen {
         } else {
             subtitle = e.subtitle();
         }
-        float sw = Math.min(150f, w * 0.34f), sh = 18f;
+        float sw = Math.min(160f, w * 0.34f), sh = 18f;
         float sx = x + w - sw;
         String time = LocalTime.now().format(CLOCK);
         float cw = Fonts.width(time, false, 0.8f) + 16;
         float cx = sx - cw - 5;
         float titleMax = cx - x - 8;
-        Fonts.draw(ctx, Fonts.trim(title, titleMax, true, 1.3f), x + 2, y + 3.5f, Theme.TEXT, true, 1.3f);
-        Fonts.draw(ctx, Fonts.trim(subtitle, titleMax, false, 0.72f), x + 2.5f, y + 17f, Theme.TEXT_MUTED, false, 0.72f);
 
-        // clock chip
-        float cy = y + (h - sh) / 2f;
-        Render2D.roundRect(ctx, cx, cy, cw, sh, Math.min(sh / 2, Theme.radius()), Theme.INPUT);
-        Render2D.roundOutline(ctx, cx, cy, cw, sh, Math.min(sh / 2, Theme.radius()), 1f, Theme.BORDER);
+        // accent tick + title
+        Render2D.roundGradientV(ctx, x + 1, y + 3, 2.4f, h - 6, 1.2f, Theme.accent(), Theme.accent2());
+        Fonts.draw(ctx, Fonts.trim(title, titleMax, true, 1.25f), x + 9, y + 2.5f, Theme.TEXT, true, 1.25f);
+        Fonts.draw(ctx, Fonts.trim(subtitle, titleMax, false, 0.7f), x + 9.5f, y + 15.5f, Theme.TEXT_MUTED, false, 0.7f);
+
+        float cyy = y + (h - sh) / 2f;
+        Render2D.roundRect(ctx, cx, cyy, cw, sh, sh / 2f, Theme.INPUT);
+        Render2D.roundOutline(ctx, cx, cyy, cw, sh, sh / 2f, 1f, Theme.BORDER);
         float pulse = 0.5f + 0.5f * (float) Math.sin(System.currentTimeMillis() / 500.0);
-        Render2D.circle(ctx, cx + 6.5f, cy + sh / 2f, 1.6f, Theme.accent(0x80 + Math.round(0x7F * pulse)));
-        Fonts.drawV(ctx, time, cx + 10.5f, cy + sh / 2f, Theme.TEXT_DIM, false, 0.8f);
+        Render2D.circle(ctx, cx + 6.5f, cyy + sh / 2f, 1.6f, Theme.accent(0x80 + Math.round(0x7F * pulse)));
+        Fonts.drawV(ctx, time, cx + 10.5f, cyy + sh / 2f, Theme.TEXT_DIM, false, 0.8f);
 
-        search.render(this, ctx, sx, cy, sw, sh, Icons.SEARCH, focused == search ? null : "Ctrl K");
-
-        // divider under the header
-        float ly = y + h + 2;
-        Render2D.rectGradient(ctx, x, ly, w / 2, Render2D.px(), 0x0023232F, 0xFF2A2A38, 0xFF2A2A38, 0x0023232F);
-        Render2D.rectGradient(ctx, x + w / 2, ly, w / 2, Render2D.px(), 0xFF2A2A38, 0x0023232F, 0x0023232F, 0xFF2A2A38);
+        search.render(this, ctx, sx, cyy, sw, sh, Icons.SEARCH, focused == search ? null : "Ctrl K");
     }
 
     private void renderTooltip(DrawContext ctx, float p) {

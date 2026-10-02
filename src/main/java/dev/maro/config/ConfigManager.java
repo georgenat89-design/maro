@@ -35,8 +35,8 @@ public final class ConfigManager {
     public static final Path CONFIG_DIR = DIR.resolve("configs");
     private static final Path CLIENT_FILE = DIR.resolve("client.json");
 
-    /** Bumped when defaults change in a way old files should not override (v2: new theme). */
-    private static final int CLIENT_VERSION = 2;
+    /** Bumped when defaults change in a way old files should not override (v3: black redesign). */
+    private static final int CLIENT_VERSION = 3;
     private static String current = "default";
 
     public record ConfigInfo(String name, long lastModified) {

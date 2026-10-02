@@ -5,12 +5,12 @@ import dev.maro.util.ColorUtil;
 
 /** Central palette. The accent is animated so preset changes fade smoothly. */
 public final class Theme {
-    public static final int BG = 0xFF0B0B12;
-    public static final int PANEL = 0xFF101019;
-    public static final int CARD = 0xFF15151F;
-    public static final int CARD_HOVER = 0xFF1C1C29;
-    public static final int BORDER = 0xFF23232F;
-    public static final int INPUT = 0xFF0D0D15;
+    public static final int BG = 0xFF000000;
+    public static final int PANEL = 0xFF0B0B0F;
+    public static final int CARD = 0xFF0F0F14;
+    public static final int CARD_HOVER = 0xFF16161D;
+    public static final int BORDER = 0xFF1E1E27;
+    public static final int INPUT = 0xFF09090C;
     public static final int TEXT = 0xFFEDEDF5;
     public static final int TEXT_DIM = 0xFFA3A3B8;
     public static final int TEXT_MUTED = 0xFF63637A;
@@ -88,11 +88,13 @@ public final class Theme {
     }
 
     public static int windowBg() {
-        return ColorUtil.withAlpha(BG, Math.round(255 * ClientSettings.opacity.getFloat() / 100f));
+        return ColorUtil.withAlpha(ClientSettings.background.get(), Math.round(255 * ClientSettings.opacity.getFloat() / 100f));
     }
 
+    /** Slightly raised surface (top bar, inputs) derived from the window colour. */
     public static int panelBg() {
-        return ColorUtil.withAlpha(PANEL, Math.round(255 * Math.min(1f, ClientSettings.opacity.getFloat() / 100f + 0.02f)));
+        int base = ColorUtil.shade(ClientSettings.background.get() | 0xFF000000, 0.045f);
+        return ColorUtil.withAlpha(base, Math.round(255 * Math.min(1f, ClientSettings.opacity.getFloat() / 100f + 0.04f)));
     }
 
     public static float radius() {

@@ -61,10 +61,6 @@ public final class Render2D {
         if (state != null) ((DrawContextAccessor) b.context()).maro$getState().addSimpleElement(state);
     }
 
-    private static void tri(ShapeRenderState.Builder b, float x1, float y1, int c1, float x2, float y2, int c2, float x3, float y3, int c3) {
-        b.quad(x1, y1, c1, x2, y2, c2, x3, y3, c3, x3, y3, c3);
-    }
-
     private static void quad(ShapeRenderState.Builder b,
                              float x1, float y1, int c1, float x2, float y2, int c2,
                              float x3, float y3, int c3, float x4, float y4, int c4) {
@@ -146,7 +142,12 @@ public final class Render2D {
             float xi = OUTER[a], yi = OUTER[a + 1], xj = OUTER[o], yj = OUTER[o + 1];
             int ci = col(uniform ? tl : bilerp(xi, yi, x, y, w, h, tl, tr, br, bl));
             int cj = col(uniform ? tl : bilerp(xj, yj, x, y, w, h, tl, tr, br, bl));
-            tri(b, cx, cy, cc, xi, yi, ci, xj, yj, cj);
+            if ((i & 1) == 0) {
+                // fan as real quads: centre + three consecutive outline points (n is always even)
+                int k = ((i + 2) % n) * 4;
+                int ck = col(uniform ? tl : bilerp(OUTER[k], OUTER[k + 1], x, y, w, h, tl, tr, br, bl));
+                quad(b, cx, cy, cc, xi, yi, ci, xj, yj, cj, OUTER[k], OUTER[k + 1], ck);
+            }
             quad(b, xi, yi, ci, xj, yj, cj,
                     xj + OUTER[o + 2] * f, yj + OUTER[o + 3] * f, clear(cj),
                     xi + OUTER[a + 2] * f, yi + OUTER[a + 3] * f, clear(ci));
@@ -271,7 +272,10 @@ public final class Render2D {
         for (int s = 0; s < seg; s++) {
             float a0 = start + (float) Math.PI * s / seg, a1 = start + (float) Math.PI * (s + 1) / seg;
             float c0 = (float) Math.cos(a0), s0 = (float) Math.sin(a0), c1 = (float) Math.cos(a1), s1 = (float) Math.sin(a1);
-            tri(b, x, y, c, x + c0 * r, y + s0 * r, c, x + c1 * r, y + s1 * r, c);
+            if ((s & 1) == 0) {
+                float a2 = start + (float) Math.PI * (s + 2) / seg;
+                quad(b, x, y, c, x + c0 * r, y + s0 * r, c, x + c1 * r, y + s1 * r, c, x + (float) Math.cos(a2) * r, y + (float) Math.sin(a2) * r, c);
+            }
             quad(b, x + c0 * r, y + s0 * r, c, x + c1 * r, y + s1 * r, c, x + c1 * (r + f), y + s1 * (r + f), z, x + c0 * (r + f), y + s0 * (r + f), z);
         }
     }

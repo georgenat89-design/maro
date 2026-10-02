@@ -23,6 +23,8 @@ public final class ClientSettings {
     public static final NumberSetting animSpeed = INTERFACE.add(new NumberSetting("Animation Speed", "How fast menu animations play", 1.0, 0.3, 3.0, 0.1).suffix("x"));
     public static final BooleanSetting backgroundBlur = INTERFACE.add(new BooleanSetting("Background Blur", "Frosted-glass blur behind the menu (strength = vanilla Menu Blur option)", true));
     public static final BooleanSetting backgroundDim = INTERFACE.add(new BooleanSetting("Background Dim", "Darken the game behind the menu", true));
+    public static final NumberSetting dimAmount = INTERFACE.add(new NumberSetting("Dim Strength", "How dark the game behind the menu gets", 55, 0, 100, 1).suffix("%")
+            .visible(backgroundDim::get));
     public static final BooleanSetting tooltips = INTERFACE.add(new BooleanSetting("Tooltips", "Show descriptions when hovering info icons", true));
     public static final BooleanSetting typeToSearch = INTERFACE.add(new BooleanSetting("Type To Search", "Start typing anywhere to search modules", true));
 
@@ -48,7 +50,8 @@ public final class ClientSettings {
             .visible(rainbow::get));
 
     public static final SettingSection WINDOW = new SettingSection("Window");
-    public static final NumberSetting opacity = WINDOW.add(new NumberSetting("Opacity", "Window background opacity", 96, 50, 100, 1).suffix("%"));
+    public static final ColorSetting background = WINDOW.add(new ColorSetting("Background Color", "Colour of the menu window", 0xFF000000));
+    public static final NumberSetting opacity = WINDOW.add(new NumberSetting("Background Opacity", "How see-through the menu window is", 94, 0, 100, 1).suffix("%"));
     public static final NumberSetting radius = WINDOW.add(new NumberSetting("Corner Radius", "Roundness of panels and cards", 6, 0, 10, 0.5));
     public static final BooleanSetting glow = WINDOW.add(new BooleanSetting("Accent Glow", "Soft glow around active elements", true));
     public static final BooleanSetting shadow = WINDOW.add(new BooleanSetting("Window Shadow", "Drop shadow behind the window", true));
