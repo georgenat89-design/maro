@@ -59,7 +59,8 @@ tasks.register('runProductionClientGameTest', net.fabricmc.loom.task.prod.Client
     mods.from(configurations.productionMods, remapJar.archiveFile, tasks.named("remapGametestJar").flatMap { it.archiveFile })
     jvmArgs.addAll([
             "-Dfabric.client.gametest",
-            "-Dfabric.client.gametest.disableNetworkSynchronizer=true"
+            "-Dfabric.client.gametest.disableNetworkSynchronizer=true",
+            "-Dmaro.debug=true"
     ])
 }
 

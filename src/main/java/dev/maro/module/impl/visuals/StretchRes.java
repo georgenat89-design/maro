@@ -42,6 +42,19 @@ public class StretchRes extends Module {
         return new Matrix4f(projection).scaleLocal(windowAspect / m.targetAspect(), 1f, 1f);
     }
 
+    private static final boolean DEBUG = Boolean.getBoolean("maro.debug");
+    private static long lastDebug;
+
+    /** Logs the matrices passing through the hooks (only with -Dmaro.debug=true). */
+    public static void debug(String where, Matrix4f m) {
+        if (!DEBUG || m == null) return;
+        long now = System.currentTimeMillis();
+        if (now - lastDebug < 500) return;
+        lastDebug = now;
+        dev.maro.Maro.LOGGER.info("[stretch-debug] {} enabled={} m00={} m11={} m22={} m23={} m32={} m33={}",
+                where, instance != null && instance.isEnabled(), m.m00(), m.m11(), m.m22(), m.m23(), m.m32(), m.m33());
+    }
+
     /** Aspect ratio the world should be projected with. */
     public float targetAspect() {
         return switch (ratio.get()) {
