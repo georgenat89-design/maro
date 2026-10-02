@@ -376,10 +376,12 @@ public class ClickGuiScreen extends Screen {
         Render2D.arc(ctx, lcx, cy, 7f, 2.6f, logoSpin, 290f, Theme.accent2(), Theme.accent());
         Render2D.circle(ctx, lcx, cy, 1.5f + lh * 0.5f, Theme.accent());
         float tx = lcx + 11;
+        Fonts.beginRaw(); // the wordmark keeps its lowercase look
         float tw = Fonts.width("maro", true, 1.05f);
         Fonts.drawV(ctx, "maro", tx, cy, Theme.TEXT, true, 1.05f);
         Fonts.drawV(ctx, ".gg", tx + tw, cy, Theme.accent(), true, 1.05f);
         float logoEnd = tx + tw + Fonts.width(".gg", true, 1.05f) + 12;
+        Fonts.endRaw();
 
         // right side: profile + general pages
         float bs = h - 6;

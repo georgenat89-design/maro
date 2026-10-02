@@ -95,13 +95,18 @@ public class TextField {
         } else {
             // keep the cursor visible by scrolling the start index
             if (cursor < scrollStart) scrollStart = cursor;
-            while (scrollStart < cursor && Fonts.width(text.substring(scrollStart, cursor), false, 0.85f) > avail) scrollStart++;
+            while (scrollStart < cursor && typedWidth(text.substring(scrollStart, cursor)) > avail) scrollStart++;
             String visible = text.substring(scrollStart);
             visible = clipRight(visible, avail);
-            Fonts.drawV(ctx, visible, tx, cy, Theme.TEXT, false, 0.85f);
+            Fonts.beginRaw();
+            try {
+                Fonts.drawV(ctx, visible, tx, cy, Theme.TEXT, false, 0.85f);
+            } finally {
+                Fonts.endRaw();
+            }
         }
         if (focused && (System.currentTimeMillis() - lastInput) % 1000 < 550) {
-            float cx = tx + Fonts.width(text.substring(Math.min(scrollStart, cursor), cursor), false, 0.85f);
+            float cx = tx + typedWidth(text.substring(Math.min(scrollStart, cursor), cursor));
             Render2D.rect(ctx, cx, cy - 4.5f, Math.max(0.6f, Render2D.px()), 9f, Theme.accent());
         }
 
@@ -112,15 +117,25 @@ public class TextField {
             // place the cursor where the user clicked
             float local = (float) mx - textX;
             int idx = scrollStart;
-            while (idx < text.length() && Fonts.width(text.substring(scrollStart, idx + 1), false, 0.85f) < local) idx++;
+            while (idx < text.length() && typedWidth(text.substring(scrollStart, idx + 1)) < local) idx++;
             cursor = Math.max(0, Math.min(text.length(), idx));
             if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) clear();
         });
     }
 
+    /** Width of typed text, measured without the caps transform so the cursor lines up. */
+    private static float typedWidth(String s) {
+        Fonts.beginRaw();
+        try {
+            return Fonts.width(s, false, 0.85f);
+        } finally {
+            Fonts.endRaw();
+        }
+    }
+
     private static String clipRight(String s, float avail) {
         int end = s.length();
-        while (end > 0 && Fonts.width(s.substring(0, end), false, 0.85f) > avail) end--;
+        while (end > 0 && typedWidth(s.substring(0, end)) > avail) end--;
         return s.substring(0, end);
     }
 

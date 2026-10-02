@@ -14,6 +14,7 @@ import org.joml.Matrix3x2fStack;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Text helpers. Uses the bundled Inter TTF (assets/maro/font) when "Custom Font" is enabled,
@@ -50,11 +51,44 @@ public final class Fonts {
         return (int) Math.max(1, Math.min(MAX_OVERSAMPLE, Math.ceil(px - 0.15)));
     }
 
-    public static Text text(String s, boolean bold) {
-        return text(s, bold, 1f);
+    // ---- caps style -------------------------------------------------------------------
+    // "Caps" draws every label in ExtraBold uppercase, slightly smaller, with a little letter
+    // spacing. Text the user typed is drawn in raw mode so it keeps its real case.
+
+    private static final float CAPS_SCALE = 0.82f;
+    private static final float CAPS_TRACKING = 0.5f;
+    private static int rawDepth;
+
+    /** Draw/measure text exactly as given (no caps transform) until {@link #endRaw()}. */
+    public static void beginRaw() {
+        rawDepth++;
     }
 
-    public static Text text(String s, boolean bold, float scale) {
+    public static void endRaw() {
+        rawDepth = Math.max(0, rawDepth - 1);
+    }
+
+    private static boolean caps() {
+        return rawDepth == 0 && ClientSettings.capsText.get();
+    }
+
+    private static String transform(String s) {
+        return caps() ? s.toUpperCase(Locale.ROOT) : s;
+    }
+
+    private static float eff(float scale) {
+        return caps() ? Math.max(0.56f, scale * CAPS_SCALE) : scale;
+    }
+
+    private static boolean weight(boolean bold) {
+        return bold || caps();
+    }
+
+    public static Text text(String s, boolean bold) {
+        return styled(transform(s), weight(bold), eff(1f));
+    }
+
+    private static Text styled(String s, boolean bold, float scale) {
         if (ClientSettings.customFont.get()) {
             int o = oversample(scale);
             return Text.literal(s).setStyle(bold ? BOLD[o] : REGULAR[o]);
@@ -62,8 +96,19 @@ public final class Fonts {
         return bold ? Text.literal(s).setStyle(VANILLA_BOLD) : Text.literal(s);
     }
 
+    private static float rawWidth(String s, boolean bold, float scale) {
+        return tr().getTextHandler().getWidth(styled(s, bold, scale)) * scale;
+    }
+
     public static float width(String s, boolean bold, float scale) {
-        return tr().getWidth(text(s, bold, scale)) * scale;
+        if (s == null || s.isEmpty()) return 0;
+        String t = transform(s);
+        boolean b = weight(bold);
+        float es = eff(scale);
+        if (!caps()) return rawWidth(t, b, es);
+        float w = 0;
+        for (int i = 0; i < t.length(); i++) w += rawWidth(String.valueOf(t.charAt(i)), b, es);
+        return w + CAPS_TRACKING * es * (t.length() - 1);
     }
 
     public static float width(String s) {
@@ -72,7 +117,7 @@ public final class Fonts {
 
     /** Visual height of capital letters, used for vertical centring. */
     public static float height(float scale) {
-        return 7f * scale;
+        return 7f * eff(scale);
     }
 
     public static void draw(DrawContext ctx, String s, float x, float y, int color, boolean bold, float scale) {
@@ -80,6 +125,22 @@ public final class Fonts {
         int c = ColorUtil.mulAlpha(color, Render2D.getAlpha());
         // the vanilla renderer treats alpha < 4 as opaque, so skip near-invisible text entirely
         if (ColorUtil.alpha(c) < 8) return;
+        String t = transform(s);
+        boolean b = weight(bold);
+        float es = eff(scale);
+        if (!caps()) {
+            drawRun(ctx, t, x, y, c, b, es);
+            return;
+        }
+        float cx = x;
+        for (int i = 0; i < t.length(); i++) {
+            String ch = String.valueOf(t.charAt(i));
+            if (t.charAt(i) != ' ') drawRun(ctx, ch, cx, y, c, b, es);
+            cx += rawWidth(ch, b, es) + CAPS_TRACKING * es;
+        }
+    }
+
+    private static void drawRun(DrawContext ctx, String s, float x, float y, int c, boolean bold, float scale) {
         float p = Render2D.px();
         x = Math.round(x / p) * p;
         y = Math.round(y / p) * p;
@@ -87,7 +148,7 @@ public final class Fonts {
         ms.pushMatrix();
         ms.translate(x, y);
         if (scale != 1f) ms.scale(scale, scale);
-        ctx.drawText(tr(), text(s, bold, scale), 0, 0, c, false);
+        ctx.drawText(tr(), styled(s, bold, scale), 0, 0, c, false);
         ms.popMatrix();
     }
 
@@ -111,7 +172,7 @@ public final class Fonts {
     /** Cuts the string with an ellipsis so it fits in {@code maxWidth}. */
     public static String trim(String s, float maxWidth, boolean bold, float scale) {
         if (width(s, bold, scale) <= maxWidth) return s;
-        String dots = "…";
+        String dots = "\u2026";
         float dw = width(dots, bold, scale);
         int end = s.length();
         while (end > 0 && width(s.substring(0, end), bold, scale) + dw > maxWidth) end--;
