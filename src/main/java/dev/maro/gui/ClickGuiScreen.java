@@ -113,6 +113,7 @@ public class ClickGuiScreen extends Screen {
     private long closingAt = -1;
     private float lastProgress;
 
+    private java.util.function.Supplier<SkinTextures> skinSupplier;
     private String tooltip, shownTooltip;
     private long tooltipSince;
     private int moduleEntries;
@@ -413,7 +414,8 @@ public class ClickGuiScreen extends Screen {
         String name = client != null ? client.getSession().getUsername() : "Player";
         SkinTextures skin = null;
         try {
-            if (client != null) skin = client.getSkinProvider().supplySkinTextures(client.getGameProfile(), false).get();
+            if (skinSupplier == null && client != null) skinSupplier = client.getSkinProvider().supplySkinTextures(client.getGameProfile(), false);
+            if (skinSupplier != null) skin = skinSupplier.get();
         } catch (Throwable ignored) {
         }
         float hs = 18;
