@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "maro",
+  "version": "${version}",
+  "name": "maro.gg",
+  "description": "maro.gg client base - a smooth, modern ClickGUI ready for your modules.",
+  "authors": ["densityBro"],
+  "license": "MIT",
+  "icon": "assets/maro/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["dev.maro.Maro"]
+  },
+  "mixins": ["maro.mixins.json"],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "minecraft": "~${minecraft_version}",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}

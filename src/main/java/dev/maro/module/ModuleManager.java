@@ -1,0 +1,104 @@
+package dev.maro.module;
+
+import dev.maro.Maro;
+import dev.maro.config.ClientSettings;
+import dev.maro.gui.notification.Notifications;
+import net.minecraft.client.gui.DrawContext;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
+
+public final class ModuleManager {
+    private static final List<Module> MODULES = new ArrayList<>();
+
+    private ModuleManager() {
+    }
+
+    public static void init() {
+        // Register your modules here, e.g.
+        // register(new dev.maro.module.impl.ExampleModule());
+    }
+
+    public static void register(Module module) {
+        if (getByName(module.getName()) != null) throw new IllegalStateException("Duplicate module name: " + module.getName());
+        MODULES.add(module);
+    }
+
+    public static List<Module> all() {
+        return Collections.unmodifiableList(MODULES);
+    }
+
+    public static List<Module> byCategory(Category category) {
+        List<Module> list = new ArrayList<>();
+        for (Module m : MODULES) if (m.getCategory() == category) list.add(m);
+        return list;
+    }
+
+    public static long enabledCount(Category category) {
+        return MODULES.stream().filter(m -> m.getCategory() == category && m.isEnabled()).count();
+    }
+
+    public static List<Module> search(String query) {
+        String q = query.toLowerCase(Locale.ROOT).trim();
+        List<Module> starts = new ArrayList<>(), contains = new ArrayList<>(), desc = new ArrayList<>();
+        for (Module m : MODULES) {
+            String n = m.getName().toLowerCase(Locale.ROOT);
+            String compact = n.replace(" ", "");
+            if (n.startsWith(q) || compact.startsWith(q.replace(" ", ""))) starts.add(m);
+            else if (n.contains(q) || compact.contains(q.replace(" ", ""))) contains.add(m);
+            else if (m.getDescription().toLowerCase(Locale.ROOT).contains(q)) desc.add(m);
+        }
+        starts.addAll(contains);
+        starts.addAll(desc);
+        return starts;
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <T extends Module> T get(Class<T> type) {
+        for (Module m : MODULES) if (m.getClass() == type) return (T) m;
+        return null;
+    }
+
+    public static Module getByName(String name) {
+        for (Module m : MODULES) if (m.getName().equalsIgnoreCase(name)) return m;
+        return null;
+    }
+
+    // ---- dispatch ------------------------------------------------------------------------
+
+    public static void onTick() {
+        for (Module m : MODULES) {
+            if (!m.isEnabled()) continue;
+            try {
+                m.onTick();
+            } catch (Throwable t) {
+                Maro.LOGGER.error("Module {} threw in onTick", m.getName(), t);
+            }
+        }
+    }
+
+    public static void onRender2D(DrawContext context, float tickDelta) {
+        for (Module m : MODULES) {
+            if (!m.isEnabled()) continue;
+            try {
+                m.onRender2D(context, tickDelta);
+            } catch (Throwable t) {
+                Maro.LOGGER.error("Module {} threw in onRender2D", m.getName(), t);
+            }
+        }
+    }
+
+    /** Toggles every module bound to {@code code}. */
+    public static void onBind(int code) {
+        for (Module m : MODULES) {
+            if (!m.getBind().matches(code)) continue;
+            m.toggle();
+            if (ClientSettings.toggleNotifications.get()) {
+                Notifications.push(m.getName(), m.isEnabled() ? "Enabled" : "Disabled",
+                        m.isEnabled() ? Notifications.Type.ENABLED : Notifications.Type.DISABLED);
+            }
+        }
+    }
+}
