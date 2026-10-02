@@ -4,6 +4,7 @@ import dev.maro.module.Category;
 import dev.maro.module.Module;
 import dev.maro.setting.ModeSetting;
 import dev.maro.setting.NumberSetting;
+import org.joml.Matrix4f;
 
 /**
  * Stretched resolution: renders the world with a different aspect ratio than the window, so e.g.
@@ -25,6 +26,20 @@ public class StretchRes extends Module {
 
     public static StretchRes get() {
         return instance;
+    }
+
+    /**
+     * Returns a stretched copy of a perspective projection, or the matrix itself when the module is
+     * off or the matrix is orthographic. Scaling column 0 by window/target aspect is exactly what
+     * rebuilding the perspective with the target aspect would give.
+     */
+    public static Matrix4f apply(Matrix4f projection) {
+        StretchRes m = instance;
+        if (m == null || !m.isEnabled() || projection == null || Math.abs(projection.m23() + 1f) > 1e-3f) return projection;
+        var window = mc.getWindow();
+        if (window.getFramebufferHeight() <= 0) return projection;
+        float windowAspect = (float) window.getFramebufferWidth() / window.getFramebufferHeight();
+        return new Matrix4f(projection).scaleLocal(windowAspect / m.targetAspect(), 1f, 1f);
     }
 
     /** Aspect ratio the world should be projected with. */

@@ -76,10 +76,9 @@ public class MaroClientGameTest implements FabricClientGameTest {
             settle(context);
             context.takeScreenshot("maro-stretch-off");
             float[] m00 = context.computeOnClient(client -> {
-                float off = client.gameRenderer.getBasicProjectionMatrix(70f).m00();
+                org.joml.Matrix4f base = client.gameRenderer.getBasicProjectionMatrix(70f);
                 ModuleManager.get(StretchRes.class).setEnabled(true);
-                float on = client.gameRenderer.getBasicProjectionMatrix(70f).m00();
-                return new float[]{off, on};
+                return new float[]{base.m00(), StretchRes.apply(base).m00()};
             });
             if (Math.abs(m00[0] - m00[1]) < 1e-4f) {
                 throw new AssertionError("Stretch Res did not change the projection (m00 " + m00[0] + " -> " + m00[1] + ")");

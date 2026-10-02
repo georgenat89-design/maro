@@ -2,18 +2,25 @@ package dev.maro.mixin;
 
 import dev.maro.module.impl.visuals.StretchRes;
 import net.minecraft.client.render.GameRenderer;
+import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 
 @Mixin(GameRenderer.class)
 public abstract class GameRendererMixin {
-    /** Swaps the window aspect ratio for the Stretch Res one when the 3D projection is built. */
-    @ModifyArg(method = {"getBasicProjectionMatrix", "getProjectionMatrix"},
-            at = @At(value = "INVOKE", target = "Lorg/joml/Matrix4f;perspective(FFFF)Lorg/joml/Matrix4f;"),
-            index = 1, require = 1)
-    private float maro$stretchAspect(float aspect) {
-        StretchRes stretch = StretchRes.get();
-        return stretch != null && stretch.isEnabled() ? stretch.targetAspect() : aspect;
+    /** Stretch Res: the world projection uploaded for this frame. */
+    @ModifyArg(method = "renderWorld",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/render/RawProjectionMatrix;set(Lorg/joml/Matrix4f;)Lcom/mojang/blaze3d/buffers/GpuBufferSlice;"),
+            require = 1)
+    private Matrix4f maro$stretchWorld(Matrix4f projection) {
+        return StretchRes.apply(projection);
+    }
+
+    /** Stretch Res: the first-person hand gets its own projection. */
+    @ModifyVariable(method = "renderHand", at = @At("HEAD"), argsOnly = true, require = 1)
+    private Matrix4f maro$stretchHand(Matrix4f projection) {
+        return StretchRes.apply(projection);
     }
 }
