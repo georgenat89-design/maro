@@ -88,10 +88,20 @@ public final class ShapeRenderState implements SimpleGuiElementRenderState {
         }
 
         void quad(float x1, float y1, int c1, float x2, float y2, int c2, float x3, float y3, int c3, float x4, float y4, int c4) {
-            vertex(x1, y1, c1);
-            vertex(x2, y2, c2);
-            vertex(x3, y3, c3);
-            vertex(x4, y4, c4);
+            // The GUI pipeline culls back faces, so every quad must share the winding vanilla uses
+            // (negative signed area in y-down screen space). Flip the ones that don't.
+            float area = (x1 * y2 - x2 * y1) + (x2 * y3 - x3 * y2) + (x3 * y4 - x4 * y3) + (x4 * y1 - x1 * y4);
+            if (area > 0) {
+                vertex(x1, y1, c1);
+                vertex(x4, y4, c4);
+                vertex(x3, y3, c3);
+                vertex(x2, y2, c2);
+            } else {
+                vertex(x1, y1, c1);
+                vertex(x2, y2, c2);
+                vertex(x3, y3, c3);
+                vertex(x4, y4, c4);
+            }
         }
 
         ShapeRenderState build(ScreenRect scissor) {

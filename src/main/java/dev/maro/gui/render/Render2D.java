@@ -18,7 +18,7 @@ import net.minecraft.client.gui.ScreenRect;
  */
 public final class Render2D {
     private static final float HALF_PI = (float) (Math.PI / 2);
-    private static final int MAX_SEG = 16;
+    private static final int MAX_SEG = 32;
     private static final float[] OUTER = new float[4 * 4 * (MAX_SEG + 1)];
     private static final float[] INNER = new float[4 * 4 * (MAX_SEG + 1)];
 
@@ -76,7 +76,7 @@ public final class Render2D {
     }
 
     private static int segments(float r) {
-        return Math.max(2, Math.min(MAX_SEG, (int) Math.ceil(Math.sqrt(r / px()) * 2.2)));
+        return Math.max(3, Math.min(MAX_SEG, (int) Math.ceil(Math.sqrt(r / px()) * 3.4)));
     }
 
     /** Writes a clockwise rounded-rect outline into {@code out} as (x, y, nx, ny) tuples. */
@@ -224,7 +224,7 @@ public final class Render2D {
         if (radius <= 0 || thickness <= 0 || sweepDeg == 0) return;
         float rOut = radius, rIn = Math.max(0f, radius - thickness);
         float f = px();
-        int seg = Math.max(8, (int) Math.ceil(Math.abs(sweepDeg) / 360f * Math.max(24, radius / f * 1.2f)));
+        int seg = Math.max(12, (int) Math.ceil(Math.abs(sweepDeg) / 360f * Math.max(32, radius / f * 2f)));
         seg = Math.min(seg, 256);
         float start = (float) Math.toRadians(startDeg), sweep = (float) Math.toRadians(sweepDeg);
 
@@ -267,7 +267,7 @@ public final class Render2D {
     }
 
     private static void cap(ShapeRenderState.Builder b, float x, float y, float r, float f, float start, int c, int z) {
-        int seg = 6;
+        int seg = 8;
         for (int s = 0; s < seg; s++) {
             float a0 = start + (float) Math.PI * s / seg, a1 = start + (float) Math.PI * (s + 1) / seg;
             float c0 = (float) Math.cos(a0), s0 = (float) Math.sin(a0), c1 = (float) Math.cos(a1), s1 = (float) Math.sin(a1);

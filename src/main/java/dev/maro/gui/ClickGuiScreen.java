@@ -279,6 +279,13 @@ public class ClickGuiScreen extends Screen {
         if (closingAt < 0) lastProgress = p;
 
         // background
+        if (ClientSettings.backgroundBlur.get() && client != null && client.world != null && p > 0.2f) {
+            try {
+                ctx.applyBlur();
+            } catch (IllegalStateException ignored) {
+                // something else already blurred this frame
+            }
+        }
         Render2D.setAlpha(p);
         if (ClientSettings.backgroundDim.get()) {
             Render2D.rectGradient(ctx, 0, 0, width, height, Theme.accent(0x22), 0x90000000, 0xB0000000, 0xA0000000);
