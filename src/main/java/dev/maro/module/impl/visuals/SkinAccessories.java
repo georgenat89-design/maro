@@ -24,7 +24,7 @@ public final class SkinAccessories extends Module {
     private final ModeSetting back = add(new ModeSetting("Back", "A backpack, jetpack, or sheathed sword", "None", "None", "Backpack", "Jetpack", "Sword"));
     private final NumberSetting headSize = add(new NumberSetting("Head Size", "Scale head accessories", 1, 0.5, 1.75, 0.05));
     private final NumberSetting wingSize = add(new NumberSetting("Wing Size", "Scale wings from their attachment points", 1, 0.4, 1.8, 0.05));
-    private final NumberSetting wingSpread = add(new NumberSetting("Wing Spread", "Open or fold your wings", 20, 0, 75, 1).suffix("°"));
+    private final NumberSetting wingSpread = add(new NumberSetting("Wing Spread", "0° folds behind your back; 90° opens fully outward", 70, 0, 90, 1).suffix("°"));
     private final NumberSetting tailLength = add(new NumberSetting("Tail Length", "Scale the tail", 1, 0.4, 1.8, 0.05));
     private final NumberSetting haloHeight = add(new NumberSetting("Halo Height", "Distance above the head in model pixels", 3, 1, 10, 0.25));
     private final ColorSetting primary = add(new ColorSetting("Primary Color", "Main accessory color", 0xFF48385E));

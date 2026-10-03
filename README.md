@@ -186,8 +186,10 @@ and Adventurer. **3D Preview** shows the actual rendered accessories, supports r
 and lets you try presets or mix individual parts even before enabling the module.
 
 Adjust head size, wing size/spread, tail length, halo height, primary/accent/halo colors,
-rainbow accents, glow, animation speed/strength, and movement response. Head accessories
-hide under helmets and wings hide with elytra by default; both options can be disabled.
+rainbow accents, glow, animation speed/strength, and movement response.
+Wing Spread increases from 0° (folded behind the back) to 90° (fully open outward).
+Flapping stays behind the shoulders, including at the slider endpoints.
+Head accessories hide under helmets and wings hide with elytra by default; both options can be disabled.
 Accessories follow the player's head, torso, and arms, including crouching and swimming.
 The Players setting selects Self or Everyone on your screen. Other clients do not receive
 these cosmetic models. Meshes are cached and animation uses render matrices, with no
