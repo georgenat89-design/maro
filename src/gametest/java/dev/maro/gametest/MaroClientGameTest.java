@@ -36,6 +36,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             SpotifyLyricsChecks.run(context);
             checkSlowSwing(context);
             checkKeySounds(context);
+            checkRegionMap(context);
             String before = context.computeOnClient(client -> describe(client));
             context.takeScreenshot("maro-00-world");
 
@@ -256,6 +257,27 @@ public class MaroClientGameTest implements FabricClientGameTest {
         context.runOnClient(client -> {
             if (dev.maro.runtime.MeteorClient.EVENT_BUS.failureCount() != failures)
                 throw new AssertionError("A Nathan event handler failed; see the game log");
+        });
+    }
+
+    /** The Region Map on its own, large enough to judge, then with the placement screen's hover card. */
+    private static void checkRegionMap(ClientGameTestContext context) {
+        var map = ModuleManager.get(dev.maro.nathan.modules.RegionMap.class);
+        var scale = map.getSettings().stream().filter(s -> s.getName().equals("scale")).findFirst().orElseThrow();
+        context.runOnClient(client -> {
+            scale.fromJson(new com.google.gson.JsonPrimitive(1.25));
+            map.setEnabled(true);
+        });
+        context.waitTicks(10);
+        context.takeScreenshot("maro-region-map");
+        context.setScreen(() -> new dev.maro.nathan.gui.RegionMapScreen(null, map));
+        context.getInput().setCursorPos(230, 200);
+        context.waitTicks(5);
+        context.takeScreenshot("maro-region-map-hover");
+        context.setScreen(() -> null);
+        context.runOnClient(client -> {
+            map.setEnabled(false);
+            scale.fromJson(new com.google.gson.JsonPrimitive(1.0));
         });
     }
 
