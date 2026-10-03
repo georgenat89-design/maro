@@ -19,11 +19,12 @@ public final class AutoTotem extends Module {
         6, .5, 10, .5).suffix(" hearts").visible(() -> mode.is("Low Health")));
     private final BooleanSetting absorption = add(new BooleanSetting("Include Absorption", "Count absorption hearts toward the threshold",
         true).visible(() -> mode.is("Low Health")));
-    private final BooleanSetting noDelay = add(new BooleanSetting("No Delay", "Equip on the next eligible tick with no module wait or retry cooldown", true));
+    private final BooleanSetting noDelay = add(new BooleanSetting("No Delay", "Set Delay to zero for immediate reaction on eligible ticks", true)
+        .onChange(this::noDelayChanged));
     private final NumberSetting strength = add(new NumberSetting("Strength", "Higher strength reacts faster; 10 adds no reaction wait",
         10, 1, 10, 1).visible(() -> !noDelay.get()));
-    private final NumberSetting delay = add(new NumberSetting("Swap Delay", "Extra eligible ticks to wait in addition to the Strength setting",
-        0, 0, 20, 1).suffix(" ticks").visible(() -> !noDelay.get()));
+    private final NumberSetting delay = add(new NumberSetting("Delay", "Reaction delay, 0–10 ticks; zero bypasses all timing waits",
+        0, 0, 10, 1).suffix(" ticks").onChange(this::delayChanged));
     private final NumberSetting retryDelay = add(new NumberSetting("Retry Delay", "Minimum ticks between swap attempts",
         2, 1, 40, 1).suffix(" ticks").visible(() -> !noDelay.get()));
     private final BooleanSetting inventoryOnly = add(new BooleanSetting("Inventory Only", "Equip only while your inventory screen is open", false));
@@ -32,6 +33,7 @@ public final class AutoTotem extends Module {
 
     private ClientPlayerEntity trackedPlayer;
     private int source = -1, eligibleTicks, cooldown;
+    private int previousDelay = 2;
 
     public AutoTotem() {
         super("Auto Totem", "Automatically equip an available totem in your offhand", Category.COMBAT);
@@ -45,11 +47,23 @@ public final class AutoTotem extends Module {
     }
     private void cancelPending() { source = -1; eligibleTicks = 0; }
 
+    private void noDelayChanged(Boolean enabled) {
+        if (enabled) delay.set(0.0);
+        else if (delay.getInt() == 0) delay.set((double) previousDelay);
+        cancelPending(); cooldown = 0;
+    }
+    private void delayChanged(Double ticks) {
+        if (ticks > 0) previousDelay = (int) Math.round(ticks);
+        noDelay.set(ticks == 0);
+        cancelPending(); cooldown = 0;
+    }
+
     @Override public void onTick() {
         if (!isEnabled() || !inGame() || mc.interactionManager == null) { reset(); return; }
         var player = mc.player;
         if (player != trackedPlayer) { reset(); trackedPlayer = player; }
-        if (noDelay.get()) cooldown = 0;
+        boolean immediate = delay.getInt() == 0;
+        if (immediate) cooldown = 0;
         else if (cooldown > 0 && --cooldown > 0) { cancelPending(); return; }
         boolean inventoryOpen = mc.currentScreen instanceof InventoryScreen;
         if (!player.isAlive() || player.isSpectator()
@@ -68,11 +82,11 @@ public final class AutoTotem extends Module {
         Slot candidate = findTotem(player);
         if (candidate == null) { cancelPending(); return; }
         if (candidate.id != source) { source = candidate.id; eligibleTicks = 0; }
-        int waitTicks = noDelay.get() ? 0 : 10 - strength.getInt() + delay.getInt();
+        int waitTicks = immediate ? 0 : 10 - strength.getInt() + delay.getInt();
         if (eligibleTicks++ < waitTicks) return;
         // SWAP with the offhand inventory index is the same action as F over an inventory slot.
         mc.interactionManager.clickSlot(player.playerScreenHandler.syncId, candidate.id, 40, SlotActionType.SWAP, player);
-        cooldown = noDelay.get() ? 0 : retryDelay.getInt();
+        cooldown = immediate ? 0 : retryDelay.getInt();
         cancelPending();
     }
 

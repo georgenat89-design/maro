@@ -31,8 +31,11 @@ The optional EG Oreo pack must be imported from Mechvibes or placed under `.mine
 **Auto Totem** (Combat) equips a totem in the offhand with a normal inventory swap. **Always**
 keeps one equipped; **Low Health** equips at the selected heart threshold, optionally counting
 absorption. **No Delay** is on by default and reacts on the next eligible game tick, with no
-module wait or retry cooldown. Turn it off to use **Strength** (1–10; 10 has no reaction wait),
-an extra Swap Delay, and a Retry Delay (default 2 ticks). Inventory Only restricts
+module wait or retry cooldown. The always-visible **Delay** slider ranges from **0–10 ticks**.
+**0** is the strongest reaction: it bypasses both the Strength wait and Retry Delay.
+The No Delay toggle stays in sync with this slider and remembers the previous nonzero delay.
+At positive delays, **Strength** (1–10) adds 0–9 reaction ticks; 10 adds none.
+Retry Delay defaults to 2 ticks. Inventory Only restricts
 swaps to the inventory screen; Empty Offhand Only preserves an existing offhand item.
 The module pauses around containers, cursor items, other screens and, by default, item use.
 Replacing an offhand item returns it to the totem's source slot. Totems in the main inventory

@@ -68,7 +68,7 @@ final class AutoTotemChecks {
             prepare(context, world, 12);
             context.runOnClient(client -> {
                 setting(module, "No Delay", new JsonPrimitive(false));
-                setting(module, "Swap Delay", new JsonPrimitive(2));
+                setting(module, "Delay", new JsonPrimitive(2));
                 module.setEnabled(true);
                 module.onTick(); module.onTick();
                 require(client.player.getOffHandStack().isOf(Items.SHIELD), "Swap ignored the two-tick delay");
@@ -91,8 +91,9 @@ final class AutoTotemChecks {
 
             prepare(context, world, 4);
             context.runOnClient(client -> {
-                setting(module, "Swap Delay", new JsonPrimitive(20)); setting(module, "Retry Delay", new JsonPrimitive(40));
-                setting(module, "Strength", new JsonPrimitive(1)); module.setEnabled(true); module.onTick();
+                setting(module, "Delay", new JsonPrimitive(10)); setting(module, "Retry Delay", new JsonPrimitive(40));
+                setting(module, "Strength", new JsonPrimitive(1)); setting(module, "Delay", new JsonPrimitive(0));
+                module.setEnabled(true); module.onTick();
                 require(client.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING), "No Delay failed to override all timing settings");
             });
             context.waitTicks(8); assertSwap(world, 4);
@@ -101,7 +102,7 @@ final class AutoTotemChecks {
             context.runOnClient(client -> {
                 setting(module, "No Delay", new JsonPrimitive(false)); setting(module, "Strength", new JsonPrimitive(1));
                 module.setEnabled(true);
-                for (int i = 0; i < 9; i++) module.onTick();
+                for (int i = 0; i < 11; i++) module.onTick();
                 require(client.player.getOffHandStack().isOf(Items.SHIELD), "Low strength ignored its reaction wait");
                 setting(module, "Strength", new JsonPrimitive(10)); module.onTick();
                 require(client.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING), "Maximum strength did not react immediately");
@@ -109,7 +110,16 @@ final class AutoTotemChecks {
             context.waitTicks(5); assertSwap(world, 7);
 
             prepare(context, world, -1);
-            context.runOnClient(client -> module.setEnabled(true));
+            context.runOnClient(client -> {
+                var slider = (dev.maro.setting.NumberSetting) module.getSettings().stream().filter(s -> s.getName().equals("Delay")).findFirst().orElseThrow();
+                require(slider.isVisible() && slider.getMin() == 0 && slider.getMax() == 10, "Delay bar is hidden or has the wrong range");
+                setting(module, "Delay", new JsonPrimitive(7));
+                require(!module.getSettings().stream().filter(s -> s.getName().equals("No Delay")).findFirst().orElseThrow().toJson().getAsBoolean(),
+                    "Positive Delay did not disable No Delay");
+                setting(module, "No Delay", new JsonPrimitive(true)); require(slider.getInt() == 0, "No Delay did not zero the bar");
+                setting(module, "No Delay", new JsonPrimitive(false)); require(slider.getInt() == 7, "No Delay did not restore the previous delay");
+                setting(module, "Delay", new JsonPrimitive(0)); module.setEnabled(true);
+            });
             context.waitTicks(8);
             world.getServer().runOnServer(server -> {
                 var player = server.getPlayerManager().getPlayerList().getFirst();
