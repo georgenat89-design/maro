@@ -38,6 +38,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             checkKeySounds(context);
             checkRegionMap(context);
             AutoTridentChecks.run(context, singleplayer);
+            AutoToolChecks.run(context, singleplayer);
             String before = context.computeOnClient(client -> describe(client));
             context.takeScreenshot("maro-00-world");
 

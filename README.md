@@ -9,7 +9,7 @@ Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 | Category | Modules |
 | --- | --- |
 | Movement | Auto Walk, Free Cam, Freelook |
-| Player | Auto Trident, Fast XP, Smart Eat, Spawner Protect, existing Fast Place |
+| Player | Auto Tool, Auto Trident, Fast XP, Smart Eat, Spawner Protect, existing Fast Place |
 | Visuals | Bloom, Color Correct, Custom FOV, Fake XP, Hats, Key Zoom, Keystrokes, Motion Blur, Region Map, Spotify HUD, Spin Bot, Swing Speed, existing Stretch Res |
 | Misc | Chat Macros, Key Sounds, existing Screen Hider |
 
@@ -26,6 +26,14 @@ Key Sounds includes **14 built-in sound packs**: Creamy, Thock, Soft, Clicky, Cr
 The optional EG Oreo pack must be imported from Mechvibes or placed under `.minecraft/maro/nameeprotect/keysounds/eg-oreo/`. Spawner Protect can use Baritone when installed separately; without it, automatic pathfinding is unavailable.
 
 ## Features
+
+**Auto Tool** (Player) selects the best tool in your hotbar when you mine a block.
+It prefers tools that can harvest the block, then compares mining speed including
+Efficiency enchantments. Switching happens before the first mining action and is
+sent to the server immediately. **Switch Back** restores your previous slot when you
+stop mining or disable the module; a manual slot change is preserved. **Protect Tools**
+skips tools with one durability point remaining. Both options are on by default.
+It leaves item use and creative mode alone and does not move items out of your inventory.
 
 **Auto Trident** (Player) repeatedly charges and releases a trident while you hold
 right-click (or your bound Use key). **Speed** ranges from **1–10**, defaulting to **10**:
