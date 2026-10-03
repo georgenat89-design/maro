@@ -20,10 +20,10 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.player.AutoTool());
         register(new dev.maro.module.impl.player.AutoTrident());
         register(new dev.maro.module.impl.misc.ScreenHider());
-        register(new dev.maro.module.impl.misc.StaffList());
         register(new dev.maro.module.impl.player.FastPlace());
         register(new dev.maro.module.impl.visuals.StretchRes());
         register(new dev.maro.module.impl.visuals.InventoryHud());
+        register(new dev.maro.module.impl.visuals.Fullbright());
         dev.maro.nathan.NameeProtectAddon.init();
 
         // Register your modules here, e.g.

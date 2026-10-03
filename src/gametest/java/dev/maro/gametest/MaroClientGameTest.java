@@ -177,7 +177,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             if (cullingAfter != cullingBefore) throw new AssertionError("FreeCam did not restore chunk culling");
 
             checkInventoryHud(context, singleplayer);
-            checkStaffList(context, singleplayer);
+            checkFullbright(context, singleplayer);
         }
     }
 
@@ -265,47 +265,44 @@ public class MaroClientGameTest implements FabricClientGameTest {
         });
     }
 
-    /** Staff List: a rank prefix from a scoreboard team, as servers use for tab ranks, must be picked up. */
-    private static void checkStaffList(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
-        var staff = ModuleManager.get(dev.maro.module.impl.misc.StaffList.class);
-        context.runOnClient(client -> staff.setEnabled(true));
-        context.waitTicks(5);
-        context.takeScreenshot("maro-staff-list-empty");
-        if (!context.computeOnClient(client -> staff.onlineNames()).isEmpty())
-            throw new AssertionError("Staff List found staff with no ranks in the tab list");
-        singleplayer.getServer().runCommand("team add mods");
-        singleplayer.getServer().runCommand("team modify mods prefix {\"text\":\"[Mod] \",\"color\":\"light_purple\"}");
-        singleplayer.getServer().runCommand("team join mods @a");
+    /** Fullbright: sealed in a dark stone room at midnight, the screen must get much brighter, and the option must not change. */
+    private static void checkFullbright(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+        singleplayer.getServer().runCommand("time set midnight");
+        singleplayer.getServer().runCommand("execute as @a at @s run fill ~-5 ~-1 ~-5 ~5 ~5 ~5 minecraft:stone hollow");
+        singleplayer.getServer().runCommand("execute as @a at @s run fill ~-4 ~ ~-4 ~4 ~4 ~4 minecraft:air");
+        context.runOnClient(client -> client.player.setPitch(10f));
         settle(context);
         settle(context);
-        var names = context.computeOnClient(client -> staff.onlineNames());
-        if (names.size() != 1 || !names.getFirst().endsWith("(Mod)"))
-            throw new AssertionError("Staff List did not find the [Mod] prefix: " + names);
-        context.takeScreenshot("maro-staff-list");
-        singleplayer.getServer().runCommand("team remove mods");
+        double gammaBefore = context.computeOnClient(client -> client.options.getGamma().getValue());
+        double dark = luminance(context.takeScreenshot("maro-fullbright-off"));
+        var fullbright = ModuleManager.get(dev.maro.module.impl.visuals.Fullbright.class);
+        context.runOnClient(client -> fullbright.setEnabled(true));
+        settle(context);
+        double bright = luminance(context.takeScreenshot("maro-fullbright-on"));
+        double gammaAfter = context.computeOnClient(client -> client.options.getGamma().getValue());
+        context.runOnClient(client -> fullbright.setEnabled(false));
+        settle(context);
+        if (gammaAfter != gammaBefore) throw new AssertionError("Fullbright changed the Brightness option: " + gammaBefore + " -> " + gammaAfter);
+        if (bright < dark + 40) throw new AssertionError("Fullbright did not brighten the dark room (" + dark + " -> " + bright + ")");
+    }
 
-        // An icon rank with no word in it, as Donut uses: not staff until it is picked.
-        singleplayer.getServer().runCommand("team add icons");
-        singleplayer.getServer().runCommand("team modify icons prefix {\"text\":\"\u2605 \",\"color\":\"gold\"}");
-        singleplayer.getServer().runCommand("team join icons @a");
-        settle(context);
-        if (!context.computeOnClient(client -> staff.onlineNames()).isEmpty())
-            throw new AssertionError("Staff List counted an unpicked icon rank as staff");
-        var keys = context.computeOnClient(client -> staff.ranksHere().stream().map(dev.maro.module.impl.misc.StaffList.Rank::key).toList());
-        if (!keys.contains("\u2605")) throw new AssertionError("Server Ranks did not list the icon rank: " + keys);
-        context.runOnClient(client -> staff.togglePicked("\u2605"));
-        context.waitTicks(3);
-        if (context.computeOnClient(client -> staff.onlineNames()).size() != 1)
-            throw new AssertionError("Staff List did not pick up the picked icon rank");
-        context.setScreen(() -> new dev.maro.module.impl.misc.StaffRanksScreen(null, staff));
-        context.waitTicks(3);
-        context.takeScreenshot("maro-staff-ranks");
-        context.setScreen(() -> null);
-        context.waitTicks(3);
-        context.takeScreenshot("maro-staff-list-icon");
-        context.runOnClient(client -> staff.togglePicked("\u2605"));
-        singleplayer.getServer().runCommand("team remove icons");
-        context.runOnClient(client -> staff.setEnabled(false));
+    /** Average brightness of a screenshot, 0 to 255. */
+    private static double luminance(java.nio.file.Path path) {
+        try {
+            var image = javax.imageio.ImageIO.read(path.toFile());
+            long total = 0;
+            int samples = 0;
+            for (int y = 0; y < image.getHeight(); y += 4) {
+                for (int x = 0; x < image.getWidth(); x += 4) {
+                    int rgb = image.getRGB(x, y);
+                    total += (rgb >> 16 & 255) * 299 + (rgb >> 8 & 255) * 587 + (rgb & 255) * 114;
+                    samples++;
+                }
+            }
+            return total / 1000.0 / samples;
+        } catch (java.io.IOException e) {
+            throw new AssertionError("Could not read screenshot " + path, e);
+        }
     }
 
     /** The Inventory HUD with armour, rare and enchanted items and a tool about to break, then its tooltip. */
