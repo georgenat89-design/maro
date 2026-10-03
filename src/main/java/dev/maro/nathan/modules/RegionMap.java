@@ -138,6 +138,7 @@ public class RegionMap extends Module {
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgLook = settings.createGroup("Look");
+    private final SettingGroup sgCorrection = settings.createGroup("Color Correction");
     private final SettingGroup sgColors = settings.createGroup("Map Colors", false);
 
     private final Setting<Integer> x = sgGeneral.add(new IntSetting.Builder()
@@ -254,12 +255,57 @@ public class RegionMap extends Module {
         .build()
     );
 
-    private final Setting<Double> saturation = sgLook.add(new DoubleSetting.Builder()
+    private final Setting<Double> saturation = sgCorrection.add(new DoubleSetting.Builder()
         .name("saturation")
         .description("How rich every group colour is. Under 1 calms them down, over 1 makes them punchier.")
         .defaultValue(1.1)
         .range(0, 2)
         .sliderRange(0, 2)
+        .build()
+    );
+
+    private final Setting<Double> brightness = sgCorrection.add(new DoubleSetting.Builder()
+        .name("brightness")
+        .description("How light every group colour is. 1 leaves them as they are.")
+        .defaultValue(1)
+        .range(0.2, 2)
+        .sliderRange(0.2, 2)
+        .build()
+    );
+
+    private final Setting<Double> contrast = sgCorrection.add(new DoubleSetting.Builder()
+        .name("contrast")
+        .description("Pushes light and dark colours further apart, or draws them together under 1.")
+        .defaultValue(1)
+        .range(0.2, 2)
+        .sliderRange(0.2, 2)
+        .build()
+    );
+
+    private final Setting<Integer> hueShift = sgCorrection.add(new IntSetting.Builder()
+        .name("hue-shift")
+        .description("Turns every group colour round the colour wheel by this many degrees.")
+        .defaultValue(0)
+        .range(-180, 180)
+        .sliderRange(-180, 180)
+        .build()
+    );
+
+    private final Setting<Integer> warmth = sgCorrection.add(new IntSetting.Builder()
+        .name("warmth")
+        .description("Warmer (towards orange) above 0, cooler (towards blue) below it.")
+        .defaultValue(0)
+        .range(-100, 100)
+        .sliderRange(-100, 100)
+        .build()
+    );
+
+    private final Setting<Integer> tileDepth = sgCorrection.add(new IntSetting.Builder()
+        .name("tile-depth")
+        .description("Midnight only: how dark the other groups' tiles are, as a percentage. Lower shows more of their colour.")
+        .defaultValue(72)
+        .range(20, 95)
+        .sliderRange(20, 95)
         .build()
     );
 
@@ -425,18 +471,41 @@ public class RegionMap extends Module {
             for (int i = 0; i < rgb.length; i++) out[i] = new Color(rgb[i] >> 16 & 0xFF, rgb[i] >> 8 & 0xFF, rgb[i] & 0xFF);
         }
 
-        double amount = saturation.get();
-
-        if (amount == 1) return out;
-
-        for (int i = 0; i < out.length; i++) {
-            float[] hsb = java.awt.Color.RGBtoHSB(out[i].r, out[i].g, out[i].b, null);
-            int rgb = java.awt.Color.HSBtoRGB(hsb[0], (float) Math.min(1, hsb[1] * amount), hsb[2]);
-
-            out[i] = new Color(rgb >> 16 & 0xFF, rgb >> 8 & 0xFF, rgb & 0xFF, out[i].a);
-        }
+        for (int i = 0; i < out.length; i++) out[i] = corrected(out[i]);
 
         return out;
+    }
+
+    /**
+     * One colour through Color Correction: turned round the wheel, made richer or
+     * calmer, lighter or darker, then contrast about the middle grey and warmth
+     * last, the way a photo editor stacks them.
+     */
+    private Color corrected(Color color) {
+        double sat = saturation.get();
+        double light = brightness.get();
+        double spread = contrast.get();
+        int turn = hueShift.get();
+        int warm = warmth.get();
+
+        if (sat == 1 && light == 1 && spread == 1 && turn == 0 && warm == 0) return color;
+
+        float[] hsb = java.awt.Color.RGBtoHSB(color.r, color.g, color.b, null);
+        int rgb = java.awt.Color.HSBtoRGB(hsb[0] + turn / 360f, (float) Math.min(1, hsb[1] * sat), (float) Math.min(1, hsb[2] * light));
+
+        double r = (rgb >> 16 & 0xFF);
+        double g = (rgb >> 8 & 0xFF);
+        double b = (rgb & 0xFF);
+
+        r = (r - 128) * spread + 128 + warm * 0.35;
+        g = (g - 128) * spread + 128 + warm * 0.08;
+        b = (b - 128) * spread + 128 - warm * 0.35;
+
+        return new Color(clamp(r), clamp(g), clamp(b), color.a);
+    }
+
+    private static int clamp(double value) {
+        return (int) Math.round(Math.max(0, Math.min(255, value)));
     }
 
     // -------------------------------------------------------------- placement
@@ -453,6 +522,11 @@ public class RegionMap extends Module {
         WButton colours = resets.add(theme.button("Reset Colors")).expandX().widget();
         colours.action = () -> {
             for (Setting<?> setting : sgColors) setting.reset();
+        };
+
+        WButton correction = resets.add(theme.button("Reset Correction")).expandX().widget();
+        correction.action = () -> {
+            for (Setting<?> setting : sgCorrection) setting.reset();
         };
 
         WButton layout = resets.add(theme.button("Reset Layout")).expandX().widget();
@@ -959,7 +1033,7 @@ public class RegionMap extends Module {
                 // Every group sunk deep into the panel with its numbers in its own
                 // colour; yours, under Spotlight, lit nearly to full strength.
                 boolean lit = i == spot;
-                fills[i] = argb(mixed(withAlpha(colors[i], 255), withAlpha(deep, 255), lit ? 0.3 : 0.72));
+                fills[i] = argb(mixed(withAlpha(colors[i], 255), withAlpha(deep, 255), lit ? 0.3 : tileDepth.get() / 100.0));
                 inks[i] = argb(lit ? ink : tinted(mixed(withAlpha(colors[i], 255), WHITE, 0.42), (spot < 0 ? 1 : 0.72) * ink.a / 255.0));
             } else {
                 fills[i] = argb(colors[i]);

@@ -276,6 +276,19 @@ public class MaroClientGameTest implements FabricClientGameTest {
         context.takeScreenshot("maro-region-map-hover");
         context.setScreen(() -> null);
         context.runOnClient(client -> {
+            for (var s : map.getSettings()) {
+                if (s.getName().equals("warmth")) s.fromJson(new com.google.gson.JsonPrimitive(45));
+                if (s.getName().equals("contrast")) s.fromJson(new com.google.gson.JsonPrimitive(1.25));
+                if (s.getName().equals("tile-depth")) s.fromJson(new com.google.gson.JsonPrimitive(55));
+            }
+        });
+        context.waitTicks(5);
+        context.takeScreenshot("maro-region-map-corrected");
+        context.runOnClient(client -> map.getSettings().stream()
+            .filter(s -> java.util.List.of("warmth", "contrast", "tile-depth").contains(s.getName()))
+            .forEach(s -> s.fromJson(s.getName().equals("contrast") ? new com.google.gson.JsonPrimitive(1.0)
+                : new com.google.gson.JsonPrimitive(s.getName().equals("tile-depth") ? 72 : 0))));
+        context.runOnClient(client -> {
             map.setEnabled(false);
             scale.fromJson(new com.google.gson.JsonPrimitive(1.0));
         });
