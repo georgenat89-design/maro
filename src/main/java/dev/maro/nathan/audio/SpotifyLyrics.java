@@ -90,7 +90,9 @@ public final class SpotifyLyrics implements AutoCloseable {
         }
     }
     private static List<Word> estimateWords(Line line, long end) {
-        Matcher matcher = Pattern.compile("\\S+\\s*").matcher(line.text());
+        EstimatedPlan cached = ESTIMATED_PLAN.get();
+        if (cached != null && cached.line() == line && cached.end() == end) return cached.words();
+        Matcher matcher = WORDS.matcher(line.text());
         List<int[]> spans = new ArrayList<>(); double total = 0;
         while (matcher.find()) { spans.add(new int[]{matcher.start(), matcher.end()}); total += Math.sqrt(matcher.group().strip().codePointCount(0, matcher.group().strip().length()) + 1); }
         List<Word> words = new ArrayList<>(); double consumed = 0;
@@ -101,8 +103,13 @@ public final class SpotifyLyrics implements AutoCloseable {
             consumed += weight;
             words.add(new Word(at, line.atMs() + Math.round((end - line.atMs()) * consumed / total), text, span[0], span[1]));
         }
-        return List.copyOf(words);
+        List<Word> plan = List.copyOf(words);
+        ESTIMATED_PLAN.set(new EstimatedPlan(line, end, plan));
+        return plan;
     }
+    private static final Pattern WORDS = Pattern.compile("\\S+\\s*");
+    private record EstimatedPlan(Line line, long end, List<Word> words) { }
+    private static final ThreadLocal<EstimatedPlan> ESTIMATED_PLAN = new ThreadLocal<>();
     @FunctionalInterface public interface Lookup { Result find(Track track) throws Exception; }
     private record Cached(Result result, long expiresAt) { }
     private final Lookup lookup;

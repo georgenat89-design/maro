@@ -58,11 +58,11 @@ public class SpotifyHud extends Module {
         .name("lyrics").description("Show song lyrics from LRCLIB. Timed lyrics follow playback and seeking.")
         .defaultValue(true).build());
     private final Setting<LyricsMode> lyricsMode = sgLyrics.add(new EnumSetting.Builder<LyricsMode>()
-        .name("lyrics-mode").description("Whole lines, highlight the sung word, or show one live word at a time. Real word timing is used where available.")
+        .name("word-display").description("Highlight the current word, show one live word, or display whole lines. Real word timing takes priority.")
         .defaultValue(LyricsMode.WordHighlight).visible(showLyrics::get).build());
     private final Setting<Boolean> estimateWords = sgLyrics.add(new BoolSetting.Builder()
-        .name("estimate-word-timing").description("Animate words using estimated timing when only line timestamps exist. Less accurate; shown as ESTIMATED.")
-        .defaultValue(false).visible(() -> showLyrics.get() && lyricsMode.get() != LyricsMode.Lines).build());
+        .name("auto-word-follow").description("Follow words even when only line timestamps exist. That fallback is approximate and labelled ESTIMATED; exact word timing takes priority.")
+        .defaultValue(true).visible(() -> showLyrics.get() && lyricsMode.get() != LyricsMode.Lines).build());
     private final Setting<Double> lyricsSize = sgLyrics.add(new DoubleSetting.Builder()
         .name("lyrics-size").description("Size of the highlighted lyric line.")
         .defaultValue(12).range(8, 16).sliderRange(8, 16).visible(showLyrics::get).build());
@@ -160,6 +160,7 @@ public class SpotifyHud extends Module {
     private record WrappedLyric(String text, double width, double unit, double desired, String first, String rest, double size) { }
     private WrappedLyric wrappedLyric;
     private long lyricPosition = -1;
+    private int lyricIndex = -1;
     private String liveWord = "";
     private final SpotifyTimeline timeline = new SpotifyTimeline();
     private final SpotifySeekPreview seekPreview = new SpotifySeekPreview();
@@ -241,7 +242,8 @@ public class SpotifyHud extends Module {
         double unit = scale.get();
         double width = (SpotifyHudLayout.MINI_WIDTH + (SpotifyHudLayout.WIDTH - SpotifyHudLayout.MINI_WIDTH) * expansion) * unit;
         double height = (SpotifyHudLayout.MINI_HEIGHT + (SpotifyHudLayout.HEIGHT - SpotifyHudLayout.MINI_HEIGHT) * expansion) * unit;
-        double extra = showLyrics.get() ? Math.max(64, lyricsSize.get() * 2 + 41) : 0;
+        // Reserve room for lowercase descenders and bottom padding, not only cap height.
+        double extra = showLyrics.get() ? Math.max(72, lyricsSize.get() * 2 + 50) : 0;
         height += extra > 0 ? (extra + 8) * unit : 0;
         SpotifyHudFeatures.Position position = SpotifyHudFeatures.position(anchor.get(), x.get(), y.get(), width, height,
             mc.getWindow().getFramebufferWidth(), mc.getWindow().getFramebufferHeight());
@@ -497,10 +499,12 @@ public class SpotifyHud extends Module {
     private void renderLyrics(SpotifyHudLayout layout, SpotifyMedia.State state, long position, double seconds, Color accent) {
         lyrics.update(state);
         var snapshot = lyrics.snapshot();
-        if (!snapshot.key().equals(lyricsKey)) { lyricsKey = snapshot.key(); plainLyricIndex = 0; lyricLine = ""; lyricPosition = -1; }
+        if (!snapshot.key().equals(lyricsKey)) { lyricsKey = snapshot.key(); plainLyricIndex = 0; lyricLine = ""; lyricPosition = -1; lyricIndex = -1; }
         var words = snapshot.karaoke(position, lyricsOffset.get(), plainLyricIndex, state.durationMs(), estimateWords.get());
         var frame = words.frame();
-        boolean changed = !frame.current().equals(lyricLine);
+        boolean changed = frame.index() != lyricIndex || !frame.current().equals(lyricLine);
+        lyricIndex = frame.index();
+        String preview = frame.next().strip().equalsIgnoreCase(frame.current().strip()) ? "" : frame.next();
         boolean seeked = lyricPosition < 0 || Math.abs(position - lyricPosition) > 750;
         lyricPosition = position;
         if (changed) { lyricLine = frame.current(); lyricFade = 0; lyricScroll = 0; lyricAge = 0; }
@@ -540,7 +544,7 @@ public class SpotifyHud extends Module {
                 area.width() - 36 * unit, 8 * unit, opacity(MUTED, .65), false);
         } else if (karaoke) {
             renderWordLine(words, area, unit, seconds, changed || seeked, accent);
-            lyricText(frame.next(), area.x() + 18 * unit, area.y() + (lyricsSize.get() + 40) * unit,
+            lyricText(preview, area.x() + 18 * unit, area.y() + area.height() - 18 * unit,
                 area.width() - 36 * unit, 8 * unit, opacity(MUTED, .65), false);
         } else {
             double width = area.width() - 36 * unit, size = lyricsSize.get() * unit;
@@ -555,7 +559,8 @@ public class SpotifyHud extends Module {
                 lyricRun(rest, left - offset, area.y() + (lyricsSize.get() + 26) * unit, size,
                     opacity(WHITE, .65 + .35 * lyricFade), true, left, left + width);
             }
-            lyricText(frame.next(), area.x() + 18 * unit, area.y() + (lyricsSize.get() * 2 + 33) * unit,
+            double nextTop = rest.isEmpty() ? Math.min(area.height() - 18 * unit, (lyricsSize.get() + 33) * unit) : area.height() - 18 * unit;
+            lyricText(preview, area.x() + 18 * unit, area.y() + nextTop,
                 width, 8 * unit, opacity(MUTED, .6), false);
         }
     }
