@@ -121,7 +121,8 @@ lyrics show a status instead. No Spotify account connection or token is needed.
 [Lyricsfile](https://github.com/tranxuanthang/lyricsfile) or enhanced LRC word timestamps when available.
 SingleWord always requires individual word timestamps; it never guesses a singer's delivery
 from the length of a line. If those timestamps are missing, the current line is displayed with
-**LINE SYNC / NO WORD TIMING**. Multiword segments cannot supply individual word timing either.
+**LINE SYNC / NO WORD TIMING** in the small header, with the next lyric below the current line.
+The preview row contains lyrics only. Multiword segments cannot supply individual word timing either.
 WordHighlight switches the whole word and its underline at the supplied timestamps.
 **Approximate word preview** is an optional WordHighlight-only estimate, disabled by default
 and labelled **ESTIMATED WORDS**. Existing Auto word follow settings do not enable it.

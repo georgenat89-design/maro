@@ -563,8 +563,8 @@ public class SpotifyHud extends Module {
                     opacity(WHITE, .65 + .35 * lyricFade), true, left, left + width);
             }
             double nextTop = rest.isEmpty() ? Math.min(area.height() - 18 * unit, (lyricsSize.get() + 33) * unit) : area.height() - 18 * unit;
-            lyricText(missingWordTiming ? "Word timestamps unavailable for this line" : preview, area.x() + 18 * unit, area.y() + nextTop,
-                width, 8 * unit, opacity(MUTED, .6), false);
+            lyricText(preview, area.x() + 18 * unit, area.y() + nextTop,
+                width, 8 * unit, opacity(MUTED, .8), false);
         }
     }
 
