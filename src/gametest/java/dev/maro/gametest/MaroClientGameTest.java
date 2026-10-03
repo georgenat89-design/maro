@@ -282,6 +282,28 @@ public class MaroClientGameTest implements FabricClientGameTest {
             throw new AssertionError("Staff List did not find the [Mod] prefix: " + names);
         context.takeScreenshot("maro-staff-list");
         singleplayer.getServer().runCommand("team remove mods");
+
+        // An icon rank with no word in it, as Donut uses: not staff until it is picked.
+        singleplayer.getServer().runCommand("team add icons");
+        singleplayer.getServer().runCommand("team modify icons prefix {\"text\":\"\u2605 \",\"color\":\"gold\"}");
+        singleplayer.getServer().runCommand("team join icons @a");
+        settle(context);
+        if (!context.computeOnClient(client -> staff.onlineNames()).isEmpty())
+            throw new AssertionError("Staff List counted an unpicked icon rank as staff");
+        var keys = context.computeOnClient(client -> staff.ranksHere().stream().map(dev.maro.module.impl.misc.StaffList.Rank::key).toList());
+        if (!keys.contains("\u2605")) throw new AssertionError("Server Ranks did not list the icon rank: " + keys);
+        context.runOnClient(client -> staff.togglePicked("\u2605"));
+        context.waitTicks(3);
+        if (context.computeOnClient(client -> staff.onlineNames()).size() != 1)
+            throw new AssertionError("Staff List did not pick up the picked icon rank");
+        context.setScreen(() -> new dev.maro.module.impl.misc.StaffRanksScreen(null, staff));
+        context.waitTicks(3);
+        context.takeScreenshot("maro-staff-ranks");
+        context.setScreen(() -> null);
+        context.waitTicks(3);
+        context.takeScreenshot("maro-staff-list-icon");
+        context.runOnClient(client -> staff.togglePicked("\u2605"));
+        singleplayer.getServer().runCommand("team remove icons");
         context.runOnClient(client -> staff.setEnabled(false));
     }
 

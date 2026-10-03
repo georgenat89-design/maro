@@ -20,13 +20,16 @@ import net.minecraft.client.gui.PlayerSkinDrawer;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.scoreboard.Team;
+import net.minecraft.text.MutableText;
 import net.minecraft.text.Style;
 import net.minecraft.text.Text;
 import org.joml.Matrix3x2fStack;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -35,9 +38,13 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Who on the server is staff, worked out from what the tab list already shows: the rank text
- * beside each name (prefixes such as [Mod] or Admin), plus any names you add yourself. Works on
- * any server, highest rank first, with a notification when staff join or leave.
+ * Who on the server is staff, worked out from what the tab list already shows.
+ *
+ * <p>Every player's rank is what the tab list draws in front of their name: a word such as [Mod],
+ * or - on servers like Donut - an icon from the server's resource pack. Ranks containing one of the
+ * Staff Ranks words count by themselves. Any other rank counts once it has been picked in
+ * {@link StaffRanksScreen}, which remembers the choice for each server. Names added by hand always
+ * count. Staff are listed in the server's own tab order, which puts higher ranks first.
  */
 public class StaffList extends Module implements HudElement {
     private static final int WIDTH = 150;
@@ -47,7 +54,16 @@ public class StaffList extends Module implements HudElement {
     private static final int HEAD = 9;
     private static final int MARGIN = 4;
     private static final float RADIUS = 6;
+    private static final char SEPARATOR = '\t';
 
+    /** The order the vanilla tab list sorts players in, which servers use to put higher ranks first. */
+    private static final Comparator<PlayerListEntry> TAB_ORDER = Comparator
+            .comparingInt((PlayerListEntry e) -> -e.getListOrder())
+            .thenComparing(e -> e.getScoreboardTeam() == null ? "" : e.getScoreboardTeam().getName())
+            .thenComparing(e -> e.getProfile().name(), String::compareToIgnoreCase);
+
+    private final ButtonSetting pick = add(new ButtonSetting("Server Ranks", "Pick which of this server's ranks are staff. Remembered for each server", "Pick",
+            () -> mc.setScreen(new StaffRanksScreen(mc.currentScreen, this))));
     private final ButtonSetting position = add(new ButtonSetting("Position", "Drag the panel where you want it and scroll to resize it", "Place",
             () -> mc.setScreen(new HudPlacementScreen(mc.currentScreen, this))));
     private final NumberSetting x = add(new NumberSetting("X", "Across the screen: 0 is the left edge, 100 the right", 0, 0, 100, 0.5).suffix("%"));
@@ -56,7 +72,7 @@ public class StaffList extends Module implements HudElement {
 
     private final dev.maro.runtime.settings.Setting<List<String>> ranks = new StringListSetting.Builder()
             .name("Staff Ranks")
-            .description("Rank words that mark staff in the tab list, highest first. One per line or separated by ;")
+            .description("Rank words that count as staff on any server. One per line or separated by ;")
             .defaultValue("Owner", "Co-Owner", "Founder", "Manager", "Admin", "Administrator", "Sr.Mod", "SrMod", "Moderator", "Mod",
                     "Jr.Mod", "JrMod", "Helper", "Trial", "Trainee", "Support", "Staff", "Developer", "Dev", "Builder")
             .build();
@@ -64,6 +80,13 @@ public class StaffList extends Module implements HudElement {
             .name("Extra Names")
             .description("Usernames to always count as staff, even with no rank shown. One per line or separated by ;")
             .defaultValue()
+            .build();
+    /** Ranks picked as staff, each stored as the server's address, a tab, and the rank's text. */
+    private final dev.maro.runtime.settings.Setting<List<String>> picked = new StringListSetting.Builder()
+            .name("Picked Ranks")
+            .description("The ranks picked as staff on each server")
+            .defaultValue()
+            .visible(() -> false)
             .build();
 
     private final BooleanSetting alerts = add(new BooleanSetting("Join Alerts", "A notification when staff join or leave", true));
@@ -74,18 +97,24 @@ public class StaffList extends Module implements HudElement {
     private final NumberSetting opacity = add(new NumberSetting("Background Opacity", "How solid the panel is", 88, 0, 100, 1).suffix("%"));
     private final ColorSetting background = add(new ColorSetting("Background", "The panel colour", 0xFF0B0D12));
 
+    /** A rank as the tab list draws it, and who has it. */
+    public record Rank(String key, Text badge, List<String> players, boolean byWord, boolean picked) {
+    }
+
     /** One staff member as found this tick. */
-    private record Staff(String name, String rank, int priority, int color, PlayerListEntry entry) {
+    private record Staff(String name, Text badge, String label, PlayerListEntry entry) {
     }
 
     private List<Staff> online = List.of();
     private final Map<String, String> lastSeen = new HashMap<>();
     private boolean primed;
+    private String lastServer = "";
 
     public StaffList() {
         super("Staff List", "Shows which staff are online, from the ranks in the tab list", Category.MISC);
         add(SettingAdapters.adapt(ranks));
         add(SettingAdapters.adapt(names));
+        add(SettingAdapters.adapt(picked));
     }
 
     @Override
@@ -94,54 +123,162 @@ public class StaffList extends Module implements HudElement {
         primed = false;
     }
 
+    // ---- reading the tab list -----------------------------------------------------------
+
+    /** The address of the server you are on, which picked ranks are remembered under. */
+    public String serverKey() {
+        if (mc.getCurrentServerEntry() != null && mc.getCurrentServerEntry().address != null) {
+            return mc.getCurrentServerEntry().address.trim().toLowerCase(Locale.ROOT);
+        }
+        return "singleplayer";
+    }
+
+    private List<PlayerListEntry> tabEntries() {
+        ClientPlayNetworkHandler network = mc.getNetworkHandler();
+        if (network == null) return List.of();
+        List<PlayerListEntry> entries = new ArrayList<>(network.getPlayerList());
+        entries.sort(TAB_ORDER);
+        return entries;
+    }
+
+    /** What the tab list shows for this player: their own display name, or their team's prefix and suffix round it. */
+    private static Text tabText(PlayerListEntry entry) {
+        if (entry.getDisplayName() != null) return entry.getDisplayName();
+        Team team = entry.getScoreboardTeam();
+        Text name = Text.literal(entry.getProfile().name());
+        return team == null ? name : Text.empty().append(team.getPrefix()).append(name).append(team.getSuffix());
+    }
+
+    /**
+     * Everything drawn in front of the name, with its own styles and fonts, so a rank icon from a
+     * server resource pack comes back as that icon. If the name is not there (a nickname), the run
+     * of symbols at the start is taken instead.
+     */
+    private static Text badgeOf(Text shown, String name) {
+        MutableText before = Text.empty();
+        boolean[] found = {false};
+        shown.visit((style, part) -> {
+            int at = part.indexOf(name);
+            if (at >= 0) {
+                if (at > 0) before.append(Text.literal(part.substring(0, at)).setStyle(style));
+                found[0] = true;
+                return Optional.of(Boolean.TRUE);
+            }
+            before.append(Text.literal(part).setStyle(style));
+            return Optional.empty();
+        }, Style.EMPTY);
+        if (found[0]) return before;
+
+        MutableText symbols = Text.empty();
+        shown.visit((style, part) -> {
+            int end = 0;
+            while (end < part.length() && !Character.isLetterOrDigit(part.charAt(end))) end++;
+            if (end > 0) symbols.append(Text.literal(part.substring(0, end)).setStyle(style));
+            return end < part.length() ? Optional.of(Boolean.TRUE) : Optional.empty();
+        }, Style.EMPTY);
+        return symbols;
+    }
+
+    /** What makes two ranks the same: their text, which for an icon is the icon's own character. */
+    private static String keyOf(Text badge) {
+        return badge.getString().strip();
+    }
+
+    private Set<String> pickedHere() {
+        String server = serverKey() + SEPARATOR;
+        Set<String> keys = new HashSet<>();
+        for (String entry : picked.get()) if (entry.startsWith(server)) keys.add(entry.substring(server.length()));
+        return keys;
+    }
+
+    /** Every rank on this server, highest first in the tab list's own order. */
+    public List<Rank> ranksHere() {
+        Map<String, Text> badges = new LinkedHashMap<>();
+        Map<String, List<String>> players = new HashMap<>();
+        for (PlayerListEntry entry : tabEntries()) {
+            String name = entry.getProfile().name();
+            Text badge = badgeOf(tabText(entry), name);
+            String key = keyOf(badge);
+            if (key.isEmpty()) continue;
+            badges.putIfAbsent(key, badge);
+            players.computeIfAbsent(key, k -> new ArrayList<>()).add(name);
+        }
+        List<Pattern> words = rankPatterns();
+        Set<String> chosen = pickedHere();
+        List<Rank> result = new ArrayList<>();
+        for (Map.Entry<String, Text> rank : badges.entrySet()) {
+            String key = rank.getKey();
+            result.add(new Rank(key, rank.getValue(), players.get(key), wordFor(key, words) != null, chosen.contains(key)));
+        }
+        return result;
+    }
+
+    public void togglePicked(String key) {
+        List<String> next = new ArrayList<>(picked.get());
+        String entry = serverKey() + SEPARATOR + key;
+        if (!next.remove(entry)) next.add(entry);
+        picked.set(next);
+        onTick();
+    }
+
+    private List<Pattern> rankPatterns() {
+        List<Pattern> patterns = new ArrayList<>();
+        for (String word : ranks.get()) {
+            String trimmed = word.trim();
+            if (!trimmed.isEmpty()) {
+                patterns.add(Pattern.compile("(?<![A-Za-z0-9])" + Pattern.quote(trimmed) + "(?![A-Za-z0-9])", Pattern.CASE_INSENSITIVE));
+            }
+        }
+        return patterns;
+    }
+
+    private static String wordFor(String key, List<Pattern> patterns) {
+        for (Pattern pattern : patterns) {
+            var match = pattern.matcher(key);
+            if (match.find()) return match.group();
+        }
+        return null;
+    }
+
     // ---- finding staff ------------------------------------------------------------------
 
     @Override
     public void onTick() {
-        ClientPlayNetworkHandler network = mc.getNetworkHandler();
-        if (!inGame() || network == null) {
+        if (!inGame() || mc.getNetworkHandler() == null) {
             online = List.of();
             lastSeen.clear();
             primed = false;
             return;
         }
 
-        List<String> rankWords = ranks.get();
-        List<Pattern> patterns = new ArrayList<>();
-        for (String word : rankWords) {
-            String trimmed = word.trim();
-            patterns.add(trimmed.isEmpty() ? null
-                    : Pattern.compile("(?<![A-Za-z0-9])" + Pattern.quote(trimmed) + "(?![A-Za-z0-9])", Pattern.CASE_INSENSITIVE));
+        String server = serverKey();
+        if (!server.equals(lastServer)) {
+            lastServer = server;
+            lastSeen.clear();
+            primed = false;
         }
+
+        List<Pattern> words = rankPatterns();
+        Set<String> chosen = pickedHere();
         Set<String> extra = new HashSet<>();
         for (String name : names.get()) extra.add(name.trim().toLowerCase(Locale.ROOT));
 
         List<Staff> found = new ArrayList<>();
-        for (PlayerListEntry entry : network.getPlayerList()) {
+        for (PlayerListEntry entry : tabEntries()) {
             String name = entry.getProfile().name();
-            Text shown = tabText(entry);
-            // Only the text round the name is a rank, so a player called "Modest" is not a mod.
-            String around = shown.getString().replace(name, " ");
-            int priority = -1;
-            String rank = null;
-            for (int i = 0; i < patterns.size(); i++) {
-                if (patterns.get(i) != null && patterns.get(i).matcher(around).find()) {
-                    priority = i;
-                    rank = rankWords.get(i).trim();
-                    break;
-                }
+            Text badge = badgeOf(tabText(entry), name);
+            String key = keyOf(badge);
+            String word = key.isEmpty() ? null : wordFor(key, words);
+            if (word != null || (!key.isEmpty() && chosen.contains(key))) {
+                found.add(new Staff(name, badge, word != null ? word : "Staff", entry));
+            } else if (extra.contains(name.toLowerCase(Locale.ROOT))) {
+                found.add(new Staff(name, key.isEmpty() ? null : badge, "Staff", entry));
             }
-            if (rank == null && extra.contains(name.toLowerCase(Locale.ROOT))) {
-                priority = rankWords.size();
-                rank = "Staff";
-            }
-            if (rank != null) found.add(new Staff(name, rank, priority, rankColor(shown, name), entry));
         }
-        found.sort((a, b) -> a.priority() != b.priority() ? Integer.compare(a.priority(), b.priority()) : a.name().compareToIgnoreCase(b.name()));
         online = found;
 
         Map<String, String> now = new HashMap<>();
-        for (Staff staff : found) now.put(staff.name(), staff.rank());
+        for (Staff staff : found) now.put(staff.name(), staff.label());
         if (primed && alerts.get()) {
             for (Map.Entry<String, String> joined : now.entrySet()) {
                 if (!lastSeen.containsKey(joined.getKey())) {
@@ -160,32 +297,19 @@ public class StaffList extends Module implements HudElement {
         primed = true;
     }
 
-    /** What the tab list shows for this player: their own display name, or their team's prefix and suffix round it. */
-    private static Text tabText(PlayerListEntry entry) {
-        if (entry.getDisplayName() != null) return entry.getDisplayName();
-        Team team = entry.getScoreboardTeam();
-        Text name = Text.literal(entry.getProfile().name());
-        return team == null ? name : Text.empty().append(team.getPrefix()).append(name).append(team.getSuffix());
-    }
-
-    /** The colour of the first coloured text that is not the name itself: usually the rank's own colour. */
-    private static int rankColor(Text shown, String name) {
-        Optional<Integer> color = shown.visit((style, part) -> {
-            if (part.isBlank() || part.contains(name) || style.getColor() == null) return Optional.empty();
-            return Optional.of(style.getColor().getRgb());
-        }, Style.EMPTY);
-        return color.map(rgb -> 0xFF000000 | rgb).orElse(Theme.accent());
-    }
-
-    /** The names of the staff found on the last tick, highest rank first. */
+    /** The names of the staff found on the last tick, in tab order. */
     public List<String> onlineNames() {
-        return online.stream().map(staff -> staff.name() + " (" + staff.rank() + ")").toList();
+        return online.stream().map(staff -> staff.name() + " (" + staff.label() + ")").toList();
     }
 
     // ---- placement ----------------------------------------------------------------------
 
+    private boolean needsPicking() {
+        return online.isEmpty() && pickedHere().isEmpty() && !"singleplayer".equals(serverKey());
+    }
+
     private int shownRows() {
-        if (online.isEmpty()) return 1;
+        if (online.isEmpty()) return needsPicking() ? 2 : 1;
         int max = maxRows.getInt();
         return online.size() > max ? max + 1 : online.size();
     }
@@ -288,7 +412,12 @@ public class StaffList extends Module implements HudElement {
         Render2D.rect(ctx, PAD, rowTop - 3, WIDTH - PAD * 2, hair, 0x14FFFFFF);
 
         if (online.isEmpty()) {
-            Fonts.drawV(ctx, "No staff in the tab list", PAD, rowTop + ROW / 2f, ColorUtil.withAlpha(Theme.TEXT, 110), true, 0.75f);
+            if (needsPicking()) {
+                Fonts.drawV(ctx, "No staff ranks picked here", PAD, rowTop + ROW / 2f, ColorUtil.withAlpha(Theme.TEXT, 130), true, 0.72f);
+                Fonts.drawV(ctx, "Settings > Server Ranks > Pick", PAD, rowTop + ROW * 1.5f, Theme.accent(220), true, 0.72f);
+            } else {
+                Fonts.drawV(ctx, "No staff in the tab list", PAD, rowTop + ROW / 2f, ColorUtil.withAlpha(Theme.TEXT, 110), true, 0.75f);
+            }
         } else {
             int max = maxRows.getInt();
             for (int i = 0; i < Math.min(max, online.size()); i++) row(ctx, online.get(i), rowTop + i * ROW);
@@ -310,11 +439,18 @@ public class StaffList extends Module implements HudElement {
             cx += HEAD + 5;
         }
 
-        String rank = staff.rank();
-        float rankWidth = Fonts.width(rank, true, 0.66f) + 8;
-        Render2D.roundRect(ctx, cx, mid - 4.5f, rankWidth, 9, 4.5f, ColorUtil.withAlpha(staff.color(), 46));
-        Fonts.drawCentered(ctx, rank, cx + rankWidth / 2f, mid, ColorUtil.lerp(staff.color(), 0xFFFFFFFF, 0.25f), true, 0.66f);
-        cx += rankWidth + 5;
+        if (staff.badge() != null && !staff.badge().getString().isBlank()) {
+            // The rank exactly as the tab list draws it, icon fonts and colours included.
+            Text badge = staff.badge();
+            ctx.drawText(mc.textRenderer, badge, Math.round(cx), Math.round(mid - 4), 0xFFFFFFFF, false);
+            cx += mc.textRenderer.getWidth(badge) + 3;
+        } else {
+            String label = staff.label();
+            float pill = Fonts.width(label, true, 0.66f) + 8;
+            Render2D.roundRect(ctx, cx, mid - 4.5f, pill, 9, 4.5f, Theme.accent(46));
+            Fonts.drawCentered(ctx, label, cx + pill / 2f, mid, Theme.accent(), true, 0.66f);
+            cx += pill + 5;
+        }
 
         float right = WIDTH - PAD;
         if (ping.get()) {
