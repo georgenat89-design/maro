@@ -30,6 +30,7 @@ import net.minecraft.registry.tag.BlockTags;
 import net.minecraft.registry.tag.FluidTags;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
@@ -42,7 +43,9 @@ import java.util.Set;
 
 /**
  * Strip mining on its own: digs a straight tunnel the way you were facing when you turned it on,
- * walking forward as it goes. Picks the right tool, places torches, fills holes in the floor, and
+ * walking forward as it goes. It mines the way a player does: it turns to the block first and only
+ * digs, or places, once the crosshair is on it, using the face the crosshair hits - so the server
+ * sees the same thing it would from a player, and blocks do not come back as ghosts. Picks the right tool, places torches, fills holes in the floor, and
  * stops by itself for lava, a full inventory, low health, a tool about to break or the distance
  * you set. Ores in the walls are announced, and can be mined on the way past.
  */
@@ -85,6 +88,10 @@ public class AutoMine extends Module {
     private long startedAt;
     private String status = "";
     private final Set<BlockPos> announced = new HashSet<>();
+    /** Ores the crosshair could not get onto from where you were, left alone. */
+    private final Set<BlockPos> skipped = new HashSet<>();
+    /** Ticks spent turning towards the current block or placement without reaching it. */
+    private int aimTicks;
     private Vec3d lastPos;
     private int stuckTicks;
 
@@ -110,6 +117,8 @@ public class AutoMine extends Module {
         lastTorch = 0;
         startedAt = System.currentTimeMillis();
         announced.clear();
+        skipped.clear();
+        aimTicks = 0;
         lastPos = null;
         stuckTicks = 0;
         status = "Starting";
@@ -247,27 +256,63 @@ public class AutoMine extends Module {
             }
             mc.options.forwardKey.setPressed(false);
             mc.options.sprintKey.setPressed(false);
-            if (autoTool.get() && !pickTool(state, dig)) return;
+            mc.options.leftKey.setPressed(false);
+            mc.options.rightKey.setPressed(false);
+            stuckTicks = 0;
             look(Vec3d.ofCenter(dig));
+
+            // Dig only what the crosshair is already on. It was worked out from the view the
+            // server was sent last tick, so the server agrees which block and which face it is.
+            BlockHitResult aimed = crosshairBlock();
+            if (aimed == null || !aimed.getBlockPos().equals(dig)) {
+                BlockPos inWay = aimed == null ? null : aimed.getBlockPos();
+                if (inWay != null && solid(inWay) && tunnel(inWay, here)) {
+                    dig = inWay;
+                    state = mc.world.getBlockState(dig);
+                } else {
+                    if (++aimTicks > 20) {
+                        // An ore that cannot be seen from here: leave it.
+                        skipped.add(dig.toImmutable());
+                        aimTicks = 0;
+                    }
+                    status = "Aiming";
+                    return;
+                }
+            }
+            aimTicks = 0;
+            if (autoTool.get() && !pickTool(state, dig)) return;
             target = dig;
-            mc.interactionManager.updateBlockBreakingProgress(dig, facing.getOpposite());
+            mc.interactionManager.updateBlockBreakingProgress(dig, aimed.getSide());
             player.swingHand(Hand.MAIN_HAND);
             status = "Mining " + state.getBlock().getName().getString();
-            stuckTicks = 0;
             return;
         }
 
         // The way is clear: check the floor, light the tunnel, then walk on.
         BlockPos floor = cell(here + 1, 0, -1);
         if (!solid(floor)) {
-            if (!fillHoles.get() || !fill(here, floor)) {
-                stop("Hole in the floor");
+            releaseKeys();
+            Boolean filled = fillHoles.get() ? fill(floor) : Boolean.FALSE;
+            if (filled == null) {
+                // Still turning to the spot.
+                if (++aimTicks > 40) stop("Could not fill the hole in the floor");
                 return;
             }
+            aimTicks = 0;
+            if (!filled) stop("Hole in the floor");
             return;
         }
 
-        if (torches.get() && here - lastTorch >= torchGap.getInt() && placeTorch(here)) lastTorch = here;
+        if (torches.get() && here - lastTorch >= torchGap.getInt()) {
+            Boolean lit = placeTorch(here);
+            if (lit == null && ++aimTicks <= 20) {
+                releaseKeys();
+                return;
+            }
+            // Placed, no torch or wall to use, or it could not be reached: move on either way.
+            aimTicks = 0;
+            lastTorch = here;
+        }
 
         walk(here);
     }
@@ -364,7 +409,7 @@ public class AutoMine extends Module {
                 for (Direction side : Direction.values()) {
                     BlockPos pos = cell.offset(side);
                     BlockState state = mc.world.getBlockState(pos);
-                    if (!ore(state) || state.getHardness(mc.world, pos) < 0) continue;
+                    if (!ore(state) || state.getHardness(mc.world, pos) < 0 || skipped.contains(pos)) continue;
                     if (eyes.squaredDistanceTo(Vec3d.ofCenter(pos)) > REACH * REACH) continue;
                     boolean lava = false;
                     for (Direction around : Direction.values()) {
@@ -447,40 +492,64 @@ public class AutoMine extends Module {
                 || block == Blocks.GRANITE || block == Blocks.TUFF || block == Blocks.BLACKSTONE || block == Blocks.STONE_BRICKS;
     }
 
-    /** Places a block from the hotbar into the hole, against the side of the floor you stand on. */
-    private boolean fill(int here, BlockPos hole) {
+    /**
+     * Patches a hole in the floor with a block from the hotbar, placed on the top of the block
+     * under the hole, or else on the near face of the block past it - the faces a player standing
+     * here can see. True when placed, false if it cannot be done, null while still turning.
+     */
+    private Boolean fill(BlockPos hole) {
         int slot = hotbarSlot(AutoMine::filler);
         if (slot < 0) return false;
-        BlockPos against = cell(here, 0, -1);
-        if (!solid(against)) return false;
-        return placeAgainst(slot, against, facing);
+        if (solid(hole.down())) return place(slot, hole.down(), Direction.UP);
+        BlockPos beyond = hole.offset(facing);
+        if (solid(beyond)) return place(slot, beyond, facing.getOpposite());
+        return false;
     }
 
-    private boolean placeTorch(int here) {
+    /** A torch on the left wall, at head height if the tunnel is tall enough. Same answers as {@link #fill}. */
+    private Boolean placeTorch(int here) {
         Item[] lights = {Items.TORCH, Items.SOUL_TORCH};
         int slot = hotbarSlot(stack -> {
             for (Item light : lights) if (stack.isOf(light)) return true;
             return false;
         });
         if (slot < 0) return false;
-        // On the left wall, at head height if the tunnel is tall enough.
         Direction left = facing.rotateYCounterclockwise();
         BlockPos wall = cell(here, firstColumn(), Math.min(1, height() - 1)).offset(left);
         if (!mc.world.getBlockState(wall).isSideSolidFullSquare(mc.world, wall, left.getOpposite())) return false;
         if (!mc.world.getBlockState(wall.offset(left.getOpposite())).isAir()) return false;
-        return placeAgainst(slot, wall, left.getOpposite());
+        return place(slot, wall, left.getOpposite());
     }
 
-    private boolean placeAgainst(int slot, BlockPos against, Direction side) {
+    /**
+     * Turns to one face of a block and, once the crosshair is on that face, places the item from
+     * this hotbar slot against it, exactly where the crosshair points. Null while still turning.
+     */
+    private Boolean place(int slot, BlockPos against, Direction side) {
+        Vec3d face = Vec3d.ofCenter(against).add(side.getOffsetX() * 0.5, side.getOffsetY() * 0.5, side.getOffsetZ() * 0.5);
+        look(face);
+        BlockHitResult aimed = crosshairBlock();
+        if (aimed == null || !aimed.getBlockPos().equals(against) || aimed.getSide() != side) {
+            status = "Aiming";
+            return null;
+        }
         int previous = mc.player.getInventory().getSelectedSlot();
         select(slot);
-        Vec3d hit = Vec3d.ofCenter(against).add(side.getOffsetX() * 0.5, side.getOffsetY() * 0.5, side.getOffsetZ() * 0.5);
-        look(hit);
-        boolean placed = mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND,
-                new BlockHitResult(hit, side, against, false)).isAccepted();
+        boolean placed = mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, aimed).isAccepted();
         if (placed) mc.player.swingHand(Hand.MAIN_HAND);
         select(previous);
         return placed;
+    }
+
+    /** The block under the crosshair, or null if it is not on one. */
+    private static BlockHitResult crosshairBlock() {
+        if (mc.crosshairTarget instanceof BlockHitResult hit && hit.getType() == HitResult.Type.BLOCK) return hit;
+        return null;
+    }
+
+    /** Whether a block is part of the tunnel around you: this slice or the next. */
+    private boolean tunnel(BlockPos pos, int here) {
+        return slice(here).contains(pos) || slice(here + 1).contains(pos);
     }
 
     // ---- looking ------------------------------------------------------------------------

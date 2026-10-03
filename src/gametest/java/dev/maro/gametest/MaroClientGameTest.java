@@ -306,7 +306,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 "fill " + x + " " + (y + 1) + " " + z + " " + x + " " + (y + 2) + " " + z + " minecraft:air",
                 "setblock " + (x - 1) + " " + (y + 2) + " " + (z + 5) + " minecraft:diamond_ore",
                 "setblock " + x + " " + y + " " + (z + 7) + " minecraft:air",
-                "tp @a " + x + ".5 " + (y + 1) + " " + z + ".5 0 0")) {
+                "tp @a " + (x + 0.5) + " " + (y + 1) + " " + (z + 0.5) + " 0 0")) {
             singleplayer.getServer().runCommand(command);
         }
         settle(context);
@@ -334,6 +334,25 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 client.world.getBlockState(new net.minecraft.util.math.BlockPos(x - 1, y + 2, z + 5)).isAir() ? 1 : 0,
                 mine.isEnabled() ? 1 : 0});
         context.takeScreenshot("maro-auto-mine-done");
+        // What the server has, not what the client shows: a ghost-mined block is still there.
+        String ghosts = singleplayer.getServer().computeOnServer(server -> {
+            var world = server.getOverworld();
+            StringBuilder out = new StringBuilder();
+            for (int step = 1; step <= 9; step++) {
+                for (int up = 1; up <= 2; up++) {
+                    var pos = new net.minecraft.util.math.BlockPos(x, y + up, z + step);
+                    var state = world.getBlockState(pos);
+                    if (!state.getCollisionShape(world, pos).isEmpty()) out.append(' ').append(pos.toShortString());
+                }
+            }
+            if (world.getBlockState(new net.minecraft.util.math.BlockPos(x, y, z + 7)).isAir()) out.append(" hole-not-filled");
+            int torches = 0;
+            for (var pos : net.minecraft.util.math.BlockPos.iterate(x - 1, y + 1, z, x + 1, y + 2, z + 10)) {
+                if (world.getBlockState(pos).isOf(net.minecraft.block.Blocks.WALL_TORCH)) torches++;
+            }
+            if (torches == 0) out.append(" no-torch");
+            return out.toString();
+        });
         context.runOnClient(client -> mine.setEnabled(false));
         singleplayer.getServer().runCommand("gamemode creative @a");
         if (result[6] == 1) throw new AssertionError("Auto Mine never stopped at its Max Distance");
@@ -342,6 +361,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
         if (result[2] < 1 || result[5] != 1) throw new AssertionError("Auto Mine did not find and mine the diamond ore in the wall");
         if (result[4] != 1) throw new AssertionError("Auto Mine did not fill the hole in the floor");
         if (result[3] >= 16) throw new AssertionError("Auto Mine placed no torches");
+        if (!ghosts.isEmpty()) throw new AssertionError("Server disagrees with Auto Mine:" + ghosts);
     }
 
     /** Crafter Disabler: opening a crafter takes items out of the chosen slots and disables exactly those. */
@@ -355,7 +375,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 "setblock " + x + " " + y + " " + (z + 2) + " minecraft:crafter",
                 "item replace block " + x + " " + y + " " + (z + 2) + " container.0 with minecraft:cobblestone 5",
                 "item replace block " + x + " " + y + " " + (z + 2) + " container.4 with minecraft:oak_planks 3",
-                "tp @a " + x + ".5 " + y + " " + z + ".5 0 30")) {
+                "tp @a " + (x + 0.5) + " " + y + " " + (z + 0.5) + " 0 30")) {
             singleplayer.getServer().runCommand(command);
         }
         settle(context);
