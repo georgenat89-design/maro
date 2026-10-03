@@ -137,6 +137,11 @@ public class MaroClientGameTest implements FabricClientGameTest {
             settle(context);
             settle(context);
             context.takeScreenshot("maro-hider-blur");
+            context.runOnClient(client -> ModuleManager.get(ScreenHider.class).getSettings().stream()
+                    .filter(s -> s.getName().equals("Style")).findFirst()
+                    .ifPresent(s -> ((dev.maro.setting.ModeSetting) s).set("Banner")));
+            settle(context);
+            context.takeScreenshot("maro-hider-banner");
             context.runOnClient(client -> ModuleManager.get(ScreenHider.class).setEnabled(false));
         }
     }

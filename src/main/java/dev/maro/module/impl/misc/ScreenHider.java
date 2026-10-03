@@ -23,9 +23,11 @@ public class ScreenHider extends Module {
 
     private final ButtonSetting edit = add(new ButtonSetting("Hidden Areas", "Draw the parts of the screen to hide", "Edit",
             () -> mc.setScreen(new RegionEditorScreen(regions(), mc.currentScreen))));
-    private final ModeSetting style = add(new ModeSetting("Style", "How hidden areas look", "Blur", "Blur", "Pixelate", "Solid"));
+    private final ModeSetting style = add(new ModeSetting("Style", "How hidden areas look", "Blur", "Blur", "Pixelate", "Solid", "Banner"));
     private final NumberSetting strength = add(new NumberSetting("Strength", "How strong the blur or pixelation is", 60, 5, 100, 1)
-            .suffix("%").visible(() -> !style.is("Solid")));
+            .suffix("%").visible(() -> style.is("Blur") || style.is("Pixelate")));
+    private final ModeSetting bannerFit = add(new ModeSetting("Banner Fit", "Fit keeps the whole banner, Fill covers the area, Stretch fills it exactly",
+            "Fit", "Fit", "Fill", "Stretch").visible(() -> style.is("Banner")));
     private final ColorSetting color = add(new ColorSetting("Color", "Fill colour for Solid", 0xFF0F0F14, true)
             .visible(() -> style.is("Solid")));
     private final BooleanSetting overMenus = add(new BooleanSetting("Over Menus", "Keep areas hidden while inventories, chat and other menus are open", true));
@@ -45,7 +47,7 @@ public class ScreenHider extends Module {
     }
 
     public void render(DrawContext ctx) {
-        HiderRenderer.draw(ctx, areas.list(), style.get(), strength.getFloat() / 100f, color.get());
+        HiderRenderer.draw(ctx, areas.list(), style.get(), strength.getFloat() / 100f, color.get(), bannerFit.get());
     }
 
     @Override

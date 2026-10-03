@@ -68,15 +68,23 @@ public final class HiderRenderer {
         return true;
     }
 
+    private static final Identifier BANNER = Identifier.of(Maro.MOD_ID, "textures/gui/banner.png");
+    private static final int BANNER_W = 1200, BANNER_H = 450;
+
     /**
-     * @param style    "Blur", "Pixelate" or "Solid"
-     * @param strength 0..1
+     * @param style     "Blur", "Pixelate", "Solid" or "Banner"
+     * @param strength  0..1
+     * @param bannerFit "Fit", "Fill" or "Stretch"
      */
-    public static void draw(DrawContext ctx, List<RegionsSetting.Region> regions, String style, float strength, int solidColor) {
+    public static void draw(DrawContext ctx, List<RegionsSetting.Region> regions, String style, float strength, int solidColor, String bannerFit) {
         if (regions.isEmpty()) return;
         float sw = ctx.getScaledWindowWidth(), sh = ctx.getScaledWindowHeight();
         if (style.equals("Solid")) {
             for (RegionsSetting.Region r : regions) Render2D.rect(ctx, r.x() * sw, r.y() * sh, r.w() * sw, r.h() * sh, solidColor);
+            return;
+        }
+        if (style.equals("Banner")) {
+            for (RegionsSetting.Region r : regions) banner(ctx, r.x() * sw, r.y() * sh, r.w() * sw, r.h() * sh, bannerFit);
             return;
         }
         if (!capture()) return;
@@ -91,6 +99,27 @@ public final class HiderRenderer {
             ScreenRect bounds = new ScreenRect(bx, by, Math.max(1, (int) Math.ceil(x2) - bx), Math.max(1, (int) Math.ceil(y2) - by)).transformEachVertex(pose);
             ((DrawContextAccessor) ctx).maro$getState().addSimpleElement(new TexturedQuadState(PIPELINE, texture, pose,
                     x1, y1, x2, y2, u1, v1, u2, v2, color, null, bounds));
+        }
+    }
+
+    /** Banner scaled into an area: Fit keeps it whole on black, Fill covers and crops, Stretch fills exactly. */
+    private static void banner(DrawContext ctx, float x, float y, float w, float h, String fit) {
+        int ax = Math.round(x), ay = Math.round(y), aw = Math.max(1, Math.round(w)), ah = Math.max(1, Math.round(h));
+        Render2D.rect(ctx, ax, ay, aw, ah, 0xFF000000);
+        switch (fit) {
+            case "Stretch" -> ctx.drawTexture(RenderPipelines.GUI_TEXTURED, BANNER, ax, ay, 0, 0, aw, ah, BANNER_W, BANNER_H, BANNER_W, BANNER_H);
+            case "Fill" -> {
+                float scale = Math.max((float) aw / BANNER_W, (float) ah / BANNER_H);
+                int rw = Math.min(BANNER_W, Math.round(aw / scale)), rh = Math.min(BANNER_H, Math.round(ah / scale));
+                ctx.drawTexture(RenderPipelines.GUI_TEXTURED, BANNER, ax, ay, (BANNER_W - rw) / 2f, (BANNER_H - rh) / 2f,
+                        aw, ah, rw, rh, BANNER_W, BANNER_H);
+            }
+            default -> {
+                float scale = Math.min((float) aw / BANNER_W, (float) ah / BANNER_H);
+                int dw = Math.max(1, Math.round(BANNER_W * scale)), dh = Math.max(1, Math.round(BANNER_H * scale));
+                ctx.drawTexture(RenderPipelines.GUI_TEXTURED, BANNER, ax + (aw - dw) / 2, ay + (ah - dh) / 2, 0, 0,
+                        dw, dh, BANNER_W, BANNER_H, BANNER_W, BANNER_H);
+            }
         }
     }
 }
