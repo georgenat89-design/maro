@@ -21,6 +21,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.misc.ScreenHider());
         register(new dev.maro.module.impl.player.FastPlace());
         register(new dev.maro.module.impl.visuals.StretchRes());
+        register(new dev.maro.module.impl.visuals.InventoryHud());
         dev.maro.nathan.NameeProtectAddon.init();
 
         // Register your modules here, e.g.

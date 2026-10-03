@@ -174,6 +174,8 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 return client.chunkCullingEnabled;
             });
             if (cullingAfter != cullingBefore) throw new AssertionError("FreeCam did not restore chunk culling");
+
+            checkInventoryHud(context, singleplayer);
         }
     }
 
@@ -259,6 +261,55 @@ public class MaroClientGameTest implements FabricClientGameTest {
             if (dev.maro.runtime.MeteorClient.EVENT_BUS.failureCount() != failures)
                 throw new AssertionError("A Nathan event handler failed; see the game log");
         });
+    }
+
+    /** The Inventory HUD with armour, rare and enchanted items and a tool about to break, then its tooltip. */
+    private static void checkInventoryHud(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+        for (String command : java.util.List.of(
+                "clear @a",
+                "item replace entity @a armor.head with minecraft:netherite_helmet",
+                "item replace entity @a armor.chest with minecraft:diamond_chestplate[enchantments={protection:4}]",
+                "item replace entity @a armor.legs with minecraft:iron_leggings",
+                "item replace entity @a armor.feet with minecraft:golden_boots",
+                "item replace entity @a weapon.offhand with minecraft:totem_of_undying",
+                "give @a minecraft:diamond_sword[enchantments={sharpness:5}]",
+                "give @a minecraft:diamond_pickaxe[damage=1500]",
+                "give @a minecraft:golden_apple 12",
+                "give @a minecraft:enchanted_golden_apple 3",
+                "give @a minecraft:ender_pearl 16",
+                "give @a minecraft:cobblestone 64",
+                "give @a minecraft:oak_log 37",
+                "give @a minecraft:elytra",
+                "give @a minecraft:experience_bottle 64",
+                "give @a minecraft:bow",
+                "give @a minecraft:arrow 48",
+                "give @a minecraft:torch 50",
+                "give @a minecraft:water_bucket",
+                "give @a minecraft:cooked_beef 24",
+                "give @a minecraft:obsidian 20")) {
+            singleplayer.getServer().runCommand(command);
+        }
+        context.waitTicks(10);
+        var hud = ModuleManager.get(dev.maro.module.impl.visuals.InventoryHud.class);
+        context.runOnClient(client -> {
+            client.player.getInventory().setSelectedSlot(1);
+            hud.setEnabled(true);
+        });
+        settle(context);
+        context.takeScreenshot("maro-inventory-hud");
+
+        int[] cursor = context.computeOnClient(client -> {
+            double gui = client.getWindow().getScaleFactor();
+            // the first storage slot: below the header (18) and the equipment row (23)
+            return new int[]{(int) ((hud.hudLeft() + (6 + 9) * hud.hudScale()) * gui),
+                    (int) ((hud.hudTop() + (6 + 18 + 23 + 9) * hud.hudScale()) * gui)};
+        });
+        context.setScreen(() -> new dev.maro.gui.hud.HudPlacementScreen(null, hud));
+        context.getInput().setCursorPos(cursor[0], cursor[1]);
+        context.waitTicks(5);
+        context.takeScreenshot("maro-inventory-hud-placement");
+        context.setScreen(() -> null);
+        context.runOnClient(client -> hud.setEnabled(false));
     }
 
     /** The Region Map on its own, large enough to judge, then with the placement screen's hover card. */
