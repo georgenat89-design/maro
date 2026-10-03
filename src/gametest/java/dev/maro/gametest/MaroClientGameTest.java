@@ -265,7 +265,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
         var map = ModuleManager.get(dev.maro.nathan.modules.RegionMap.class);
         var scale = map.getSettings().stream().filter(s -> s.getName().equals("scale")).findFirst().orElseThrow();
         context.runOnClient(client -> {
-            scale.fromJson(new com.google.gson.JsonPrimitive(1.6));
+            scale.fromJson(new com.google.gson.JsonPrimitive(1.25));
             map.setEnabled(true);
         });
         context.waitTicks(10);

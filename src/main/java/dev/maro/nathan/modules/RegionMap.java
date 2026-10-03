@@ -750,8 +750,8 @@ public class RegionMap extends Module {
     private static void crown(double left, double top, double unit, Color[] colors, double clock) {
         double from = left + PANEL_RADIUS * unit;
         double span = (WIDTH - PANEL_RADIUS * 2) * unit;
-        double thick = Math.max(1, 0.8 * unit);
-        double spill = 8 * unit;
+        double thick = Math.max(1, 1.2 * unit);
+        double spill = 9 * unit;
         int steps = 56;
         MeshBuilder mesh = Renderer2D.COLOR.triangles;
 
@@ -766,7 +766,7 @@ public class RegionMap extends Module {
             double xb = from + span * b;
 
             gradient(mesh, xa, top, xb, top + thick, tinted(ca, ea), tinted(ca, ea), tinted(cb, eb), tinted(cb, eb));
-            gradient(mesh, xa, top + thick, xb, top + thick + spill, tinted(ca, ea * 0.16), CLEARED, CLEARED, tinted(cb, eb * 0.16));
+            gradient(mesh, xa, top + thick, xb, top + thick + spill, tinted(ca, ea * 0.26), CLEARED, CLEARED, tinted(cb, eb * 0.26));
         }
     }
 
