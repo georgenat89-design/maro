@@ -43,7 +43,7 @@ public final class HiderRenderer {
 
     private static GpuTexture copy;
     private static GpuTextureView copyView;
-    private static net.minecraft.class_12137 sampler;
+    private static TextureSetup textureSetup;
 
     private HiderRenderer() {
     }
@@ -61,9 +61,8 @@ public final class HiderRenderer {
             copy = device.createTexture(() -> "maro screen hider", GpuTexture.USAGE_COPY_DST | GpuTexture.USAGE_TEXTURE_BINDING,
                     TextureFormat.RGBA8, w, h, 1, 1);
             copyView = device.createTextureView(copy);
-        }
-        if (sampler == null) {
-            sampler = device.createSampler(AddressMode.CLAMP_TO_EDGE, AddressMode.CLAMP_TO_EDGE, FilterMode.LINEAR, FilterMode.LINEAR, 1, OptionalDouble.empty());
+            textureSetup = TextureSetup.of(copyView,
+                    device.createSampler(AddressMode.CLAMP_TO_EDGE, AddressMode.CLAMP_TO_EDGE, FilterMode.LINEAR, FilterMode.LINEAR, 1, OptionalDouble.empty()));
         }
         device.createCommandEncoder().copyTextureToTexture(src, copy, 0, 0, 0, 0, 0, w, h);
         return true;
@@ -81,7 +80,7 @@ public final class HiderRenderer {
             return;
         }
         if (!capture()) return;
-        TextureSetup texture = TextureSetup.of(copyView, sampler);
+        TextureSetup texture = textureSetup;
         int color = ColorUtil.argb(255, Math.round(Math.max(0f, Math.min(1f, strength)) * 255), style.equals("Pixelate") ? 255 : 0, 0);
         Matrix3x2f pose = new Matrix3x2f(ctx.getMatrices());
         for (RegionsSetting.Region r : regions) {
