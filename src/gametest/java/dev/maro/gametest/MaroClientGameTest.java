@@ -35,6 +35,10 @@ public class MaroClientGameTest implements FabricClientGameTest {
             // make sure nothing (pause menu, toasts...) is in the way before testing the keybind
             context.setScreen(() -> null);
             context.waitTicks(5);
+            if (Boolean.getBoolean("maro.gametest.projectionOnly")) {
+                StretchProjectionChecks.run(context, singleplayer);
+                return;
+            }
             checkNathanPort(context);
             SpotifyLyricsChecks.run(context);
             checkSlowSwing(context);
@@ -89,6 +93,8 @@ public class MaroClientGameTest implements FabricClientGameTest {
             }
             context.waitForScreen(null);
 
+            StretchProjectionChecks.run(context, singleplayer);
+
             // Stretch Res must actually change the world projection. Build a brick wall in front of
             // the camera so the horizontal stretch is obvious in the screenshots.
             singleplayer.getServer().runCommand("execute as @a at @s run fill ^-6 ^-1 ^7 ^6 ^5 ^7 minecraft:bricks");
@@ -99,7 +105,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             float[] m00 = context.computeOnClient(client -> {
                 org.joml.Matrix4f base = client.gameRenderer.getBasicProjectionMatrix(70f);
                 ModuleManager.get(StretchRes.class).setEnabled(true);
-                return new float[]{base.m00(), StretchRes.apply(base).m00()};
+                return new float[]{base.m00(), client.gameRenderer.getBasicProjectionMatrix(70f).m00()};
             });
             if (Math.abs(m00[0] - m00[1]) < 1e-4f) {
                 throw new AssertionError("Stretch Res did not change the projection (m00 " + m00[0] + " -> " + m00[1] + ")");

@@ -7,19 +7,22 @@ import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Stretch Res hooks. In 1.21.11 renderWorld uploads two perspective projections: the world one
- * (RawProjectionMatrix.set(Matrix4f)) and the first-person hand one (ProjectionMatrix3.set(w, h, fov)).
+ * Stretch the shared perspective before it reaches rendering, culling and screen projection.
+ * The hand builds a separate projection directly from its dimensions.
  */
 @Mixin(GameRenderer.class)
 public abstract class GameRendererMixin {
-    @ModifyArg(method = "renderWorld",
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/render/RawProjectionMatrix;set(Lorg/joml/Matrix4f;)Lcom/mojang/blaze3d/buffers/GpuBufferSlice;"),
-            require = 1)
-    private Matrix4f maro$stretchWorld(Matrix4f projection) {
-        StretchRes.debug("world", projection);
-        return StretchRes.apply(projection);
+    @Inject(method = "getBasicProjectionMatrix", at = @At("RETURN"), cancellable = true)
+    private void maro$stretchPerspective(float fov, CallbackInfoReturnable<Matrix4f> info) {
+        // Scaling only the uploaded copy left WorldRenderer and Meteor's ESP / nametag
+        // projection using a different aspect ratio. Apply once at the shared source.
+        Matrix4f projection = StretchRes.apply(info.getReturnValue());
+        StretchRes.debug("perspective", projection);
+        info.setReturnValue(projection);
     }
 
     /** The hand projection is built from a width/height pair: give it a width matching the target aspect. */

@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "name": "maro.gg gametest",
   "environment": "client",
+  "mixins": ["maro-gametest.mixins.json"],
   "entrypoints": {
     "fabric-client-gametest": ["dev.maro.gametest.MaroClientGameTest"]
   },

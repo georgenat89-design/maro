@@ -219,6 +219,19 @@ both avoided while routing is enabled. If neither side is safe or loaded, it sto
 Turning routing off restores the Stop At Lava / Stop At Water controls. Max Distance
 counts progress across all tunnel segments; inventory, health and tool problems still stop.
 
+## Stretch Res compatibility
+
+Stretch Res changes the shared perspective matrix before the world, culling, ESP screen
+projection and Motion Blur use it. The GPU receives the same matrix once, keeping ESP
+aligned when the camera turns. HUD and menu orthographic projections stay unchanged;
+the hand retains its separate stretched perspective.
+
+The production game test compares the uploaded and world matrices across every aspect
+ratio. To also check Meteor Shader, Box and 2D ESP against rendered entity positions, run
+`./gradlew runProductionClientGameTest -PmeteorTestJar=/path/to/meteor-client.jar`.
+Add `-PprojectionTestOnly=true` for just the projection and ESP checks. Meteor is test-only
+and is not bundled into Maro.
+
 ## Building
 
 Requires Java 21.

@@ -1,0 +1,7 @@
+{
+  "required": true,
+  "package": "dev.maro.gametest.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": ["ProjectionUploadProbe", "WorldProjectionProbe"],
+  "injectors": {"defaultRequire": 1}
+}

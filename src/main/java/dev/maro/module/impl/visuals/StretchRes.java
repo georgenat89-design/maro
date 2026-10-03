@@ -30,7 +30,7 @@ public class StretchRes extends Module {
 
     /**
      * Returns a stretched copy of a perspective projection, or the matrix itself when the module is
-     * off or the matrix is orthographic. Scaling column 0 by window/target aspect is exactly what
+     * off or the matrix is orthographic. Scaling row 0 by window/target aspect is exactly what
      * rebuilding the perspective with the target aspect would give.
      */
     public static Matrix4f apply(Matrix4f projection) {
