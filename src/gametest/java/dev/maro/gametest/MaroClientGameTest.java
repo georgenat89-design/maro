@@ -147,6 +147,31 @@ public class MaroClientGameTest implements FabricClientGameTest {
             settle(context);
             context.takeScreenshot("maro-hider-banner");
             context.runOnClient(client -> ModuleManager.get(ScreenHider.class).setEnabled(false));
+
+            // FreeCam: with the camera inside solid ground the world beyond must still be drawn
+            // (occlusion culling used to hide it), and culling must come back afterwards.
+            singleplayer.getServer().runCommand("execute as @a at @s run fill ^-10 ^-3 ^3 ^10 ^8 ^14 minecraft:stone");
+            singleplayer.getServer().runCommand("execute as @a at @s run fill ^-8 ^-2 ^22 ^8 ^8 ^22 minecraft:gold_block");
+            settle(context);
+            settle(context);
+            boolean cullingBefore = context.computeOnClient(client -> client.chunkCullingEnabled);
+            boolean cullingWhileOut = context.computeOnClient(client -> {
+                dev.maro.nathan.modules.FreeCam freeCam = ModuleManager.get(dev.maro.nathan.modules.FreeCam.class);
+                freeCam.setEnabled(true);
+                net.minecraft.util.math.Vec3d look = client.player.getRotationVector();
+                dev.maro.nathan.modules.FreeCam.placeCamera(client.player.getX() + look.x * 8, client.player.getEyeY(),
+                        client.player.getZ() + look.z * 8, client.player.getYaw(), 0f);
+                return client.chunkCullingEnabled;
+            });
+            if (cullingWhileOut) throw new AssertionError("FreeCam left chunk culling on");
+            settle(context);
+            settle(context);
+            context.takeScreenshot("maro-freecam-in-stone");
+            boolean cullingAfter = context.computeOnClient(client -> {
+                ModuleManager.get(dev.maro.nathan.modules.FreeCam.class).setEnabled(false);
+                return client.chunkCullingEnabled;
+            });
+            if (cullingAfter != cullingBefore) throw new AssertionError("FreeCam did not restore chunk culling");
         }
     }
 

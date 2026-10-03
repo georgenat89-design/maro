@@ -145,6 +145,9 @@ public class FreeCam extends Module {
     /** Your own render distance, in chunks, if it was raised; nothing if it was not. */
     private Integer ownRenderDistance;
 
+    /** Whether chunk culling was on before the camera went out; nothing while it is not out. */
+    private Boolean ownChunkCulling;
+
     public FreeCam() {
         super(NameeProtectAddon.CATEGORY, "free-cam", "Flies the camera about on its own while your player stays put. It never moves or teleports you.");
 
@@ -181,6 +184,15 @@ public class FreeCam extends Module {
             ownRenderDistance = own;
             mc.options.getViewDistance().setValue(chunks);
         }
+
+        // Occlusion culling works out what is visible by walking outward from the
+        // section the camera is in. Once the camera flies into solid ground that walk
+        // cannot get out, and the world falls apart into floating scraps over the void.
+        // Vanilla switches it off for spectators inside blocks; do the same while the
+        // camera is out, and put it back afterwards.
+        ownChunkCulling = mc.chunkCullingEnabled;
+        mc.chunkCullingEnabled = false;
+        mc.worldRenderer.scheduleTerrainUpdate();
     }
 
     @Override
@@ -191,6 +203,12 @@ public class FreeCam extends Module {
         if (ownRenderDistance != null && mc.options != null) {
             mc.options.getViewDistance().setValue(ownRenderDistance);
             ownRenderDistance = null;
+        }
+
+        if (ownChunkCulling != null) {
+            mc.chunkCullingEnabled = ownChunkCulling;
+            ownChunkCulling = null;
+            if (mc.worldRenderer != null) mc.worldRenderer.scheduleTerrainUpdate();
         }
     }
 
@@ -266,6 +284,23 @@ public class FreeCam extends Module {
         FreeCam module = instance;
 
         return module != null && module.isActive();
+    }
+
+    /** Puts the camera somewhere directly (it must already be out), e.g. for tests or commands. */
+    public static void placeCamera(double x, double y, double z, float yaw, float pitch) {
+        FreeCam module = instance;
+        if (module == null || !module.isActive()) return;
+
+        module.x = x;
+        module.y = y;
+        module.z = z;
+        module.yaw = yaw;
+        module.pitch = pitch;
+        module.velocityX = 0;
+        module.velocityY = 0;
+        module.velocityZ = 0;
+        module.lastAt = System.nanoTime();
+        module.started = true;
     }
 
     /** The mouse, which while the camera is out turns the camera and not you. */
