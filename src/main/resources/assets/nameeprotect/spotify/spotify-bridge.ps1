@@ -3,7 +3,8 @@ param(
     [string] $Action = 'status',
     [string] $ArtworkPath = '',
     [long] $SeekMs = 0,
-    [string] $ExpectedTrack = ''
+    [string] $ExpectedTrack = '',
+    [switch] $Watch
 )
 
 $ErrorActionPreference = 'Stop'
@@ -23,12 +24,53 @@ function Result($value) {
     $value | ConvertTo-Json -Compress -Depth 4
 }
 
+function Read-Status($manager) {
+    $sessions = @($manager.GetSessions())
+    $spotify = @($sessions | Where-Object { $_.SourceAppUserModelId -match 'spotify' })
+    $browser = @($sessions | Where-Object { $_.SourceAppUserModelId -match 'chrome|msedge|firefox|brave|opera|vivaldi' })
+    $session = @($spotify | Where-Object { $_.GetPlaybackInfo().PlaybackStatus.ToString() -eq 'Playing' }) | Select-Object -First 1
+    if ($null -eq $session) { $session = @($browser | Where-Object { $_.GetPlaybackInfo().PlaybackStatus.ToString() -eq 'Playing' }) | Select-Object -First 1 }
+    if ($null -eq $session) { $session = $spotify | Select-Object -First 1 }
+    if ($null -eq $session) { $session = $browser | Select-Object -First 1 }
+    if ($null -eq $session) { return @{ ok = $true; available = $false } }
+    $media = Await-WinRt ($session.TryGetMediaPropertiesAsync()) $mediaType
+    $playback = $session.GetPlaybackInfo()
+    $timeline = $session.GetTimelineProperties()
+    $duration = [Math]::Max(0, [Math]::Round(($timeline.EndTime - $timeline.StartTime).TotalMilliseconds))
+    $position = [Math]::Max(0, [Math]::Round(($timeline.Position - $timeline.StartTime).TotalMilliseconds))
+    $playing = $playback.PlaybackStatus.ToString() -eq 'Playing'
+    $sampled = [DateTimeOffset]::UtcNow
+    if ($playing -and $duration -gt 0 -and $timeline.LastUpdatedTime.Year -gt 2000) {
+        $age = [Math]::Max(0, ($sampled - [DateTimeOffset]$timeline.LastUpdatedTime).TotalMilliseconds)
+        $rate = if ($null -ne $playback.PlaybackRate) { [double]$playback.PlaybackRate } else { 1.0 }
+        $position = [Math]::Min($duration, [Math]::Round($position + $age * $rate))
+    }
+    return @{
+        ok = $true; available = $true; title = [string]$media.Title; artist = [string]$media.Artist
+        album = [string]$media.AlbumTitle; playing = $playing
+        canSeek = [bool]$playback.Controls.IsPlaybackPositionEnabled -and $duration -gt 0
+        positionMs = $position; durationMs = $duration; sampledAtMs = $sampled.ToUnixTimeMilliseconds()
+        source = if ($session.SourceAppUserModelId -match 'spotify') { 'Spotify' } else { 'Browser' }
+    }
+}
+
 try {
     Add-Type -AssemblyName System.Runtime.WindowsRuntime
 
     $managerType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType=WindowsRuntime]
     $mediaType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties, Windows.Media.Control, ContentType=WindowsRuntime]
     $manager = Await-WinRt ($managerType::RequestAsync()) $managerType
+
+    if ($Watch -and $Action -eq 'status') {
+        while ($true) {
+            try { $value = Read-Status $manager }
+            catch { $value = @{ ok = $false; available = $false; error = $_.Exception.Message } }
+            [Console]::Out.WriteLine(($value | ConvertTo-Json -Compress -Depth 4))
+            [Console]::Out.Flush()
+            Start-Sleep -Milliseconds 250
+        }
+    }
+    if ($Action -eq 'status') { Result (Read-Status $manager); exit 0 }
 
     $sessions = @($manager.GetSessions())
     $spotify = @($sessions | Where-Object { $_.SourceAppUserModelId -match 'spotify' })

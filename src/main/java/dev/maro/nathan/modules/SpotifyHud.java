@@ -42,12 +42,12 @@ import org.lwjgl.glfw.GLFW;
 
 /** A small media player with native icons, a scrub timeline and live playback bands. */
 public class SpotifyHud extends Module {
+    public enum LyricsMode { Lines, WordHighlight, SingleWord }
     private static final Color FACE = new Color(44, 49, 62);
     private static final Color WHITE = new Color(239, 241, 246);
     private static final Color MUTED = new Color(160, 169, 187);
     private static final Color TRACK = new Color(62, 69, 84);
     private static final int DEFAULT_TINT = 0x8A9FC2;
-    private static final SpotifyCardRaster.Raster DEFAULT_CARD = SpotifyCardRaster.render(DEFAULT_TINT);
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgControls = settings.createGroup("Controls");
@@ -57,9 +57,15 @@ public class SpotifyHud extends Module {
     private final Setting<Boolean> showLyrics = sgLyrics.add(new BoolSetting.Builder()
         .name("lyrics").description("Show song lyrics from LRCLIB. Timed lyrics follow playback and seeking.")
         .defaultValue(true).build());
+    private final Setting<LyricsMode> lyricsMode = sgLyrics.add(new EnumSetting.Builder<LyricsMode>()
+        .name("lyrics-mode").description("Whole lines, highlight the sung word, or show one live word at a time. Real word timing is used where available.")
+        .defaultValue(LyricsMode.WordHighlight).visible(showLyrics::get).build());
+    private final Setting<Boolean> estimateWords = sgLyrics.add(new BoolSetting.Builder()
+        .name("estimate-word-timing").description("Animate words using estimated timing when only line timestamps exist. Less accurate; shown as ESTIMATED.")
+        .defaultValue(false).visible(() -> showLyrics.get() && lyricsMode.get() != LyricsMode.Lines).build());
     private final Setting<Double> lyricsSize = sgLyrics.add(new DoubleSetting.Builder()
         .name("lyrics-size").description("Size of the highlighted lyric line.")
-        .defaultValue(11).range(8, 16).sliderRange(8, 16).visible(showLyrics::get).build());
+        .defaultValue(12).range(8, 16).sliderRange(8, 16).visible(showLyrics::get).build());
     private final Setting<Integer> lyricsOffset = sgLyrics.add(new IntSetting.Builder()
         .name("lyrics-offset-ms").description("Adjust lyric timing. Positive values show lines earlier.")
         .defaultValue(0).range(-10000, 10000).sliderRange(-3000, 3000).visible(showLyrics::get).build());
@@ -149,6 +155,12 @@ public class SpotifyHud extends Module {
     private String lyricsKey = "", lyricLine = "";
     private int plainLyricIndex;
     private double lyricFade = 1;
+    private double lyricScroll, wordFade = 1;
+    private double lyricAge;
+    private record WrappedLyric(String text, double width, double unit, double desired, String first, String rest, double size) { }
+    private WrappedLyric wrappedLyric;
+    private long lyricPosition = -1;
+    private String liveWord = "";
     private final SpotifyTimeline timeline = new SpotifyTimeline();
     private final SpotifySeekPreview seekPreview = new SpotifySeekPreview();
     private final SpotifyHudAnimation animation = new SpotifyHudAnimation();
@@ -165,6 +177,7 @@ public class SpotifyHud extends Module {
     private Texture glowTexture;
     private int cardTint = Integer.MIN_VALUE;
     private SpotifyCardRaster.Theme cardTheme;
+    private int cardHeight = -1;
     private double expansion = 1;
     private double visibility = 1;
     private double scrollAge;
@@ -198,7 +211,7 @@ public class SpotifyHud extends Module {
         seekPreview.cancel();
         media.close();
         lyrics.close();
-        lyricsKey = ""; lyricLine = ""; plainLyricIndex = 0;
+        lyricsKey = ""; lyricLine = ""; plainLyricIndex = 0; lyricScroll = 0; lyricPosition = -1; liveWord = "";
         if (coverTexture != null) coverTexture.close();
         if (leavingCoverTexture != null) leavingCoverTexture.close();
         if (cardTexture != null) cardTexture.close();
@@ -228,7 +241,7 @@ public class SpotifyHud extends Module {
         double unit = scale.get();
         double width = (SpotifyHudLayout.MINI_WIDTH + (SpotifyHudLayout.WIDTH - SpotifyHudLayout.MINI_WIDTH) * expansion) * unit;
         double height = (SpotifyHudLayout.MINI_HEIGHT + (SpotifyHudLayout.HEIGHT - SpotifyHudLayout.MINI_HEIGHT) * expansion) * unit;
-        double extra = showLyrics.get() ? Math.max(56, lyricsSize.get() + 43) : 0;
+        double extra = showLyrics.get() ? Math.max(64, lyricsSize.get() * 2 + 41) : 0;
         height += extra > 0 ? (extra + 8) * unit : 0;
         SpotifyHudFeatures.Position position = SpotifyHudFeatures.position(anchor.get(), x.get(), y.get(), width, height,
             mc.getWindow().getFramebufferWidth(), mc.getWindow().getFramebufferHeight());
@@ -401,7 +414,7 @@ public class SpotifyHud extends Module {
         double progress = state.durationMs() > 0 ? Math.max(0, Math.min(1, (double) position / state.durationMs())) : 0;
 
         double pad = SpotifyCardRaster.PADDING * unit;
-        Rect surface = new Rect(panel.x() - pad, panel.y() - pad, panel.width() + pad * 2, panel.height() + pad * 2);
+        Rect surface = new Rect(panel.x() - pad, panel.y() - pad, panel.width() + pad * 2, layout.bounds().height() + pad * 2);
         if (leavingCardTexture != null && cardFade < 1) textured(leavingCardTexture, surface,
             new Color(255, 255, 255, theme.get() == SpotifyCardRaster.Theme.FrostedGlass ? alpha(1 - cardFade) : 255));
         textured(cardTexture, surface, new Color(255, 255, 255, leavingCardTexture == null ? 255 : alpha(cardFade)));
@@ -432,7 +445,7 @@ public class SpotifyHud extends Module {
         box(track, track.height() / 2, 0, TRACK, TRACK);
         double filled = track.width() * progress;
         if (filled > 0) {
-            Color progressInk = opacity(mix(new Color(210, 221, 240), accent, 0.07));
+            Color progressInk = opacity(mix(WHITE, accent, 0.5));
             RoundedBox.draw(track.x() + filled / 2, track.centerY(), filled, track.height(),
                 Math.min(track.height() / 2, filled / 2), 0, Math.min(1, filled), 0, progressInk, progressInk);
             if (progressShimmer.get() && state.playing() && !timeline.active()) shimmer(track, filled, animation.shimmer(), unit);
@@ -484,48 +497,187 @@ public class SpotifyHud extends Module {
     private void renderLyrics(SpotifyHudLayout layout, SpotifyMedia.State state, long position, double seconds, Color accent) {
         lyrics.update(state);
         var snapshot = lyrics.snapshot();
-        if (!snapshot.key().equals(lyricsKey)) { lyricsKey = snapshot.key(); plainLyricIndex = 0; lyricLine = ""; }
-        var frame = snapshot.frame(position, lyricsOffset.get(), plainLyricIndex);
-        if (!frame.current().equals(lyricLine)) { lyricLine = frame.current(); lyricFade = 0; }
+        if (!snapshot.key().equals(lyricsKey)) { lyricsKey = snapshot.key(); plainLyricIndex = 0; lyricLine = ""; lyricPosition = -1; }
+        var words = snapshot.karaoke(position, lyricsOffset.get(), plainLyricIndex, state.durationMs(), estimateWords.get());
+        var frame = words.frame();
+        boolean changed = !frame.current().equals(lyricLine);
+        boolean seeked = lyricPosition < 0 || Math.abs(position - lyricPosition) > 750;
+        lyricPosition = position;
+        if (changed) { lyricLine = frame.current(); lyricFade = 0; lyricScroll = 0; lyricAge = 0; }
+        lyricAge += seconds;
         lyricFade += (1 - lyricFade) * (1 - Math.exp(-14 * seconds));
         Rect area = layout.lyrics(); double unit = layout.scale();
         Renderer2D.COLOR.begin();
-        RoundedBox.shadow(area.centerX(), area.centerY() + unit, area.width(), area.height(), 12 * unit, 7 * unit, 0, .18 * visibility);
-        box(area, 12 * unit, .7 * unit, new Color(20, 23, 31, 235), new Color(61, 68, 84, 140));
+        // One shared surface, with a quiet divider instead of a second outlined box.
+        box(new Rect(area.x() + 16 * unit, area.y() - 3 * unit, area.width() - 32 * unit, .6 * unit), .3 * unit, 0,
+            new Color(146, 165, 203, 28), new Color(146, 165, 203, 28));
         Color dot = opacity(mix(accent, WHITE, .2));
-        RoundedBox.draw(area.x() + 15 * unit, area.y() + 12 * unit, 4 * unit, 4 * unit, 2 * unit, 0, unit, 0, dot, dot);
+        RoundedBox.draw(area.x() + 18 * unit, area.y() + 9 * unit, 3 * unit, 3 * unit, 1.5 * unit, 0, unit, 0, dot, dot);
         Renderer2D.COLOR.render();
-        String heading = snapshot.result().status() == SpotifyLyrics.Status.Plain ? "LYRICS  /  UNSYNCED" : "LYRICS";
+        boolean karaoke = lyricsMode.get() != LyricsMode.Lines && words.timed();
+        boolean ambient = snapshot.result().status() != SpotifyLyrics.Status.Synced && snapshot.result().status() != SpotifyLyrics.Status.Plain
+            || frame.current().equals("♪");
+        String heading = snapshot.result().status() == SpotifyLyrics.Status.Plain ? "UNTIMED LYRICS"
+            : ambient ? "LISTENING" : karaoke ? words.estimated() ? "ESTIMATED WORDS" : "LIVE WORDS" : "LIVE LYRICS";
         CrispFont.begin(null);
         try {
             var caption = CrispFont.POPPINS_MEDIUM.forCaps(6 * unit);
-            caption.draw(heading, area.x() + 23 * unit, area.y() + 9 * unit - caption.capsTop(), opacity(MUTED), 0, false);
+            caption.draw(heading, area.x() + 26 * unit, area.y() + 6 * unit - caption.capsTop(), opacity(MUTED, .65), 0, false);
         } finally { CrispFont.end(); }
-        lyricText(frame.current(), area.x() + 14 * unit, area.y() + (23 + 2 * (1 - lyricFade)) * unit,
-            area.width() - 28 * unit, lyricsSize.get() * unit, opacity(WHITE, .35 + .65 * lyricFade), true);
-        lyricText(frame.next(), area.x() + 14 * unit, area.y() + (lyricsSize.get() + 32) * unit,
-            area.width() - 28 * unit, 8 * unit, opacity(MUTED), false);
+        if (ambient) {
+            renderLyricsAmbient(snapshot.result().status(), area, unit, state.playing(), accent);
+        } else if (karaoke && lyricsMode.get() == LyricsMode.SingleWord) {
+            String word = words.currentWord();
+            if (!word.equals(liveWord)) { liveWord = word; wordFade = 0; }
+            wordFade += (1 - wordFade) * (1 - Math.exp(-22 * seconds));
+            double size = (lyricsSize.get() + 9) * unit;
+            double width = lyricWidth(word, size, true);
+            lyricText(word, area.centerX() - Math.min(width, area.width() - 36 * unit) / 2,
+                area.y() + (22 + 2 * (1 - wordFade)) * unit, area.width() - 36 * unit, size, opacity(WHITE, .65 + .35 * wordFade), true);
+            String next = words.active() + 1 < words.words().size() ? words.words().get(words.active() + 1).text().strip() : "";
+            double nextWidth = lyricWidth(next, 8 * unit, false);
+            lyricText(next, area.centerX() - nextWidth / 2, area.y() + (lyricsSize.get() + 38) * unit,
+                area.width() - 36 * unit, 8 * unit, opacity(MUTED, .65), false);
+        } else if (karaoke) {
+            renderWordLine(words, area, unit, seconds, changed || seeked, accent);
+            lyricText(frame.next(), area.x() + 18 * unit, area.y() + (lyricsSize.get() + 40) * unit,
+                area.width() - 36 * unit, 8 * unit, opacity(MUTED, .65), false);
+        } else {
+            double width = area.width() - 36 * unit, size = lyricsSize.get() * unit;
+            WrappedLyric wrapped = wrapLyric(frame.current(), width, unit, size);
+            String first = wrapped.first(), rest = wrapped.rest(); size = wrapped.size();
+            lyricText(first, area.x() + 18 * unit, area.y() + (21 + 2 * (1 - lyricFade)) * unit,
+                width, size, opacity(WHITE, .65 + .35 * lyricFade), true);
+            if (!rest.isEmpty()) {
+                double overflow = Math.max(0, lyricWidth(rest, size, true) - width);
+                double offset = Math.min(overflow, Math.max(0, lyricAge - .7) * 24 * unit);
+                double left = area.x() + 18 * unit;
+                lyricRun(rest, left - offset, area.y() + (lyricsSize.get() + 26) * unit, size,
+                    opacity(WHITE, .65 + .35 * lyricFade), true, left, left + width);
+            }
+            lyricText(frame.next(), area.x() + 18 * unit, area.y() + (lyricsSize.get() * 2 + 33) * unit,
+                width, 8 * unit, opacity(MUTED, .6), false);
+        }
+    }
+
+    private WrappedLyric wrapLyric(String text, double width, double unit, double desired) {
+        if (wrappedLyric != null && wrappedLyric.text().equals(text) && wrappedLyric.width() == width
+            && wrappedLyric.unit() == unit && wrappedLyric.desired() == desired) return wrappedLyric;
+        double size = desired; String first, rest;
+        while (true) {
+            first = fitLyric(text, width - 2 * unit, size, true);
+            int split = first.length();
+            if (split < text.length()) {
+                int space = first.lastIndexOf(' '); if (space > first.length() / 2) split = space;
+                first = text.substring(0, split).stripTrailing();
+            }
+            rest = text.substring(split).stripLeading();
+            if (lyricWidth(rest, size, true) <= width - 2 * unit || size <= 8 * unit) break;
+            size = Math.max(8 * unit, size - unit);
+        }
+        return wrappedLyric = new WrappedLyric(text, width, unit, desired, first, rest, size);
+    }
+
+    private void renderLyricsAmbient(SpotifyLyrics.Status status, Rect area, double unit, boolean playing, Color accent) {
+        String title = switch (status) {
+            case Loading -> "Tuning in...";
+            case Missing -> "Let the music speak";
+            case Unavailable -> "Still vibing";
+            case Instrumental -> "Just the music";
+            case Waiting -> "Ready when you are";
+            default -> "Let it breathe";
+        };
+        String subtitle = switch (status) {
+            case Loading -> "Finding the words to your track";
+            case Missing -> "No lyrics for this track yet";
+            case Unavailable -> "Lyrics will retry. The music stays on.";
+            case Instrumental -> "No vocals. Enjoy the instrumental.";
+            case Waiting -> "Play a song to bring this card to life";
+            default -> "Waiting for the vocals";
+        };
+        double phase = animation.shimmer() * Math.PI * 2;
+        double cx = area.x() + area.width() - 48 * unit, cy = area.y() + 36 * unit;
+        Renderer2D.COLOR.begin();
+        Color haze = opacity(new Color(accent.r, accent.g, accent.b, (int) (8 + 4 * Math.sin(phase))));
+        RoundedBox.draw(cx, cy, 65 * unit, 42 * unit, 21 * unit, 0, unit, 0, haze, haze);
+        for (int i = 0; i < 5; i++) {
+            double motion = playing ? (.5 + .5 * Math.sin(phase + i * .85)) : .15;
+            double height = (3 + 11 * Math.max(levels[i], motion * .55)) * unit;
+            Color ink = opacity(mix(accent, WHITE, .2), .45 + .35 * motion);
+            RoundedBox.draw(cx + (i - 2) * 6 * unit, cy, 2.5 * unit, height, 1.25 * unit, 0, unit, 0, ink, ink);
+        }
+        Renderer2D.COLOR.render();
+        lyricText(title, area.x() + 18 * unit, area.y() + 24 * unit, area.width() - 100 * unit,
+            12 * unit, opacity(WHITE), true);
+        lyricText(subtitle, area.x() + 18 * unit, area.y() + 46 * unit, area.width() - 100 * unit,
+            7 * unit, opacity(MUTED, .75), false);
+    }
+
+    private void renderWordLine(SpotifyLyrics.WordFrame frame, Rect area, double unit, double seconds, boolean snap, Color accent) {
+        String text = frame.frame().current(); double size = lyricsSize.get() * unit;
+        double width = area.width() - 36 * unit, full = lyricWidth(text, size, true);
+        double activeLeft = 0, activeRight = 0;
+        if (frame.active() >= 0) {
+            var word = frame.words().get(frame.active());
+            activeLeft = lyricWidth(text.substring(0, word.from()), size, true);
+            activeRight = lyricWidth(text.substring(0, word.to()), size, true);
+        }
+        double target = frame.active() < 0 ? lyricScroll : Math.max(0, Math.min(Math.max(0, full - width), (activeLeft + activeRight) / 2 - width * .48));
+        lyricScroll = snap ? target : lyricScroll + (target - lyricScroll) * (1 - Math.exp(-12 * seconds));
+        double left = area.x() + 18 * unit, top = area.y() + 25 * unit;
+        lyricRun(text, left - lyricScroll, top, size, opacity(new Color(119, 134, 159)), true, left, left + width);
+        if (frame.active() >= 0) {
+            lyricRun(text, left - lyricScroll, top, size, opacity(WHITE), true,
+                Math.max(left, left + activeLeft - lyricScroll), Math.min(left + width, left + activeRight - lyricScroll));
+            double start = Math.max(left, left + activeLeft - lyricScroll), end = Math.min(left + width, left + activeRight - lyricScroll);
+            double filled = Math.max(0, end - start) * frame.progress();
+            if (filled > 0) {
+                Renderer2D.COLOR.begin();
+                box(new Rect(start, top + size + 5 * unit, filled, 1.5 * unit), .75 * unit, 0, mix(accent, WHITE, .35), accent);
+                Renderer2D.COLOR.render();
+            }
+        }
+    }
+
+    private double lyricWidth(String text, double size, boolean bold) {
+        return latin(text) ? (bold ? CrispFont.POPPINS_SEMIBOLD : CrispFont.POPPINS_MEDIUM).forCaps(size).width(text, 0)
+            : mc.textRenderer.getWidth(text) * size / 8;
+    }
+    private static boolean latin(String text) { return text.codePoints().allMatch(c -> c >= 32 && c <= 255); }
+    private String fitLyric(String text, double width, double size, boolean bold) {
+        int low = 0, high = text.length();
+        while (low < high) {
+            int mid = (low + high + 1) >>> 1;
+            if (lyricWidth(text.substring(0, mid), size, bold) <= width) low = mid; else high = mid - 1;
+        }
+        if (low > 0 && low < text.length() && Character.isHighSurrogate(text.charAt(low - 1))) low--;
+        return text.substring(0, low);
     }
 
     /** Use Minecraft's Unicode fallback for scripts outside the bundled Latin font. */
     private void lyricText(String text, double left, double top, double width, double size, Color ink, boolean bold) {
         if (text.isBlank() || ink.a < 8) return;
-        if (text.codePoints().allMatch(c -> c >= 32 && c <= 255)) {
+        lyricRun(text, left, top, size, ink, bold, left, left + width);
+    }
+    private void lyricRun(String text, double left, double top, double size, Color ink, boolean bold, double clipLeft, double clipRight) {
+        if (text.isBlank() || ink.a < 8 || clipRight <= clipLeft) return;
+        if (latin(text)) {
             var font = (bold ? CrispFont.POPPINS_SEMIBOLD : CrispFont.POPPINS_MEDIUM).forCaps(size);
             CrispFont.begin(null);
-            try { font.draw(clip(text, font, width), left, top - font.capsTop(), ink, 0, false); }
+            try { font.drawClipped(text, left, top - font.capsTop(), ink, 0, clipLeft, clipRight); }
             finally { CrispFont.end(); }
         } else {
             var context = Renderer2D.context();
             float factor = (float) (size / 8);
-            String clipped = mc.textRenderer.trimToWidth(text, (int) (width / factor));
-            if (!clipped.equals(text)) clipped = mc.textRenderer.trimToWidth(text, Math.max(0, (int) (width / factor) - mc.textRenderer.getWidth("..."))) + "...";
+            double guiScale = mc.getWindow().getScaleFactor();
+            context.enableScissor((int) Math.ceil(clipLeft / guiScale), (int) Math.floor(top / guiScale),
+                (int) Math.floor(clipRight / guiScale), (int) Math.ceil((top + size * 1.5) / guiScale));
             var matrices = context.getMatrices(); matrices.pushMatrix();
             try {
                 float gui = (float) mc.getWindow().getScaleFactor();
                 matrices.scale(1 / gui, 1 / gui); matrices.translate((float) left, (float) top); matrices.scale(factor, factor);
-                context.drawText(mc.textRenderer, net.minecraft.text.Text.literal(clipped), 0, 0, ink.getPacked(), false);
-            } finally { matrices.popMatrix(); }
+                context.drawText(mc.textRenderer, net.minecraft.text.Text.literal(text), 0, 0, ink.getPacked(), false);
+            } finally { matrices.popMatrix(); context.disableScissor(); }
         }
     }
 
@@ -673,15 +825,18 @@ public class SpotifyHud extends Module {
     }
 
     private void updateCard(int tintRgb) {
-        if (cardTexture != null && cardTint == tintRgb && cardTheme == theme.get()) return;
+        int height = SpotifyCardRaster.PANEL_HEIGHT + (showLyrics.get() ? (int) Math.round(layout().lyricsHeight() + 8) : 0);
+        if (cardTexture != null && cardTint == tintRgb && cardTheme == theme.get() && cardHeight == height) return;
         if (leavingCardTexture != null) leavingCardTexture.close();
         leavingCardTexture = cardTexture;
-        SpotifyCardRaster.Raster raster = theme.get() == SpotifyCardRaster.Theme.AlbumColours
-            ? albumAccent.get() && shownArtwork != null ? shownArtwork.cardRaster() : DEFAULT_CARD : SpotifyCardRaster.preset(theme.get());
+        SpotifyCardRaster.Raster raster = theme.get() == SpotifyCardRaster.Theme.AlbumColours && albumAccent.get() && shownArtwork != null
+            ? showLyrics.get() ? shownArtwork.lyricsRaster() : shownArtwork.cardRaster()
+            : showLyrics.get() ? SpotifyCardRaster.lyricsPreset(theme.get()) : SpotifyCardRaster.preset(theme.get());
         cardTexture = new Texture(raster.width(), raster.height(), TextureFormat.RGBA8, FilterMode.LINEAR, FilterMode.LINEAR);
         cardTexture.upload(raster.rgba());
         cardTint = tintRgb;
         cardTheme = theme.get();
+        cardHeight = height;
         if (leavingCardTexture != null) animation.changeCard();
     }
 
@@ -696,7 +851,7 @@ public class SpotifyHud extends Module {
             double size = target.width() + (2 * hover - 2.5 * press) * unit;
             RoundedBox.shadow(cx, cy + 2 * unit, size, size, size / 2, 8 * unit, 0, 0.20 * visibility * fade);
             Color fill = available ? mix(new Color(220, 227, 240), WHITE, hover * 0.8) : new Color(75, 82, 98);
-            fill = mix(fill, accent, 0.05);
+            fill = mix(fill, accent, 0.25);
             fill = opacity(fill, fade);
             RoundedBox.draw(cx, cy, size, size, size / 2, 0, unit, 0, fill, fill);
         } else if (hover + press > 0.01) {

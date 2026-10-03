@@ -30,7 +30,8 @@ import dev.maro.nathan.render.SpotifyCardRaster;
 /** Reads and controls the Windows media session without blocking Minecraft's render thread. */
 public final class SpotifyMedia implements AutoCloseable {
     /** Artwork is decoded off the render thread and uploaded only when the song changes. */
-    public record Artwork(String key, int width, int height, byte[] rgba, int tintRgb, SpotifyCardRaster.Raster cardRaster) {
+    public record Artwork(String key, int width, int height, byte[] rgba, int tintRgb,
+                          SpotifyCardRaster.Raster cardRaster, SpotifyCardRaster.Raster lyricsRaster) {
     }
 
     public record State(boolean available, String title, String artist, String album, String source,
@@ -57,6 +58,10 @@ public final class SpotifyMedia implements AutoCloseable {
 
     private volatile State state = State.waiting();
     private volatile Artwork artwork;
+    private String artworkLoadingKey = "";
+    private long artworkRetryAt;
+    private volatile Process statusProcess;
+    private Thread statusReader;
     private volatile String artworkKey = "";
     private boolean artworkPending;
     private final Object artworkLock = new Object();
@@ -133,8 +138,47 @@ public final class SpotifyMedia implements AutoCloseable {
             thread.setDaemon(true);
             return thread;
         });
-        worker.scheduleWithFixedDelay(this::poll, 0, 2500, TimeUnit.MILLISECONDS);
+        ScheduledExecutorService active = worker;
+        active.execute(() -> startStatus(active));
         startAudio();
+    }
+
+    /** Keep one lightweight bridge alive; no new PowerShell process is spawned for each sample. */
+    private void startStatus(ScheduledExecutorService active) {
+        if (worker != active) return;
+        try {
+            List<String> command = powershell(script); command.add("status"); command.add("-Watch");
+            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            statusProcess = process;
+            if (worker != active) { process.destroyForcibly(); return; }
+            statusReader = new Thread(() -> {
+                try (var reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                    String row;
+                    while (worker == active && process == statusProcess && (row = reader.readLine()) != null) {
+                        if (row.startsWith("{")) {
+                            try { acceptStatus(JsonParser.parseString(row).getAsJsonObject(), active); }
+                            catch (RuntimeException ignored) { }
+                        }
+                    }
+                } catch (Exception e) {
+                    if (worker == active) NameeProtectAddon.LOG.debug("Spotify status stream stopped: {}", e.toString());
+                } finally {
+                    process.destroyForcibly();
+                    if (worker == active && process == statusProcess) {
+                        statusProcess = null;
+                        try { active.scheduleWithFixedDelay(this::poll, 0, 1000, TimeUnit.MILLISECONDS); }
+                        catch (java.util.concurrent.RejectedExecutionException ignored) { }
+                    }
+                }
+            }, "maro-spotify-status");
+            statusReader.setDaemon(true); statusReader.start();
+        } catch (Exception e) {
+            if (worker == active) {
+                NameeProtectAddon.LOG.debug("Spotify status stream unavailable: {}", e.toString());
+                try { active.scheduleWithFixedDelay(this::poll, 0, 1000, TimeUnit.MILLISECONDS); }
+                catch (java.util.concurrent.RejectedExecutionException ignored) { }
+            }
+        }
     }
 
     public void control(String action) {
@@ -265,7 +309,18 @@ public final class SpotifyMedia implements AutoCloseable {
         ScheduledExecutorService active = worker;
         if (active == null) return;
         try {
+            if (statusProcess != null && statusProcess.isAlive()) return;
             JsonObject response = call("status");
+            acceptStatus(response, active);
+        } catch (Exception e) {
+            synchronized (artworkLock) {
+                if (worker != active) return;
+                state = new State(false, "Spotify unavailable", "Could not read Windows media", "", false, false, 0, 0, 0, e.getMessage());
+            }
+        }
+    }
+
+    private void acceptStatus(JsonObject response, ScheduledExecutorService active) {
             if (worker != active) return;
             if (!bool(response, "ok")) {
                 String error = string(response, "error", "Windows media session unavailable");
@@ -291,27 +346,33 @@ public final class SpotifyMedia implements AutoCloseable {
                     bool(response, "canSeek"),
                     number(response, "positionMs"),
                     number(response, "durationMs"),
-                    System.currentTimeMillis(), "");
+                    sampleTime(response), "");
                 String key = artworkKey(current);
                 boolean load;
                 synchronized (artworkLock) {
                     if (worker != active) return;
+                    if (state.available() && current.sampledAtMs() < state.sampledAtMs()) return;
                     state = current;
                     if (!key.equals(artworkKey)) {
                         artworkKey = key;
                         artwork = null;
                         artworkPending = true;
+                        artworkRetryAt = 0;
                     }
-                    load = artworkPending;
+                    load = artworkPending && !key.equals(artworkLoadingKey) && System.currentTimeMillis() >= artworkRetryAt;
+                    if (load) artworkLoadingKey = key;
                 }
-                if (load) loadArtwork(key, active);
+                if (load) {
+                    // Artwork decode and raster preparation stay on the media worker, while status samples continue.
+                    try { active.execute(() -> loadArtwork(key, active)); }
+                    catch (java.util.concurrent.RejectedExecutionException ignored) { }
+                }
             }
-        } catch (Exception e) {
-            synchronized (artworkLock) {
-                if (worker != active) return;
-                state = new State(false, "Spotify unavailable", "Could not read Windows media", "", false, false, 0, 0, 0, e.getMessage());
-            }
-        }
+    }
+
+    private static long sampleTime(JsonObject response) {
+        long now = System.currentTimeMillis(), sample = number(response, "sampledAtMs");
+        return sample > now - 20_000 && sample <= now + 1000 ? sample : now;
     }
 
     private void loadArtwork(String key, ScheduledExecutorService active) {
@@ -346,6 +407,12 @@ public final class SpotifyMedia implements AutoCloseable {
         } catch (Exception e) {
             NameeProtectAddon.LOG.debug("Spotify artwork unavailable: {}", e.toString());
         } finally {
+            synchronized (artworkLock) {
+                if (worker == active && key.equals(artworkLoadingKey)) {
+                    artworkLoadingKey = "";
+                    if (artworkPending && key.equals(artworkKey)) artworkRetryAt = System.currentTimeMillis() + 2000;
+                }
+            }
             if (imageFile != null) {
                 try { Files.deleteIfExists(imageFile); }
                 catch (Exception ignored) {}
@@ -385,7 +452,8 @@ public final class SpotifyMedia implements AutoCloseable {
             }
         }
         int tint = artworkTint(square);
-        return new Artwork(key, size, size, rgba, tint, SpotifyCardRaster.render(tint));
+        return new Artwork(key, size, size, rgba, tint, SpotifyCardRaster.render(tint),
+            SpotifyCardRaster.render(tint, SpotifyCardRaster.Theme.AlbumColours, SpotifyCardRaster.LYRICS_PANEL_HEIGHT));
     }
 
     /** Samples colour once on the media worker; neutral covers keep a quiet blue accent. */
@@ -491,12 +559,17 @@ public final class SpotifyMedia implements AutoCloseable {
             artwork = null;
             artworkKey = "";
             artworkPending = false;
+            artworkLoadingKey = ""; artworkRetryAt = 0;
         }
         Process process = audioProcess;
         audioProcess = null;
         if (process != null) process.destroyForcibly();
         if (audioReader != null) audioReader.interrupt();
         audioReader = null;
+        Process status = statusProcess; statusProcess = null;
+        if (status != null) status.destroyForcibly();
+        if (statusReader != null) statusReader.interrupt();
+        statusReader = null;
         audioLevels = SILENT_LEVELS;
         audioSampleAt = 0;
         pendingSeek.set(null);
