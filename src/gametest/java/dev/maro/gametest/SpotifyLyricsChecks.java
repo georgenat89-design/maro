@@ -17,6 +17,34 @@ import java.util.concurrent.atomic.AtomicInteger;
 final class SpotifyLyricsChecks {
     private static final SpotifyLyrics.Result TIMED = new SpotifyLyrics.Result(SpotifyLyrics.Status.Synced,
         SpotifyLyrics.parseLrc("[00:01.00]A quiet test line\n[00:04.00]Another test line\n[00:07.00]テストの歌詞\n[00:10.00]"), List.of(), 0);
+    private static final String WORD_YAML = """
+        version: '1.0'
+        metadata:
+          title: Word test song
+          artist: Test artist
+        lines:
+          - text: Keep the music moving
+            start_ms: 1000
+            end_ms: 4000
+            words:
+              - text: 'Keep '
+                start_ms: 1000
+                end_ms: 1600
+              - text: 'the '
+                start_ms: 1600
+                end_ms: 2000
+              - text: 'music '
+                start_ms: 2000
+                end_ms: 2800
+              - text: moving
+                start_ms: 2800
+                end_ms: 4000
+          - text: A longer original lyric that should wrap across two lines without cutting off the words
+            start_ms: 7000
+            end_ms: 11000
+        """;
+    private static final SpotifyLyrics.Result WORDS = new SpotifyLyrics.Result(SpotifyLyrics.Status.Synced,
+        SpotifyLyrics.parseLyricsfile(WORD_YAML), List.of(), 0);
     private static SpotifyMedia.State state(String title, long position) {
         return new SpotifyMedia.State(true, title, "Test artist", "Test album", "test", false, true,
             position, 60_000, System.currentTimeMillis(), "");
@@ -56,6 +84,22 @@ final class SpotifyLyricsChecks {
         require(SpotifyLyrics.decode(JsonParser.parseString("{\"instrumental\":true}").getAsJsonObject()).status() == SpotifyLyrics.Status.Instrumental,
             "Instrumental status failed");
         require(SpotifyLyrics.decode(JsonParser.parseString("{}").getAsJsonObject()).status() == SpotifyLyrics.Status.Missing, "Missing lyrics status failed");
+        require(WORDS.lines().size() == 2 && WORDS.lines().getFirst().words().size() == 4, "Real word timestamps did not parse");
+        var wordSnapshot = new SpotifyLyrics.Snapshot("words", WORDS);
+        var exact = wordSnapshot.karaoke(2500, 0, 0, 60000, false);
+        require(exact.active() == 2 && exact.currentWord().equals("music") && !exact.estimated()
+            && Math.abs(exact.progress() - .625) < .001, "Active word or smooth progress used wrong timestamps");
+        require(wordSnapshot.karaoke(1600, 0, 0, 60000, false).active() == 1
+            && wordSnapshot.karaoke(999, 0, 0, 60000, false).active() == -1, "Word boundary failed");
+        require(wordSnapshot.karaoke(4500, 0, 0, 60000, false).active() == -1, "Word held through an explicit vocal gap");
+        require(wordSnapshot.karaoke(2500, -1000, 0, 60000, false).active() == 0, "Word offset/backwards seek failed");
+        require(!snapshot.karaoke(2500, 0, 0, 60000, false).timed()
+            && snapshot.karaoke(2500, 0, 0, 60000, true).estimated(), "Missing word timing silently became estimated");
+        require(SpotifyLyrics.parseLyricsfile(WORD_YAML.replace("version: '1.0'", "version: '2.0'")).isEmpty(), "Unknown Lyricsfile version accepted");
+        require(SpotifyLyrics.parseLyricsfile("version: '1.0'\nversion: '1.0'\nlines: []").isEmpty(), "Duplicate YAML keys accepted");
+        require(SpotifyLyrics.parseLyricsfile("!!javax.script.ScriptEngineManager []").isEmpty(), "Unsafe YAML tag accepted");
+        var malformed = SpotifyLyrics.parseLyricsfile(WORD_YAML.replace("start_ms: 2000", "start_ms: 1500"));
+        require(malformed.getFirst().words().isEmpty(), "Out-of-order word timing was displayed as accurate");
 
         CountDownLatch entered = new CountDownLatch(1), release = new CountDownLatch(1);
         AtomicInteger calls = new AtomicInteger();
@@ -74,8 +118,24 @@ final class SpotifyLyricsChecks {
             require(lyrics.snapshot().result() == TIMED, "Disable/re-enable lost usable cached lyrics");
         }
 
+        var image = new java.awt.image.BufferedImage(96, 96, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        for (int row = 0; row < 96; row++) for (int col = 0; col < 96; col++) {
+            double light = Math.exp(-Math.pow((col - 30) / 35.0, 2) - Math.pow((row - 28) / 40.0, 2));
+            image.setRGB(col, row, 0xff000000 | (int)(35 + 175 * light) << 16 | (int)(40 + 95 * light) << 8 | (int)(85 + 115 * (1 - light)));
+        }
+        SpotifyMedia.Artwork demoArt;
+        try {
+            var decode = SpotifyMedia.class.getDeclaredMethod("decodeArtwork", String.class, java.awt.image.BufferedImage.class); decode.setAccessible(true);
+            demoArt = (SpotifyMedia.Artwork)decode.invoke(null, SpotifyMedia.artworkKey(state("Word test song", 2500)), image);
+        } catch (ReflectiveOperationException e) { throw new AssertionError(e); }
         var hud = ModuleManager.get(SpotifyHud.class);
-        var fakeLyrics = new SpotifyLyrics(request -> request.title().equals("Untimed test song") ? plain : TIMED);
+        CountDownLatch loadingRelease = new CountDownLatch(1);
+        var fakeLyrics = new SpotifyLyrics(request -> {
+            if (request.title().equals("Loading test song")) { await(loadingRelease); return SpotifyLyrics.Result.status(SpotifyLyrics.Status.Unavailable); }
+            return request.title().equals("Untimed test song") ? plain
+                : request.title().equals("Word test song") ? WORDS
+                : request.title().equals("Missing test song") ? SpotifyLyrics.Result.status(SpotifyLyrics.Status.Missing) : TIMED;
+        });
         SpotifyLyrics original = context.computeOnClient(client -> {
             try {
                 var field = SpotifyHud.class.getDeclaredField("lyrics"); field.setAccessible(true);
@@ -115,12 +175,41 @@ final class SpotifyLyricsChecks {
             });
             context.takeScreenshot("maro-spotify-lyrics-plain");
             context.runOnClient(client -> {
+                setting(hud, "player mode", new JsonPrimitive("Expanded"));
+                setting(hud, "lyrics size", new JsonPrimitive(12));
+                setting(hud, "lyrics mode", new JsonPrimitive("WordHighlight"));
+                setState(hud, state("Word test song", 2500));
+                try { var art = SpotifyMedia.class.getDeclaredField("artwork"); art.setAccessible(true); art.set(media(hud), demoArt); }
+                catch (ReflectiveOperationException e) { throw new AssertionError(e); }
+            });
+            context.waitTicks(12);
+            context.takeScreenshot("maro-spotify-karaoke-word");
+            context.runOnClient(client -> setting(hud, "lyrics mode", new JsonPrimitive("SingleWord")));
+            context.waitTicks(6);
+            context.takeScreenshot("maro-spotify-karaoke-single");
+            context.runOnClient(client -> {
+                setting(hud, "lyrics mode", new JsonPrimitive("Lines")); setState(hud, state("Word test song", 8000));
+            });
+            context.waitTicks(8);
+            context.takeScreenshot("maro-spotify-lyrics-wrapped");
+            context.runOnClient(client -> setState(hud, state("Missing test song", 8000)));
+            context.waitTicks(8);
+            context.takeScreenshot("maro-spotify-lyrics-missing");
+            context.runOnClient(client -> setState(hud, state("Loading test song", 8000)));
+            context.waitTicks(5);
+            require(fakeLyrics.snapshot().result().status() == SpotifyLyrics.Status.Loading, "Lyrics lookup blocked the game or failed to show loading");
+            context.takeScreenshot("maro-spotify-lyrics-loading");
+            loadingRelease.countDown();
+            context.waitTicks(6);
+            context.takeScreenshot("maro-spotify-lyrics-offline");
+            context.runOnClient(client -> {
                 var layout = layout(hud);
                 require(layout.bounds().y() + layout.bounds().height() <= client.getWindow().getFramebufferHeight(), "Mini lyrics clipped at large size");
                 setting(hud, "lyrics", new JsonPrimitive(false));
                 require(layout(hud).totalHeight() == layout(hud).height(), "Lyrics toggle retained extra space");
             });
         } finally {
+            loadingRelease.countDown();
             context.runOnClient(client -> {
                 hud.setEnabled(false);
                 try { var field = SpotifyHud.class.getDeclaredField("lyrics"); field.setAccessible(true); field.set(hud, original); }

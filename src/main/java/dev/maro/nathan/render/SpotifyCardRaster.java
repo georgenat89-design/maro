@@ -3,8 +3,9 @@ package dev.maro.nathan.render;
 /** Cached, antialiased artwork for the player surface; all coordinates use layout pixels. */
 public final class SpotifyCardRaster {
     public enum Theme { AlbumColours, Midnight, FrostedGlass, Monochrome }
-    public static final int PANEL_WIDTH = 380;
+    public static final int PANEL_WIDTH = 420;
     public static final int PANEL_HEIGHT = 108;
+    public static final int LYRICS_PANEL_HEIGHT = 184;
     public static final int PADDING = 18;
     private static final int DENSITY = 2;
     private static final double RADIUS = 18;
@@ -15,9 +16,14 @@ public final class SpotifyCardRaster {
     /** Fixed theme surfaces are baked once when the addon is initialized. */
     public static void prepareThemes() { Presets.RASTERS.size(); }
     public static Raster preset(Theme theme) { return Presets.RASTERS.get(theme); }
+    public static Raster lyricsPreset(Theme theme) { return Presets.LYRICS.get(theme); }
     private static final class Presets {
         private static final java.util.Map<Theme, Raster> RASTERS = new java.util.EnumMap<>(Theme.class);
-        static { for (Theme theme : Theme.values()) RASTERS.put(theme, render(0x8A9FC2, theme)); }
+        private static final java.util.Map<Theme, Raster> LYRICS = new java.util.EnumMap<>(Theme.class);
+        static { for (Theme theme : Theme.values()) {
+            RASTERS.put(theme, render(0x8A9FC2, theme));
+            LYRICS.put(theme, render(0x8A9FC2, theme, LYRICS_PANEL_HEIGHT));
+        } }
     }
 
     private SpotifyCardRaster() { }
@@ -62,18 +68,22 @@ public final class SpotifyCardRaster {
     }
 
     public static Raster render(int tintRgb, Theme theme) {
+        return render(tintRgb, theme, PANEL_HEIGHT);
+    }
+
+    public static Raster render(int tintRgb, Theme theme, int panelHeight) {
         int width = (PANEL_WIDTH + PADDING * 2) * DENSITY;
-        int height = (PANEL_HEIGHT + PADDING * 2) * DENSITY;
+        int height = (panelHeight + PADDING * 2) * DENSITY;
         byte[] rgba = new byte[width * height * 4];
         double tintR = tintRgb >> 16 & 255;
         double tintG = tintRgb >> 8 & 255;
         double tintB = tintRgb & 255;
         double halfWidth = PANEL_WIDTH / 2.0;
-        double halfHeight = PANEL_HEIGHT / 2.0;
+        double halfHeight = panelHeight / 2.0;
 
         for (int y = 0; y < height; y++) {
             double py = (y + 0.5) / DENSITY - PADDING;
-            double vertical = clamp(py / PANEL_HEIGHT);
+            double vertical = clamp(py / panelHeight);
             double topHighlight = 0.055 + 0.085 * Math.exp(-Math.max(0, py) / 22);
             double glowY = (py - 44) / 54;
             double coolY = (py - 40) / 80;
@@ -87,14 +97,11 @@ public final class SpotifyCardRaster {
 
                 // Colour overlays are composed into the opaque face first. The
                 // rounded coverage and shadow then compose in premultiplied form.
-                double red = mix(theme == Theme.FrostedGlass ? 64 : theme == Theme.Midnight ? 15 : 36,
-                    theme == Theme.FrostedGlass ? 42 : theme == Theme.Midnight ? 9 : 23, vertical);
-                double green = mix(theme == Theme.FrostedGlass ? 76 : theme == Theme.Midnight ? 22 : 39,
-                    theme == Theme.FrostedGlass ? 54 : theme == Theme.Midnight ? 13 : 26, vertical);
-                double blue = mix(theme == Theme.FrostedGlass ? 96 : theme == Theme.Midnight ? 39 : 49,
-                    theme == Theme.FrostedGlass ? 75 : theme == Theme.Midnight ? 25 : 35, vertical);
+                double red = mix(theme == Theme.FrostedGlass ? 64 : 22, theme == Theme.FrostedGlass ? 42 : 11, vertical);
+                double green = mix(theme == Theme.FrostedGlass ? 76 : 27, theme == Theme.FrostedGlass ? 54 : 16, vertical);
+                double blue = mix(theme == Theme.FrostedGlass ? 96 : 40, theme == Theme.FrostedGlass ? 75 : 29, vertical);
                 double glowX = (px - 64) / 76;
-                double glow = theme == Theme.AlbumColours ? 0.12 * Math.exp(-0.5 * (glowX * glowX + glowY * glowY)) : 0;
+                double glow = theme == Theme.AlbumColours ? 0.24 * Math.exp(-0.5 * (glowX * glowX + glowY * glowY)) : 0;
                 red = mix(red, tintR, glow);
                 green = mix(green, tintG, glow);
                 blue = mix(blue, tintB, glow);

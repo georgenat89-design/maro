@@ -116,6 +116,22 @@ The **Lyrics** settings let you hide the panel, adjust text size, or change timi
 **lyrics offset ms** (positive values advance the lyrics). Instrumental tracks and missing
 lyrics show a status instead. No Spotify account connection or token is needed.
 
+**Lyrics mode** offers **Lines**, **WordHighlight** (the active word turns white), and
+**SingleWord** (one live word centred in the card). Real word timing comes from LRCLIB's
+[Lyricsfile](https://github.com/tranxuanthang/lyricsfile) data when available. Tracks with
+only line timestamps keep line sync. **Estimate word timing** is an optional, less accurate
+fallback and is labelled **ESTIMATED WORDS**; it is off by default. Words follow the same
+playback/seek clock as the timeline. Timing accuracy also depends on the supplied lyrics
+and the media player's position reports.
+The Windows bridge stays open and samples every 250 ms, preserving the sample timestamp
+so process delivery time does not push the lyric clock behind playback. If the stream stops,
+the HUD falls back to regular polling. Turning the module off closes the bridge.
+
+The wider player and lyrics share one softly shaded card. Long lyric lines wrap; word mode
+gently scrolls to keep the current word visible. Missing, loading and instrumental lyrics
+use an animated listening view. Artwork surfaces are prepared on the media worker, so
+the HUD does not rebuild its gradient every frame.
+
 ## Building
 
 Requires Java 21.
