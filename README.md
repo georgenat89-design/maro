@@ -9,7 +9,7 @@ Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 | Category | Modules |
 | --- | --- |
 | Movement | Auto Walk, Free Cam, Freelook |
-| Player | Fast XP, Smart Eat, Spawner Protect, existing Fast Place |
+| Player | Auto Trident, Fast XP, Smart Eat, Spawner Protect, existing Fast Place |
 | Visuals | Bloom, Color Correct, Custom FOV, Fake XP, Hats, Key Zoom, Keystrokes, Motion Blur, Region Map, Spotify HUD, Spin Bot, Swing Speed, existing Stretch Res |
 | Misc | Chat Macros, Key Sounds, existing Screen Hider |
 
@@ -26,6 +26,14 @@ Key Sounds includes **14 built-in sound packs**: Creamy, Thock, Soft, Clicky, Cr
 The optional EG Oreo pack must be imported from Mechvibes or placed under `.minecraft/maro/nameeprotect/keysounds/eg-oreo/`. Spawner Protect can use Baritone when installed separately; without it, automatic pathfinding is unavailable.
 
 ## Features
+
+**Auto Trident** (Player) repeatedly charges and releases a trident while you hold
+right-click (or your bound Use key). **Speed** ranges from **1–10**, defaulting to **10**:
+10 releases after the normal minimum of 10 charge ticks (0.5 seconds at 20 TPS),
+and 1 holds for 28 ticks (1.4 seconds). The next charge starts on the next client tick.
+Works in either hand, pauses in menus, and leaves other active item uses alone.
+Riptide still needs water or rain; thrown tridents must be returned or replaced before
+the next throw in survival. Uses normal item interactions and release actions.
 
 **GUI**
 - Floating top-bar navigation (category tabs with a sliding pill, icon buttons for general pages) over a black, top-lit window
