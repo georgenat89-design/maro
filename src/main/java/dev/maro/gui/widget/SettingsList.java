@@ -7,6 +7,7 @@ import dev.maro.gui.render.Render2D;
 import dev.maro.gui.theme.Theme;
 import dev.maro.setting.BooleanSetting;
 import dev.maro.setting.ColorSetting;
+import dev.maro.setting.ButtonSetting;
 import dev.maro.setting.KeybindSetting;
 import dev.maro.setting.ModeSetting;
 import dev.maro.setting.NumberSetting;
@@ -88,6 +89,9 @@ public class SettingsList {
         else if (s instanceof KeybindSetting k) {
             float cw = Fonts.width(gui.listening == k ? "Press a key" : k.getKeyName(), false, 0.72f) + 9;
             Widgets.bindChip(gui, ctx, k, x + w - 10 - cw, y + 15, 1f);
+        } else if (s instanceof ButtonSetting b) {
+            float bw = Widgets.buttonWidth(b.getLabel(), Icons.CHEVRON_RIGHT);
+            Widgets.button(gui, ctx, b, x + w - 10 - bw, y + 7, bw, 16, b.getLabel(), Widgets.Style.PRIMARY, Icons.CHEVRON_RIGHT, b::press);
         }
     }
 
