@@ -42,6 +42,8 @@ public class InventoryHud extends Module implements HudElement {
     private static final int COLUMNS = 9;
     private static final float RADIUS = 6;
     private static final float SLOT_RADIUS = 3.5f;
+    /** Air kept between the panel and the edges of the screen. */
+    private static final int MARGIN = 4;
 
     private static final Identifier[] ARMOR_SPRITES = {
             Identifier.ofVanilla("container/slot/helmet"),
@@ -54,7 +56,7 @@ public class InventoryHud extends Module implements HudElement {
     private final ButtonSetting position = add(new ButtonSetting("Position", "Drag the panel where you want it and scroll to resize it", "Place",
             () -> mc.setScreen(new HudPlacementScreen(mc.currentScreen, this))));
     private final NumberSetting x = add(new NumberSetting("X", "Across the screen: 0 is the left edge, 100 the right", 100, 0, 100, 0.5).suffix("%"));
-    private final NumberSetting y = add(new NumberSetting("Y", "Down the screen: 0 is the top, 100 the bottom", 50, 0, 100, 0.5).suffix("%"));
+    private final NumberSetting y = add(new NumberSetting("Y", "Down the screen: 0 is the top, 100 the bottom", 100, 0, 100, 0.5).suffix("%"));
     private final NumberSetting scale = add(new NumberSetting("Scale", "How big the panel is", 1, 0.5, 2.5, 0.05).suffix("x"));
     private final BooleanSetting header = add(new BooleanSetting("Header", "The title and how many slots are in use", true));
     private final BooleanSetting capacity = add(new BooleanSetting("Capacity Bar", "A thin bar that fills up with your inventory", true).visible(header::get));
@@ -112,29 +114,29 @@ public class InventoryHud extends Module implements HudElement {
     }
 
     private float roomX() {
-        return Math.max(0, mc.getWindow().getScaledWidth() - hudWidth());
+        return Math.max(0, mc.getWindow().getScaledWidth() - hudWidth() - MARGIN * 2);
     }
 
     private float roomY() {
-        return Math.max(0, mc.getWindow().getScaledHeight() - hudHeight());
+        return Math.max(0, mc.getWindow().getScaledHeight() - hudHeight() - MARGIN * 2);
     }
 
     @Override
     public float hudLeft() {
-        return Math.round(roomX() * x.getFloat() / 100f);
+        return MARGIN + Math.round(roomX() * x.getFloat() / 100f);
     }
 
     @Override
     public float hudTop() {
-        return Math.round(roomY() * y.getFloat() / 100f);
+        return MARGIN + Math.round(roomY() * y.getFloat() / 100f);
     }
 
     @Override
     public void hudMove(float left, float top) {
         float rx = roomX();
         float ry = roomY();
-        x.set(rx <= 0 ? 0.0 : Math.max(0.0, Math.min(100.0, left / rx * 100.0)));
-        y.set(ry <= 0 ? 0.0 : Math.max(0.0, Math.min(100.0, top / ry * 100.0)));
+        x.set(rx <= 0 ? 0.0 : Math.max(0.0, Math.min(100.0, (left - MARGIN) / rx * 100.0)));
+        y.set(ry <= 0 ? 0.0 : Math.max(0.0, Math.min(100.0, (top - MARGIN) / ry * 100.0)));
     }
 
     @Override
