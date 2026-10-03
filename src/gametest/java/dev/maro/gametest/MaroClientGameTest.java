@@ -33,6 +33,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             context.setScreen(() -> null);
             context.waitTicks(5);
             checkNathanPort(context);
+            checkSlowSwing(context);
             String before = context.computeOnClient(client -> describe(client));
             context.takeScreenshot("maro-00-world");
 
@@ -222,6 +223,63 @@ public class MaroClientGameTest implements FabricClientGameTest {
             if (dev.maro.runtime.MeteorClient.EVENT_BUS.failureCount() != failures)
                 throw new AssertionError("A Nathan event handler failed; see the game log");
         });
+    }
+
+    /** Checks the actual client arm clock, including the mixin and native settings bridge. */
+    private static void checkSlowSwing(ClientGameTestContext context) {
+        var module = ModuleManager.get(dev.maro.nathan.modules.SwingSpeed.class);
+        var speed = module.getSettings().stream().filter(s -> s.getName().equals("swing speed")).findFirst().orElseThrow();
+        var hand = module.getSettings().stream().filter(s -> s.getName().equals("hand")).findFirst().orElseThrow();
+        context.runOnClient(client -> module.setEnabled(false));
+        int normal = swingTicks(context, net.minecraft.util.Hand.MAIN_HAND);
+        int[] levels = {-1, -5, -10, 0, 1, 10};
+        for (int level : levels) {
+            context.runOnClient(client -> {
+                speed.fromJson(new com.google.gson.JsonPrimitive(level));
+                speed.fromJson(speed.toJson());
+                if (speed.toJson().getAsInt() != level) throw new AssertionError("Swing strength did not round-trip: " + level);
+                module.setEnabled(true);
+            });
+            int duration = swingTicks(context, net.minecraft.util.Hand.MAIN_HAND);
+            if ((level < 0 && duration <= normal) || (level == 10 && duration >= normal)
+                || ((level == 0 || level == 1) && duration != normal))
+                throw new AssertionError("Swing strength " + level + ": " + duration + " ticks; normal=" + normal);
+        }
+        context.runOnClient(client -> {
+            speed.fromJson(new com.google.gson.JsonPrimitive(-10));
+            hand.fromJson(new com.google.gson.JsonPrimitive("MainHand"));
+        });
+        if (swingTicks(context, net.minecraft.util.Hand.OFF_HAND) != normal)
+            throw new AssertionError("Main-hand slowdown changed the offhand animation");
+        // Changing from a long animation to a short one must finish the current swing cleanly.
+        context.runOnClient(client -> client.player.swingHand(net.minecraft.util.Hand.MAIN_HAND));
+        context.waitTicks(normal + 2);
+        context.runOnClient(client -> speed.fromJson(new com.google.gson.JsonPrimitive(10)));
+        context.waitTicks(2);
+        context.runOnClient(client -> {
+            if (client.player.handSwinging || client.player.handSwingProgress != 0)
+                throw new AssertionError("Changing swing strength left a stuck arm");
+            module.setEnabled(false);
+        });
+        if (swingTicks(context, net.minecraft.util.Hand.MAIN_HAND) != normal)
+            throw new AssertionError("Disabling Swing Speed did not restore normal animation");
+        context.runOnClient(client -> {
+            speed.reset(); hand.reset();
+        });
+    }
+
+    private static int swingTicks(ClientGameTestContext context, net.minecraft.util.Hand arm) {
+        context.runOnClient(client -> {
+            client.player.handSwinging = false;
+            client.player.handSwingTicks = 0;
+            client.player.swingHand(arm);
+        });
+        int ticks = 0;
+        while (context.computeOnClient(client -> client.player.handSwinging) && ticks < 80) {
+            context.waitTick(); ticks++;
+        }
+        if (ticks == 80) throw new AssertionError("Swing animation never finished");
+        return ticks;
     }
 
     /** Lets time-based animations finish (the game only advances inside wait calls). */

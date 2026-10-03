@@ -19,6 +19,8 @@ Spotify HUD supports the existing desktop/browser media bridge on Windows, album
 
 Region Map retains Nathan's updated region divisions and sharp labels. Keystrokes retains its Poppins labels. Their initial positions leave room for each other and Spotify, and can be changed in settings.
 
+Swing Speed accepts **-10 to 10**: negative values slow the arm animation, **-10** makes it take 3.5 times as long, **0 or 1** is normal, and **2 to 10** retains the original faster speeds. The selected hand setting still applies.
+
 Key Sounds includes its generated sounds; the optional EG Oreo pack must be imported from Mechvibes or placed under `.minecraft/maro/nameeprotect/keysounds/eg-oreo/`. Spawner Protect can use Baritone when installed separately; without it, automatic pathfinding is unavailable.
 
 ## Features

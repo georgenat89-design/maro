@@ -65,28 +65,19 @@ public class SwingSpeed extends Module {
     /** A swing can never be shorter than this, in ticks. */
     public static final int MIN_DURATION = 1;
 
-    /**
-     * The slider is a level from 1 to 10 rather than a multiplier.
-     *
-     * <p>Level 1 is normal speed and level 10 is {@link #MAX_SPEED}, with the
-     * levels in between spread evenly across that span. So the numbers on the
-     * slider mean "how much faster", not "times what" - and because level 1 lands
-     * on exactly 1.0, leaving the slider alone leaves the animation untouched.
-     *
-     * <p>There is deliberately nothing below normal: the scale starts at 1, so
-     * this cannot slow a swing down.
-     */
+    /** Maximum acceleration and maximum slowdown factor. */
     public static final double MAX_SPEED = 3.5;
 
-    private static final int MIN_LEVEL = 1;
+    private static final int MIN_LEVEL = -10;
+    private static final int NORMAL_LEVEL = 1;
     private static final int MAX_LEVEL = 10;
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
     private final Setting<Integer> level = sgGeneral.add(new IntSetting.Builder()
         .name("swing-speed")
-        .description("How fast the arm swings, 1 to 10. 1 is normal, 5 is about 2.1x, 10 is 3.5x - the fastest it goes.")
-        .defaultValue(MIN_LEVEL)
+        .description("Negative strength slows the swing: -10 takes 3.5x as long. 0 and 1 are normal; 2 to 10 speed it up, up to 3.5x.")
+        .defaultValue(NORMAL_LEVEL)
         .min(MIN_LEVEL)
         .max(MAX_LEVEL)
         .sliderRange(MIN_LEVEL, MAX_LEVEL)
@@ -123,6 +114,14 @@ public class SwingSpeed extends Module {
         keyWasDown = down;
     }
 
+    /** Negative levels lengthen swings; existing positive levels keep their speeds. */
+    public static double speedOf(int level) {
+        int strength = Math.max(MIN_LEVEL, Math.min(MAX_LEVEL, level));
+        if (strength < 0) return 1 / (1 + -strength * (MAX_SPEED - 1) / -MIN_LEVEL);
+        if (strength <= NORMAL_LEVEL) return 1;
+        return 1 + (strength - NORMAL_LEVEL) * (MAX_SPEED - 1) / (MAX_LEVEL - NORMAL_LEVEL);
+    }
+
     /**
      * How much to divide the swing duration by, for the arm now swinging.
      *
@@ -133,11 +132,6 @@ public class SwingSpeed extends Module {
      *
      * @param arm the swinging arm, which is null before the first swing of a life
      */
-    /** Level 1 to 10, spread evenly from normal speed up to {@link #MAX_SPEED}. */
-    public static double speedOf(int level) {
-        return 1 + (level - MIN_LEVEL) * (MAX_SPEED - 1) / (MAX_LEVEL - MIN_LEVEL);
-    }
-
     public static double scaleFor(net.minecraft.util.Hand arm) {
         Modules modules = Modules.get();
         if (modules == null) return 1;
