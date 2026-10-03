@@ -1,15 +1,16 @@
 package dev.maro.nathan.render;
 
 /** Shared physical-pixel geometry for the mini player's rendering and mouse targets. */
-public record SpotifyHudLayout(double left, double top, double scale, double expansion) {
+public record SpotifyHudLayout(double left, double top, double scale, double expansion, double lyricsHeight) {
     public static final double WIDTH = 380;
     public static final double HEIGHT = 108;
     public static final double TIME_CAPS = 9.5;
     public static final double MINI_WIDTH = 264;
     public static final double MINI_HEIGHT = 72;
 
-    public SpotifyHudLayout(double left, double top, double scale) { this(left, top, scale, 1); }
-    public SpotifyHudLayout { expansion = Math.max(0, Math.min(1, expansion)); }
+    public SpotifyHudLayout(double left, double top, double scale) { this(left, top, scale, 1, 0); }
+    public SpotifyHudLayout(double left, double top, double scale, double expansion) { this(left, top, scale, expansion, 0); }
+    public SpotifyHudLayout { expansion = Math.max(0, Math.min(1, expansion)); lyricsHeight = Math.max(0, Math.min(84, lyricsHeight)); }
 
     public record Rect(double x, double y, double width, double height) {
         public double centerX() { return x + width / 2; }
@@ -32,6 +33,9 @@ public record SpotifyHudLayout(double left, double top, double scale, double exp
     public double detailOpacity() { return Math.max(0, (expansion - 0.55) / 0.45); }
     public double controlOpacity() { return Math.max(0, (expansion - 0.94) / 0.06); }
     public Rect panel() { return rect(0, 0, width(), height()); }
+    public double totalHeight() { return height() + (lyricsHeight > 0 ? 8 + lyricsHeight : 0); }
+    public Rect bounds() { return rect(0, 0, width(), totalHeight()); }
+    public Rect lyrics() { return rect(0, height() + 8, width(), lyricsHeight); }
     public Rect cover() { return rect(lerp(12, 14), 12, lerp(48, 64), lerp(48, 64)); }
     public Rect previous() { return rect(lerp(184, 270), lerp(24, 21), lerp(24, 32), lerp(24, 32)); }
     public Rect toggle() { return rect(lerp(216, 303), lerp(20, 18), lerp(32, 38), lerp(32, 38)); }

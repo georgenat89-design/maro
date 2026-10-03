@@ -33,6 +33,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             context.setScreen(() -> null);
             context.waitTicks(5);
             checkNathanPort(context);
+            SpotifyLyricsChecks.run(context);
             checkSlowSwing(context);
             checkKeySounds(context);
             String before = context.computeOnClient(client -> describe(client));
@@ -185,6 +186,8 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 throw new AssertionError("Maro config did not restore Nathan settings and macros");
             x.fromJson(oldX);
             dev.maro.config.ConfigManager.delete("port_smoke");
+            ModuleManager.get(dev.maro.nathan.modules.SpotifyHud.class).getSettings().stream()
+                .filter(s -> s.getName().equals("lyrics")).findFirst().orElseThrow().fromJson(new com.google.gson.JsonPrimitive(false));
             for (String name : java.util.List.of("Region Map", "Keystrokes", "Spotify Hud", "Hats", "Spin Bot", "Custom Fov", "Key Zoom", "Free Cam", "Freelook")) {
                 var module = ModuleManager.getByName(name);
                 if (module == null) throw new AssertionError("Missing " + name);

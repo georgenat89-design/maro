@@ -5,6 +5,7 @@ import com.mojang.blaze3d.textures.TextureFormat;
 
 import dev.maro.nathan.NameeProtectAddon;
 import dev.maro.nathan.audio.SpotifyMedia;
+import dev.maro.nathan.audio.SpotifyLyrics;
 import dev.maro.nathan.audio.SpotifySeekPreview;
 import dev.maro.nathan.audio.SpotifyTimeline;
 import dev.maro.nathan.gui.SpotifyControlsScreen;
@@ -52,6 +53,16 @@ public class SpotifyHud extends Module {
     private final SettingGroup sgControls = settings.createGroup("Controls");
     private final SettingGroup sgAnimation = settings.createGroup("Animations");
     private final SettingGroup sgAppearance = settings.createGroup("Appearance");
+    private final SettingGroup sgLyrics = settings.createGroup("Lyrics");
+    private final Setting<Boolean> showLyrics = sgLyrics.add(new BoolSetting.Builder()
+        .name("lyrics").description("Show song lyrics from LRCLIB. Timed lyrics follow playback and seeking.")
+        .defaultValue(true).build());
+    private final Setting<Double> lyricsSize = sgLyrics.add(new DoubleSetting.Builder()
+        .name("lyrics-size").description("Size of the highlighted lyric line.")
+        .defaultValue(11).range(8, 16).sliderRange(8, 16).visible(showLyrics::get).build());
+    private final Setting<Integer> lyricsOffset = sgLyrics.add(new IntSetting.Builder()
+        .name("lyrics-offset-ms").description("Adjust lyric timing. Positive values show lines earlier.")
+        .defaultValue(0).range(-10000, 10000).sliderRange(-3000, 3000).visible(showLyrics::get).build());
 
     private final Setting<Integer> x = sgGeneral.add(new IntSetting.Builder()
         .name("x").description("Horizontal offset from the selected screen anchor, in pixels.")
@@ -134,6 +145,10 @@ public class SpotifyHud extends Module {
         }).build());
 
     private final SpotifyMedia media = new SpotifyMedia();
+    private SpotifyLyrics lyrics = new SpotifyLyrics();
+    private String lyricsKey = "", lyricLine = "";
+    private int plainLyricIndex;
+    private double lyricFade = 1;
     private final SpotifyTimeline timeline = new SpotifyTimeline();
     private final SpotifySeekPreview seekPreview = new SpotifySeekPreview();
     private final SpotifyHudAnimation animation = new SpotifyHudAnimation();
@@ -182,6 +197,8 @@ public class SpotifyHud extends Module {
         cancelScrub();
         seekPreview.cancel();
         media.close();
+        lyrics.close();
+        lyricsKey = ""; lyricLine = ""; plainLyricIndex = 0;
         if (coverTexture != null) coverTexture.close();
         if (leavingCoverTexture != null) leavingCoverTexture.close();
         if (cardTexture != null) cardTexture.close();
@@ -211,9 +228,11 @@ public class SpotifyHud extends Module {
         double unit = scale.get();
         double width = (SpotifyHudLayout.MINI_WIDTH + (SpotifyHudLayout.WIDTH - SpotifyHudLayout.MINI_WIDTH) * expansion) * unit;
         double height = (SpotifyHudLayout.MINI_HEIGHT + (SpotifyHudLayout.HEIGHT - SpotifyHudLayout.MINI_HEIGHT) * expansion) * unit;
+        double extra = showLyrics.get() ? Math.max(56, lyricsSize.get() + 43) : 0;
+        height += extra > 0 ? (extra + 8) * unit : 0;
         SpotifyHudFeatures.Position position = SpotifyHudFeatures.position(anchor.get(), x.get(), y.get(), width, height,
             mc.getWindow().getFramebufferWidth(), mc.getWindow().getFramebufferHeight());
-        return new SpotifyHudLayout(position.x(), position.y(), unit, expansion);
+        return new SpotifyHudLayout(position.x(), position.y(), unit, expansion, extra);
     }
 
     private void control(String action) {
@@ -238,7 +257,7 @@ public class SpotifyHud extends Module {
             seekPreview.cancel();
             dragExpansion = expansion;
             return timeline.begin(trackKey(state), state.durationMs(), state.available() && state.canSeek(), layout.fractionAt(mouseX, track));
-        } else if (dragPlayer.get() && layout.panel().contains(mouseX, mouseY)) {
+        } else if (dragPlayer.get() && layout.bounds().contains(mouseX, mouseY)) {
             draggingPlayer = true;
             dragExpansion = expansion;
             dragOffsetX = mouseX - layout.left(); dragOffsetY = mouseY - layout.top();
@@ -252,7 +271,7 @@ public class SpotifyHud extends Module {
         if (draggingPlayer) {
             SpotifyHudLayout layout = layout();
             SpotifyHudFeatures.Position position = SpotifyHudFeatures.position(Anchor.Free, mouseX - dragOffsetX, mouseY - dragOffsetY,
-                layout.panel().width(), layout.panel().height(), mc.getWindow().getFramebufferWidth(), mc.getWindow().getFramebufferHeight());
+                layout.bounds().width(), layout.bounds().height(), mc.getWindow().getFramebufferWidth(), mc.getWindow().getFramebufferHeight());
             x.set((int) Math.round(position.x())); y.set((int) Math.round(position.y()));
             return true;
         }
@@ -268,7 +287,7 @@ public class SpotifyHud extends Module {
         if (draggingPlayer) {
             mouseDragged(mouseX, mouseY);
             SpotifyHudLayout layout = layout();
-            SpotifyHudFeatures.Dock dock = SpotifyHudFeatures.dock(layout.left(), layout.top(), layout.panel().width(), layout.panel().height(),
+            SpotifyHudFeatures.Dock dock = SpotifyHudFeatures.dock(layout.left(), layout.top(), layout.bounds().width(), layout.bounds().height(),
                 mc.getWindow().getFramebufferWidth(), mc.getWindow().getFramebufferHeight(), snapEdges.get());
             anchor.set(dock.anchor()); x.set(dock.x()); y.set(dock.y());
             draggingPlayer = false;
@@ -291,10 +310,19 @@ public class SpotifyHud extends Module {
 
     public void cancelInteraction() { cancelScrub(); draggingPlayer = false; }
 
+    public boolean scrollLyrics(double mouseX, double mouseY, double amount) {
+        if (!isActive() || !showLyrics.get() || !layout().lyrics().contains(mouseX, mouseY)
+            || lyrics.snapshot().result().status() != SpotifyLyrics.Status.Plain) return false;
+        plainLyricIndex = Math.max(0, Math.min(lyrics.snapshot().result().plain().size() - 1,
+            plainLyricIndex + (amount < 0 ? 1 : amount > 0 ? -1 : 0)));
+        return true;
+    }
+
     public String controlsHint() {
         SpotifyMedia.State state = media.state();
         if (!state.error().isBlank()) return state.error();
         if (!state.available()) return "Open Spotify and play a track";
+        if (showLyrics.get() && lyrics.snapshot().result().status() == SpotifyLyrics.Status.Plain) return "Untimed lyrics: scroll over the lyrics panel";
         if (!state.canSeek() || state.durationMs() <= 0) return "Seeking is unavailable for this track";
         return "";
     }
@@ -334,7 +362,7 @@ public class SpotifyHud extends Module {
         double mouseY = mc.currentScreen instanceof SpotifyControlsScreen ? mc.mouse.getScaledY(mc.getWindow()) * mc.getWindow().getScaleFactor() : -1;
         SpotifyHudLayout before = layout();
         double targetExpansion = playerMode.get() == Mode.Expanded ? 1 : playerMode.get() == Mode.Mini ? 0
-            : before.panel().contains(mouseX, mouseY) ? 1 : 0;
+            : before.bounds().contains(mouseX, mouseY) ? 1 : 0;
         if (draggingPlayer || timeline.active()) targetExpansion = dragExpansion;
         if (targetExpansion != lastExpansionTarget) { scrollAge = 0; lastExpansionTarget = targetExpansion; }
         expansion = ease(expansion, targetExpansion, 13, seconds);
@@ -445,9 +473,59 @@ public class SpotifyHud extends Module {
         } finally {
             CrispFont.end();
         }
+        if (showLyrics.get()) renderLyrics(layout, state, position, seconds, accent);
+        else if (!lyrics.snapshot().key().isEmpty()) { lyrics.close(); lyricsKey = ""; }
         if (seekTooltip.get() && (hoverTrack || timeline.active()) && canSeek) {
             long previewPosition = timeline.active() ? timeline.positionMs() : Math.round(state.durationMs() * layout.fractionAt(mouseX, track));
             renderSeekTooltip(timeFont, time(previewPosition), mouseX, track, unit);
+        }
+    }
+
+    private void renderLyrics(SpotifyHudLayout layout, SpotifyMedia.State state, long position, double seconds, Color accent) {
+        lyrics.update(state);
+        var snapshot = lyrics.snapshot();
+        if (!snapshot.key().equals(lyricsKey)) { lyricsKey = snapshot.key(); plainLyricIndex = 0; lyricLine = ""; }
+        var frame = snapshot.frame(position, lyricsOffset.get(), plainLyricIndex);
+        if (!frame.current().equals(lyricLine)) { lyricLine = frame.current(); lyricFade = 0; }
+        lyricFade += (1 - lyricFade) * (1 - Math.exp(-14 * seconds));
+        Rect area = layout.lyrics(); double unit = layout.scale();
+        Renderer2D.COLOR.begin();
+        RoundedBox.shadow(area.centerX(), area.centerY() + unit, area.width(), area.height(), 12 * unit, 7 * unit, 0, .18 * visibility);
+        box(area, 12 * unit, .7 * unit, new Color(20, 23, 31, 235), new Color(61, 68, 84, 140));
+        Color dot = opacity(mix(accent, WHITE, .2));
+        RoundedBox.draw(area.x() + 15 * unit, area.y() + 12 * unit, 4 * unit, 4 * unit, 2 * unit, 0, unit, 0, dot, dot);
+        Renderer2D.COLOR.render();
+        String heading = snapshot.result().status() == SpotifyLyrics.Status.Plain ? "LYRICS  /  UNSYNCED" : "LYRICS";
+        CrispFont.begin(null);
+        try {
+            var caption = CrispFont.POPPINS_MEDIUM.forCaps(6 * unit);
+            caption.draw(heading, area.x() + 23 * unit, area.y() + 9 * unit - caption.capsTop(), opacity(MUTED), 0, false);
+        } finally { CrispFont.end(); }
+        lyricText(frame.current(), area.x() + 14 * unit, area.y() + (23 + 2 * (1 - lyricFade)) * unit,
+            area.width() - 28 * unit, lyricsSize.get() * unit, opacity(WHITE, .35 + .65 * lyricFade), true);
+        lyricText(frame.next(), area.x() + 14 * unit, area.y() + (lyricsSize.get() + 32) * unit,
+            area.width() - 28 * unit, 8 * unit, opacity(MUTED), false);
+    }
+
+    /** Use Minecraft's Unicode fallback for scripts outside the bundled Latin font. */
+    private void lyricText(String text, double left, double top, double width, double size, Color ink, boolean bold) {
+        if (text.isBlank() || ink.a < 8) return;
+        if (text.codePoints().allMatch(c -> c >= 32 && c <= 255)) {
+            var font = (bold ? CrispFont.POPPINS_SEMIBOLD : CrispFont.POPPINS_MEDIUM).forCaps(size);
+            CrispFont.begin(null);
+            try { font.draw(clip(text, font, width), left, top - font.capsTop(), ink, 0, false); }
+            finally { CrispFont.end(); }
+        } else {
+            var context = Renderer2D.context();
+            float factor = (float) (size / 8);
+            String clipped = mc.textRenderer.trimToWidth(text, (int) (width / factor));
+            if (!clipped.equals(text)) clipped = mc.textRenderer.trimToWidth(text, Math.max(0, (int) (width / factor) - mc.textRenderer.getWidth("..."))) + "...";
+            var matrices = context.getMatrices(); matrices.pushMatrix();
+            try {
+                float gui = (float) mc.getWindow().getScaleFactor();
+                matrices.scale(1 / gui, 1 / gui); matrices.translate((float) left, (float) top); matrices.scale(factor, factor);
+                context.drawText(mc.textRenderer, net.minecraft.text.Text.literal(clipped), 0, 0, ink.getPacked(), false);
+            } finally { matrices.popMatrix(); }
         }
     }
 
