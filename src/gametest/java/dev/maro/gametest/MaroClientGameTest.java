@@ -305,7 +305,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 "fill " + x + " " + (y + 1) + " " + z + " " + x + " " + (y + 2) + " " + z + " minecraft:air",
                 "setblock " + (x - 1) + " " + (y + 2) + " " + (z + 5) + " minecraft:diamond_ore",
                 "setblock " + x + " " + y + " " + (z + 7) + " minecraft:air",
-                "tp @a " + x + ".5 " + (y + 1) + " " + z + ".5 0 0")) {
+                "tp @a " + (x + 0.5) + " " + (y + 1) + " " + (z + 0.5) + " 0 0")) {
             singleplayer.getServer().runCommand(command);
         }
         settle(context);
@@ -374,7 +374,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 "setblock " + x + " " + y + " " + (z + 2) + " minecraft:crafter",
                 "item replace block " + x + " " + y + " " + (z + 2) + " container.0 with minecraft:cobblestone 5",
                 "item replace block " + x + " " + y + " " + (z + 2) + " container.4 with minecraft:oak_planks 3",
-                "tp @a " + x + ".5 " + y + " " + z + ".5 0 30")) {
+                "tp @a " + (x + 0.5) + " " + y + " " + (z + 0.5) + " 0 30")) {
             singleplayer.getServer().runCommand(command);
         }
         settle(context);
