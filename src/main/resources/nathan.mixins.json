@@ -1,0 +1,27 @@
+{
+  "required": true,
+  "package": "dev.maro.nathan.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "CameraMixin",
+    "ContainerScreenAccessor",
+    "GlowColorMixin",
+    "GlowMixin",
+    "FakeXpBarMixin",
+    "FakeXpLevelMixin",
+    "ChefHatLayerMixin",
+    "FreeCamInputMixin",
+    "FreeCamLookMixin",
+    "HandsMixin",
+    "SpinBotMixin",
+    "SwingSpeedMixin",
+    "GameRendererMixin",
+    "LevelMatricesMixin",
+    "PostChainAccessor",
+    "LivingEntityRendererAccessor",
+    "PostPassAccessor"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -32,6 +32,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             // make sure nothing (pause menu, toasts...) is in the way before testing the keybind
             context.setScreen(() -> null);
             context.waitTicks(5);
+            checkNathanPort(context);
             String before = context.computeOnClient(client -> describe(client));
             context.takeScreenshot("maro-00-world");
 
@@ -144,6 +145,83 @@ public class MaroClientGameTest implements FabricClientGameTest {
     private static String describe(net.minecraft.client.MinecraftClient client) {
         return "screen=" + (client.currentScreen == null ? "none" : client.currentScreen.getClass().getName())
                 + " player=" + (client.player != null) + " world=" + (client.world != null);
+    }
+
+    private static void checkNathanPort(ClientGameTestContext context) {
+        long failures = context.computeOnClient(client -> dev.maro.runtime.MeteorClient.EVENT_BUS.failureCount());
+        context.runOnClient(client -> {
+            if (dev.maro.runtime.systems.modules.Modules.get().getAll().size() != 20)
+                throw new AssertionError("Expected all 20 current Nathan modules");
+            for (var module : dev.maro.runtime.systems.modules.Modules.get().getAll()) {
+                if (module.getSettings().isEmpty()) throw new AssertionError("No settings for " + module.name);
+                module.setEnabled(false);
+                for (var group : module.settings) for (var setting : group) setting.reset();
+                for (var setting : module.getSettings()) setting.fromJson(setting.toJson());
+            }
+            // Macro definitions need their own saved data, beyond the module's scalar settings.
+            var macros = ModuleManager.get(dev.maro.nathan.modules.ChatMacros.class);
+            var macro = new dev.maro.nathan.modules.ChatMacros.Macro();
+            macro.name.set("Port smoke test"); macro.steps.set(java.util.List.of("Hello; world!", "@wait 1500"));
+            macros.macros.add(macro);
+            var saved = macros.saveExtra(); macros.macros.clear(); macros.loadExtra(saved);
+            if (macros.macros.size() != 1 || !macros.macros.getFirst().name.get().equals("Port smoke test")
+                || !macros.macros.getFirst().steps.get().equals(macro.steps.get()))
+                throw new AssertionError("Macro config did not round-trip");
+            var map = ModuleManager.get(dev.maro.nathan.modules.RegionMap.class);
+            var x = map.getSettings().stream().filter(s -> s.getName().equals("x")).findFirst().orElseThrow();
+            var oldX = x.toJson();
+            x.fromJson(new com.google.gson.JsonPrimitive(65));
+            if (!dev.maro.config.ConfigManager.save("port_smoke")) throw new AssertionError("Config save failed");
+            x.fromJson(oldX); macros.macros.clear();
+            if (!dev.maro.config.ConfigManager.load("port_smoke") || x.toJson().getAsInt() != 65
+                || macros.macros.size() != 1 || !macros.macros.getFirst().steps.get().equals(macro.steps.get()))
+                throw new AssertionError("Maro config did not restore Nathan settings and macros");
+            x.fromJson(oldX);
+            dev.maro.config.ConfigManager.delete("port_smoke");
+            for (String name : java.util.List.of("Region Map", "Keystrokes", "Spotify Hud", "Hats", "Spin Bot", "Custom Fov", "Key Zoom", "Free Cam", "Freelook")) {
+                var module = ModuleManager.getByName(name);
+                if (module == null) throw new AssertionError("Missing " + name);
+                module.setEnabled(true);
+            }
+        });
+        context.waitTicks(15);
+        context.takeScreenshot("maro-nathan-huds");
+        context.runOnClient(client -> {
+            for (var module : dev.maro.runtime.systems.modules.Modules.get().getAll()) module.setEnabled(false);
+            if (client.options.forwardKey.isPressed() || client.options.useKey.isPressed())
+                throw new AssertionError("A ported module left an input key pressed");
+        });
+        context.setScreen(() -> new dev.maro.nathan.gui.ChatMacroScreens.Manager(new dev.maro.runtime.gui.GuiTheme(), ModuleManager.get(dev.maro.nathan.modules.ChatMacros.class)));
+        context.waitTicks(3);
+        context.takeScreenshot("maro-macro-manager");
+        context.setScreen(() -> new dev.maro.nathan.gui.ChatMacroScreens.Editor(new dev.maro.runtime.gui.GuiTheme(), ModuleManager.get(dev.maro.nathan.modules.ChatMacros.class), ModuleManager.get(dev.maro.nathan.modules.ChatMacros.class).macros.getFirst(), () -> {}));
+        context.waitTicks(3);
+        context.takeScreenshot("maro-macro-editor");
+        context.setScreen(() -> null);
+        context.runOnClient(client -> ModuleManager.get(dev.maro.nathan.modules.ChatMacros.class).macros.clear());
+        for (String name : java.util.List.of("Bloom", "Color Correct", "Motion Blur")) {
+            context.runOnClient(client -> {
+                var module = ModuleManager.getByName(name);
+                if (name.equals("Color Correct")) module.getSettings().stream().filter(s -> s.getName().equals("saturation")).findFirst().orElseThrow().fromJson(new com.google.gson.JsonPrimitive(.75));
+                module.setEnabled(true);
+            });
+            context.waitTicks(5);
+            context.takeScreenshot("maro-effect-" + name.replace(' ', '-'));
+            context.runOnClient(client -> {
+                var module = ModuleManager.getByName(name);
+                try {
+                    var field = module.getClass().getDeclaredField("effect"); field.setAccessible(true);
+                    var effect = (dev.maro.nathan.render.PostEffect)field.get(module);
+                    var broken = effect.getClass().getDeclaredField("broken"); broken.setAccessible(true);
+                    if (effect.chain() == null || broken.getBoolean(effect)) throw new AssertionError(name + " shader did not run");
+                } catch (ReflectiveOperationException e) { throw new AssertionError(e); }
+                module.setEnabled(false);
+            });
+        }
+        context.runOnClient(client -> {
+            if (dev.maro.runtime.MeteorClient.EVENT_BUS.failureCount() != failures)
+                throw new AssertionError("A Nathan event handler failed; see the game log");
+        });
     }
 
     /** Lets time-based animations finish (the game only advances inside wait calls). */

@@ -2,6 +2,7 @@ package dev.maro.module;
 
 import dev.maro.setting.KeybindSetting;
 import dev.maro.setting.Setting;
+import dev.maro.setting.SettingSection;
 import dev.maro.util.KeyUtil;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -79,6 +80,15 @@ public abstract class Module {
     public List<Setting<?>> getSettings() {
         return Collections.unmodifiableList(settings);
     }
+
+    public List<SettingSection> getSettingSections() {
+        SettingSection section = new SettingSection("Settings");
+        getSettings().forEach(section::add);
+        return List.of(section);
+    }
+
+    public com.google.gson.JsonObject saveExtra() { return new com.google.gson.JsonObject(); }
+    public void loadExtra(com.google.gson.JsonObject data) { }
 
     /** True when there is a world and player - most module logic needs this. */
     protected static boolean inGame() {
