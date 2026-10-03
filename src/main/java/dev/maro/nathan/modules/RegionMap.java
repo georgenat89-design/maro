@@ -40,8 +40,8 @@ import dev.maro.nathan.render.RoundedBox;
  * <p>The 36 by 36 source grid is drawn as differently sized numbered shards on a
  * dark glass card: a flowing band of the group colours along its top edge, the
  * region you are in written large over the map with its group and the way you
- * are facing, glossy tiles that dim every group but yours, a pulsing outline on
- * your own shard, a radar ping under the arrow, coordinate chips under the map
+ * are facing, deep tiles with your own group lit, your shard raised off the map
+ * with a pulse, a radar ping under the arrow, coordinate chips under the map
  * and the groups as a row of chips. Scale still grows every part together.
  *
  * <p>The cells and all 201 antialiased labels share one cached texture, rebuilt
@@ -95,17 +95,23 @@ public class RegionMap extends Module {
     private static final double SCALE_MAX = 4;
 
     /** The arrow at a Marker Size of 1, from its middle to its point. */
-    private static final double MARKER = 4.6;
+    private static final double MARKER = 3.6;
 
     /** Seconds for the marker's heading to catch up with your own. */
     private static final double TURN = 0.07;
+
+    /** How far a raised tile stands out past its own cell on every side. */
+    private static final double LIFT = 0.6;
 
     /** Seconds for one pulse round your shard, and for one ping under the arrow. */
     private static final double PULSE = 1.6;
     private static final double PING = 2.2;
 
-    /** Saturated colours that keep white numbers readable, in {@link RegionGrid.Locale} order. */
-    private static final int[] NEON = { 0x3D6CFF, 0xEC4468, 0x17A862, 0xE58A0C, 0x965AFF, 0x0EA2B4, 0xDB4BB0 };
+    /** Balanced colours, none brighter than the rest, in {@link RegionGrid.Locale} order. */
+    private static final int[] RICH = { 0x4F6BED, 0xE0526A, 0x2E9E6B, 0xD48A2A, 0x8B62D9, 0x2B97AE, 0xC9579F };
+
+    /** Louder colours for those who want them. */
+    private static final int[] VIVID = { 0x3D6CFF, 0xEC4468, 0x17A862, 0xE58A0C, 0x965AFF, 0x0EA2B4, 0xDB4BB0 };
 
     /** Original six muted colours, plus one for the new Europe shards. */
     private static final int[] MUTED = { 0x3F67B2, 0xC45860, 0x3C7B13, 0xB88B1F, 0xA37CDF, 0x069A9D, 0xB065A8 };
@@ -117,10 +123,17 @@ public class RegionMap extends Module {
     private static final String[] HEADINGS = { "S", "SW", "W", "NW", "N", "NE", "E", "SE" };
 
     public enum Palette {
-        Neon,
+        Rich,
+        Vivid,
         Muted,
         Signal,
         Custom
+    }
+
+    public enum TileStyle {
+        Midnight,
+        Flat,
+        Glossy
     }
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
@@ -234,27 +247,36 @@ public class RegionMap extends Module {
         .build()
     );
 
-    private final Setting<Boolean> glossy = sgLook.add(new BoolSetting.Builder()
-        .name("glossy-tiles")
-        .description("Tiles lit from above, with a bright top edge and a soft shadow under each number.")
-        .defaultValue(true)
+    private final Setting<TileStyle> tileStyle = sgLook.add(new EnumSetting.Builder<TileStyle>()
+        .name("tile-style")
+        .description("Midnight: deep tiles with coloured numbers. Flat: solid colour tiles. Glossy: solid tiles lit from above.")
+        .defaultValue(TileStyle.Midnight)
+        .build()
+    );
+
+    private final Setting<Double> saturation = sgLook.add(new DoubleSetting.Builder()
+        .name("saturation")
+        .description("How rich every group colour is. Under 1 calms them down, over 1 makes them punchier.")
+        .defaultValue(1.1)
+        .range(0, 2)
+        .sliderRange(0, 2)
         .build()
     );
 
     private final Setting<Boolean> spotlight = sgLook.add(new BoolSetting.Builder()
         .name("spotlight")
-        .description("Dims every group but the one you are in, so yours stands out.")
+        .description("Your own group in full colour while the rest stay quiet.")
         .defaultValue(true)
         .build()
     );
 
     private final Setting<Integer> spotlightStrength = sgLook.add(new IntSetting.Builder()
         .name("spotlight-strength")
-        .description("How far the other groups are dimmed, as a percentage.")
+        .description("Flat and Glossy only: how far the other groups are dimmed, as a percentage.")
         .defaultValue(40)
         .range(0, 85)
         .sliderRange(0, 85)
-        .visible(spotlight::get)
+        .visible(() -> spotlight.get() && tileStyle.get() != TileStyle.Midnight)
         .build()
     );
 
@@ -289,9 +311,9 @@ public class RegionMap extends Module {
     );
 
     private final Setting<SettingColor> accentColor = sgLook.add(new ColorSetting.Builder()
-        .name("glow-color")
-        .description("The outline round the cell you are standing in. Its pulse takes your group's colour.")
-        .defaultValue(new SettingColor(255, 255, 255, 240))
+        .name("tile-outline-color")
+        .description("The fine outline round the raised tile you are standing in.")
+        .defaultValue(new SettingColor(255, 255, 255, 110))
         .build()
     );
 
@@ -312,15 +334,15 @@ public class RegionMap extends Module {
 
     private final Setting<Boolean> shadow = sgLook.add(new BoolSetting.Builder()
         .name("text-shadow")
-        .description("Shadow under the lettering on the panel. Cell numbers have their own with Glossy Tiles.")
+        .description("Shadow under the lettering on the panel. Cell numbers have their own with Glossy tiles.")
         .defaultValue(false)
         .build()
     );
 
     private final Setting<Palette> palette = sgColors.add(new EnumSetting.Builder<Palette>()
-        .name("scheme")
-        .description("Neon is bright and saturated. Muted and Signal are the original colours. Custom lets you change all seven.")
-        .defaultValue(Palette.Neon)
+        .name("color-scheme")
+        .description("Rich is balanced, Vivid is louder. Muted and Signal are the original colours. Custom lets you change all seven.")
+        .defaultValue(Palette.Rich)
         .build()
     );
 
@@ -360,7 +382,7 @@ public class RegionMap extends Module {
     }
 
     private ColorSetting.Builder group(String name, RegionGrid.Locale of) {
-        int rgb = NEON[of.ordinal()];
+        int rgb = RICH[of.ordinal()];
 
         return new ColorSetting.Builder()
             .name(name)
@@ -384,21 +406,35 @@ public class RegionMap extends Module {
         rasterInks = null;
     }
 
-    /** The seven colours in use, in {@link RegionGrid.Locale} order. */
+    /** The seven colours in use, in {@link RegionGrid.Locale} order, with Saturation applied. */
     private Color[] colors() {
+        Color[] out;
+
         if (palette.get() == Palette.Custom) {
-            return new Color[]{euCentralColor.get(), euWestColor.get(), naEastColor.get(),
+            out = new Color[]{euCentralColor.get(), euWestColor.get(), naEastColor.get(),
                 naWestColor.get(), asiaColor.get(), oceaniaColor.get(), europeColor.get()};
+        } else {
+            int[] rgb = switch (palette.get()) {
+                case Vivid -> VIVID;
+                case Muted -> MUTED;
+                case Signal -> SIGNAL;
+                default -> RICH;
+            };
+            out = new Color[rgb.length];
+
+            for (int i = 0; i < rgb.length; i++) out[i] = new Color(rgb[i] >> 16 & 0xFF, rgb[i] >> 8 & 0xFF, rgb[i] & 0xFF);
         }
 
-        int[] rgb = switch (palette.get()) {
-            case Muted -> MUTED;
-            case Signal -> SIGNAL;
-            default -> NEON;
-        };
-        Color[] out = new Color[rgb.length];
+        double amount = saturation.get();
 
-        for (int i = 0; i < rgb.length; i++) out[i] = new Color(rgb[i] >> 16 & 0xFF, rgb[i] >> 8 & 0xFF, rgb[i] & 0xFF);
+        if (amount == 1) return out;
+
+        for (int i = 0; i < out.length; i++) {
+            float[] hsb = java.awt.Color.RGBtoHSB(out[i].r, out[i].g, out[i].b, null);
+            int rgb = java.awt.Color.HSBtoRGB(hsb[0], (float) Math.min(1, hsb[1] * amount), hsb[2]);
+
+            out[i] = new Color(rgb >> 16 & 0xFF, rgb >> 8 & 0xFF, rgb & 0xFF, out[i].a);
+        }
 
         return out;
     }
@@ -629,33 +665,29 @@ public class RegionMap extends Module {
 
         Renderer2D.COLOR.begin();
 
-        // The cell you are in: a glow inside it, a bright outline, and a pulse in
-        // your group's colour leaving it.
+        // The cell you are in, then the one under the pointer: each raised off the
+        // map as a tile of its group's full colour with a soft shadow under it.
+        // Yours also sends a slow pulse of its colour outwards.
         if (here >= 0) {
             RegionGrid.Shard shard = RegionGrid.shard(here);
             double[] middle = cellMiddle(left, top, unit, gridTop, here);
-            double w = shardWidth(shard, unit);
-            double h = shardHeight(shard, unit);
 
             if (animations.get()) {
                 double phase = (clock % PULSE) / PULSE;
 
-                RoundedBox.ripple(middle[0], middle[1], w, h, CELL_RADIUS * unit, FEATHER, (0.4 + phase * 3.6) * unit,
-                    1.3 * unit, tinted(ownLight, Math.pow(1 - phase, 1.6) * 0.9));
+                RoundedBox.ripple(middle[0], middle[1], shardWidth(shard, unit) + LIFT * 2 * unit, shardHeight(shard, unit) + LIFT * 2 * unit,
+                    (CELL_RADIUS + LIFT) * unit, FEATHER, (0.3 + phase * 3.2) * unit, 1.1 * unit,
+                    tinted(ownLight, Math.pow(1 - phase, 1.8) * 0.7));
             }
 
-            RoundedBox.innerGlow(middle[0], middle[1], w, h, CELL_RADIUS * unit, FEATHER, 0, 2.2 * unit, 0, tinted(glow, 0.4));
-            RoundedBox.drawCompact(middle[0], middle[1], w, h, CELL_RADIUS * unit, Math.max(1, 0.8 * unit), FEATHER, 0,
-                CLEAR, glow);
+            raised(middle[0], middle[1], shard, unit, own, glow);
         }
 
         if (hovered >= 0 && hovered != here) {
             RegionGrid.Shard shard = RegionGrid.shard(hovered);
             double[] middle = cellMiddle(left, top, unit, gridTop, hovered);
 
-            RoundedBox.drawCompact(middle[0], middle[1], shardWidth(shard, unit), shardHeight(shard, unit),
-                CELL_RADIUS * unit, Math.max(1, 0.7 * unit), FEATHER, 0,
-                tinted(WHITE, 0.12), tinted(ink, 0.75));
+            raised(middle[0], middle[1], shard, unit, colors[shard.locale().ordinal()], tinted(WHITE, 0.55));
         }
 
         if (marker.get() && here >= 0) {
@@ -665,8 +697,8 @@ public class RegionMap extends Module {
             Color color = markerColor.get();
 
             // A soft halo, then a ring that leaves it like a radar ping.
-            double halo = size * 2.2;
-            RoundedBox.draw(px, py, halo, halo, halo / 2, 0, halo * 0.5, 0, tinted(color, 0.3), tinted(color, 0.3));
+            double halo = size * 2;
+            RoundedBox.draw(px, py, halo, halo, halo / 2, 0, halo * 0.5, 0, tinted(color, 0.18), tinted(color, 0.18));
 
             if (animations.get()) {
                 double phase = (clock % PING) / PING;
@@ -684,6 +716,20 @@ public class RegionMap extends Module {
         // ---- the lettering
 
         CrispFont.begin(null);
+
+        // Numbers on the raised tiles. Yours is left to the arrow, and the header
+        // says it anyway, unless there is no arrow.
+        if (numbers.get()) {
+            if (here >= 0 && !marker.get()) {
+                double[] middle = cellMiddle(left, top, unit, gridTop, here);
+                raisedNumber(middle[0], middle[1], RegionGrid.shard(here), unit, ink);
+            }
+
+            if (hovered >= 0 && hovered != here) {
+                double[] middle = cellMiddle(left, top, unit, gridTop, hovered);
+                raisedNumber(middle[0], middle[1], RegionGrid.shard(hovered), unit, ink);
+            }
+        }
 
         if (header.get()) {
             double numberLeft = left + PAD * unit;
@@ -735,6 +781,29 @@ public class RegionMap extends Module {
     /** Nothing at all: the fill of a shape that is only a rim. */
     private static final Color CLEAR = new Color(0, 0, 0, 0);
     private static final Color WHITE = new Color(255, 255, 255);
+
+    /** A tile raised off the map over one shard: a shadow, then the shard a little larger in {@code fill}. */
+    private static void raised(double cx, double cy, RegionGrid.Shard shard, double unit, Color fill, Color rim) {
+        double w = shardWidth(shard, unit) + LIFT * 2 * unit;
+        double h = shardHeight(shard, unit) + LIFT * 2 * unit;
+        double radius = (CELL_RADIUS + LIFT) * unit;
+
+        RoundedBox.shadow(cx, cy + 0.9 * unit, w + unit, h + unit, radius, 4 * unit, 0, 0.6);
+        RoundedBox.drawCompact(cx, cy, w, h, radius, Math.max(1, 0.5 * unit), FEATHER, 0,
+            withAlpha(fill, 255), rim);
+    }
+
+    /** The number on a raised tile, as large as its tile allows. */
+    private void raisedNumber(double cx, double cy, RegionGrid.Shard shard, double unit, Color ink) {
+        String text = Integer.toString(shard.number());
+        double w = shardWidth(shard, unit) + LIFT * 2 * unit;
+        double h = shardHeight(shard, unit) + LIFT * 2 * unit;
+        CrispFont font = CrispFont.POPPINS_SEMIBOLD;
+        double caps = Math.min(3.2 * numberSize.get() * unit, h * 0.62);
+        CrispFont.Sized sized = fitted(font, text, caps, w - 1.4 * unit);
+
+        sized.centred(text, cx, Math.round(cy - sized.caps() / 2), ink, 0, true);
+    }
 
     /** A pill: {@code fill} at {@code strength} of its own alpha, with a fine rim. */
     private static void chip(double left, double top, double width, double height, double unit, Color fill, Color rim, double strength) {
@@ -879,20 +948,32 @@ public class RegionMap extends Module {
         RegionMapRaster.NumberFont chosenFont = numberFont.get();
         double chosenSize = numberSize.get();
         boolean fit = fitNumbers.get();
-        boolean gloss = glossy.get();
+        TileStyle style = tileStyle.get();
+        boolean gloss = style == TileStyle.Glossy;
         double dim = spot < 0 ? 0 : spotlightStrength.get() / 100.0;
         int[] fills = new int[colors.length];
         int[] inks = new int[colors.length];
+        Color deep = backgroundColor.get();
         for (int i = 0; i < colors.length; i++) {
-            fills[i] = argb(colors[i]);
-            inks[i] = argb(ink);
+            if (style == TileStyle.Midnight) {
+                // Every group sunk deep into the panel with its numbers in its own
+                // colour; yours, under Spotlight, lit nearly to full strength.
+                boolean lit = i == spot;
+                fills[i] = argb(mixed(withAlpha(colors[i], 255), withAlpha(deep, 255), lit ? 0.3 : 0.72));
+                inks[i] = argb(lit ? ink : tinted(mixed(withAlpha(colors[i], 255), WHITE, 0.42), (spot < 0 ? 1 : 0.72) * ink.a / 255.0));
+            } else {
+                fills[i] = argb(colors[i]);
+                inks[i] = argb(ink);
+            }
         }
+        if (style == TileStyle.Midnight) dim = 0;
+        int rasterSpot = style == TileStyle.Midnight ? -1 : spot;
         if (gridTexture != null && size == rasterSize && showNumbers == rasterNumbers
             && (!showNumbers || chosenFont == rasterFont && chosenSize == rasterNumberSize && fit == rasterFitNumbers)
-            && gloss == rasterGloss && spot == rasterSpotlight && dim == rasterDim
+            && gloss == rasterGloss && rasterSpot == rasterSpotlight && dim == rasterDim
             && Arrays.equals(fills, rasterFills) && Arrays.equals(inks, rasterInks)) return;
 
-        var image = RegionMapRaster.create(size, fills, inks, showNumbers, chosenFont, chosenSize, fit, gloss, spot, dim).image();
+        var image = RegionMapRaster.create(size, fills, inks, showNumbers, chosenFont, chosenSize, fit, gloss, rasterSpot, dim).image();
         int[] pixels = image.getRGB(0, 0, size, size, null, 0, size);
         byte[] rgba = new byte[size * size * 4];
         for (int i = 0; i < pixels.length; i++) {
@@ -911,7 +992,7 @@ public class RegionMap extends Module {
         rasterNumberSize = chosenSize;
         rasterFitNumbers = fit;
         rasterGloss = gloss;
-        rasterSpotlight = spot;
+        rasterSpotlight = rasterSpot;
         rasterDim = dim;
         rasterFills = fills;
         rasterInks = inks;
@@ -1052,6 +1133,10 @@ public class RegionMap extends Module {
         body.draw(south, px + inset, py + southTop - body.capsTop(), tinted(ink, 0.66), 0, false);
 
         CrispFont.end();
+    }
+
+    private static Color withAlpha(Color color, int alpha) {
+        return new Color(color.r, color.g, color.b, alpha);
     }
 
     private static Color tinted(Color color, double alpha) {
