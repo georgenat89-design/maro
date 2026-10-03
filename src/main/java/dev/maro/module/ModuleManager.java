@@ -19,6 +19,7 @@ public final class ModuleManager {
     public static void init() {
         register(new dev.maro.module.impl.player.FastPlace());
         register(new dev.maro.module.impl.visuals.StretchRes());
+        dev.maro.nathan.NameeProtectAddon.init();
 
         // Register your modules here, e.g.
         // register(new dev.maro.module.impl.ExampleModule());
@@ -27,6 +28,7 @@ public final class ModuleManager {
     public static void register(Module module) {
         if (getByName(module.getName()) != null) throw new IllegalStateException("Duplicate module name: " + module.getName());
         MODULES.add(module);
+        if(module instanceof dev.maro.runtime.systems.modules.Module ported) module.getBind().set(ported.keybind.code());
     }
 
     public static List<Module> all() {

@@ -29,14 +29,17 @@ public class Maro implements ClientModInitializer {
     public void onInitializeClient() {
         ModuleManager.init();
         ConfigManager.init();
+        dev.maro.runtime.commands.Commands.add(new dev.maro.nathan.commands.BloomCommand());
 
-        ClientTickEvents.END_CLIENT_TICK.register(client -> ModuleManager.onTick());
+        ClientTickEvents.START_CLIENT_TICK.register(client -> dev.maro.runtime.RuntimeEvents.tickPre());
+        ClientTickEvents.END_CLIENT_TICK.register(client -> { ModuleManager.onTick(); dev.maro.runtime.RuntimeEvents.tickPost(); });
         HudElementRegistry.addLast(Identifier.of(MOD_ID, "hud"), (context, tickCounter) -> {
             Theme.update();
             ModuleManager.onRender2D(context, tickCounter.getTickProgress(false));
+            dev.maro.runtime.RuntimeEvents.hud(context);
             if (!(MinecraftClient.getInstance().currentScreen instanceof ClickGuiScreen)) Notifications.render(context);
         });
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> ConfigManager.saveAll());
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> { ConfigManager.saveAll(); dev.maro.runtime.RuntimeEvents.shutdown(); });
 
         LOGGER.info("{} {} loaded", NAME, VERSION);
     }

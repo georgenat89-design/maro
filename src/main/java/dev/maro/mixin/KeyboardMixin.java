@@ -11,8 +11,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(Keyboard.class)
 public abstract class KeyboardMixin {
-    @Inject(method = "onKey", at = @At("HEAD"))
+    @Inject(method = "onKey", at = @At("HEAD"), cancellable=true)
     private void maro$onKey(long window, int action, KeyInput input, CallbackInfo ci) {
-        if (window == MinecraftClient.getInstance().getWindow().getHandle()) Maro.onKey(input.key(), action);
+        if (window == MinecraftClient.getInstance().getWindow().getHandle()) {
+            if(dev.maro.runtime.RuntimeEvents.key(input,action)){ci.cancel();return;}
+            Maro.onKey(input.key(), action);
+        }
     }
 }

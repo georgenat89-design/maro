@@ -236,11 +236,11 @@ public class ModulesPage extends Page {
         });
 
         List<SettingSection> secs = sections.computeIfAbsent(m, mod -> {
-            SettingSection settings = new SettingSection("Settings");
-            mod.getSettings().forEach(settings::add);
+            java.util.ArrayList<SettingSection> result = new java.util.ArrayList<>(mod.getSettingSections());
             SettingSection bind = new SettingSection("Keybind");
             bind.add(mod.getBind());
-            return List.of(settings, bind);
+            result.add(bind);
+            return result;
         });
 
         float ly = y + hh + 7, lh = h - hh - 7;

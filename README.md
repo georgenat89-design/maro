@@ -1,9 +1,25 @@
 # maro.gg
 
-A clean **Fabric 1.21.11** client base: a smooth, modern ClickGUI and the plumbing behind it.
-It ships with **no modules** so you can add your own.
+A **Fabric 1.21.11 / Java 21** client with a smooth, modern ClickGUI and the 20 modules from Nathan's current 1.21.11 source. It runs directly on Fabric; Meteor Client is not required.
 
 Open the menu in-game with **Right Shift** (you can change this in *Settings*).
+
+## Included modules
+
+| Category | Modules |
+| --- | --- |
+| Movement | Auto Walk, Free Cam, Freelook |
+| Player | Fast XP, Smart Eat, Spawner Protect, existing Fast Place |
+| Visuals | Bloom, Color Correct, Custom FOV, Fake XP, Hats, Key Zoom, Keystrokes, Motion Blur, Region Map, Spotify HUD, Spin Bot, Swing Speed, existing Stretch Res |
+| Misc | Chat Macros, Key Sounds |
+
+The Nathan modules use Maro's settings, keybinds, friend list, and saved configs. Right-click a module to edit its settings. Chat Macros includes a manager and editor under its Actions section. Strings and item lists have an Edit button; lists accept JSON arrays or semicolon-separated entries.
+
+Spotify HUD supports the existing desktop/browser media bridge on Windows, album covers, playback controls, draggable positioning, seeking, and animated audio bars. Press **F9** while enabled to interact. Audio-reactive bars use Windows system output; they do not record a microphone. Live media/audio integration needs Windows; other systems keep the HUD's preview/fallback state. Spotify control integration is retained from Nathan, with Maro's renderer underneath.
+
+Region Map retains Nathan's updated region divisions and sharp labels. Keystrokes retains its Poppins labels. Their initial positions leave room for each other and Spotify, and can be changed in settings.
+
+Key Sounds includes its generated sounds; the optional EG Oreo pack must be imported from Mechvibes or placed under `.minecraft/maro/nameeprotect/keysounds/eg-oreo/`. Spawner Protect can use Baritone when installed separately; without it, automatic pathfinding is unavailable.
 
 ## Features
 
@@ -96,6 +112,8 @@ Requires Java 21.
 
 The mod jar is written to `build/libs/`. Run the dev client with `./gradlew runClient`.
 
+Run `./gradlew runProductionClientGameTest` to launch a real client against the production jar. It checks the module registry, settings/macros/config round-trips, HUD rendering, camera modules, shader effects, menu pages, Stretch Res, and Fast Place. Screenshots are saved under `run/screenshots/`. External Spotify sessions, sound devices, and optional Baritone are not controlled by this test.
+
 ## Tweaks
 
 - **Font:** Inter SemiBold / ExtraBold. Each weight has one definition per GUI scale (`assets/maro/font/inter_*_x1..x6.json`) so text is rasterised pixel-perfect; change `"shift"` / `"size"` there if text sits slightly high or low.
@@ -103,3 +121,5 @@ The mod jar is written to `build/libs/`. Run the dev client with `./gradlew runC
 - **Window size:** see the layout block at the top of `ClickGuiScreen#render`.
 
 Inter font © The Inter Project Authors, SIL Open Font License 1.1 (`INTER_LICENSE.txt` in the jar).
+
+See [THIRD_PARTY.md](THIRD_PARTY.md) for bundled Nathan source, fonts, and retained notices.

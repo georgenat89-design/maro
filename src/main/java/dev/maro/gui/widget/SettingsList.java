@@ -88,6 +88,11 @@ public class SettingsList {
         else if (s instanceof KeybindSetting k) {
             float cw = Fonts.width(gui.listening == k ? "Press a key" : k.getKeyName(), false, 0.72f) + 9;
             Widgets.bindChip(gui, ctx, k, x + w - 10 - cw, y + 15, 1f);
+        } else if (s instanceof dev.maro.setting.ActionSetting action) {
+            Widgets.button(gui,ctx,s,x+w-62,y+6,52,18,"Open",Widgets.Style.SECONDARY,null,action::run);
+        } else if (s instanceof dev.maro.runtime.settings.SettingAdapters.ValueSetting value) {
+            Widgets.button(gui,ctx,s,x+w-62,y+6,52,18,"Edit",Widgets.Style.SECONDARY,null,
+                ()->net.minecraft.client.MinecraftClient.getInstance().setScreen(new dev.maro.gui.ValueEditorScreen(gui,value)));
         }
     }
 

@@ -83,6 +83,12 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 java {
+    toolchain { languageVersion = JavaLanguageVersion.of(21) }
     sourceCompatibility = JavaVersion.VERSION_21
     targetCompatibility = JavaVersion.VERSION_21
+}
+
+tasks.named('jar', Jar) {
+    from('LICENSE-Nathan', 'THIRD_PARTY.md')
+    from('LICENSES') { into 'LICENSES' }
 }
