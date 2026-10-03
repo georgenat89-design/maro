@@ -58,11 +58,11 @@ public class SpotifyHud extends Module {
         .name("lyrics").description("Show song lyrics from LRCLIB. Timed lyrics follow playback and seeking.")
         .defaultValue(true).build());
     private final Setting<LyricsMode> lyricsMode = sgLyrics.add(new EnumSetting.Builder<LyricsMode>()
-        .name("word-display").description("Highlight the current word, show one live word, or display whole lines. Real word timing takes priority.")
+        .name("word-display").description("Highlight each timed word, show one sung word at a time, or display whole lines. SingleWord requires real word timestamps.")
         .defaultValue(LyricsMode.WordHighlight).visible(showLyrics::get).build());
     private final Setting<Boolean> estimateWords = sgLyrics.add(new BoolSetting.Builder()
-        .name("auto-word-follow").description("Follow words even when only line timestamps exist. That fallback is approximate and labelled ESTIMATED; exact word timing takes priority.")
-        .defaultValue(true).visible(() -> showLyrics.get() && lyricsMode.get() != LyricsMode.Lines).build());
+        .name("approximate-word-preview").description("Optional guessed highlighting for line-only lyrics. This does not detect vocals and never applies to SingleWord.")
+        .defaultValue(false).visible(() -> showLyrics.get() && lyricsMode.get() == LyricsMode.WordHighlight).build());
     private final Setting<Double> lyricsSize = sgLyrics.add(new DoubleSetting.Builder()
         .name("lyrics-size").description("Size of the highlighted lyric line.")
         .defaultValue(12).range(8, 16).sliderRange(8, 16).visible(showLyrics::get).build());
@@ -500,7 +500,7 @@ public class SpotifyHud extends Module {
         lyrics.update(state);
         var snapshot = lyrics.snapshot();
         if (!snapshot.key().equals(lyricsKey)) { lyricsKey = snapshot.key(); plainLyricIndex = 0; lyricLine = ""; lyricPosition = -1; lyricIndex = -1; }
-        var words = snapshot.karaoke(position, lyricsOffset.get(), plainLyricIndex, state.durationMs(), estimateWords.get());
+        var words = lyricWords(snapshot, position, state.durationMs());
         var frame = words.frame();
         boolean changed = frame.index() != lyricIndex || !frame.current().equals(lyricLine);
         lyricIndex = frame.index();
@@ -521,8 +521,11 @@ public class SpotifyHud extends Module {
         boolean karaoke = lyricsMode.get() != LyricsMode.Lines && words.timed();
         boolean ambient = snapshot.result().status() != SpotifyLyrics.Status.Synced && snapshot.result().status() != SpotifyLyrics.Status.Plain
             || frame.current().equals("♪");
+        boolean missingWordTiming = !ambient && snapshot.result().status() == SpotifyLyrics.Status.Synced
+            && lyricsMode.get() != LyricsMode.Lines && !words.timed();
         String heading = snapshot.result().status() == SpotifyLyrics.Status.Plain ? "UNTIMED LYRICS"
-            : ambient ? "LISTENING" : karaoke ? words.estimated() ? "ESTIMATED WORDS" : "LIVE WORDS" : "LIVE LYRICS";
+            : ambient ? "LISTENING" : missingWordTiming ? "LINE SYNC / NO WORD TIMING"
+            : karaoke ? words.estimated() ? "ESTIMATED WORDS" : "LIVE WORDS" : "LIVE LYRICS";
         CrispFont.begin(null);
         try {
             var caption = CrispFont.POPPINS_MEDIUM.forCaps(6 * unit);
@@ -532,12 +535,12 @@ public class SpotifyHud extends Module {
             renderLyricsAmbient(snapshot.result().status(), area, unit, state.playing(), accent);
         } else if (karaoke && lyricsMode.get() == LyricsMode.SingleWord) {
             String word = words.currentWord();
-            if (!word.equals(liveWord)) { liveWord = word; wordFade = 0; }
+            if (changed || seeked || !word.equals(liveWord)) { liveWord = word; wordFade = 0; }
             wordFade += (1 - wordFade) * (1 - Math.exp(-22 * seconds));
             double size = (lyricsSize.get() + 9) * unit;
             double width = lyricWidth(word, size, true);
             lyricText(word, area.centerX() - Math.min(width, area.width() - 36 * unit) / 2,
-                area.y() + (22 + 2 * (1 - wordFade)) * unit, area.width() - 36 * unit, size, opacity(WHITE, .65 + .35 * wordFade), true);
+                area.y() + 22 * unit, area.width() - 36 * unit, size, opacity(WHITE, .85 + .15 * wordFade), true);
             String next = words.active() + 1 < words.words().size() ? words.words().get(words.active() + 1).text().strip() : "";
             double nextWidth = lyricWidth(next, 8 * unit, false);
             lyricText(next, area.centerX() - nextWidth / 2, area.y() + (lyricsSize.get() + 38) * unit,
@@ -560,9 +563,17 @@ public class SpotifyHud extends Module {
                     opacity(WHITE, .65 + .35 * lyricFade), true, left, left + width);
             }
             double nextTop = rest.isEmpty() ? Math.min(area.height() - 18 * unit, (lyricsSize.get() + 33) * unit) : area.height() - 18 * unit;
-            lyricText(preview, area.x() + 18 * unit, area.y() + nextTop,
+            lyricText(missingWordTiming ? "Word timestamps unavailable for this line" : preview, area.x() + 18 * unit, area.y() + nextTop,
                 width, 8 * unit, opacity(MUTED, .6), false);
         }
+    }
+
+    private SpotifyLyrics.WordFrame lyricWords(SpotifyLyrics.Snapshot snapshot, long position, long duration) {
+        // SingleWord must never substitute a time distribution for the vocalist's word starts.
+        var words = snapshot.karaoke(position, lyricsOffset.get(), plainLyricIndex, duration,
+            lyricsMode.get() == LyricsMode.WordHighlight && estimateWords.get());
+        return lyricsMode.get() == LyricsMode.SingleWord && words.timed() && !words.individualWords()
+            ? new SpotifyLyrics.WordFrame(words.frame(), java.util.List.of(), -1, 0, false) : words;
     }
 
     private WrappedLyric wrapLyric(String text, double width, double unit, double desired) {
@@ -635,10 +646,10 @@ public class SpotifyHud extends Module {
             lyricRun(text, left - lyricScroll, top, size, opacity(WHITE), true,
                 Math.max(left, left + activeLeft - lyricScroll), Math.min(left + width, left + activeRight - lyricScroll));
             double start = Math.max(left, left + activeLeft - lyricScroll), end = Math.min(left + width, left + activeRight - lyricScroll);
-            double filled = Math.max(0, end - start) * frame.progress();
-            if (filled > 0) {
+            double span = Math.max(0, end - start);
+            if (span > 0) {
                 Renderer2D.COLOR.begin();
-                box(new Rect(start, top + size + 5 * unit, filled, 1.5 * unit), .75 * unit, 0, mix(accent, WHITE, .35), accent);
+                box(new Rect(start, top + size + 5 * unit, span, 1.5 * unit), .75 * unit, 0, mix(accent, WHITE, .35), accent);
                 Renderer2D.COLOR.render();
             }
         }

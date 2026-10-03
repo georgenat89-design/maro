@@ -117,12 +117,15 @@ The **Lyrics** settings let you hide the panel, adjust text size, or change timi
 lyrics show a status instead. No Spotify account connection or token is needed.
 
 **Word display** offers **Lines**, **WordHighlight** (the active word turns white), and
-**SingleWord** (one live word centred in the card). Real word timing comes from LRCLIB's
-[Lyricsfile](https://github.com/tranxuanthang/lyricsfile) data when available. Tracks with
-only line timestamps use **Auto word follow**, enabled by default. This fallback is less accurate
-and is labelled **ESTIMATED WORDS**. Turn Auto word follow off to require actual word timestamps.
-Word display defaults to WordHighlight; these new settings also enable following for existing
-configs that previously stored line mode or disabled estimates. Words follow the same
+**SingleWord** (one sung word centred in a fixed position). Real word timing comes from LRCLIB's
+[Lyricsfile](https://github.com/tranxuanthang/lyricsfile) or enhanced LRC word timestamps when available.
+SingleWord always requires individual word timestamps; it never guesses a singer's delivery
+from the length of a line. If those timestamps are missing, the current line is displayed with
+**LINE SYNC / NO WORD TIMING**. Multiword segments cannot supply individual word timing either.
+WordHighlight switches the whole word and its underline at the supplied timestamps.
+**Approximate word preview** is an optional WordHighlight-only estimate, disabled by default
+and labelled **ESTIMATED WORDS**. Existing Auto word follow settings do not enable it.
+Word display defaults to WordHighlight. Words follow the same
 playback/seek clock as the timeline. Timing accuracy also depends on the supplied lyrics
 and the media player's position reports.
 The Windows bridge stays open and samples every 250 ms, preserving the sample timestamp
