@@ -92,6 +92,8 @@ public class AutoMine extends Module {
     private final Set<BlockPos> skipped = new HashSet<>();
     /** Ticks spent turning towards the current block or placement without reaching it. */
     private int aimTicks;
+    /** Where to look for the ore chosen this tick: the middle of the face it shows the tunnel. */
+    private Vec3d oreFace;
     private Vec3d lastPos;
     private int stuckTicks;
 
@@ -244,6 +246,7 @@ public class AutoMine extends Module {
 
         // What to dig: an ore showing beside the tunnel, then the next slice of the tunnel itself.
         BlockPos dig = null;
+        oreFace = null;
         if (mineOres.get()) dig = exposedOre(here);
         if (dig == null) for (BlockPos pos : slice(here)) if (solid(pos)) { dig = pos; break; }
         if (dig == null) for (BlockPos pos : next) if (solid(pos)) { dig = pos; break; }
@@ -259,7 +262,7 @@ public class AutoMine extends Module {
             mc.options.leftKey.setPressed(false);
             mc.options.rightKey.setPressed(false);
             stuckTicks = 0;
-            look(Vec3d.ofCenter(dig));
+            look(oreFace != null && dig.equals(exposedOreAt) ? oreFace : Vec3d.ofCenter(dig));
 
             // Dig only what the crosshair is already on. It was worked out from the view the
             // server was sent last tick, so the server agrees which block and which face it is.
@@ -402,6 +405,8 @@ public class AutoMine extends Module {
     }
 
     /** An ore touching the tunnel near you, close enough to dig, with no lava behind it. */
+    private BlockPos exposedOreAt;
+
     private BlockPos exposedOre(int here) {
         Vec3d eyes = mc.player.getEyePos();
         for (int step = here - 1; step <= here + 1; step++) {
@@ -415,7 +420,12 @@ public class AutoMine extends Module {
                     for (Direction around : Direction.values()) {
                         if (mc.world.getFluidState(pos.offset(around)).isIn(FluidTags.LAVA)) lava = true;
                     }
-                    if (!lava) return pos;
+                    if (lava) continue;
+                    // Aim at the face it shows the tunnel: its middle is nearer than the
+                    // block's, and nothing but tunnel lies in the way.
+                    oreFace = Vec3d.ofCenter(pos).add(-side.getOffsetX() * 0.5, -side.getOffsetY() * 0.5, -side.getOffsetZ() * 0.5);
+                    exposedOreAt = pos.toImmutable();
+                    return pos;
                 }
             }
         }
