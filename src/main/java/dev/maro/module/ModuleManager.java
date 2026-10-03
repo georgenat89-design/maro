@@ -17,6 +17,7 @@ public final class ModuleManager {
     }
 
     public static void init() {
+        register(new dev.maro.module.impl.player.AutoTool());
         register(new dev.maro.module.impl.player.AutoTrident());
         register(new dev.maro.module.impl.misc.ScreenHider());
         register(new dev.maro.module.impl.player.FastPlace());

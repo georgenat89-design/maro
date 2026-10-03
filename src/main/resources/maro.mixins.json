@@ -4,6 +4,8 @@
   "package": "dev.maro.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
+    "AutoToolMixin",
+    "ClientPlayerInteractionManagerAccessor",
     "DrawContextAccessor",
     "GameRendererMixin",
     "LightmapMixin",
