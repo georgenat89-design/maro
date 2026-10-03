@@ -309,13 +309,18 @@ public class MaroClientGameTest implements FabricClientGameTest {
         }
         settle(context);
         var mine = ModuleManager.get(dev.maro.module.impl.player.AutoMine.class);
-        context.runOnClient(client -> {
+        String facing = context.computeOnClient(client -> {
+            // Face down the tunnel here rather than trusting the teleport: earlier checks move the
+            // mouse, and a stray mouse turn would point the tunnel somewhere else.
+            client.player.setYaw(0f);
+            client.player.setPitch(0f);
             client.player.getInventory().setSelectedSlot(0);
             for (var s : mine.getSettings()) {
                 if (s.getName().equals("Max Distance")) s.fromJson(new com.google.gson.JsonPrimitive(10));
                 if (s.getName().equals("Torch Gap")) s.fromJson(new com.google.gson.JsonPrimitive(4));
             }
             mine.setEnabled(true);
+            return client.player.getHorizontalFacing().asString();
         });
         context.waitTicks(60);
         context.takeScreenshot("maro-auto-mine");
@@ -330,7 +335,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
         context.runOnClient(client -> mine.setEnabled(false));
         singleplayer.getServer().runCommand("gamemode creative @a");
         if (result[6] == 1) throw new AssertionError("Auto Mine never stopped at its Max Distance");
-        if (result[0] < 9) throw new AssertionError("Auto Mine only got " + result[0] + " blocks along the tunnel");
+        if (result[0] < 9) throw new AssertionError("Auto Mine only got " + result[0] + " blocks along the tunnel (facing " + facing + ")");
         if (result[1] < 15) throw new AssertionError("Auto Mine mined only " + result[1] + " blocks");
         if (result[2] < 1 || result[5] != 1) throw new AssertionError("Auto Mine did not find and mine the diamond ore in the wall");
         if (result[4] != 1) throw new AssertionError("Auto Mine did not fill the hole in the floor");
