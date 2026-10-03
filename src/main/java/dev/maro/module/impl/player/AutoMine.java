@@ -14,6 +14,7 @@ import dev.maro.util.ColorUtil;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.enchantment.Enchantment;
@@ -97,8 +98,26 @@ public class AutoMine extends Module {
     private Vec3d lastPos;
     private int stuckTicks;
 
+    /** Set while a block is being dug this tick, so the game's own "not holding attack" cancel leaves it alone. */
+    private static boolean digging;
+
     public AutoMine() {
         super("Auto Mine", "Digs a straight strip-mining tunnel for you", Category.PLAYER);
+        // At the start of the tick, as the game's own mining does: the dig goes to the server
+        // before this tick's movement, in the order it would from a player holding attack.
+        ClientTickEvents.START_CLIENT_TICK.register(client -> {
+            digging = false;
+            if (isEnabled()) work();
+        });
+    }
+
+    /**
+     * Whether the game should keep the current break going although attack is not held. Without
+     * this it cancels the break at the start of every tick, the server is told "stopped" and
+     * "started" again each tick, and servers that check break timing throw the block back.
+     */
+    public static boolean holdingBreak() {
+        return digging;
     }
 
     // ---- lifecycle ----------------------------------------------------------------------
@@ -128,6 +147,7 @@ public class AutoMine extends Module {
 
     @Override
     protected void onDisable() {
+        digging = false;
         releaseKeys();
         if (mc.interactionManager != null) mc.interactionManager.cancelBlockBreaking();
         if (mc.player != null && originalSlot >= 0 && originalSlot < 9) select(originalSlot);
@@ -203,6 +223,9 @@ public class AutoMine extends Module {
 
     @Override
     public void onTick() {
+    }
+
+    private void work() {
         if (!inGame() || mc.interactionManager == null || facing == null) return;
         ClientPlayerEntity player = mc.player;
 
@@ -285,6 +308,7 @@ public class AutoMine extends Module {
             aimTicks = 0;
             if (autoTool.get() && !pickTool(state, dig)) return;
             target = dig;
+            digging = true;
             mc.interactionManager.updateBlockBreakingProgress(dig, aimed.getSide());
             player.swingHand(Hand.MAIN_HAND);
             status = "Mining " + state.getBlock().getName().getString();
