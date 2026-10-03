@@ -10,7 +10,7 @@ Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 | --- | --- |
 | Movement | Auto Walk, Free Cam, Freelook |
 | Player | Auto Tool, Auto Trident, Fast XP, Smart Eat, Spawner Protect, existing Fast Place |
-| Visuals | Bloom, Color Correct, Custom FOV, Fake XP, Hats, Key Zoom, Keystrokes, Motion Blur, Region Map, Spotify HUD, Spin Bot, Swing Speed, existing Stretch Res |
+| Visuals | Bloom, Color Correct, Custom Crosshair, Custom FOV, Fake XP, Hats, Key Zoom, Keystrokes, Motion Blur, Region Map, Spotify HUD, Spin Bot, Swing Speed, existing Stretch Res |
 | Misc | Chat Macros, Key Sounds, existing Screen Hider |
 
 The Nathan modules use Maro's settings, keybinds, friend list, and saved configs. Right-click a module to edit its settings. Chat Macros includes a manager and editor under its Actions section. Strings and item lists have an Edit button; lists accept JSON arrays or semicolon-separated entries.
@@ -26,6 +26,16 @@ Key Sounds includes **14 built-in sound packs**: Creamy, Thock, Soft, Clicky, Cr
 The optional EG Oreo pack must be imported from Mechvibes or placed under `.minecraft/maro/nameeprotect/keysounds/eg-oreo/`. Spawner Protect can use Baritone when installed separately; without it, automatic pathfinding is unavailable.
 
 ## Features
+
+**Custom Crosshair** (Visuals) includes **24 vector presets**: Dot, Square Dot, Plus,
+Cross, Cross + Dot, T Cross, X, X + Dot, Circle, Circle + Dot, Ring Cross, Double Ring,
+Square, Square + Dot, Diamond, Diamond + Dot, Chevron, Double Chevron, Triangle,
+Brackets, Corner Brackets, Star, Reticle, and Four Dots. Open **Preset Gallery** to
+see and click the shapes; it scrolls on smaller screens and supports arrow keys.
+Customize size, gap, thickness, dot size, an optional center dot, color/opacity,
+and outline color/width. Optional Target Highlight changes color on living targets.
+Shapes use Maro's anti-aliased vector renderer. Vanilla attack indicators, F1 hiding,
+first-person visibility, spectator rules, and the debug crosshair still work.
 
 **Auto Tool** (Player) selects the best tool in your hotbar when you mine a block.
 It prefers tools that can harvest the block, then compares mining speed including

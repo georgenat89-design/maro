@@ -39,6 +39,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             checkRegionMap(context);
             AutoTridentChecks.run(context, singleplayer);
             AutoToolChecks.run(context, singleplayer);
+            CrosshairChecks.run(context);
             String before = context.computeOnClient(client -> describe(client));
             context.takeScreenshot("maro-00-world");
 
