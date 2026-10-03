@@ -180,6 +180,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             checkInventoryHud(context, singleplayer);
             checkFullbright(context, singleplayer);
             checkAutoMine(context, singleplayer);
+            checkCrafterDisabler(context, singleplayer);
         }
     }
 
@@ -334,6 +335,55 @@ public class MaroClientGameTest implements FabricClientGameTest {
         if (result[2] < 1 || result[5] != 1) throw new AssertionError("Auto Mine did not find and mine the diamond ore in the wall");
         if (result[4] != 1) throw new AssertionError("Auto Mine did not fill the hole in the floor");
         if (result[3] >= 16) throw new AssertionError("Auto Mine placed no torches");
+    }
+
+    /** Crafter Disabler: opening a crafter takes items out of the chosen slots and disables exactly those. */
+    private static void checkCrafterDisabler(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+        int[] at = context.computeOnClient(client -> new int[]{client.player.getBlockX(), client.player.getBlockY() + 20, client.player.getBlockZ()});
+        int x = at[0], y = at[1], z = at[2];
+        for (String command : java.util.List.of(
+                "clear @a",
+                "fill " + (x - 2) + " " + (y - 1) + " " + (z - 2) + " " + (x + 2) + " " + (y - 1) + " " + (z + 3) + " minecraft:stone",
+                "fill " + (x - 2) + " " + y + " " + (z - 2) + " " + (x + 2) + " " + (y + 2) + " " + (z + 3) + " minecraft:air",
+                "setblock " + x + " " + y + " " + (z + 2) + " minecraft:crafter",
+                "item replace block " + x + " " + y + " " + (z + 2) + " container.0 with minecraft:cobblestone 5",
+                "item replace block " + x + " " + y + " " + (z + 2) + " container.4 with minecraft:oak_planks 3",
+                "tp @a " + x + ".5 " + y + " " + z + ".5 0 30")) {
+            singleplayer.getServer().runCommand(command);
+        }
+        settle(context);
+        var disabler = ModuleManager.get(dev.maro.module.impl.player.CrafterDisabler.class);
+        context.runOnClient(client -> {
+            disabler.clearAll();
+            disabler.toggle(0);
+            disabler.toggle(4);
+            disabler.toggle(8);
+            disabler.setEnabled(true);
+            var pos = new net.minecraft.util.math.BlockPos(x, y, z + 2);
+            client.interactionManager.interactBlock(client.player, net.minecraft.util.Hand.MAIN_HAND,
+                    new net.minecraft.util.hit.BlockHitResult(net.minecraft.util.math.Vec3d.ofCenter(pos), net.minecraft.util.math.Direction.UP, pos, false));
+        });
+        context.waitTicks(15);
+        String state = context.computeOnClient(client -> {
+            if (!(client.currentScreen instanceof net.minecraft.client.gui.screen.ingame.CrafterScreen screen)) return "no crafter screen";
+            var handler = screen.getScreenHandler();
+            StringBuilder out = new StringBuilder();
+            for (int slot = 0; slot < 9; slot++) {
+                out.append(handler.isSlotDisabled(slot) ? 'X' : '.');
+                if (handler.getSlot(slot).hasStack()) out.append('*');
+            }
+            return out.toString();
+        });
+        context.takeScreenshot("maro-crafter-disabler");
+        context.setScreen(() -> new dev.maro.module.impl.player.CrafterSlotsScreen(null, disabler));
+        context.waitTicks(3);
+        context.takeScreenshot("maro-crafter-slots");
+        context.setScreen(() -> null);
+        context.runOnClient(client -> {
+            disabler.setEnabled(false);
+            disabler.clearAll();
+        });
+        if (!state.equals("X...X...X")) throw new AssertionError("Crafter Disabler left the crafter as " + state + " (expected X...X...X)");
     }
 
     /** Average brightness of a screenshot, 0 to 255. */
