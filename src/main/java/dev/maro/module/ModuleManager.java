@@ -27,6 +27,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.InventoryHud());
         register(new dev.maro.module.impl.visuals.Fullbright());
         register(new dev.maro.module.impl.visuals.CustomCrosshair());
+        register(new dev.maro.module.impl.visuals.SkinAccessories());
         dev.maro.nathan.NameeProtectAddon.init();
 
         // Register your modules here, e.g.

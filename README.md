@@ -176,6 +176,23 @@ The lyric preview reserves bottom padding for descenders at every text size and 
 When the upcoming line repeats the current one, its duplicate preview is hidden. Repeated
 lines still restart the word cursor at their own timestamp.
 
+## Skin Accessories
+
+**Visuals → Skin Accessories** adds client-side 3D accessories to your player skin.
+Mix eight head styles, five wing styles, five tails, four halos, three shoulder styles,
+and three back accessories. Each slot also has a None option. Twelve themed presets
+include Dragon, Angel, Demon, Fox, Cat, Bunny, Cyber, Royal, Forest, Butterfly, Astral,
+and Adventurer. **3D Preview** shows the actual rendered accessories, supports rotation,
+and lets you try presets or mix individual parts even before enabling the module.
+
+Adjust head size, wing size/spread, tail length, halo height, primary/accent/halo colors,
+rainbow accents, glow, animation speed/strength, and movement response. Head accessories
+hide under helmets and wings hide with elytra by default; both options can be disabled.
+Accessories follow the player's head, torso, and arms, including crouching and swimming.
+The Players setting selects Self or Everyone on your screen. Other clients do not receive
+these cosmetic models. Meshes are cached and animation uses render matrices, with no
+inventory or server packet changes.
+
 ## Building
 
 Requires Java 21.
