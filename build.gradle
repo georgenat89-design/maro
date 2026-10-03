@@ -59,6 +59,11 @@ tasks.register('remapGametestJar', net.fabricmc.loom.task.RemapJarTask) {
 tasks.register('runProductionClientGameTest', net.fabricmc.loom.task.prod.ClientProductionRunTask) {
     dependsOn remapJar, remapGametestJar
     mods.from(configurations.productionMods, remapJar.archiveFile, tasks.named("remapGametestJar").flatMap { it.archiveFile })
+    // Optional companion-mod compatibility run; never bundled into the production jar.
+    if (providers.gradleProperty("meteorTestJar").isPresent()) {
+        mods.from(file(providers.gradleProperty("meteorTestJar").get()))
+    }
+    jvmArgs.add("-Dmaro.gametest.projectionOnly=" + providers.gradleProperty("projectionTestOnly").getOrElse("false"))
     jvmArgs.addAll([
             "-Dfabric.client.gametest",
             "-Dfabric.client.gametest.disableNetworkSynchronizer=true",
