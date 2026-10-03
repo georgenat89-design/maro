@@ -186,6 +186,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             checkFullbright(context, singleplayer);
             checkAutoMine(context, singleplayer);
             checkCrafterDisabler(context, singleplayer);
+            checkNoRender(context, singleplayer);
         }
     }
 
@@ -462,6 +463,42 @@ public class MaroClientGameTest implements FabricClientGameTest {
             disabler.clearAll();
         });
         if (!state.equals("X...X...X")) throw new AssertionError("Crafter Disabler left the crafter as " + state + " (expected X...X...X)");
+    }
+
+    /** No Render with every switch on, in rain with items, orbs and a falling block about: nothing may break. */
+    private static void checkNoRender(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+        for (String command : java.util.List.of(
+                "time set noon",
+                "weather thunder",
+                "execute as @a at @s run summon item ~2 ~1 ~2 {Item:{id:\"minecraft:diamond\",count:1}}",
+                "execute as @a at @s run summon experience_orb ~-2 ~1 ~2 {Value:5}",
+                "execute as @a at @s run summon armor_stand ~ ~ ~4",
+                "execute as @a at @s run summon falling_block ~1 ~6 ~3 {BlockState:{Name:\"minecraft:sand\"}}",
+                "execute as @a at @s run summon tnt ~ ~ ~6 {fuse:10}")) {
+            singleplayer.getServer().runCommand(command);
+        }
+        settle(context);
+        context.takeScreenshot("maro-no-render-off");
+        var noRender = ModuleManager.get(dev.maro.module.impl.visuals.NoRender.class);
+        context.runOnClient(client -> {
+            for (var s : noRender.getSettings()) if (s instanceof dev.maro.setting.BooleanSetting b) b.set(true);
+            noRender.setEnabled(true);
+            client.gameRenderer.showFloatingItem(new net.minecraft.item.ItemStack(net.minecraft.item.Items.TOTEM_OF_UNDYING));
+        });
+        settle(context);
+        context.takeScreenshot("maro-no-render-on");
+        boolean hidden = context.computeOnClient(client -> {
+            var item = new net.minecraft.entity.ItemEntity(client.world, client.player.getX(), client.player.getY(), client.player.getZ(),
+                    new net.minecraft.item.ItemStack(net.minecraft.item.Items.STONE));
+            var frustum = new net.minecraft.client.render.Frustum(new org.joml.Matrix4f(), new org.joml.Matrix4f());
+            return !client.getEntityRenderDispatcher().shouldRender(item, frustum, 0, 0, 0);
+        });
+        context.runOnClient(client -> {
+            noRender.setEnabled(false);
+            for (var s : noRender.getSettings()) s.reset();
+        });
+        singleplayer.getServer().runCommand("weather clear");
+        if (!hidden) throw new AssertionError("No Render did not hide dropped items");
     }
 
     /** Average brightness of a screenshot, 0 to 255. */
