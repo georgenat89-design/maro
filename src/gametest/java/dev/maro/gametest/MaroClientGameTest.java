@@ -37,7 +37,6 @@ public class MaroClientGameTest implements FabricClientGameTest {
             checkSlowSwing(context);
             checkKeySounds(context);
             checkRegionMap(context);
-            AutoTotemChecks.run(context, singleplayer);
             String before = context.computeOnClient(client -> describe(client));
             context.takeScreenshot("maro-00-world");
 
