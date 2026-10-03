@@ -179,6 +179,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
 
             checkInventoryHud(context, singleplayer);
             checkFullbright(context, singleplayer);
+            checkAutoMine(context, singleplayer);
         }
     }
 
@@ -285,6 +286,54 @@ public class MaroClientGameTest implements FabricClientGameTest {
         settle(context);
         if (gammaAfter != gammaBefore) throw new AssertionError("Fullbright changed the Brightness option: " + gammaBefore + " -> " + gammaAfter);
         if (bright < dark + 40) throw new AssertionError("Fullbright did not brighten the dark room (" + dark + " -> " + bright + ")");
+    }
+
+    /** Auto Mine digs a 1x2 tunnel through solid stone in survival, mines a wall ore, fills a hole and lights the way. */
+    private static void checkAutoMine(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+        int[] at = context.computeOnClient(client -> new int[]{client.player.getBlockX(), client.player.getBlockY() + 30, client.player.getBlockZ()});
+        int x = at[0], y = at[1], z = at[2];
+        for (String command : java.util.List.of(
+                "time set noon",
+                "gamemode survival @a",
+                "clear @a",
+                "give @a minecraft:diamond_pickaxe[enchantments={efficiency:5}]",
+                "give @a minecraft:torch 16",
+                "give @a minecraft:cobblestone 32",
+                "fill " + (x - 3) + " " + y + " " + (z - 1) + " " + (x + 3) + " " + (y + 5) + " " + (z + 16) + " minecraft:stone",
+                "fill " + x + " " + (y + 1) + " " + z + " " + x + " " + (y + 2) + " " + z + " minecraft:air",
+                "setblock " + (x - 1) + " " + (y + 2) + " " + (z + 5) + " minecraft:diamond_ore",
+                "setblock " + x + " " + y + " " + (z + 7) + " minecraft:air",
+                "tp @a " + x + ".5 " + (y + 1) + " " + z + ".5 0 0")) {
+            singleplayer.getServer().runCommand(command);
+        }
+        settle(context);
+        var mine = ModuleManager.get(dev.maro.module.impl.player.AutoMine.class);
+        context.runOnClient(client -> {
+            client.player.getInventory().setSelectedSlot(0);
+            for (var s : mine.getSettings()) {
+                if (s.getName().equals("Max Distance")) s.fromJson(new com.google.gson.JsonPrimitive(10));
+                if (s.getName().equals("Torch Gap")) s.fromJson(new com.google.gson.JsonPrimitive(4));
+            }
+            mine.setEnabled(true);
+        });
+        context.waitTicks(60);
+        context.takeScreenshot("maro-auto-mine");
+        for (int i = 0; i < 800 && context.computeOnClient(client -> mine.isEnabled()); i++) context.waitTick();
+        int[] result = context.computeOnClient(client -> new int[]{
+                client.player.getBlockZ() - z, mine.minedCount(), mine.oreCount(),
+                client.player.getInventory().count(net.minecraft.item.Items.TORCH),
+                client.world.getBlockState(new net.minecraft.util.math.BlockPos(x, y, z + 7)).isAir() ? 0 : 1,
+                client.world.getBlockState(new net.minecraft.util.math.BlockPos(x - 1, y + 2, z + 5)).isAir() ? 1 : 0,
+                mine.isEnabled() ? 1 : 0});
+        context.takeScreenshot("maro-auto-mine-done");
+        context.runOnClient(client -> mine.setEnabled(false));
+        singleplayer.getServer().runCommand("gamemode creative @a");
+        if (result[6] == 1) throw new AssertionError("Auto Mine never stopped at its Max Distance");
+        if (result[0] < 9) throw new AssertionError("Auto Mine only got " + result[0] + " blocks along the tunnel");
+        if (result[1] < 15) throw new AssertionError("Auto Mine mined only " + result[1] + " blocks");
+        if (result[2] < 1 || result[5] != 1) throw new AssertionError("Auto Mine did not find and mine the diamond ore in the wall");
+        if (result[4] != 1) throw new AssertionError("Auto Mine did not fill the hole in the floor");
+        if (result[3] >= 16) throw new AssertionError("Auto Mine placed no torches");
     }
 
     /** Average brightness of a screenshot, 0 to 255. */
