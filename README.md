@@ -8,6 +8,7 @@ Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 
 | Category | Modules |
 | --- | --- |
+| Combat | Auto Totem |
 | Movement | Auto Walk, Free Cam, Freelook |
 | Player | Fast XP, Smart Eat, Spawner Protect, existing Fast Place |
 | Visuals | Bloom, Color Correct, Custom FOV, Fake XP, Hats, Key Zoom, Keystrokes, Motion Blur, Region Map, Spotify HUD, Spin Bot, Swing Speed, existing Stretch Res |
@@ -26,6 +27,17 @@ Key Sounds includes **14 built-in sound packs**: Creamy, Thock, Soft, Clicky, Cr
 The optional EG Oreo pack must be imported from Mechvibes or placed under `.minecraft/maro/nameeprotect/keysounds/eg-oreo/`. Spawner Protect can use Baritone when installed separately; without it, automatic pathfinding is unavailable.
 
 ## Features
+
+**Auto Totem** (Combat) equips a totem in the offhand with a normal inventory swap. **Always**
+keeps one equipped; **Low Health** equips at the selected heart threshold, optionally counting
+absorption. **No Delay** is on by default and reacts on the next eligible game tick, with no
+module wait or retry cooldown. Turn it off to use **Strength** (1–10; 10 has no reaction wait),
+an extra Swap Delay, and a Retry Delay (default 2 ticks). Inventory Only restricts
+swaps to the inventory screen; Empty Offhand Only preserves an existing offhand item.
+The module pauses around containers, cursor items, other screens and, by default, item use.
+Replacing an offhand item returns it to the totem's source slot. Totems in the main inventory
+are preferred over the hotbar, and the selected hand is the last source considered.
+Server rules and inventory validation still apply; no universal anti-cheat bypass is promised.
 
 **GUI**
 - Floating top-bar navigation (category tabs with a sliding pill, icon buttons for general pages) over a black, top-lit window
