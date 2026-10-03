@@ -33,6 +33,12 @@ public final class SpotifyLyrics implements AutoCloseable {
     public record WordFrame(Frame frame, List<Word> words, int active, double progress, boolean estimated) {
         public String currentWord() { return active < 0 ? "♪" : words.get(active).text().strip(); }
         public boolean timed() { return !words.isEmpty(); }
+        public boolean individualWords() {
+            return timed() && words.stream().allMatch(word -> {
+                String text = word.text().strip();
+                return !text.isEmpty() && text.codePoints().noneMatch(Character::isWhitespace);
+            });
+        }
     }
     public record Result(Status status, List<Line> lines, List<String> plain, long retryAfterMs) {
         public Result { lines = List.copyOf(lines); plain = List.copyOf(plain); }
@@ -176,6 +182,7 @@ public final class SpotifyLyrics implements AutoCloseable {
     }
 
     private static final Pattern TIME = Pattern.compile("\\[(\\d{1,3}):(\\d{2})(?:[.,](\\d{1,3}))?]");
+    private static final Pattern WORD_TIME = Pattern.compile("<(\\d{1,3}):(\\d{2})(?:[.,](\\d{1,3}))?>");
     private static final Pattern OFFSET = Pattern.compile("\\[offset:([+-]?\\d+)]", Pattern.CASE_INSENSITIVE);
     public static List<Line> parseLrc(String lrc) {
         if (lrc == null || lrc.length() > 262_144) return List.of();
@@ -183,7 +190,7 @@ public final class SpotifyLyrics implements AutoCloseable {
         var offsetMatch = OFFSET.matcher(lrc);
         if (offsetMatch.find()) { try { offset = Long.parseLong(offsetMatch.group(1)); } catch (NumberFormatException ignored) {} }
         offset = Math.max(-60_000, Math.min(60_000, offset));
-        var lines = new TreeMap<Long, String>();
+        var lines = new TreeMap<Long, Line>();
         for (String row : lrc.split("\\R")) {
             Matcher tags = TIME.matcher(row);
             List<Long> stamps = new ArrayList<>(); int end = 0;
@@ -196,14 +203,45 @@ public final class SpotifyLyrics implements AutoCloseable {
                 end = tags.end();
             }
             if (stamps.isEmpty()) continue;
-            String text = clean(row.substring(end));
             for (long stamp : stamps) {
                 if (lines.size() >= 5000) break;
                 long time = Math.max(0, stamp);
-                lines.merge(time, text, (a, b) -> a.isBlank() ? b : b.isBlank() || a.equals(b) ? a : a + " / " + b);
+                Line line = enhancedLine(time, row.substring(end), offset + stamp - stamps.getFirst());
+                lines.merge(time, line, (a, b) -> a.text().isBlank() ? b
+                    : b.text().isBlank() ? a : a.text().equals(b.text()) ? a.words().isEmpty() ? b : a
+                    : new Line(time, a.text() + " / " + b.text()));
             }
         }
-        return lines.entrySet().stream().map(e -> new Line(e.getKey(), e.getValue())).toList();
+        return List.copyOf(lines.values());
+    }
+    /** Enhanced LRC carries actual <mm:ss.xx> starts. Never split un-timed segments into invented words. */
+    private static Line enhancedLine(long at, String body, long shift) {
+        String fallback = clean(WORD_TIME.matcher(body).replaceAll(""));
+        Matcher tags = WORD_TIME.matcher(body);
+        List<Long> starts = new ArrayList<>(); List<Integer> from = new ArrayList<>(), to = new ArrayList<>();
+        while (tags.find()) {
+            if (starts.size() >= 256 || Integer.parseInt(tags.group(2)) >= 60) return new Line(at, fallback);
+            String fraction = tags.group(3);
+            long start = Integer.parseInt(tags.group(1)) * 60_000L + Integer.parseInt(tags.group(2)) * 1000L
+                + (fraction == null ? 0 : Integer.parseInt((fraction + "000").substring(0, 3))) + shift;
+            if (start < at || !starts.isEmpty() && start < starts.getLast()) return new Line(at, fallback);
+            starts.add(start); from.add(tags.start()); to.add(tags.end());
+        }
+        if (starts.isEmpty() || !body.substring(0, from.getFirst()).isBlank() || fallback.length() >= 1000) return new Line(at, fallback);
+        List<Word> words = new ArrayList<>(); StringBuilder joined = new StringBuilder(); long end = -1;
+        for (int i = 0; i < starts.size(); i++) {
+            String text = body.substring(to.get(i), i + 1 < starts.size() ? from.get(i + 1) : body.length())
+                .replaceAll("[\\p{Cc}&&[^\\t]]", "").replace('\t', ' ');
+            if (text.isBlank()) {
+                if (i == starts.size() - 1 && !words.isEmpty()) end = starts.get(i);
+                else return new Line(at, fallback);
+                continue;
+            }
+            int begin = joined.length(); joined.append(text);
+            words.add(new Word(starts.get(i), i + 1 < starts.size() ? starts.get(i + 1) : -1, text, begin, joined.length()));
+        }
+        if (!joined.toString().strip().equals(fallback)) return new Line(at, fallback);
+        return new Line(at, end, joined.toString(), words);
     }
     private static String clean(String value) {
         String text = value.replaceAll("[\\p{Cc}&&[^\\t]]", "").replace('\t', ' ').strip();
@@ -232,13 +270,21 @@ public final class SpotifyLyrics implements AutoCloseable {
         if (record.has("instrumental") && !record.get("instrumental").isJsonNull() && record.get("instrumental").getAsBoolean())
             return Result.status(Status.Instrumental);
         List<Line> rich = parseLyricsfile(text(record, "lyricsfile", "lyricsfile"));
-        if (rich.stream().anyMatch(line -> !line.text().isBlank())) return new Result(Status.Synced, rich, List.of(), 0);
         List<Line> synced = parseLrc(text(record, "syncedLyrics", "synced_lyrics"));
+        // A legacy enhanced-LRC field can retain word starts even when a generated Lyricsfile has only lines.
+        if (rich.stream().anyMatch(line -> !line.text().isBlank())) {
+            if (timedWordCount(synced) > timedWordCount(rich)) rich = synced;
+            return new Result(Status.Synced, rich, List.of(), 0);
+        }
         if (synced.stream().anyMatch(line -> !line.text().isBlank())) return new Result(Status.Synced, synced, List.of(), 0);
         String plain = text(record, "plainLyrics", "plain_lyrics");
         if (plain.length() > 262_144) return Result.status(Status.Missing);
         List<String> rows = plain.lines().map(SpotifyLyrics::clean).filter(s -> !s.isBlank()).limit(5000).toList();
         return rows.isEmpty() ? Result.status(Status.Missing) : new Result(Status.Plain, List.of(), rows, 0);
+    }
+
+    private static long timedWordCount(List<Line> lines) {
+        return lines.stream().mapToLong(line -> line.words().size()).sum();
     }
 
     /** Lyricsfile 1.0 uses absolute milliseconds and preserves whitespace inside word segments. */

@@ -93,6 +93,27 @@ final class SpotifyLyricsChecks {
             && wordSnapshot.karaoke(999, 0, 0, 60000, false).active() == -1, "Word boundary failed");
         require(wordSnapshot.karaoke(4500, 0, 0, 60000, false).active() == -1, "Word held through an explicit vocal gap");
         require(wordSnapshot.karaoke(2500, -1000, 0, 60000, false).active() == 0, "Word offset/backwards seek failed");
+        require(wordSnapshot.karaoke(2000, 0, 0, 60000, false).currentWord().equals("music")
+            && wordSnapshot.karaoke(2799, 0, 0, 60000, false).currentWord().equals("music")
+            && wordSnapshot.karaoke(2800, 0, 0, 60000, false).currentWord().equals("moving"),
+            "Individual words advanced before the next supplied vocal timestamp");
+        var enhanced = SpotifyLyrics.parseLrc("[offset:100]\n[00:01.00][00:10.00]<00:01.00>Keep <00:01.60>the <00:02.00>music <00:02.80>moving<00:04.00>");
+        require(enhanced.size() == 2 && enhanced.getFirst().words().size() == 4
+            && enhanced.getFirst().text().equals("Keep the music moving") && enhanced.getFirst().endMs() == 4100
+            && enhanced.get(1).words().get(2).atMs() == 11100, "Enhanced LRC words, offset or repeated lines failed");
+        var enhancedSnapshot = new SpotifyLyrics.Snapshot("enhanced", new SpotifyLyrics.Result(SpotifyLyrics.Status.Synced, enhanced, List.of(), 0));
+        require(enhancedSnapshot.karaoke(2899, 0, 0, 60000, false).currentWord().equals("music")
+            && enhancedSnapshot.karaoke(2900, 0, 0, 60000, false).currentWord().equals("moving")
+            && enhancedSnapshot.karaoke(4100, 0, 0, 60000, false).active() == -1, "Enhanced word boundaries/gap failed");
+        require(SpotifyLyrics.parseLrc("[00:01.00]<00:01.00>First <00:00.50>invalid").getFirst().words().isEmpty(),
+            "Backwards enhanced word timestamps accepted");
+        var segment = SpotifyLyrics.parseLrc("[00:01.00]<00:01.00>Not individual words<00:04.00>");
+        var segmentSnapshot = new SpotifyLyrics.Snapshot("segment", new SpotifyLyrics.Result(SpotifyLyrics.Status.Synced, segment, List.of(), 0));
+        require(!segmentSnapshot.karaoke(1500, 0, 0, 60000, false).individualWords(), "Multiword segment treated as individual word timing");
+        var enhancedRecord = new com.google.gson.JsonObject();
+        enhancedRecord.addProperty("lyricsfile", "version: '1.0'\nlines:\n  - text: Keep the music moving\n    start_ms: 1000\n    end_ms: 4000\n");
+        enhancedRecord.addProperty("syncedLyrics", "[00:01.00]<00:01.00>Keep <00:01.60>the <00:02.00>music <00:02.80>moving<00:04.00>");
+        require(SpotifyLyrics.decode(enhancedRecord).lines().getFirst().words().size() == 4, "Word starts in enhanced LRC lost to generated line-only Lyricsfile");
         require(!snapshot.karaoke(2500, 0, 0, 60000, false).timed()
             && snapshot.karaoke(2500, 0, 0, 60000, true).estimated(), "Missing word timing silently became estimated");
         var estimatedEarly = snapshot.karaoke(1100, 0, 0, 60000, true);
@@ -163,8 +184,8 @@ final class SpotifyLyricsChecks {
             });
             context.takeScreenshot("maro-spotify-lyrics");
             context.runOnClient(client -> {
-                require(hud.getSettings().stream().filter(s -> s.getName().equals("auto word follow")).findFirst().orElseThrow()
-                    .toJson().getAsBoolean(), "Automatic word following is off by default");
+                require(!hud.getSettings().stream().filter(s -> s.getName().equals("approximate word preview")).findFirst().orElseThrow()
+                    .toJson().getAsBoolean(), "Guessed vocal timing is on by default");
                 require(hud.getSettings().stream().filter(s -> s.getName().equals("word display")).findFirst().orElseThrow()
                     .toJson().getAsString().equals("WordHighlight"), "Default word display does not highlight words");
                 setting(hud, "word display", new JsonPrimitive("Lines")); setting(hud, "lyrics size", new JsonPrimitive(11));
@@ -185,7 +206,19 @@ final class SpotifyLyricsChecks {
             context.takeScreenshot("maro-spotify-footer-padding");
             context.runOnClient(client -> setting(hud, "word display", new JsonPrimitive("WordHighlight")));
             context.waitTicks(6);
-            context.takeScreenshot("maro-spotify-auto-word-follow");
+            context.takeScreenshot("maro-spotify-no-word-timing");
+            context.runOnClient(client -> {
+                setting(hud, "approximate word preview", new JsonPrimitive(true));
+                require(lyricWords(hud, snapshot, 2500).estimated(), "Optional approximation stopped working in WordHighlight");
+                setting(hud, "word display", new JsonPrimitive("SingleWord"));
+                require(!lyricWords(hud, snapshot, 2500).timed(), "SingleWord still guesses vocal timing with approximation enabled");
+                require(!lyricWords(hud, segmentSnapshot, 1500).timed(), "SingleWord split an untimed multiword segment");
+                var nativeExact = lyricWords(hud, wordSnapshot, 2500);
+                require(nativeExact.currentWord().equals("music") && !nativeExact.estimated(), "SingleWord did not use exact vocal timestamps");
+                setting(hud, "approximate word preview", new JsonPrimitive(false));
+            });
+            context.waitTicks(6);
+            context.takeScreenshot("maro-spotify-single-word-unavailable");
             context.runOnClient(client -> {
                 setState(hud, state("Original test song", 7500));
                 setting(hud, "player mode", new JsonPrimitive("Mini"));
@@ -216,7 +249,17 @@ final class SpotifyLyricsChecks {
             context.takeScreenshot("maro-spotify-karaoke-word");
             context.runOnClient(client -> setting(hud, "word display", new JsonPrimitive("SingleWord")));
             context.waitTicks(6);
+            context.runOnClient(client -> require(liveWord(hud).equals("music"), "SingleWord rendered the wrong sung word"));
             context.takeScreenshot("maro-spotify-karaoke-single");
+            context.runOnClient(client -> setState(hud, state("Word test song", 2799)));
+            context.waitTicks(2);
+            context.runOnClient(client -> require(liveWord(hud).equals("music"), "SingleWord advanced while paused inside a held word"));
+            context.runOnClient(client -> setState(hud, state("Word test song", 2800)));
+            context.waitTicks(2);
+            context.runOnClient(client -> require(liveWord(hud).equals("moving"), "SingleWord missed the next exact word boundary"));
+            context.runOnClient(client -> setState(hud, state("Word test song", 1600)));
+            context.waitTicks(2);
+            context.runOnClient(client -> require(liveWord(hud).equals("the"), "SingleWord did not follow a backwards seek"));
             context.runOnClient(client -> {
                 setting(hud, "word display", new JsonPrimitive("Lines")); setState(hud, state("Word test song", 8000));
             });
@@ -251,6 +294,16 @@ final class SpotifyLyricsChecks {
     }
     private static void setting(SpotifyHud hud, String name, JsonPrimitive value) {
         hud.getSettings().stream().filter(s -> s.getName().equals(name)).findFirst().orElseThrow().fromJson(value);
+    }
+    private static SpotifyLyrics.WordFrame lyricWords(SpotifyHud hud, SpotifyLyrics.Snapshot snapshot, long position) {
+        try {
+            var method = SpotifyHud.class.getDeclaredMethod("lyricWords", SpotifyLyrics.Snapshot.class, long.class, long.class);
+            method.setAccessible(true); return (SpotifyLyrics.WordFrame) method.invoke(hud, snapshot, position, 60000L);
+        } catch (ReflectiveOperationException e) { throw new AssertionError(e); }
+    }
+    private static String liveWord(SpotifyHud hud) {
+        try { var field = SpotifyHud.class.getDeclaredField("liveWord"); field.setAccessible(true); return (String) field.get(hud); }
+        catch (ReflectiveOperationException e) { throw new AssertionError(e); }
     }
     private static SpotifyMedia media(SpotifyHud hud) throws ReflectiveOperationException {
         var field = SpotifyHud.class.getDeclaredField("media"); field.setAccessible(true); return (SpotifyMedia)field.get(hud);
