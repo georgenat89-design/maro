@@ -6,6 +6,8 @@ import dev.maro.module.ModuleManager;
 import dev.maro.module.impl.ExampleModule;
 import dev.maro.module.impl.visuals.StretchRes;
 import dev.maro.module.impl.player.FastPlace;
+import dev.maro.module.impl.misc.ScreenHider;
+import dev.maro.gui.hider.RegionEditorScreen;
 import dev.maro.mixin.MinecraftClientAccessor;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
@@ -109,6 +111,34 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 return value;
             });
             if (cooldown != 0) throw new AssertionError("Fast Place did not shorten the cooldown (got " + cooldown + ")");
+
+            // Screen Hider: scribble an area in the editor with the real mouse, then check it is blurred
+            context.runOnClient(client -> {
+                ScreenHider hider = ModuleManager.get(ScreenHider.class);
+                hider.setEnabled(true);
+                hider.regions().list().clear();
+                client.setScreen(new RegionEditorScreen(hider.regions(), null));
+            });
+            settle(context);
+            context.getInput().setCursorPos(420, 220);
+            context.getInput().holdMouse(GLFW.GLFW_MOUSE_BUTTON_LEFT);
+            for (int i = 1; i <= 12; i++) {
+                context.getInput().setCursorPos(420 + i * 36, i % 2 == 0 ? 230 : 470);
+                context.waitTick();
+            }
+            settle(context);
+            context.takeScreenshot("maro-hider-drawing");
+            context.getInput().releaseMouse(GLFW.GLFW_MOUSE_BUTTON_LEFT);
+            settle(context);
+            int areas = context.computeOnClient(client -> ModuleManager.get(ScreenHider.class).regions().list().size());
+            if (areas != 1) throw new AssertionError("Drawing in the Screen Hider editor made " + areas + " areas (expected 1)");
+            context.takeScreenshot("maro-hider-editor");
+            context.getInput().pressKey(GLFW.GLFW_KEY_ESCAPE);
+            context.waitForScreen(null);
+            settle(context);
+            settle(context);
+            context.takeScreenshot("maro-hider-blur");
+            context.runOnClient(client -> ModuleManager.get(ScreenHider.class).setEnabled(false));
         }
     }
 

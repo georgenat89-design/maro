@@ -11,7 +11,7 @@ Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 | Movement | Auto Walk, Free Cam, Freelook |
 | Player | Fast XP, Smart Eat, Spawner Protect, existing Fast Place |
 | Visuals | Bloom, Color Correct, Custom FOV, Fake XP, Hats, Key Zoom, Keystrokes, Motion Blur, Region Map, Spotify HUD, Spin Bot, Swing Speed, existing Stretch Res |
-| Misc | Chat Macros, Key Sounds |
+| Misc | Chat Macros, Key Sounds, existing Screen Hider |
 
 The Nathan modules use Maro's settings, keybinds, friend list, and saved configs. Right-click a module to edit its settings. Chat Macros includes a manager and editor under its Actions section. Strings and item lists have an Edit button; lists accept JSON arrays or semicolon-separated entries.
 

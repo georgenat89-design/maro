@@ -11,6 +11,8 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import dev.maro.module.impl.misc.ScreenHider;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.Identifier;
@@ -40,6 +42,8 @@ public class Maro implements ClientModInitializer {
             if (!(MinecraftClient.getInstance().currentScreen instanceof ClickGuiScreen)) Notifications.render(context);
         });
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> { ConfigManager.saveAll(); dev.maro.runtime.RuntimeEvents.shutdown(); });
+        ScreenEvents.AFTER_INIT.register((client, screen, width, height) ->
+                ScreenEvents.afterRender(screen).register((s, context, mouseX, mouseY, delta) -> ScreenHider.renderOver(s, context)));
 
         LOGGER.info("{} {} loaded", NAME, VERSION);
     }

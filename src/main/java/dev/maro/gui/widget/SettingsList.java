@@ -7,6 +7,7 @@ import dev.maro.gui.render.Render2D;
 import dev.maro.gui.theme.Theme;
 import dev.maro.setting.BooleanSetting;
 import dev.maro.setting.ColorSetting;
+import dev.maro.setting.ButtonSetting;
 import dev.maro.setting.KeybindSetting;
 import dev.maro.setting.ModeSetting;
 import dev.maro.setting.NumberSetting;
@@ -93,6 +94,9 @@ public class SettingsList {
         } else if (s instanceof dev.maro.runtime.settings.SettingAdapters.ValueSetting value) {
             Widgets.button(gui,ctx,s,x+w-62,y+6,52,18,"Edit",Widgets.Style.SECONDARY,null,
                 ()->net.minecraft.client.MinecraftClient.getInstance().setScreen(new dev.maro.gui.ValueEditorScreen(gui,value)));
+        } else if (s instanceof ButtonSetting b) {
+            float bw = Widgets.buttonWidth(b.getLabel(), Icons.CHEVRON_RIGHT);
+            Widgets.button(gui, ctx, b, x + w - 10 - bw, y + 7, bw, 16, b.getLabel(), Widgets.Style.PRIMARY, Icons.CHEVRON_RIGHT, b::press);
         }
     }
 
