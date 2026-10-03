@@ -37,6 +37,15 @@ and outline color/width. Optional Target Highlight changes color on living targe
 Shapes use Maro's anti-aliased vector renderer. Vanilla attack indicators, F1 hiding,
 first-person visibility, spectator rules, and the debug crosshair still work.
 
+Crosshairs use the exact framebuffer center, including odd window sizes and GUI scales.
+For your own artwork, click **Import PNG**: browse for a file, paste its path, or drag it
+into the import window. Import switches **Source** to **PNG** and saves a copy at
+`.minecraft/maro/crosshairs/custom.png` for later launches. Customize **PNG Size**,
+**PNG Opacity**, **Trim Padding** (centers visible artwork), **Smooth PNG**, and optional
+**Tint PNG**. Aspect ratio and original colors are preserved. PNGs may be up to
+1024 × 1024 and 8 MB; empty or unreadable images keep the working image. If no image
+is available, the built-in preset remains visible.
+
 **Auto Tool** (Player) selects the best tool in your hotbar when you mine a block.
 It prefers tools that can harvest the block, then compares mining speed including
 Efficiency enchantments. Switching happens before the first mining action and is
