@@ -26,7 +26,10 @@ final class SkinAccessoriesChecks {
             context.runOnClient(c -> {
                 c.options.getGuiScale().setValue(2); c.onResolutionChanged(); m.setEnabled(false);
                 c.setScreen(new SkinAccessoriesScreen(null, m)); m.selectPreset("Cyber");
-                ((SkinAccessoriesScreen)c.currentScreen).showAngle(-25);
+                ((SkinAccessoriesScreen)c.currentScreen).showAngle(0);
+                ((ModeSetting)setting(m, "Halo")).set("Ring");
+                ((ColorSetting)setting(m, "Halo Color")).set(0xFF55E6F5);
+                ((BooleanSetting)setting(m, "Animate")).set(false);
             });
             context.waitTicks(5);
             require(!m.isEnabled(), "Preview unexpectedly enabled module");
@@ -45,8 +48,9 @@ final class SkinAccessoriesChecks {
                     int color = image.getRGB(x, y), r = color >> 16 & 255, g = color >> 8 & 255, b = color & 255;
                     if (r < 130 && g > 165 && b > 170) cyan++;
                 }
-                require(cyan > 80, "3D preview did not render cyan accessory geometry (pixels=" + cyan + ")");
+                require(cyan > 80, "3D preview did not render cyan halo geometry (pixels=" + cyan + ")");
             } catch (IOException e) { throw new AssertionError("Cannot inspect accessory screenshot", e); }
+            context.runOnClient(c -> ((BooleanSetting)setting(m, "Animate")).set(true));
 
             // Exercise every style through the actual GUI entity renderer and queued geometry.
             for (String slot : new String[]{"Head", "Wings", "Tail", "Halo", "Shoulders", "Back"}) {
