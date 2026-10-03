@@ -148,6 +148,12 @@ public final class NoRenderMixins {
         private void maro$miningParticles(CallbackInfo ci) {
             if (NoRender.hides(Part.MINING_PARTICLES)) ci.cancel();
         }
+
+        /** The clouds of debris an explosion throws out, sent by the server with the explosion. */
+        @Inject(method = "addBlockParticleEffects", at = @At("HEAD"), cancellable = true)
+        private void maro$explosionDebris(CallbackInfo ci) {
+            if (NoRender.hides(Part.EXPLOSIONS)) ci.cancel();
+        }
     }
 
     /** Whole kinds of entity, left out before they are drawn at all. */
