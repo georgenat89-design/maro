@@ -24,6 +24,8 @@ public class MaroClientGameTest implements FabricClientGameTest {
         context.getInput().resizeWindow(1280, 720);
         context.runOnClient(client -> {
             if (ModuleManager.getByName("Example") == null) ModuleManager.register(new ExampleModule());
+            // Saved test-profile modules (especially Screen Hider) must not mask later screenshots.
+            ModuleManager.all().forEach(module -> module.setEnabled(false));
         });
 
         try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
