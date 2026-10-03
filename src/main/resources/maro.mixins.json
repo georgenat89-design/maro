@@ -9,7 +9,11 @@
     "InGameHudMixin",
     "KeyboardMixin",
     "MinecraftClientAccessor",
-    "MouseMixin"
+    "MouseMixin",
+    "ModuleEventsMixin",
+    "PerspectiveEventsMixin",
+    "PacketEventsMixin",
+    "BlockEventsMixin"
   ],
   "injectors": {
     "defaultRequire": 1

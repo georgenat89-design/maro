@@ -11,8 +11,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(Mouse.class)
 public abstract class MouseMixin {
-    @Inject(method = "onMouseButton", at = @At("HEAD"))
+    @Inject(method = "onMouseButton", at = @At("HEAD"), cancellable=true)
     private void maro$onMouseButton(long window, MouseInput input, int action, CallbackInfo ci) {
-        if (window == MinecraftClient.getInstance().getWindow().getHandle()) Maro.onMouseButton(input.button(), action);
+        if (window == MinecraftClient.getInstance().getWindow().getHandle()) {
+            if(dev.maro.runtime.RuntimeEvents.mouse(input,action)){ci.cancel();return;}
+            Maro.onMouseButton(input.button(), action);
+        }
+    }
+
+    @Inject(method="onMouseScroll",at=@At("HEAD"),cancellable=true)
+    private void maro$scroll(long window,double horizontal,double vertical,CallbackInfo info){
+        if(window==MinecraftClient.getInstance().getWindow().getHandle() && dev.maro.runtime.MeteorClient.EVENT_BUS.post(new dev.maro.runtime.events.meteor.MouseScrollEvent(vertical)).isCancelled())info.cancel();
     }
 }
