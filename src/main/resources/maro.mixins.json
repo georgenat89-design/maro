@@ -6,6 +6,7 @@
   "client": [
     "DrawContextAccessor",
     "GameRendererMixin",
+    "LightmapMixin",
     "InGameHudMixin",
     "KeyboardMixin",
     "MinecraftClientAccessor",
