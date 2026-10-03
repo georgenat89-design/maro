@@ -195,6 +195,22 @@ The Players setting selects Self or Everyone on your screen. Other clients do no
 these cosmetic models. Meshes are cached and animation uses render matrices, with no
 inventory or server packet changes.
 
+## Auto Mine timing
+
+**Player → Auto Mine → Humanizing** adds tick-based random delays between new digs and
+placements, a delay after changing tools, and a turn speed sampled once per target.
+Smooth Look slows as it reaches the target. An active block keeps one continuous break;
+timing variation does not restart it on every tick or change vanilla mining speed.
+
+**Short Breaks** pauses between completed blocks, using configurable block-count and
+duration ranges. Min/max ranges are automatically ordered. **Stop On Manual Input**
+hands control back when you move the view or press attack, use, back, jump, or sneak.
+Optional **Pause Near Players** waits while another player is within the chosen radius.
+Existing lava, health, inventory, tool durability, and distance stops still run during waits.
+The status bar reports aiming, action delays, tool waits, breaks, and nearby-player pauses.
+Turning Humanize off clears timing waits immediately. These variations cannot guarantee
+that a server will allow automation or that it will avoid detection or bans.
+
 ## Building
 
 Requires Java 21.

@@ -21,6 +21,7 @@ import org.lwjgl.glfw.GLFW;
 public class MaroClientGameTest implements FabricClientGameTest {
     @Override
     public void runTest(ClientGameTestContext context) {
+        MiningCadenceChecks.run();
         context.getInput().resizeWindow(1280, 720);
         context.runOnClient(client -> {
             if (ModuleManager.getByName("Example") == null) ModuleManager.register(new ExampleModule());
@@ -322,6 +323,11 @@ public class MaroClientGameTest implements FabricClientGameTest {
             for (var s : mine.getSettings()) {
                 if (s.getName().equals("Max Distance")) s.fromJson(new com.google.gson.JsonPrimitive(10));
                 if (s.getName().equals("Torch Gap")) s.fromJson(new com.google.gson.JsonPrimitive(4));
+                if (s.getName().equals("Humanize") || s.getName().equals("Short Breaks")) s.fromJson(new com.google.gson.JsonPrimitive(true));
+                if (s.getName().equals("Min Blocks Between Breaks")) s.fromJson(new com.google.gson.JsonPrimitive(3));
+                if (s.getName().equals("Max Blocks Between Breaks")) s.fromJson(new com.google.gson.JsonPrimitive(5));
+                if (s.getName().equals("Min Break Length")) s.fromJson(new com.google.gson.JsonPrimitive(2));
+                if (s.getName().equals("Max Break Length")) s.fromJson(new com.google.gson.JsonPrimitive(5));
             }
             mine.setEnabled(true);
             return client.player.getHorizontalFacing().asString();
@@ -336,6 +342,8 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 client.world.getBlockState(new net.minecraft.util.math.BlockPos(x - 1, y + 2, z + 5)).isAir() ? 1 : 0,
                 mine.isEnabled() ? 1 : 0});
         context.takeScreenshot("maro-auto-mine-done");
+        if (mine.delayedTickCount() == 0 || mine.restCount() < 2)
+            throw new AssertionError("Auto Mine did not use varied action timing and between-block breaks");
         // What the server has, not what the client shows: a ghost-mined block is still there.
         String ghosts = singleplayer.getServer().computeOnServer(server -> {
             var world = server.getOverworld();
@@ -364,6 +372,47 @@ public class MaroClientGameTest implements FabricClientGameTest {
         if (result[4] != 1) throw new AssertionError("Auto Mine did not fill the hole in the floor");
         if (result[3] >= 16) throw new AssertionError("Auto Mine placed no torches");
         if (!ghosts.isEmpty()) throw new AssertionError("Server disagrees with Auto Mine:" + ghosts);
+        // A human input must immediately stop automation and release its movement keys.
+        context.runOnClient(client -> {
+            for (var setting : mine.getSettings()) setting.reset();
+            client.options.attackKey.setPressed(false); client.options.useKey.setPressed(false);
+            mine.setEnabled(true); client.options.backKey.setPressed(true);
+        });
+        context.waitTick();
+        context.runOnClient(client -> {
+            client.options.backKey.setPressed(false);
+            if (mine.isEnabled() || client.options.forwardKey.isPressed() || dev.maro.module.impl.player.AutoMine.holdingBreak())
+                throw new AssertionError("Auto Mine did not stop and release control on manual input");
+        });
+        int neighborId = context.computeOnClient(client -> {
+            for (var setting : mine.getSettings()) if (setting.getName().equals("Pause Near Players"))
+                setting.fromJson(new com.google.gson.JsonPrimitive(true));
+            var neighbor = new net.minecraft.client.network.OtherClientPlayerEntity(client.world,
+                    new com.mojang.authlib.GameProfile(java.util.UUID.randomUUID(), "MaroTestNeighbor"));
+            neighbor.setPosition(client.player.getX() + 2, client.player.getY(), client.player.getZ());
+            client.world.addEntity(neighbor);
+            mine.setEnabled(true);
+            return neighbor.getId();
+        });
+        context.waitTicks(2);
+        context.runOnClient(client -> {
+            if (!mine.isEnabled() || !mine.activity().equals("Player nearby")
+                    || client.options.forwardKey.isPressed() || dev.maro.module.impl.player.AutoMine.holdingBreak())
+                throw new AssertionError("Auto Mine did not pause and release control near another player");
+            client.world.removeEntity(neighborId, net.minecraft.entity.Entity.RemovalReason.DISCARDED);
+        });
+        context.waitTicks(2);
+        context.runOnClient(client -> {
+            if (!mine.isEnabled() || mine.activity().equals("Player nearby"))
+                throw new AssertionError("Auto Mine did not resume after the nearby player left");
+            client.player.setYaw(client.player.getYaw() + 20);
+        });
+        context.waitTick();
+        context.runOnClient(client -> {
+            if (mine.isEnabled() || client.options.forwardKey.isPressed() || dev.maro.module.impl.player.AutoMine.holdingBreak())
+                throw new AssertionError("Auto Mine did not hand control back after a manual view turn");
+            for (var setting : mine.getSettings()) setting.reset();
+        });
     }
 
     /** Crafter Disabler: opening a crafter takes items out of the chosen slots and disables exactly those. */

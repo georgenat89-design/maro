@@ -10,7 +10,10 @@ import dev.maro.module.Module;
 import dev.maro.setting.BooleanSetting;
 import dev.maro.setting.ModeSetting;
 import dev.maro.setting.NumberSetting;
+import dev.maro.setting.Setting;
+import dev.maro.setting.SettingSection;
 import dev.maro.util.ColorUtil;
+import dev.maro.util.MiningCadence;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
@@ -41,6 +44,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Strip mining on its own: digs a straight tunnel the way you were facing when you turned it on,
@@ -58,6 +62,22 @@ public class AutoMine extends Module {
     private final BooleanSetting autoTool = add(new BooleanSetting("Auto Tool", "Pick the fastest hotbar tool for each block", true));
     private final NumberSetting saveTool = add(new NumberSetting("Save Tools", "Never use a tool below this much durability, and stop if none is left", 3, 0, 25, 1)
             .suffix("%"));
+
+    private final BooleanSetting humanize = add(new BooleanSetting("Humanize", "Vary action timing and smooth turn speed; does not guarantee detection avoidance", true)
+            .onChange(value -> resetCadence()));
+    private final NumberSetting minDelay = add(new NumberSetting("Min Action Delay", "Minimum wait before starting a new dig or placement", 1, 0, 20, 1).suffix(" ticks").visible(humanize::get));
+    private final NumberSetting maxDelay = add(new NumberSetting("Max Action Delay", "Maximum wait before a new action; inverted ranges are automatically ordered", 4, 0, 20, 1).suffix(" ticks").visible(humanize::get));
+    private final NumberSetting toolDelay = add(new NumberSetting("Tool Switch Delay", "Wait after selecting a different tool before starting to dig", 1, 0, 6, 1).suffix(" ticks").visible(humanize::get));
+    private final NumberSetting aimSpeed = add(new NumberSetting("Turn Speed", "Maximum turn per tick with Smooth Look", 24, 5, 60, 1).suffix("°").visible(() -> humanize.get() && smooth.get()));
+    private final NumberSetting aimVariation = add(new NumberSetting("Turn Variation", "Sample a different turn speed once per target", 20, 0, 70, 1).suffix("%").visible(() -> humanize.get() && smooth.get()));
+    private final BooleanSetting shortBreaks = add(new BooleanSetting("Short Breaks", "Occasionally rest between completed blocks", true).visible(humanize::get));
+    private final NumberSetting breakMinBlocks = add(new NumberSetting("Min Blocks Between Breaks", "Minimum completed blocks before a short rest", 32, 1, 200, 1).visible(() -> humanize.get() && shortBreaks.get()));
+    private final NumberSetting breakMaxBlocks = add(new NumberSetting("Max Blocks Between Breaks", "Maximum completed blocks before a short rest", 64, 1, 200, 1).visible(() -> humanize.get() && shortBreaks.get()));
+    private final NumberSetting breakMinTicks = add(new NumberSetting("Min Break Length", "Shortest rest; 20 ticks is one second", 10, 0, 200, 1).suffix(" ticks").visible(() -> humanize.get() && shortBreaks.get()));
+    private final NumberSetting breakMaxTicks = add(new NumberSetting("Max Break Length", "Longest rest; inverted ranges are automatically ordered", 35, 0, 200, 1).suffix(" ticks").visible(() -> humanize.get() && shortBreaks.get()));
+    private final BooleanSetting manualStop = add(new BooleanSetting("Stop On Manual Input", "Stop when you move the view or press attack, use, back, jump, or sneak", true));
+    private final BooleanSetting nearbyPause = add(new BooleanSetting("Pause Near Players", "Pause while another player is close", false));
+    private final NumberSetting nearbyRange = add(new NumberSetting("Player Pause Radius", "Distance to another player that pauses mining", 12, 3, 32, 1).suffix(" blocks").visible(nearbyPause::get));
 
     private final BooleanSetting torches = add(new BooleanSetting("Torches", "Put a torch on the wall every few blocks, from your hotbar", true));
     private final NumberSetting torchGap = add(new NumberSetting("Torch Gap", "Blocks between torches", 8, 3, 16, 1).visible(torches::get));
@@ -97,6 +117,12 @@ public class AutoMine extends Module {
     private Vec3d oreFace;
     private Vec3d lastPos;
     private int stuckTicks;
+    private final MiningCadence cadence = new MiningCadence(ThreadLocalRandom.current());
+    private float lastAutoYaw, lastAutoPitch;
+    private boolean ownsView;
+    private int delayedTicks;
+    private int restCount;
+    private record Action(String kind, BlockPos block, Direction side) { }
 
     /** Set while a block is being dug this tick, so the game's own "not holding attack" cancel leaves it alone. */
     private static boolean digging;
@@ -118,6 +144,20 @@ public class AutoMine extends Module {
      */
     public static boolean holdingBreak() {
         return digging;
+    }
+
+    @Override public List<SettingSection> getSettingSections() {
+        return List.of(section("Tunnel & Tools", size, sprint, center, smooth, autoTool, saveTool),
+                section("Humanizing", humanize, minDelay, maxDelay, toolDelay, aimSpeed, aimVariation),
+                section("Short Breaks", shortBreaks, breakMinBlocks, breakMaxBlocks, breakMinTicks, breakMaxTicks),
+                section("Lighting & Ores", torches, torchGap, fillHoles, oreAlerts, mineOres, stopOnDiamond),
+                section("Stops & Pauses", manualStop, nearbyPause, nearbyRange, stopLava, stopWater, stopFull, minHealth, maxDistance, statusBar));
+    }
+    private SettingSection section(String name, Setting<?>... values) {
+        var section = new SettingSection(name); for (var setting : values) section.add(setting); return section;
+    }
+    private void resetCadence() {
+        if (cadence != null) cadence.reset(breakMinBlocks.getInt(), breakMaxBlocks.getInt());
     }
 
     // ---- lifecycle ----------------------------------------------------------------------
@@ -142,6 +182,10 @@ public class AutoMine extends Module {
         aimTicks = 0;
         lastPos = null;
         stuckTicks = 0;
+        ownsView = false;
+        delayedTicks = 0;
+        restCount = 0;
+        resetCadence();
         status = "Starting";
     }
 
@@ -153,6 +197,8 @@ public class AutoMine extends Module {
         if (mc.player != null && originalSlot >= 0 && originalSlot < 9) select(originalSlot);
         originalSlot = -1;
         target = null;
+        ownsView = false;
+        resetCadence();
     }
 
     private void stop(String reason) {
@@ -228,9 +274,14 @@ public class AutoMine extends Module {
     private void work() {
         if (!inGame() || mc.interactionManager == null || facing == null) return;
         ClientPlayerEntity player = mc.player;
+        if (humanize.get()) cadence.tick();
+        else { cadence.clearAction(); cadence.cancelRest(); }
+        if (!shortBreaks.get()) cadence.cancelRest();
 
         if (mc.currentScreen != null) {
             releaseKeys();
+            ownsView = false;
+            cadence.clearAction();
             status = "Paused";
             return;
         }
@@ -252,6 +303,13 @@ public class AutoMine extends Module {
             stop("Inventory full");
             return;
         }
+        if (manualStop.get() && (mc.options.attackKey.isPressed() || mc.options.useKey.isPressed()
+                || mc.options.backKey.isPressed() || mc.options.jumpKey.isPressed() || mc.options.sneakKey.isPressed()
+                || ownsView && (Math.abs(MathHelper.wrapDegrees(player.getYaw() - lastAutoYaw)) > 3
+                || Math.abs(player.getPitch() - lastAutoPitch) > 3))) {
+            stop("Manual input");
+            return;
+        }
 
         countMined();
 
@@ -266,6 +324,18 @@ public class AutoMine extends Module {
 
         scanOres(here);
         if (!isEnabled()) return;
+        if (nearbyPause.get() && mc.world.getPlayers().stream().anyMatch(other -> other != player && !other.isSpectator()
+                && other.squaredDistanceTo(player) <= nearbyRange.get() * nearbyRange.get())) {
+            releaseKeys(); cadence.clearAction(); stuckTicks = 0; lastPos = null;
+            status = "Player nearby";
+            return;
+        }
+        if (humanize.get() && cadence.resting()) {
+            releaseKeys(); stuckTicks = 0; lastPos = null;
+            delayedTicks++;
+            status = "Short break · " + cadence.restTicks() + " ticks";
+            return;
+        }
 
         // What to dig: an ore showing beside the tunnel, then the next slice of the tunnel itself.
         BlockPos dig = null;
@@ -285,7 +355,6 @@ public class AutoMine extends Module {
             mc.options.leftKey.setPressed(false);
             mc.options.rightKey.setPressed(false);
             stuckTicks = 0;
-            look(oreFace != null && dig.equals(exposedOreAt) ? oreFace : Vec3d.ofCenter(dig));
 
             // Dig only what the crosshair is already on. It was worked out from the view the
             // server was sent last tick, so the server agrees which block and which face it is.
@@ -296,7 +365,9 @@ public class AutoMine extends Module {
                     dig = inWay;
                     state = mc.world.getBlockState(dig);
                 } else {
-                    if (++aimTicks > 20) {
+                    prepareAction("Dig", dig, null);
+                    look(oreFace != null && dig.equals(exposedOreAt) ? oreFace : Vec3d.ofCenter(dig));
+                    if (++aimTicks > aimLimit(20)) {
                         // An ore that cannot be seen from here: leave it.
                         skipped.add(dig.toImmutable());
                         aimTicks = 0;
@@ -305,8 +376,16 @@ public class AutoMine extends Module {
                     return;
                 }
             }
+            // Resolve an intervening tunnel block before preparing the action, so its
+            // one-time wait cannot be reset by the intended target every tick.
+            prepareAction("Dig", dig, null);
+            look(oreFace != null && dig.equals(exposedOreAt) ? oreFace : Vec3d.ofCenter(dig));
             aimTicks = 0;
+            if (!cadence.reactionReady()) { delayedTicks++; status = "Waiting before digging"; return; }
+            int previousSlot = player.getInventory().getSelectedSlot();
             if (autoTool.get() && !pickTool(state, dig)) return;
+            if (humanize.get() && previousSlot != player.getInventory().getSelectedSlot()) cadence.switchedTool(toolDelay.getInt());
+            if (!cadence.toolReady()) { delayedTicks++; status = "Waiting after tool switch"; return; }
             target = dig;
             digging = true;
             mc.interactionManager.updateBlockBreakingProgress(dig, aimed.getSide());
@@ -322,7 +401,7 @@ public class AutoMine extends Module {
             Boolean filled = fillHoles.get() ? fill(floor) : Boolean.FALSE;
             if (filled == null) {
                 // Still turning to the spot.
-                if (++aimTicks > 40) stop("Could not fill the hole in the floor");
+                if (++aimTicks > aimLimit(40) + maxDelay.getInt()) stop("Could not fill the hole in the floor");
                 return;
             }
             aimTicks = 0;
@@ -332,7 +411,7 @@ public class AutoMine extends Module {
 
         if (torches.get() && here - lastTorch >= torchGap.getInt()) {
             Boolean lit = placeTorch(here);
-            if (lit == null && ++aimTicks <= 20) {
+            if (lit == null && ++aimTicks <= aimLimit(20) + maxDelay.getInt()) {
                 releaseKeys();
                 return;
             }
@@ -352,6 +431,7 @@ public class AutoMine extends Module {
             case NORTH -> 180f;
             default -> -90f;
         };
+        prepareAction("Walk", origin.offset(facing, here), null);
         turnTo(yaw, 18f);
         mc.options.forwardKey.setPressed(true);
         mc.options.sprintKey.setPressed(sprint.get());
@@ -388,6 +468,10 @@ public class AutoMine extends Module {
         if (target != null && !solid(target)) {
             mined++;
             target = null;
+            if (humanize.get()) {
+                cadence.completedBlock(shortBreaks.get(), breakMinBlocks.getInt(), breakMaxBlocks.getInt(), breakMinTicks.getInt(), breakMaxTicks.getInt());
+                if (cadence.resting()) restCount++;
+            }
         }
     }
 
@@ -561,12 +645,14 @@ public class AutoMine extends Module {
      */
     private Boolean place(int slot, BlockPos against, Direction side) {
         Vec3d face = Vec3d.ofCenter(against).add(side.getOffsetX() * 0.5, side.getOffsetY() * 0.5, side.getOffsetZ() * 0.5);
+        prepareAction("Place", against, side);
         look(face);
         BlockHitResult aimed = crosshairBlock();
         if (aimed == null || !aimed.getBlockPos().equals(against) || aimed.getSide() != side) {
             status = "Aiming";
             return null;
         }
+        if (!cadence.reactionReady()) { delayedTicks++; status = "Waiting before placement"; return null; }
         int previous = mc.player.getInventory().getSelectedSlot();
         select(slot);
         boolean placed = mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, aimed).isAccepted();
@@ -588,6 +674,16 @@ public class AutoMine extends Module {
 
     // ---- looking ------------------------------------------------------------------------
 
+    private void prepareAction(String kind, BlockPos block, Direction side) {
+        if (humanize.get()) cadence.prepare(new Action(kind, block.toImmutable(), side),
+                kind.equals("Walk") ? 0 : minDelay.getInt(), kind.equals("Walk") ? 0 : maxDelay.getInt(), aimVariation.getFloat() / 100);
+    }
+    private int aimLimit(int base) {
+        if (!humanize.get() || !smooth.get()) return base;
+        float slowest = aimSpeed.getFloat() * (1 - aimVariation.getFloat() / 100);
+        return Math.max(base, (int)Math.ceil(180 / Math.max(1, slowest)) + 20);
+    }
+
     private void look(Vec3d point) {
         Vec3d eyes = mc.player.getEyePos();
         double dx = point.x - eyes.x;
@@ -603,11 +699,19 @@ public class AutoMine extends Module {
         float dyaw = MathHelper.wrapDegrees(yaw - player.getYaw());
         float dpitch = pitch - player.getPitch();
         if (smooth.get()) {
-            dyaw = MathHelper.clamp(dyaw, -TURN, TURN);
-            dpitch = MathHelper.clamp(dpitch, -TURN, TURN);
+            float limit = humanize.get() ? aimSpeed.getFloat() * cadence.aimFactor() : TURN;
+            if (humanize.get()) {
+                float distance = (float)Math.hypot(dyaw, dpitch);
+                float step = Math.min(limit, Math.max(.6f, distance * .45f));
+                if (distance > step) { dyaw *= step / distance; dpitch *= step / distance; }
+            } else {
+                dyaw = MathHelper.clamp(dyaw, -limit, limit);
+                dpitch = MathHelper.clamp(dpitch, -limit, limit);
+            }
         }
         player.setYaw(player.getYaw() + dyaw);
         player.setPitch(MathHelper.clamp(player.getPitch() + dpitch, -90f, 90f));
+        lastAutoYaw = player.getYaw(); lastAutoPitch = player.getPitch(); ownsView = true;
     }
 
     // ---- status bar ---------------------------------------------------------------------
@@ -620,6 +724,9 @@ public class AutoMine extends Module {
     public int oreCount() {
         return ores;
     }
+    public int delayedTickCount() { return delayedTicks; }
+    public int restCount() { return restCount; }
+    public String activity() { return status; }
 
     @Override
     public void onRender2D(DrawContext ctx, float tickDelta) {
