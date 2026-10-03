@@ -106,6 +106,16 @@ dev.maro
     └── notification/         toasts
 ```
 
+## Spotify lyrics
+
+Spotify Hud can show the current lyric and next line below the player. It looks up song title,
+artist, album and duration through [LRCLIB](https://lrclib.net/docs) in a background worker.
+Timed lyrics follow pause, playback and timeline seeking; availability depends on the song.
+Untimed lyrics are marked **UNSYNCED**: open F9 controls and scroll over the lyrics panel to read them.
+The **Lyrics** settings let you hide the panel, adjust text size, or change timing with
+**lyrics offset ms** (positive values advance the lyrics). Instrumental tracks and missing
+lyrics show a status instead. No Spotify account connection or token is needed.
+
 ## Building
 
 Requires Java 21.

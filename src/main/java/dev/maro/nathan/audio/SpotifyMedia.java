@@ -33,9 +33,13 @@ public final class SpotifyMedia implements AutoCloseable {
     public record Artwork(String key, int width, int height, byte[] rgba, int tintRgb, SpotifyCardRaster.Raster cardRaster) {
     }
 
-    public record State(boolean available, String title, String artist, String source,
+    public record State(boolean available, String title, String artist, String album, String source,
                         boolean playing, boolean canSeek, long positionMs, long durationMs, long sampledAtMs,
                         String error) {
+        public State(boolean available, String title, String artist, String source, boolean playing, boolean canSeek,
+                     long positionMs, long durationMs, long sampledAtMs, String error) {
+            this(available, title, artist, "", source, playing, canSeek, positionMs, durationMs, sampledAtMs, error);
+        }
         public static State waiting() {
             return new State(false, "Waiting for Spotify", "Open Spotify and play something", "", false, false, 0, 0, 0, "");
         }
@@ -141,7 +145,7 @@ public final class SpotifyMedia implements AutoCloseable {
                 JsonObject response = call(action);
                 if (worker != active) return;
                 if (!bool(response, "ok")) {
-                    state = new State(state.available, state.title, state.artist, state.source,
+                    state = new State(state.available, state.title, state.artist, state.album, state.source,
                         state.playing, state.canSeek, state.positionMs, state.durationMs, state.sampledAtMs,
                         "Windows could not control this session");
                     return;
@@ -149,7 +153,7 @@ public final class SpotifyMedia implements AutoCloseable {
             } catch (Exception e) {
                 if (worker != active) return;
                 NameeProtectAddon.LOG.warn("Spotify control failed: {}", e.toString());
-                state = new State(state.available, state.title, state.artist, state.source,
+                state = new State(state.available, state.title, state.artist, state.album, state.source,
                     state.playing, state.canSeek, state.positionMs, state.durationMs, state.sampledAtMs,
                     "Control unavailable");
                 return;
@@ -181,13 +185,13 @@ public final class SpotifyMedia implements AutoCloseable {
                     continue;
                 }
                 if (!bool(response, "ok")) {
-                    state = new State(before.available, before.title, before.artist, before.source,
+                    state = new State(before.available, before.title, before.artist, before.album, before.source,
                         before.playing, before.canSeek, before.currentPositionMs(), before.durationMs,
                         System.currentTimeMillis(), string(response, "error", "This player does not support seeking"));
                     continue;
                 }
                 // Show accepted seeks immediately; the next regular poll verifies the player's timeline.
-                state = new State(before.available, before.title, before.artist, before.source,
+                state = new State(before.available, before.title, before.artist, before.album, before.source,
                     before.playing, before.canSeek, number(response, "positionMs"), before.durationMs,
                     System.currentTimeMillis(), "");
             }
@@ -195,7 +199,7 @@ public final class SpotifyMedia implements AutoCloseable {
             if (worker != active) return;
             NameeProtectAddon.LOG.debug("Spotify seek unavailable: {}", e.toString());
             State current = state;
-            state = new State(current.available, current.title, current.artist, current.source,
+            state = new State(current.available, current.title, current.artist, current.album, current.source,
                 current.playing, current.canSeek, current.positionMs, current.durationMs,
                 current.sampledAtMs, "This player could not seek");
         } finally {
@@ -281,6 +285,7 @@ public final class SpotifyMedia implements AutoCloseable {
                 State current = new State(true,
                     string(response, "title", "Unknown track"),
                     string(response, "artist", "Unknown artist"),
+                    string(response, "album", ""),
                     string(response, "source", "Spotify"),
                     bool(response, "playing"),
                     bool(response, "canSeek"),
