@@ -69,6 +69,16 @@ public class KeySounds extends Module {
         Thock("thock", "Thock"),
         Soft("soft", "Soft"),
         Clicky("clicky", "Clicky"),
+        CreamyDeep("creamy-deep", "Creamy Deep"),
+        CreamyLight("creamy-light", "Creamy Light"),
+        Silky("silky", "Silky"),
+        Milky("milky", "Milky"),
+        Marshmallow("marshmallow", "Marshmallow"),
+        Velvet("velvet", "Velvet"),
+        Poppy("poppy", "Poppy"),
+        Bubble("bubble", "Bubble"),
+        Marble("marble", "Marble"),
+        Rain("rain", "Rain"),
         EgOreo("creamy", "EG Oreo");
 
         /** Where the addon's own samples for it are. For a pack, the ones that stand in while it is missing. */
@@ -101,9 +111,16 @@ public class KeySounds extends Module {
 
     private final Setting<Preset> preset = sgMain.add(new EnumSetting.Builder<Preset>()
         .name("sound-pack")
-        .description("Creamy: soft, rounded and a little muted. Thock: deeper and longer. Soft: quiet, nearly no knock. Clicky: bright, with the click of a clicky switch. EG Oreo: the Mechvibes pack, which has to be imported first.")
+        .description("14 bundled keyboard sounds, from deep Creamy and Marshmallow to bright Poppy and Marble. EG Oreo is a separate Mechvibes pack that needs importing.")
         .defaultValue(Preset.Creamy)
-        .onChanged(value -> packChanged())
+        .onChanged(value -> packChanged(true))
+        .build()
+    );
+
+    private final Setting<Boolean> previewOnChange = sgMain.add(new BoolSetting.Builder()
+        .name("preview-on-change")
+        .description("Play a short preview when you choose a different sound pack in the menu.")
+        .defaultValue(true)
         .build()
     );
 
@@ -172,7 +189,7 @@ public class KeySounds extends Module {
     @Override
     public void onActivate() {
         warned = false;
-        packChanged();
+        packChanged(false);
     }
 
     @Override
@@ -198,12 +215,16 @@ public class KeySounds extends Module {
         return MeteorClient.FOLDER.toPath().resolve("nameeprotect").resolve("keysounds").resolve(OREO);
     }
 
-    private void packChanged() {
+    private void packChanged(boolean preview) {
+        previews++;
+        lastTake = 0;
         player.unload();
 
         if (preset.get() == Preset.EgOreo && oreo == null && !oreoTried) readOreo();
 
         showPack();
+        if (preview && previewOnChange.get() && mc.currentScreen != null)
+            preview(new int[] {GLFW.GLFW_KEY_H, GLFW.GLFW_KEY_E, GLFW.GLFW_KEY_SPACE}, 110);
     }
 
     /** Off the main thread: it is a third of a megabyte of Ogg to decode. */
@@ -240,7 +261,13 @@ public class KeySounds extends Module {
                     oreoProblem = "";
                 }
 
-                player.unload();
+                // Reading an optional pack must not interrupt another selected preset.
+                if (preset.get() == Preset.EgOreo) {
+                    previews++;
+                    player.unload();
+                    if (oreo != null && previewOnChange.get() && mc.currentScreen != null)
+                        preview(new int[] {GLFW.GLFW_KEY_H, GLFW.GLFW_KEY_SPACE}, 110);
+                }
                 showPack();
             }, mc);
     }
@@ -379,33 +406,7 @@ public class KeySounds extends Module {
 
         WButton preview = list.add(theme.button("Preview Sound")).expandX().widget();
 
-        preview.action = () -> {
-            int mine = ++previews;
-
-            // A few letters, the spacebar, Enter and Backspace - the keys a
-            // pack has sounds of their own for - and a click if clicks are on.
-            int[] order = {GLFW.GLFW_KEY_H, GLFW.GLFW_KEY_E, GLFW.GLFW_KEY_Y, GLFW.GLFW_KEY_SPACE, GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_BACKSPACE, -1};
-
-            for (int i = 0; i < order.length; i++) {
-                int key = order[i];
-
-                if (key < 0 && !mouseClickSounds.get()) continue;
-
-                CompletableFuture.delayedExecutor(i * 140L, TimeUnit.MILLISECONDS).execute(() -> mc.execute(() -> {
-                    if (mine != previews) return;
-
-                    if (key < 0) play("mouse", 1);
-                    else playKey(key);
-                }));
-            }
-
-            // Off, it holds nothing between previews either.
-            if (!isActive()) {
-                CompletableFuture.delayedExecutor(2500, TimeUnit.MILLISECONDS).execute(() -> mc.execute(() -> {
-                    if (mine == previews && !isActive()) player.close();
-                }));
-            }
-        };
+        preview.action = () -> preview(new int[] {GLFW.GLFW_KEY_H, GLFW.GLFW_KEY_E, GLFW.GLFW_KEY_Y, GLFW.GLFW_KEY_SPACE, GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_BACKSPACE, -1}, 140);
 
         list.add(theme.horizontalSeparator("EG Oreo")).expandX();
 
@@ -434,15 +435,36 @@ public class KeySounds extends Module {
             }
         };
 
-        // The folder by its short name: a whole path has no spaces to wrap at,
-        // and a line that cannot wrap makes the window as wide as the path.
         list.add(theme.label("The pack is not bundled. Import copies it from Mechvibes installed on this computer. Or put its config.json and oreo.ogg in maro / nameeprotect / keysounds / eg-oreo under the game folder - Open Folder goes there.", 360)).widget().color(theme.textSecondaryColor());
 
-        // Whether it is there, even if another pack is what is chosen.
         if (oreo == null && !oreoLoading && !oreoTried) readOreo();
-
         showPack();
-
         return list;
+    }
+
+    /** Changing presets cancels earlier queued previews and stops their live sources. */
+    private void preview(int[] order, int spacingMs) {
+        int mine = ++previews;
+        player.stop();
+
+        for (int i = 0; i < order.length; i++) {
+            int key = order[i];
+
+            if (key < 0 && !mouseClickSounds.get()) continue;
+
+            CompletableFuture.delayedExecutor(i * (long)spacingMs, TimeUnit.MILLISECONDS).execute(() -> mc.execute(() -> {
+                if (mine != previews) return;
+
+                if (key < 0) play("mouse", 1);
+                else playKey(key);
+            }));
+        }
+
+        // Off, it holds nothing between previews either.
+        if (!isActive()) {
+            CompletableFuture.delayedExecutor(2500, TimeUnit.MILLISECONDS).execute(() -> mc.execute(() -> {
+                if (mine == previews && !isActive()) player.close();
+            }));
+        }
     }
 }

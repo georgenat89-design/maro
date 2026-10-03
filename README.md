@@ -21,7 +21,9 @@ Region Map retains Nathan's updated region divisions and sharp labels. Keystroke
 
 Swing Speed accepts **-10 to 10**: negative values slow the arm animation, **-10** makes it take 3.5 times as long, **0 or 1** is normal, and **2 to 10** retains the original faster speeds. The selected hand setting still applies.
 
-Key Sounds includes its generated sounds; the optional EG Oreo pack must be imported from Mechvibes or placed under `.minecraft/maro/nameeprotect/keysounds/eg-oreo/`. Spawner Protect can use Baritone when installed separately; without it, automatic pathfinding is unavailable.
+Key Sounds includes **14 built-in sound packs**: Creamy, Thock, Soft, Clicky, Creamy Deep, Creamy Light, Silky, Milky, Marshmallow, Velvet, Poppy, Bubble, Marble, and Rain. Each has four key variations, a spacebar, and a mouse click. Changing Sound Pack stops the old sounds, cancels earlier previews, and plays a short preview of the new choice when the menu is open. Turn off Preview on Change for silent selection. Rebuild the bundled samples with `java tools/KeySoundGen.java`.
+
+The optional EG Oreo pack must be imported from Mechvibes or placed under `.minecraft/maro/nameeprotect/keysounds/eg-oreo/`. Spawner Protect can use Baritone when installed separately; without it, automatic pathfinding is unavailable.
 
 ## Features
 

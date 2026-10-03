@@ -34,6 +34,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             context.waitTicks(5);
             checkNathanPort(context);
             checkSlowSwing(context);
+            checkKeySounds(context);
             String before = context.computeOnClient(client -> describe(client));
             context.takeScreenshot("maro-00-world");
 
@@ -280,6 +281,73 @@ public class MaroClientGameTest implements FabricClientGameTest {
         }
         if (ticks == 80) throw new AssertionError("Swing animation never finished");
         return ticks;
+    }
+
+    /** Switch through every bundled preset using the same setting exposed by the menu. */
+    private static void checkKeySounds(ClientGameTestContext context) {
+        var module = ModuleManager.get(dev.maro.nathan.modules.KeySounds.class);
+        var pack = (dev.maro.setting.ModeSetting) module.getSettings().stream().filter(s -> s.getName().equals("sound pack")).findFirst().orElseThrow();
+        var mouse = module.getSettings().stream().filter(s -> s.getName().equals("mouse click sounds")).findFirst().orElseThrow();
+        if (pack.getModes().size() != 15) throw new AssertionError("Expected 14 built-in packs plus EG Oreo");
+        context.runOnClient(client -> {
+            module.setEnabled(true);
+            mouse.fromJson(new com.google.gson.JsonPrimitive(true));
+        });
+        for (var preset : dev.maro.nathan.modules.KeySounds.Preset.values()) {
+            if (preset == dev.maro.nathan.modules.KeySounds.Preset.EgOreo) continue;
+            context.runOnClient(client -> pack.set(preset.name()));
+            context.getInput().pressKey(GLFW.GLFW_KEY_P);
+            context.getInput().pressKey(GLFW.GLFW_KEY_SPACE);
+            context.getInput().pressMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
+            context.runOnClient(client -> assertSoundBuffers(module, preset, true));
+        }
+        // Switching while a preview is queued must cancel it and load only the new pack.
+        context.setScreen(ClickGuiScreen::new);
+        context.runOnClient(client -> {
+            ((ClickGuiScreen) client.currentScreen).openModuleSettings(module);
+            module.getSettings().stream().filter(s -> s.getName().equals("Preview Sound")).map(s -> (dev.maro.setting.ActionSetting)s).findFirst().orElseThrow().run();
+            pack.set("CreamyDeep"); pack.set("Marble");
+        });
+        long end = System.currentTimeMillis() + 1200;
+        while (System.currentTimeMillis() < end) context.waitTick();
+        context.runOnClient(client -> assertSoundBuffers(module, dev.maro.nathan.modules.KeySounds.Preset.Marble, false));
+        context.takeScreenshot("maro-key-sounds-presets");
+        context.runOnClient(client -> {
+            module.setEnabled(false);
+            pack.reset(); mouse.reset();
+        });
+        context.setScreen(() -> null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void assertSoundBuffers(dev.maro.nathan.modules.KeySounds module,
+                                          dev.maro.nathan.modules.KeySounds.Preset preset, boolean mouse) {
+        try {
+            var playerField = module.getClass().getDeclaredField("player"); playerField.setAccessible(true);
+            Object player = playerField.get(module);
+            var buffersField = player.getClass().getDeclaredField("buffers"); buffersField.setAccessible(true);
+            var buffers = (java.util.Map<String, Integer>)buffersField.get(player);
+            var folderField = preset.getClass().getDeclaredField("folder"); folderField.setAccessible(true);
+            String prefix = "/assets/nameeprotect/keysounds/" + folderField.get(preset) + "/";
+            if (buffers.size() < (mouse ? 3 : 2) || !buffers.containsKey(prefix + "space.wav")
+                || (mouse && !buffers.containsKey(prefix + "mouse.wav")))
+                throw new AssertionError("No complete playback buffers for " + preset + ": " + buffers);
+            for (var entry : buffers.entrySet()) {
+                if (!entry.getKey().startsWith(prefix) || entry.getValue() == 0
+                    || !org.lwjgl.openal.AL10.alIsBuffer(entry.getValue())
+                    || org.lwjgl.openal.AL10.alGetBufferi(entry.getValue(), org.lwjgl.openal.AL10.AL_FREQUENCY) != 44100)
+                    throw new AssertionError("Wrong or invalid live sample after switching to " + preset + ": " + entry);
+            }
+            var madeField = player.getClass().getDeclaredField("made"); madeField.setAccessible(true);
+            if (madeField.getInt(player) <= 0) throw new AssertionError("No OpenAL playback source for " + preset);
+            var sourcesField = player.getClass().getDeclaredField("sources"); sourcesField.setAccessible(true);
+            int[] sources = (int[])sourcesField.get(player);
+            boolean bound = false;
+            for (int i = 0; i < madeField.getInt(player); i++)
+                bound |= buffers.containsValue(org.lwjgl.openal.AL10.alGetSourcei(sources[i], org.lwjgl.openal.AL10.AL_BUFFER));
+            if (!bound || org.lwjgl.openal.AL10.alGetError() != org.lwjgl.openal.AL10.AL_NO_ERROR)
+                throw new AssertionError("Selected sample was not bound to a valid source for " + preset);
+        } catch (ReflectiveOperationException e) { throw new AssertionError(e); }
     }
 
     /** Lets time-based animations finish (the game only advances inside wait calls). */
