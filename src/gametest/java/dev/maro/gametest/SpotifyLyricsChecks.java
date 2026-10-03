@@ -95,6 +95,10 @@ final class SpotifyLyricsChecks {
         require(wordSnapshot.karaoke(2500, -1000, 0, 60000, false).active() == 0, "Word offset/backwards seek failed");
         require(!snapshot.karaoke(2500, 0, 0, 60000, false).timed()
             && snapshot.karaoke(2500, 0, 0, 60000, true).estimated(), "Missing word timing silently became estimated");
+        var estimatedEarly = snapshot.karaoke(1100, 0, 0, 60000, true);
+        var estimatedLater = snapshot.karaoke(3700, 0, 0, 60000, true);
+        require(estimatedLater.active() > estimatedEarly.active(), "Line-only lyric word cursor did not advance");
+        require(snapshot.karaoke(1100, 0, 0, 60000, true).words() == estimatedEarly.words(), "Estimated timing plan was rebuilt every frame");
         require(SpotifyLyrics.parseLyricsfile(WORD_YAML.replace("version: '1.0'", "version: '2.0'")).isEmpty(), "Unknown Lyricsfile version accepted");
         require(SpotifyLyrics.parseLyricsfile("version: '1.0'\nversion: '1.0'\nlines: []").isEmpty(), "Duplicate YAML keys accepted");
         require(SpotifyLyrics.parseLyricsfile("!!javax.script.ScriptEngineManager []").isEmpty(), "Unsafe YAML tag accepted");
@@ -133,6 +137,8 @@ final class SpotifyLyricsChecks {
         var fakeLyrics = new SpotifyLyrics(request -> {
             if (request.title().equals("Loading test song")) { await(loadingRelease); return SpotifyLyrics.Result.status(SpotifyLyrics.Status.Unavailable); }
             return request.title().equals("Untimed test song") ? plain
+                : request.title().equals("Footer test song") ? new SpotifyLyrics.Result(SpotifyLyrics.Status.Synced,
+                    SpotifyLyrics.parseLrc("[00:01.00]An original quiet chorus\n[00:04.00]gently playing by the river"), List.of(), 0)
                 : request.title().equals("Word test song") ? WORDS
                 : request.title().equals("Missing test song") ? SpotifyLyrics.Result.status(SpotifyLyrics.Status.Missing) : TIMED;
         });
@@ -157,6 +163,30 @@ final class SpotifyLyricsChecks {
             });
             context.takeScreenshot("maro-spotify-lyrics");
             context.runOnClient(client -> {
+                require(hud.getSettings().stream().filter(s -> s.getName().equals("auto word follow")).findFirst().orElseThrow()
+                    .toJson().getAsBoolean(), "Automatic word following is off by default");
+                require(hud.getSettings().stream().filter(s -> s.getName().equals("word display")).findFirst().orElseThrow()
+                    .toJson().getAsString().equals("WordHighlight"), "Default word display does not highlight words");
+                setting(hud, "word display", new JsonPrimitive("Lines")); setting(hud, "lyrics size", new JsonPrimitive(11));
+                setState(hud, state("Footer test song", 1500));
+            });
+            context.waitTicks(6);
+            context.runOnClient(client -> {
+                double[] sizes = {8, 11, 16}, scales = {.65, 1, 2};
+                for (double size : sizes) for (double scale : scales) {
+                    setting(hud, "lyrics size", new JsonPrimitive(size)); setting(hud, "scale", new JsonPrimitive(scale));
+                    var area = layout(hud).lyrics();
+                    var font = dev.maro.nathan.render.CrispFont.POPPINS_MEDIUM.forCaps(8 * scale);
+                    double bottom = area.y() + area.height() - 18 * scale + font.height() - font.capsTop();
+                    require(bottom <= area.y() + area.height() - 2 * scale, "Preview descenders extend outside card at size " + size + ", scale " + scale);
+                }
+                setting(hud, "lyrics size", new JsonPrimitive(11)); setting(hud, "scale", new JsonPrimitive(1));
+            });
+            context.takeScreenshot("maro-spotify-footer-padding");
+            context.runOnClient(client -> setting(hud, "word display", new JsonPrimitive("WordHighlight")));
+            context.waitTicks(6);
+            context.takeScreenshot("maro-spotify-auto-word-follow");
+            context.runOnClient(client -> {
                 setState(hud, state("Original test song", 7500));
                 setting(hud, "player mode", new JsonPrimitive("Mini"));
                 setting(hud, "lyrics size", new JsonPrimitive(16));
@@ -177,18 +207,18 @@ final class SpotifyLyricsChecks {
             context.runOnClient(client -> {
                 setting(hud, "player mode", new JsonPrimitive("Expanded"));
                 setting(hud, "lyrics size", new JsonPrimitive(12));
-                setting(hud, "lyrics mode", new JsonPrimitive("WordHighlight"));
+                setting(hud, "word display", new JsonPrimitive("WordHighlight"));
                 setState(hud, state("Word test song", 2500));
                 try { var art = SpotifyMedia.class.getDeclaredField("artwork"); art.setAccessible(true); art.set(media(hud), demoArt); }
                 catch (ReflectiveOperationException e) { throw new AssertionError(e); }
             });
             context.waitTicks(12);
             context.takeScreenshot("maro-spotify-karaoke-word");
-            context.runOnClient(client -> setting(hud, "lyrics mode", new JsonPrimitive("SingleWord")));
+            context.runOnClient(client -> setting(hud, "word display", new JsonPrimitive("SingleWord")));
             context.waitTicks(6);
             context.takeScreenshot("maro-spotify-karaoke-single");
             context.runOnClient(client -> {
-                setting(hud, "lyrics mode", new JsonPrimitive("Lines")); setState(hud, state("Word test song", 8000));
+                setting(hud, "word display", new JsonPrimitive("Lines")); setState(hud, state("Word test song", 8000));
             });
             context.waitTicks(8);
             context.takeScreenshot("maro-spotify-lyrics-wrapped");
