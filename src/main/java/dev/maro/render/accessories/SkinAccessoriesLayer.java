@@ -41,10 +41,7 @@ public final class SkinAccessoriesLayer extends FeatureRenderer<PlayerEntityRend
             if (category.equals("head")) pose.scale(m.headSize(), m.headSize(), m.headSize());
             switch (group.motion()) {
                 case LEFT_WING, RIGHT_WING -> {
-                    float sign = group.motion() == AccessoryModels.Motion.LEFT_WING ? 1 : -1;
-                    float flap = (float)Math.sin(phase * 2.2) * 13 * amount;
-                    pose.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(sign * (m.wingSpread() + flap)));
-                    pose.scale(m.wingSize(), m.wingSize(), m.wingSize());
+                    applyWingPose(pose, group.motion(), m.wingSpread(), m.wingSize(), phase, amount);
                 }
                 case TAIL -> {
                     pose.scale(m.tailLength(), m.tailLength(), m.tailLength());
@@ -66,5 +63,17 @@ public final class SkinAccessoriesLayer extends FeatureRenderer<PlayerEntityRend
                 category.equals("halo") ? m.haloColor() : m.accentColor(), null);
             pose.pop();
         }
+    }
+    public static void applyWingPose(MatrixStack pose, AccessoryModels.Motion wing, float spread, float size, float phase, float amount) {
+        float opening = Math.max(0, Math.min(90, spread));
+        float reach = 13 * Math.max(0, amount);
+        float close = Math.min(reach, opening), open = Math.min(reach, 90 - opening);
+        // A smooth bounded wave keeps even maximum-strength flaps behind the shoulders.
+        float wave = ((float)Math.sin(phase * 2.2) + 1) * .5f;
+        opening = opening - close + (close + open) * wave;
+        float side = wing == AccessoryModels.Motion.LEFT_WING ? 1 : -1;
+        // Wing meshes extend along +/-X. Negative yaw on +X folds toward +Z (the back).
+        pose.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(side * (opening - 90)));
+        pose.scale(size, size, size);
     }
 }

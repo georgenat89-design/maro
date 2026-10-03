@@ -9,6 +9,10 @@ import net.minecraft.client.option.Perspective;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import dev.maro.render.accessories.AccessoryModels;
+import dev.maro.render.accessories.SkinAccessoriesLayer;
+import net.minecraft.client.util.math.MatrixStack;
+import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
 import javax.imageio.ImageIO;
 import java.io.IOException;
@@ -17,6 +21,7 @@ final class SkinAccessoriesChecks {
     private static void require(boolean condition, String message) { if (!condition) throw new AssertionError(message); }
     private static Setting<?> setting(SkinAccessories m, String name) { return m.getSettings().stream().filter(s -> s.getName().equals(name)).findFirst().orElseThrow(); }
     static void run(ClientGameTestContext context) {
+        checkWingDirection();
         SkinAccessories m = ModuleManager.get(SkinAccessories.class);
         require(m != null, "Skin Accessories not registered");
         int scale = context.computeOnClient(c -> c.options.getGuiScale().getValue());
@@ -51,6 +56,19 @@ final class SkinAccessoriesChecks {
                 require(cyan > 80, "3D preview did not render cyan halo geometry (pixels=" + cyan + ")");
             } catch (IOException e) { throw new AssertionError("Cannot inspect accessory screenshot", e); }
             context.runOnClient(c -> ((BooleanSetting)setting(m, "Animate")).set(true));
+
+            context.runOnClient(c -> {
+                m.selectPreset("Angel"); ((BooleanSetting)setting(m, "Animate")).set(false);
+                ((SkinAccessoriesScreen)c.currentScreen).showAngle(0);
+                ((NumberSetting)setting(m, "Wing Spread")).set(0.0);
+            });
+            context.waitTicks(3); context.takeScreenshot("maro-wings-folded-behind");
+            context.runOnClient(c -> ((NumberSetting)setting(m, "Wing Spread")).set(90.0));
+            context.waitTicks(3); context.takeScreenshot("maro-wings-open-outward");
+            context.runOnClient(c -> {
+                ((NumberSetting)setting(m, "Wing Spread")).reset();
+                ((BooleanSetting)setting(m, "Animate")).set(true);
+            });
 
             // Exercise every style through the actual GUI entity renderer and queued geometry.
             for (String slot : new String[]{"Head", "Wings", "Tail", "Halo", "Shoulders", "Back"}) {
@@ -111,5 +129,27 @@ final class SkinAccessoriesChecks {
                 c.options.setPerspective(perspective); c.options.getGuiScale().setValue(scale); c.onResolutionChanged();
             });
         }
+    }
+    private static void checkWingDirection() {
+        float previousWidth = -1;
+        for (int spread = 0; spread <= 90; spread += 5) {
+            var left = wingTip(AccessoryModels.Motion.LEFT_WING, spread, 0, 0);
+            var right = wingTip(AccessoryModels.Motion.RIGHT_WING, spread, 0, 0);
+            require(left.x >= previousWidth - .0001f, "Increasing spread folded the wings inward");
+            require(left.z >= -.0001f && right.z >= -.0001f, "Spread moved wings toward the player's front");
+            require(Math.abs(left.x + right.x) < .0001f && Math.abs(left.z - right.z) < .0001f, "Wing opening is not mirrored");
+            previousWidth = left.x;
+            for (int frame = 0; frame < 100; frame++) {
+                var animated = wingTip(AccessoryModels.Motion.LEFT_WING, spread, frame * .1f, 2);
+                require(animated.x >= -.0001f && animated.z >= -.0001f, "Strong wing animation crossed the shoulder plane");
+            }
+        }
+        require(previousWidth > 9.99f, "90° did not fully open the wings outward");
+        require(wingTip(AccessoryModels.Motion.LEFT_WING, 0, 0, 0).z > 9.99f, "0° did not fold wings behind the back");
+    }
+    private static Vector3f wingTip(AccessoryModels.Motion wing, float spread, float phase, float amount) {
+        var pose = new MatrixStack();
+        SkinAccessoriesLayer.applyWingPose(pose, wing, spread, 1, phase, amount);
+        return pose.peek().getPositionMatrix().transformPosition(new Vector3f(wing == AccessoryModels.Motion.LEFT_WING ? 10 : -10, 0, 0));
     }
 }
