@@ -107,7 +107,10 @@ public class RegionMap extends Module {
     private static final double PULSE = 1.6;
     private static final double PING = 2.2;
 
-    /** Balanced colours, none brighter than the rest, in {@link RegionGrid.Locale} order. */
+    /** Clean, bright colours that keep white numbers readable, in {@link RegionGrid.Locale} order. */
+    private static final int[] BRIGHT = { 0x3B82F6, 0xF43F5E, 0x10B981, 0xF59E0B, 0x8B5CF6, 0x06B6D4, 0xEC4899 };
+
+    /** Balanced colours, none brighter than the rest. */
     private static final int[] RICH = { 0x4F6BED, 0xE0526A, 0x2E9E6B, 0xD48A2A, 0x8B62D9, 0x2B97AE, 0xC9579F };
 
     /** Louder colours for those who want them. */
@@ -123,6 +126,7 @@ public class RegionMap extends Module {
     private static final String[] HEADINGS = { "S", "SW", "W", "NW", "N", "NE", "E", "SE" };
 
     public enum Palette {
+        Bright,
         Rich,
         Vivid,
         Muted,
@@ -131,8 +135,8 @@ public class RegionMap extends Module {
     }
 
     public enum TileStyle {
-        Midnight,
         Flat,
+        Midnight,
         Glossy
     }
 
@@ -249,16 +253,16 @@ public class RegionMap extends Module {
     );
 
     private final Setting<TileStyle> tileStyle = sgLook.add(new EnumSetting.Builder<TileStyle>()
-        .name("tile-style")
-        .description("Midnight: deep tiles with coloured numbers. Flat: solid colour tiles. Glossy: solid tiles lit from above.")
-        .defaultValue(TileStyle.Midnight)
+        .name("map-style")
+        .description("Flat: solid colour tiles. Midnight: deep tiles with coloured numbers. Glossy: solid tiles lit from above.")
+        .defaultValue(TileStyle.Flat)
         .build()
     );
 
     private final Setting<Double> saturation = sgCorrection.add(new DoubleSetting.Builder()
-        .name("saturation")
+        .name("color-saturation")
         .description("How rich every group colour is. Under 1 calms them down, over 1 makes them punchier.")
-        .defaultValue(1.1)
+        .defaultValue(1)
         .range(0, 2)
         .sliderRange(0, 2)
         .build()
@@ -317,9 +321,9 @@ public class RegionMap extends Module {
     );
 
     private final Setting<Integer> spotlightStrength = sgLook.add(new IntSetting.Builder()
-        .name("spotlight-strength")
+        .name("spotlight-dim")
         .description("Flat and Glossy only: how far the other groups are dimmed, as a percentage.")
-        .defaultValue(40)
+        .defaultValue(28)
         .range(0, 85)
         .sliderRange(0, 85)
         .visible(() -> spotlight.get() && tileStyle.get() != TileStyle.Midnight)
@@ -386,9 +390,9 @@ public class RegionMap extends Module {
     );
 
     private final Setting<Palette> palette = sgColors.add(new EnumSetting.Builder<Palette>()
-        .name("color-scheme")
-        .description("Rich is balanced, Vivid is louder. Muted and Signal are the original colours. Custom lets you change all seven.")
-        .defaultValue(Palette.Rich)
+        .name("map-colors")
+        .description("Bright pops, Rich is calmer, Vivid is louder. Muted and Signal are the original colours. Custom lets you change all seven.")
+        .defaultValue(Palette.Bright)
         .build()
     );
 
@@ -428,7 +432,7 @@ public class RegionMap extends Module {
     }
 
     private ColorSetting.Builder group(String name, RegionGrid.Locale of) {
-        int rgb = RICH[of.ordinal()];
+        int rgb = BRIGHT[of.ordinal()];
 
         return new ColorSetting.Builder()
             .name(name)
@@ -461,10 +465,11 @@ public class RegionMap extends Module {
                 naWestColor.get(), asiaColor.get(), oceaniaColor.get(), europeColor.get()};
         } else {
             int[] rgb = switch (palette.get()) {
+                case Rich -> RICH;
                 case Vivid -> VIVID;
                 case Muted -> MUTED;
                 case Signal -> SIGNAL;
-                default -> RICH;
+                default -> BRIGHT;
             };
             out = new Color[rgb.length];
 
@@ -754,14 +759,14 @@ public class RegionMap extends Module {
                     tinted(ownLight, Math.pow(1 - phase, 1.8) * 0.7));
             }
 
-            raised(middle[0], middle[1], shard, unit, own, glow);
+            raised(middle[0], middle[1], shard, unit, mixed(own, WHITE, 0.12), glow);
         }
 
         if (hovered >= 0 && hovered != here) {
             RegionGrid.Shard shard = RegionGrid.shard(hovered);
             double[] middle = cellMiddle(left, top, unit, gridTop, hovered);
 
-            raised(middle[0], middle[1], shard, unit, colors[shard.locale().ordinal()], tinted(WHITE, 0.55));
+            raised(middle[0], middle[1], shard, unit, mixed(colors[shard.locale().ordinal()], WHITE, 0.12), tinted(WHITE, 0.55));
         }
 
         if (marker.get() && here >= 0) {
