@@ -51,7 +51,7 @@ import java.util.concurrent.ThreadLocalRandom;
  * walking forward as it goes. It mines the way a player does: it turns to the block first and only
  * digs, or places, once the crosshair is on it, using the face the crosshair hits - so the server
  * sees the same thing it would from a player, and blocks do not come back as ghosts. Picks the right tool, places torches, fills holes in the floor, and
- * stops by itself for lava, a full inventory, low health, a tool about to break or the distance
+ * can turn around environmental obstacles, and stops for a full inventory, low health, a tool about to break or the distance
  * you set. Ores in the walls are announced, and can be mined on the way past.
  */
 public class AutoMine extends Module {
@@ -78,6 +78,9 @@ public class AutoMine extends Module {
     private final BooleanSetting manualStop = add(new BooleanSetting("Stop On Manual Input", "Stop when you move the view or press attack, use, back, jump, or sneak", true));
     private final BooleanSetting nearbyPause = add(new BooleanSetting("Pause Near Players", "Pause while another player is close", false));
     private final NumberSetting nearbyRange = add(new NumberSetting("Player Pause Radius", "Distance to another player that pauses mining", 12, 3, 32, 1).suffix(" blocks").visible(nearbyPause::get));
+    private final BooleanSetting reroute = add(new BooleanSetting("Reroute Obstacles", "Turn into a checked side tunnel around liquids, dangerous blocks, bedrock or unsafe gaps", true));
+    private final ModeSetting turnPreference = add(new ModeSetting("Turn Preference", "Try this side first; use the other side if it is unsafe", "Alternate", "Alternate", "Left", "Right").visible(reroute::get));
+    private final NumberSetting routeLookahead = add(new NumberSetting("Route Lookahead", "Check this many blocks of a side route before committing to a turn", 4, 2, 8, 1).suffix(" blocks").visible(reroute::get));
 
     private final BooleanSetting torches = add(new BooleanSetting("Torches", "Put a torch on the wall every few blocks, from your hotbar", true));
     private final NumberSetting torchGap = add(new NumberSetting("Torch Gap", "Blocks between torches", 8, 3, 16, 1).visible(torches::get));
@@ -87,11 +90,11 @@ public class AutoMine extends Module {
     private final BooleanSetting mineOres = add(new BooleanSetting("Mine Ores", "Also mine ores showing in the walls, floor and ceiling as you pass", true));
     private final BooleanSetting stopOnDiamond = add(new BooleanSetting("Stop On Diamonds", "Stop when diamonds or ancient debris show up", false));
 
-    private final BooleanSetting stopLava = add(new BooleanSetting("Stop At Lava", "Stop before opening into lava", true));
-    private final BooleanSetting stopWater = add(new BooleanSetting("Stop At Water", "Stop before opening into water", false));
+    private final BooleanSetting stopLava = add(new BooleanSetting("Stop At Lava", "Stop before opening into lava when rerouting is off", true).visible(() -> !reroute.get()));
+    private final BooleanSetting stopWater = add(new BooleanSetting("Stop At Water", "Stop before opening into water when rerouting is off", false).visible(() -> !reroute.get()));
     private final BooleanSetting stopFull = add(new BooleanSetting("Stop When Full", "Stop when your inventory has no empty slot", true));
     private final NumberSetting minHealth = add(new NumberSetting("Min Health", "Stop when health drops to this, in hearts. 0 never stops", 4, 0, 10, 0.5));
-    private final NumberSetting maxDistance = add(new NumberSetting("Max Distance", "Stop after this many blocks. 0 keeps going", 0, 0, 1000, 1));
+    private final NumberSetting maxDistance = add(new NumberSetting("Max Distance", "Total tunnel distance, including turns. 0 keeps going", 0, 0, 1000, 1));
 
     private final BooleanSetting statusBar = add(new BooleanSetting("Status Bar", "A bar at the top of the screen with what it is doing and how far it got", true));
 
@@ -123,12 +126,15 @@ public class AutoMine extends Module {
     private int delayedTicks;
     private int restCount;
     private record Action(String kind, BlockPos block, Direction side) { }
+    private record Route(BlockPos origin, Direction direction) { }
+    private final Set<Route> triedRoutes = new HashSet<>();
+    private int completedDistance, segmentProgress, reroutes;
 
     /** Set while a block is being dug this tick, so the game's own "not holding attack" cancel leaves it alone. */
     private static boolean digging;
 
     public AutoMine() {
-        super("Auto Mine", "Digs a straight strip-mining tunnel for you", Category.PLAYER);
+        super("Auto Mine", "Strip-mines tunnels with optional safe turns around obstacles", Category.PLAYER);
         // At the start of the tick, as the game's own mining does: the dig goes to the server
         // before this tick's movement, in the order it would from a player holding attack.
         ClientTickEvents.START_CLIENT_TICK.register(client -> {
@@ -150,6 +156,7 @@ public class AutoMine extends Module {
         return List.of(section("Tunnel & Tools", size, sprint, center, smooth, autoTool, saveTool),
                 section("Humanizing", humanize, minDelay, maxDelay, toolDelay, aimSpeed, aimVariation),
                 section("Short Breaks", shortBreaks, breakMinBlocks, breakMaxBlocks, breakMinTicks, breakMaxTicks),
+                section("Obstacle Routing", reroute, turnPreference, routeLookahead),
                 section("Lighting & Ores", torches, torchGap, fillHoles, oreAlerts, mineOres, stopOnDiamond),
                 section("Stops & Pauses", manualStop, nearbyPause, nearbyRange, stopLava, stopWater, stopFull, minHealth, maxDistance, statusBar));
     }
@@ -185,6 +192,9 @@ public class AutoMine extends Module {
         ownsView = false;
         delayedTicks = 0;
         restCount = 0;
+        completedDistance = segmentProgress = reroutes = 0;
+        triedRoutes.clear();
+        triedRoutes.add(new Route(origin, facing));
         resetCadence();
         status = "Starting";
     }
@@ -236,8 +246,11 @@ public class AutoMine extends Module {
 
     /** One block of the tunnel: this far along, this many columns right of centre, this many rows up. */
     private BlockPos cell(int step, int column, int row) {
-        Direction right = facing.rotateYClockwise();
-        return origin.offset(facing, step).offset(right, column).up(row);
+        return cell(origin, facing, step, column, row);
+    }
+
+    private BlockPos cell(BlockPos start, Direction direction, int step, int column, int row) {
+        return start.offset(direction, step).offset(direction.rotateYClockwise(), column).up(row);
     }
 
     private List<BlockPos> slice(int step) {
@@ -291,7 +304,8 @@ public class AutoMine extends Module {
         }
 
         int here = along(player.getBlockPos());
-        if (maxDistance.getInt() > 0 && here >= maxDistance.getInt()) {
+        segmentProgress = Math.max(segmentProgress, Math.max(0, here));
+        if (maxDistance.getInt() > 0 && travelledDistance() >= maxDistance.getInt()) {
             stop("Reached " + maxDistance.getInt() + " blocks");
             return;
         }
@@ -314,11 +328,10 @@ public class AutoMine extends Module {
         countMined();
 
         List<BlockPos> next = slice(here + 1);
-        List<BlockPos> after = slice(here + 2);
 
-        String danger = danger(next, after);
+        String danger = routeProblem(origin, facing, here + 1, 2);
         if (danger != null) {
-            stop(danger);
+            interrupt(danger);
             return;
         }
 
@@ -347,7 +360,7 @@ public class AutoMine extends Module {
         if (dig != null) {
             BlockState state = mc.world.getBlockState(dig);
             if (state.getHardness(mc.world, dig) < 0) {
-                stop("Unbreakable block ahead");
+                interrupt("Unbreakable block ahead");
                 return;
             }
             mc.options.forwardKey.setPressed(false);
@@ -401,11 +414,11 @@ public class AutoMine extends Module {
             Boolean filled = fillHoles.get() ? fill(floor) : Boolean.FALSE;
             if (filled == null) {
                 // Still turning to the spot.
-                if (++aimTicks > aimLimit(40) + maxDelay.getInt()) stop("Could not fill the hole in the floor");
+                if (++aimTicks > aimLimit(40) + maxDelay.getInt()) interrupt("Could not fill the hole in the floor");
                 return;
             }
             aimTicks = 0;
-            if (!filled) stop("Hole in the floor");
+            if (!filled) interrupt("Hole in the floor");
             return;
         }
 
@@ -433,6 +446,13 @@ public class AutoMine extends Module {
         };
         prepareAction("Walk", origin.offset(facing, here), null);
         turnTo(yaw, 18f);
+        // Turning the view also changes the direction of forward movement. Wait until
+        // aligned, otherwise the first few ticks would still walk towards the obstacle.
+        if (Math.abs(MathHelper.wrapDegrees(yaw - player.getYaw())) > 7) {
+            releaseKeys(); lastPos = null; stuckTicks = 0;
+            status = "Turning " + facing.asString();
+            return;
+        }
         mc.options.forwardKey.setPressed(true);
         mc.options.sprintKey.setPressed(sprint.get());
 
@@ -452,7 +472,7 @@ public class AutoMine extends Module {
         Vec3d pos = new Vec3d(player.getX(), player.getY(), player.getZ());
         if (lastPos != null && pos.squaredDistanceTo(lastPos) < 1.0e-4) {
             if (++stuckTicks > 60) {
-                stop("Stuck");
+                interrupt("Stuck");
                 return;
             }
         } else {
@@ -475,19 +495,63 @@ public class AutoMine extends Module {
         }
     }
 
-    /** Lava or water about to be opened into, or null if it is safe. */
-    private String danger(List<BlockPos> next, List<BlockPos> after) {
-        List<BlockPos> check = new ArrayList<>(next);
-        check.addAll(after);
-        for (BlockPos pos : check) {
-            for (BlockPos near : new BlockPos[]{pos, pos.up(), pos.down(), pos.north(), pos.south(), pos.east(), pos.west()}) {
-                var fluid = mc.world.getFluidState(near);
-                if (fluid.isEmpty()) continue;
-                if (stopLava.get() && fluid.isIn(FluidTags.LAVA)) return "Lava ahead";
-                if (stopWater.get() && fluid.isIn(FluidTags.WATER)) return "Water ahead";
+    /** A bounded check of the entire tunnel cross-section, its neighbours and its floor. */
+    private String routeProblem(BlockPos start, Direction direction, int first, int length) {
+        boolean canFill = fillHoles.get() && hotbarSlot(AutoMine::filler) >= 0;
+        for (int step = first; step < first + length; step++) {
+            for (int column = firstColumn(); column < firstColumn() + width(); column++) {
+                for (int row = 0; row < height(); row++) {
+                    BlockPos pos = cell(start, direction, step, column, row);
+                    if (!mc.world.isChunkLoaded(pos)) return "Unloaded terrain";
+                    if (!mc.world.getWorldBorder().contains(pos)) return "World border";
+                    BlockState state = mc.world.getBlockState(pos);
+                    if (state.getHardness(mc.world, pos) < 0 && solid(pos)) return "Unbreakable block ahead";
+                    String danger = dangerAround(pos);
+                    if (danger != null) return danger;
+                }
+                BlockPos floor = cell(start, direction, step, column, -1);
+                if (!solid(floor) && !(column == 0 && canFill
+                        && (solid(floor.down()) || solid(floor.offset(direction))))) return "Hole in the floor";
             }
         }
         return null;
+    }
+
+    private String dangerAround(BlockPos pos) {
+        for (BlockPos near : new BlockPos[]{pos, pos.up(), pos.down(), pos.north(), pos.south(), pos.east(), pos.west()}) {
+            var fluid = mc.world.getFluidState(near);
+            if ((reroute.get() || stopLava.get()) && fluid.isIn(FluidTags.LAVA)) return "Lava ahead";
+            if ((reroute.get() || stopWater.get()) && fluid.isIn(FluidTags.WATER)) return "Water ahead";
+            BlockState state = mc.world.getBlockState(near);
+            if (state.isOf(Blocks.FIRE) || state.isOf(Blocks.SOUL_FIRE) || state.isOf(Blocks.CACTUS)
+                    || state.isOf(Blocks.MAGMA_BLOCK) || state.isOf(Blocks.CAMPFIRE)
+                    || state.isOf(Blocks.SOUL_CAMPFIRE) || state.isOf(Blocks.POWDER_SNOW)) return "Dangerous block ahead";
+        }
+        return null;
+    }
+
+    /** Only environmental interruptions can be routed around; health and supplies still stop. */
+    private void interrupt(String reason) {
+        releaseKeys();
+        if (!reroute.get()) { stop(reason); return; }
+        BlockPos pivot = mc.player.getBlockPos().toImmutable();
+        boolean leftFirst = turnPreference.is("Left") || turnPreference.is("Alternate") && reroutes % 2 == 0;
+        Direction left = facing.rotateYCounterclockwise(), right = facing.rotateYClockwise();
+        for (Direction candidate : leftFirst ? new Direction[]{left, right} : new Direction[]{right, left}) {
+            Route route = new Route(pivot, candidate);
+            if (triedRoutes.contains(route) || routeProblem(pivot, candidate, 0, routeLookahead.getInt() + 1) != null) continue;
+            triedRoutes.add(route);
+            digging = false;
+            mc.interactionManager.cancelBlockBreaking();
+            target = null; oreFace = null; cadence.clearAction();
+            completedDistance += segmentProgress; segmentProgress = 0;
+            origin = pivot; facing = candidate; reroutes++;
+            lastTorch = 0; aimTicks = 0; stuckTicks = 0; lastPos = null;
+            status = "Turning " + candidate.asString() + " · " + reason;
+            Notifications.push("Auto Mine rerouted", reason + " · " + candidate.asString(), Notifications.Type.INFO);
+            return;
+        }
+        stop("No safe turn · " + reason);
     }
 
     /** Announces ores around the last few slices, once each. */
@@ -727,11 +791,14 @@ public class AutoMine extends Module {
     public int delayedTickCount() { return delayedTicks; }
     public int restCount() { return restCount; }
     public String activity() { return status; }
+    public int rerouteCount() { return reroutes; }
+    public int travelledDistance() { return completedDistance + segmentProgress; }
+    public Direction routeDirection() { return facing; }
 
     @Override
     public void onRender2D(DrawContext ctx, float tickDelta) {
         if (!statusBar.get() || !inGame() || mc.options.hudHidden || facing == null) return;
-        int here = Math.max(0, along(mc.player.getBlockPos()));
+        int here = travelledDistance();
         double minutes = Math.max(1 / 60.0, (System.currentTimeMillis() - startedAt) / 60000.0);
         String[] parts = {
                 status,

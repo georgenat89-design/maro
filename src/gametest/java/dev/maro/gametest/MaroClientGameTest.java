@@ -185,6 +185,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             checkInventoryHud(context, singleplayer);
             checkFullbright(context, singleplayer);
             checkAutoMine(context, singleplayer);
+            AutoMineRouteChecks.run(context, singleplayer);
             checkCrafterDisabler(context, singleplayer);
             checkNoRender(context, singleplayer);
         }

@@ -211,6 +211,14 @@ The status bar reports aiming, action delays, tool waits, breaks, and nearby-pla
 Turning Humanize off clears timing waits immediately. These variations cannot guarantee
 that a server will allow automation or that it will avoid detection or bans.
 
+**Obstacle Routing → Reroute Obstacles** checks both side tunnels when liquids, dangerous
+blocks, unbreakable blocks, unsafe floor gaps, or a stuck path interrupt mining. It tries
+the selected **Turn Preference** first, checks the full tunnel width and height for the
+configured **Route Lookahead**, and turns smoothly before walking. Water and lava are
+both avoided while routing is enabled. If neither side is safe or loaded, it stops.
+Turning routing off restores the Stop At Lava / Stop At Water controls. Max Distance
+counts progress across all tunnel segments; inventory, health and tool problems still stop.
+
 ## Building
 
 Requires Java 21.
