@@ -5,7 +5,7 @@
   "name": "maro.gg",
   "description": "maro.gg client with Nathan's HUD, movement, player, and visual modules for Minecraft 1.21.11.",
   "authors": ["densityBro"],
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "icon": "assets/maro/icon.png",
   "environment": "client",
   "entrypoints": {

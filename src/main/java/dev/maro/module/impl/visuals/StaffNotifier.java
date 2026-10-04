@@ -16,6 +16,9 @@ import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
+import net.minecraft.network.packet.Packet;
+import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
+import net.minecraft.world.GameMode;
 
 import java.util.*;
 
@@ -23,8 +26,11 @@ import java.util.*;
  * were unavailable; all tracking, rendering, and alerts here are Maro code. */
 public final class StaffNotifier extends Module implements HudElement {
     public static final List<String> DEFAULT_STAFF = List.of("0gsummer", "archivepedro", "bautiedgar",
-        "fluffymaster07", "frwost", "itszdeath", "pastagamer08", "showered", "w1zox_");
-    private static final int WIDTH = 186, ROW = 27, MARGIN = 4;
+        "fluffymaster07", "frwost", "itszdeath", "pastagamer08", "showered", "w1zox_",
+        "Frenk_Btw", "Napooo_", "BobisFound", "CryptoDaveYt", "MunkerLich", "u_vv", "Fallerfly", "Dough4");
+    private static final List<String> NEW_STAFF=DEFAULT_STAFF.subList(9,DEFAULT_STAFF.size());
+    private static final Set<String> FACE_STAFF=Set.copyOf(DEFAULT_STAFF.subList(0,9));
+    private static final int WIDTH = 216, MARGIN = 4;
     private final SettingGroup general = settings.getDefaultGroup();
     private final SettingGroup hud = settings.createGroup("HUD");
     private final Setting<List<String>> names = general.add(new StringListSetting.Builder().name("staff-names")
@@ -32,6 +38,18 @@ public final class StaffNotifier extends Module implements HudElement {
         .defaultValue(DEFAULT_STAFF.toArray(String[]::new)).build());
     private final Setting<Boolean> alerts = general.add(new BoolSetting.Builder().name("alerts").defaultValue(true).build());
     private final Setting<Boolean> sound = general.add(new BoolSetting.Builder().name("sound-alerts").defaultValue(true).visible(alerts::get).build());
+    public enum SoundMode { AllStaff, SelectedStaff }
+    public enum AlertSound { Chime, Bell, Soft, Alert }
+    private final Setting<SoundMode> soundMode=general.add(new EnumSetting.Builder<SoundMode>().name("sound-mode")
+        .description("Play sounds for every configured staff member or only your selected names").defaultValue(SoundMode.AllStaff).visible(sound::get).build());
+    private final Setting<List<String>> soundStaff=general.add(new StringListSetting.Builder().name("sound-staff")
+        .description("Names that trigger a sound in SelectedStaff mode; exact names, case insensitive").defaultValue(new String[0])
+        .visible(()->sound.get()&&soundMode.get()==SoundMode.SelectedStaff).build());
+    private final Setting<AlertSound> alertSound=general.add(new EnumSetting.Builder<AlertSound>().name("alert-sound").defaultValue(AlertSound.Chime).visible(sound::get).build());
+    private final Setting<Double> volume=general.add(new DoubleSetting.Builder().name("sound-volume").defaultValue(.65).range(0,1).visible(sound::get).build());
+    private final Setting<Double> pitch=general.add(new DoubleSetting.Builder().name("sound-pitch").defaultValue(1.15).range(.5,2).visible(sound::get).build());
+    private final Setting<Boolean> leaveSound=general.add(new BoolSetting.Builder().name("sound-on-leave").defaultValue(false).visible(sound::get).build());
+    private final Setting<Boolean> proximitySound=general.add(new BoolSetting.Builder().name("sound-on-nearby").defaultValue(true).visible(sound::get).build());
     private final Setting<Boolean> chat = general.add(new BoolSetting.Builder().name("chat-alerts").defaultValue(false).visible(alerts::get).build());
     private final Setting<Boolean> notifyExisting = general.add(new BoolSetting.Builder().name("notify-existing")
         .description("Notify about staff already in tab when enabling or joining a server").defaultValue(true).build());
@@ -39,10 +57,19 @@ public final class StaffNotifier extends Module implements HudElement {
     private final Setting<Boolean> empty = hud.add(new BoolSetting.Builder().name("show-empty")
         .description("Keep the panel visible when no configured staff are listed in tab").defaultValue(true).build());
     private final Setting<Boolean> ping = hud.add(new BoolSetting.Builder().name("show-ping").defaultValue(true).build());
+    private final Setting<Boolean> avatars = hud.add(new BoolSetting.Builder().name("show-heads").defaultValue(true).build());
+    private final Setting<Boolean> hidden = hud.add(new BoolSetting.Builder().name("show-hidden-profiles")
+        .description("Include configured profiles the server supplied but did not list in tab").defaultValue(true).build());
+    private final Setting<Boolean> nearbyAlerts=general.add(new BoolSetting.Builder().name("nearby-alerts")
+        .description("Highlight and notify when a configured staff player appears in the loaded world").defaultValue(true).build());
+    private final Setting<Integer> nearbyCooldown=general.add(new IntSetting.Builder().name("nearby-cooldown")
+        .description("Seconds between proximity alerts for each staff player").defaultValue(120).range(10,600).build());
+    public enum Layout { Comfortable, Compact }
+    private final Setting<Layout> layout=hud.add(new EnumSetting.Builder<Layout>().name("layout").defaultValue(Layout.Comfortable).build());
     private final Setting<Integer> rows = hud.add(new IntSetting.Builder().name("max-rows").defaultValue(9).range(1,16).build());
     private final Setting<Double> x = hud.add(new DoubleSetting.Builder().name("hud-x").defaultValue(98).range(0,100).build());
     private final Setting<Double> y = hud.add(new DoubleSetting.Builder().name("hud-y").defaultValue(12).range(0,100).build());
-    private final Setting<Double> scale = hud.add(new DoubleSetting.Builder().name("staff-list-size").defaultValue(.85).range(.5,2).build());
+    private final Setting<Double> scale = hud.add(new DoubleSetting.Builder().name("staff-list-size").defaultValue(.75).range(.5,2).build());
     public record Staff(UUID id, String name, int ping) {}
     public record Change(String name, boolean joined) {}
     private Map<UUID, PlayerListEntry> online = Map.of();
@@ -51,26 +78,76 @@ public final class StaffNotifier extends Module implements HudElement {
     private ClientPlayNetworkHandler connection;
     private Set<String> configured = Set.of();
     private boolean initialized, rebaseline;
+    public record HudStaff(UUID id,String name,int ping,boolean listed,boolean spectator,float distance) {
+        public String status(){return distance>=0?"Nearby · "+Math.round(distance)+"m":spectator?"Spectator":listed?"Listed in tab":"Hidden from tab";}
+    }
+    private List<HudStaff> hudDisplay=List.of();
+    private final Map<UUID,PlayerListEntry> profiles=new HashMap<>();
+    private final Map<UUID,Long> activity=new HashMap<>(),proximityAlerts=new HashMap<>(),highlights=new HashMap<>();
+    private final Map<UUID,Long> playedProximitySound=new HashMap<>();
+    private Set<String> selectedSoundStaff=Set.of();
+    public long soundAlertsPlayed(){return soundAlertsPlayed;}
+    private long soundAlertsPlayed;
+    public boolean shouldSoundFor(String name){return sound.get()&&(soundMode.get()==SoundMode.AllStaff||name!=null&&selectedSoundStaff.contains(name.toLowerCase(Locale.ROOT)));}
+    private void playAlertSound(){
+        var event=switch(alertSound.get()){
+            case Chime -> SoundEvents.BLOCK_NOTE_BLOCK_PLING.value();
+            case Bell -> SoundEvents.BLOCK_NOTE_BLOCK_BELL.value();
+            case Soft -> SoundEvents.BLOCK_NOTE_BLOCK_HARP.value();
+            case Alert -> SoundEvents.BLOCK_NOTE_BLOCK_BIT.value();
+        };
+        mc.player.playSound(event,volume.get().floatValue(),pitch.get().floatValue());soundAlertsPlayed++;
+    }
 
     public StaffNotifier() {
         super(NameeProtectAddon.CATEGORY, "staff-notifier", "Shows configured staff in tab and alerts when they join or leave.");
         names.observe(value -> { configured = normalize(value); rebaseline = true; });
+        configured=normalize(names.get());
+        soundStaff.observe(value->selectedSoundStaff=normalize(value));
+        selectedSoundStaff=normalize(soundStaff.get());
     }
     private static Set<String> normalize(List<String> values) {
         Set<String> result = new HashSet<>();
         for (String value : values.stream().limit(512).toList()) {
             if (value == null) continue;
-            String name = value.strip().toLowerCase(Locale.ROOT);
-            if (name.matches("[a-z0-9_]{1,16}")) result.add(name);
+            for(String part:value.split("[,;\\r\\n]+")) {
+                String name = part.strip().toLowerCase(Locale.ROOT);
+                if (name.matches("[a-z0-9_]{1,16}")) result.add(name);
+            }
         }
         return Set.copyOf(result);
     }
     public List<Staff> onlineStaff() { return display; }
+    public List<HudStaff> hudStaff(){return hudDisplay;}
+    public boolean isStaffName(String name){return name!=null&&configured.contains(name.toLowerCase(Locale.ROOT));}
+    public boolean isInYourRegion(UUID id){return isActive()&&activity.getOrDefault(id,0L)>System.currentTimeMillis()-60000;}
+    public boolean alarmedRecently(UUID id){return isActive()&&playedProximitySound.getOrDefault(id,0L)>System.currentTimeMillis()-5000;}
+    public void onIncoming(Packet<?> packet) {
+        if(packet instanceof PlayerListS2CPacket info&&info.getActions().contains(PlayerListS2CPacket.Action.UPDATE_GAME_MODE)
+            &&!info.getActions().contains(PlayerListS2CPacket.Action.ADD_PLAYER)&&mc.getNetworkHandler()!=null) {
+            for(var entry:info.getEntries()) {
+                var known=mc.getNetworkHandler().getPlayerListEntry(entry.profileId());
+                if(known!=null&&isStaffName(known.getProfile().name())&&mc.player!=null&&!entry.profileId().equals(mc.player.getUuid()))
+                    activity.put(entry.profileId(),System.currentTimeMillis());
+            }
+        }
+    }
+    @Override public com.google.gson.JsonObject saveExtra(){var data=super.saveExtra();data.addProperty("staff-list-revision",2);return data;}
+    @Override public void loadExtra(com.google.gson.JsonObject data){
+        var copy=data.deepCopy();copy.remove("staff-list-revision");super.loadExtra(copy);
+        if(!data.has("staff-list-revision")) {
+            var updated=new ArrayList<>(names.get());var existing=normalize(updated);
+            for(String name:NEW_STAFF)if(!existing.contains(name.toLowerCase(Locale.ROOT)))updated.add(name);
+            names.set(updated);
+        }
+    }
     public List<Change> recentChanges() { return List.copyOf(recent); }
     @Override public String getInfoString() { return Integer.toString(display.size()); }
     private void clear() {
         online = Map.of(); display = List.of(); recent.clear(); connection = null;
         initialized = false; rebaseline = false;
+        hudDisplay=List.of();profiles.clear();activity.clear();proximityAlerts.clear();highlights.clear();
+        playedProximitySound.clear();soundAlertsPlayed=0;
     }
     @Override public void onActivate() { clear(); configured = normalize(names.get()); }
     @Override public void onDeactivate() { clear(); }
@@ -91,9 +168,48 @@ public final class StaffNotifier extends Module implements HudElement {
         display = next.values().stream().map(e -> new Staff(e.getProfile().id(),e.getProfile().name(),e.getLatency()))
             .sorted(Comparator.comparing(Staff::name,String.CASE_INSENSITIVE_ORDER)).toList();
         initialized = true; rebaseline = false;
+        updateHud();
         changes.sort(Comparator.comparing(Change::name,String.CASE_INSENSITIVE_ORDER));
-        for (Change change : changes) { if (recent.size()>=12) recent.removeFirst(); recent.addLast(change); }
+        for (Change change : changes) {
+            if (recent.size()>=12) recent.removeFirst(); recent.addLast(change);
+            for(var entry:next.entrySet())if(entry.getValue().getProfile().name().equals(change.name))highlights.put(entry.getKey(),System.currentTimeMillis());
+        }
         if (alerts.get() && !changes.isEmpty()) notifyChanges(changes);
+    }
+    private void updateHud() {
+        long now=System.currentTimeMillis();profiles.clear();
+        Set<UUID> listed=online.keySet();var entries=new ArrayList<HudStaff>();var newNearby=new ArrayList<String>();
+        for(var entry:connection.getPlayerList()) {
+            var profile=entry.getProfile();
+            if(!isStaffName(profile.name())||profile.id().equals(mc.player.getUuid())||profile.id().version()==2)continue;
+            profiles.put(profile.id(),entry);
+            var body=mc.world.getPlayerByUuid(profile.id());float distance=body==null?-1:body.distanceTo(mc.player);
+            if(body!=null) {
+                activity.put(profile.id(),now);
+                if(nearbyAlerts.get()&&now-proximityAlerts.getOrDefault(profile.id(),0L)>=nearbyCooldown.get()*1000L) {
+                    proximityAlerts.put(profile.id(),now);highlights.put(profile.id(),now);newNearby.add(profile.name());
+                }
+            }
+            if(listed.contains(profile.id())||hidden.get()||body!=null)entries.add(new HudStaff(profile.id(),profile.name(),entry.getLatency(),listed.contains(profile.id()),entry.getGameMode()==GameMode.SPECTATOR,distance));
+        }
+        // Keep a configured loaded player visible even if their profile was removed from tab.
+        for(var body:mc.world.getPlayers()) {
+            var profile=body.getGameProfile();
+            if(body==mc.player||!isStaffName(profile.name())||profiles.containsKey(profile.id())||profile.id().version()==2)continue;
+            activity.put(profile.id(),now);
+            entries.add(new HudStaff(profile.id(),profile.name(),0,false,body.isSpectator(),body.distanceTo(mc.player)));
+        }
+        hudDisplay=entries.stream().sorted(Comparator.comparingInt((HudStaff s)->s.distance>=0?0:!s.listed?1:s.spectator?2:3)
+            .thenComparingDouble(s->s.distance>=0?s.distance:Float.MAX_VALUE).thenComparing(HudStaff::name,String.CASE_INSENSITIVE_ORDER)).toList();
+        activity.values().removeIf(time->now-time>60000);highlights.values().removeIf(time->now-time>4000);
+        proximityAlerts.keySet().removeIf(id->!activity.containsKey(id)&&!profiles.containsKey(id));
+        if(alerts.get()&&!newNearby.isEmpty()) {
+            Notifications.push("Staff nearby",String.join(", ",newNearby.stream().limit(3).toList())+" · loaded in your area",Notifications.Type.WARNING,4500);
+            if(proximitySound.get()&&newNearby.stream().anyMatch(this::shouldSoundFor)) {
+                playAlertSound();
+                for(var staff:hudDisplay)if(newNearby.contains(staff.name)&&shouldSoundFor(staff.name))playedProximitySound.put(staff.id,now);
+            }
+        }
     }
     private void notifyChanges(List<Change> changes) {
         // Coalesce a packet burst into at most one join toast, one leave toast, and one sound.
@@ -105,15 +221,15 @@ public final class StaffNotifier extends Module implements HudElement {
             Notifications.push("Staff Notifier",message,joined?Notifications.Type.WARNING:Notifications.Type.INFO,4000);
             if (chat.get()) mc.player.sendMessage(Text.literal("[Maro] "+message),false);
         }
-        if (sound.get()) mc.player.playSound(SoundEvents.BLOCK_NOTE_BLOCK_PLING.value(),.7f,
-            changes.stream().anyMatch(Change::joined)?1.1f:.8f);
+        if(changes.stream().anyMatch(c->(c.joined||leaveSound.get())&&shouldSoundFor(c.name)))playAlertSound();
     }
     @Override public dev.maro.runtime.gui.widgets.WWidget getWidget(dev.maro.runtime.gui.GuiTheme theme) {
         var button=theme.button("Place staff list");
         button.action=() -> { list.set(true); setEnabled(true); mc.setScreen(new HudPlacementScreen(mc.currentScreen,this)); };
         return button;
     }
-    private int height() { return 39+Math.max(1,Math.min(rows.get(),display.size()))*ROW+(display.size()>rows.get()?13:0); }
+    private int rowHeight(){return layout.get()==Layout.Compact?28:33;}
+    private int height() { return 52+Math.max(1,Math.min(rows.get(),hudDisplay.size()))*rowHeight()+18; }
     @Override public String hudName() { return "Staff Notifier"; }
     @Override public float hudScale() { return (float)Math.min(scale.get(),Math.min((mc.getWindow().getScaledWidth()-8)/(double)WIDTH,(mc.getWindow().getScaledHeight()-8)/(double)height())); }
     @Override public float hudWidth() { return WIDTH*hudScale(); }
@@ -130,28 +246,46 @@ public final class StaffNotifier extends Module implements HudElement {
     @Override public void hudReset() { x.reset(); y.reset(); scale.reset(); }
     private static double clamp(double n,double min,double max) { return Math.max(min,Math.min(max,n)); }
     @Override public void onRender2D(DrawContext ctx,float delta) {
-        if (!inGame() || !list.get() || mc.options.hudHidden || (!empty.get() && display.isEmpty())) return;
+        if (!inGame() || !list.get() || mc.options.hudHidden || (!empty.get() && hudDisplay.isEmpty())) return;
         ctx.getMatrices().pushMatrix(); Fonts.beginRaw();
         try {
             ctx.getMatrices().translate(hudLeft(),hudTop()); ctx.getMatrices().scale(hudScale(),hudScale());
-            Render2D.roundRect(ctx,0,0,WIDTH,height(),8,0xEE101319);
-            Render2D.roundOutline(ctx,0,0,WIDTH,height(),8,.6f,0x504F5868);
-            Fonts.draw(ctx,"STAFF ONLINE",10,9,0xFFE9EDF5,true,.7f);
-            Fonts.drawRight(ctx,Integer.toString(display.size()),WIDTH-10,13,display.isEmpty()?0xFF8F9AAE:0xFFFFB575,true,.7f);
-            Fonts.draw(ctx,"Players currently listed in tab",10,24,0xFF8794A9,false,.55f);
-            if (display.isEmpty()) Fonts.draw(ctx,"No configured staff in tab",10,46,0xFFBCC6D6,false,.65f);
-            for (int i=0;i<Math.min(rows.get(),display.size());i++) {
-                Staff staff=display.get(i); int top=36+i*ROW;
-                Render2D.roundRect(ctx,6,top,WIDTH-12,24,5,0x70262D3B);
-                PlayerListEntry entry=online.get(staff.id);
-                if (DEFAULT_STAFF.contains(staff.name.toLowerCase(Locale.ROOT))) {
-                    ctx.drawTexture(RenderPipelines.GUI_TEXTURED,Identifier.of("maro","textures/staff/"+staff.name.toLowerCase(Locale.ROOT)+".png"),11,top+4,0,0,16,16,8,8,8,8);
-                } else if (entry!=null) PlayerSkinDrawer.draw(ctx,entry.getSkinTextures(),11,top+4,16);
-                Fonts.draw(ctx,Fonts.trim(staff.name,ping.get()?112:145,true,.65f),33,top+5,0xFFF0F3F9,true,.65f);
-                Fonts.draw(ctx,"Listed in tab",33,top+15,0xFF8CA0B1,false,.45f);
-                if (ping.get()) Fonts.drawRight(ctx,Math.max(0,staff.ping)+"ms",WIDTH-12,top+11,0xFFACBCCC,false,.5f);
+            Render2D.roundRect(ctx,1,2,WIDTH,height(),10,0x30101723);
+            Render2D.roundRect(ctx,0,0,WIDTH,height(),10,0xF0131722);
+            Render2D.roundOutline(ctx,0,0,WIDTH,height(),10,.6f,0x80525B6C);
+            Render2D.roundRect(ctx,10,10,3,17,1.5f,0xFFE6C18A);
+            Fonts.draw(ctx,"STAFF LIST",19,10,0xFFF4EEE4,true,.78f);
+            Fonts.draw(ctx,"Presence & proximity",19,25,0xFF99A6BA,false,.48f);
+            Render2D.roundRect(ctx,WIDTH-37,10,26,20,6,0x403F4C66);
+            Fonts.drawRight(ctx,Integer.toString(hudDisplay.size()),WIDTH-18,17,0xFFE8D5B3,true,.75f);
+            long near=hudDisplay.stream().filter(s->s.distance>=0).count();
+            Fonts.draw(ctx,display.size()+" in tab",11,40,0xFF9CBAD4,false,.5f);
+            Fonts.draw(ctx,near+" nearby",77,40,0xFFA6DCC2,false,.5f);
+            Fonts.drawRight(ctx,(hudDisplay.size()-hudDisplay.stream().filter(HudStaff::listed).count())+" hidden",WIDTH-11,44,0xFFD8BA95,false,.5f);
+            if (hudDisplay.isEmpty()) {
+                Render2D.roundRect(ctx,7,51,WIDTH-14,rowHeight()-2,6,0x352F3D52);
+                Fonts.draw(ctx,"All clear",13,58,0xFFDDE7F4,true,.7f);
+                Fonts.draw(ctx,"No configured staff supplied by server",13,71,0xFF8796AC,false,.43f);
             }
-            if (display.size()>rows.get()) Fonts.draw(ctx,"+"+(display.size()-rows.get())+" more",10,height()-12,0xFF99A7BA,false,.55f);
+            for (int i=0;i<Math.min(rows.get(),hudDisplay.size());i++) {
+                HudStaff staff=hudDisplay.get(i); int top=51+i*rowHeight();
+                int color=staff.distance>=0?0xFF8EDDB4:staff.spectator?0xFFC3AEF6:!staff.listed?0xFFEBC190:0xFF9EC7E7;
+                float flash=(float)Math.max(0,1-(System.currentTimeMillis()-highlights.getOrDefault(staff.id,0L))/3500.0);
+                Render2D.roundRect(ctx,7,top,WIDTH-14,rowHeight()-3,6,((int)(40+flash*35)<<24)|0x40536E);
+                Render2D.roundRect(ctx,8,top+7,2,rowHeight()-17,1,color);
+                PlayerListEntry entry=profiles.get(staff.id);int textX=avatars.get()?39:15;
+                if(avatars.get()) {
+                    Render2D.roundRect(ctx,14,top+5,20,20,5,0xFF343D50);
+                    if (FACE_STAFF.contains(staff.name.toLowerCase(Locale.ROOT))) {
+                        ctx.drawTexture(RenderPipelines.GUI_TEXTURED,Identifier.of("maro","textures/staff/"+staff.name.toLowerCase(Locale.ROOT)+".png"),16,top+7,0,0,16,16,8,8,8,8);
+                    } else if (entry!=null) PlayerSkinDrawer.draw(ctx,entry.getSkinTextures(),16,top+7,16);
+                }
+                Fonts.draw(ctx,Fonts.trim(staff.name,WIDTH-textX-(ping.get()?47:16),true,.72f),textX,top+5,0xFFF0F3F9,true,.72f);
+                Fonts.draw(ctx,staff.status(),textX,top+18,color,false,.46f);
+                if (ping.get()&&entry!=null) Fonts.drawRight(ctx,Math.max(0,staff.ping)+"ms",WIDTH-13,top+10,0xFFA0AEC1,false,.46f);
+            }
+            Fonts.draw(ctx,configured.size()+" tracked accounts",11,height()-12,0xFF8292A9,false,.43f);
+            Fonts.drawRight(ctx,hudDisplay.size()>rows.get()?"+"+(hudDisplay.size()-rows.get())+" more":"LIVE",WIDTH-11,height()-8,0xFFB4C5D7,true,.43f);
         } finally { Fonts.endRaw(); ctx.getMatrices().popMatrix(); }
     }
 }

@@ -28,6 +28,8 @@
     "ModuleEventsMixin",
     "PerspectiveEventsMixin",
     "PacketEventsMixin",
+    "StaffPacketsMixin",
+    "StaffConnectionMixin",
     "BlockEventsMixin"
   ],
   "injectors": {

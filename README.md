@@ -10,9 +10,30 @@ Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 and default account names in Maro. Edit **staff names** for your server. It shows
 staff currently listed in tab, their heads and ping, and join/leave toast and sound
 alerts. Matching uses exact account names, case insensitive. Hidden tab entries
-are excluded; this does not establish whether someone has disconnected or vanished.
+can optionally appear with an explicit **Hidden from tab** label; this does not establish why the server hid them.
 Use **Place staff list** to drag/resize the panel. Native SignalDebug method bodies
 were unavailable, so the tracker, HUD, and alerts are implemented independently.
+
+The refined staff panel includes player heads, visible/hidden counts, nearby distance,
+spectator labels, fading highlights, comfortable/compact layouts, and a proximity alert
+cooldown. Eight user-supplied names were added: Frenk_Btw, Napooo_, BobisFound,
+CryptoDaveYt, MunkerLich, u_vv, Fallerfly, and Dough4. Existing saved lists receive these
+names once; subsequent edits/removals persist. Choose **Sound mode → SelectedStaff**
+and edit **Sound staff** to play join sounds only for chosen accounts. Chime, Bell,
+Soft and Alert tones have volume/pitch controls; leave and proximity sounds are optional.
+
+**Anti Vanish** (Misc) adapts the Anubis detector into Maro. It consumes tab visibility,
+removal, game-mode and chat packets; command-target suggestions; invisible player
+metadata; and unexplained nearby sounds/particles. It suppresses ordinary departures,
+bulk tab removals, local interactions, explosions, visible causes, redstone mechanisms,
+villager door use, and ambient smoke sources. It shares Maro's editable staff names,
+resets across world/shard changes, coalesces/rate-limits alerts, and provides a movable
+evidence HUD. The completion probe requests suggestions for `minecraft:msg ` every
+5 seconds by default; it does not send a chat message and can be disabled. Range,
+probe interval, sounds, chat alerts, and notifications are configurable. Evidence can
+suggest a hidden player; it cannot reveal staff the server never exposes to the client.
+The original Anubis Staff List module was not ported. GPL notices and corresponding
+source are retained; see THIRD_PARTY.md.
 
 **Base ESP** (Visuals) ports the underground base detector from the user-provided
 Krypton Avengers source (`dev.dexter.kryptionians.modules.BaseESP`). It groups

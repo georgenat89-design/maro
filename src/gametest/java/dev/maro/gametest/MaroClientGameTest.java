@@ -43,6 +43,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             }
             if (Boolean.getBoolean("maro.gametest.staffOnly")) {
                 StaffNotifierChecks.run(context);
+                AntiVanishChecks.run(context);
                 return;
             }
             if (Boolean.getBoolean("maro.gametest.baseEspOnly")) {
@@ -70,6 +71,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             PetChecks.run(context, singleplayer);
             BaseEspChecks.run(context, singleplayer);
             StaffNotifierChecks.run(context);
+            AntiVanishChecks.run(context);
             String before = context.computeOnClient(client -> describe(client));
             context.takeScreenshot("maro-00-world");
 
