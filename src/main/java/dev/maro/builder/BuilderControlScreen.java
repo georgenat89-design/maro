@@ -25,7 +25,7 @@ public final class BuilderControlScreen extends Screen {
         String[] labels={"X−","X+","Y−","Y+","Z−","Z+"};
         for(int i=0;i<directions.length;i++){Direction direction=directions[i];addDrawableChild(ButtonWidget.builder(Text.literal(labels[i]),b->{if(builder.origin()!=null)builder.setOrigin(builder.origin().offset(direction));}).dimensions(left+18+i*29,top+54,26,12).build());}
         var budget=new TextFieldWidget(textRenderer,left+62,top+71,column-44,17,Text.literal("AH session budget"));
-        budget.setMaxLength(10);budget.setText(String.valueOf((long)builder.auctionBudget()));budget.setTextPredicate(value->value.matches("[0-9]*"));
+        budget.setMaxLength(10);budget.setText(String.valueOf((long)builder.auctionBudget()));budget.setTextPredicate(value->value.matches("[0-9]*")&&(value.isEmpty()||Long.parseLong(value)<=1_000_000_000L));
         budget.setChangedListener(value->{try{builder.auctionBudget(value.isEmpty()?0:Long.parseLong(value));}catch(NumberFormatException ignored){}});addDrawableChild(budget);
         mode=button("",1,top+71,17,builder::cycleBuildMode);
         button("Choose Schematic",0,top+94,18,()->client.setScreen(new BuilderScreen(this,builder,false)));
@@ -38,13 +38,14 @@ public final class BuilderControlScreen extends Screen {
         cancel=button("Cancel Schematic",1,top+154,18,()->{builder.cancelSchematic();tick();});
         buy=smallButton("Buy Missing",0,top+174,builder::buyMaterials);
         deposit=smallButton("Deposit All",1,top+174,builder::depositAll);
-        smallButton("Options",2,top+174,()->{var gui=parent instanceof ClickGuiScreen existing?existing:new ClickGuiScreen();client.setScreen(gui);gui.openModuleOptions(builder);});
+        smallButton("Select Chest",2,top+174,builder::markContainer);
+        smallButton("Options",3,top+174,()->{var gui=parent instanceof ClickGuiScreen existing?existing:new ClickGuiScreen();client.setScreen(gui);gui.openModuleOptions(builder);});
         preview=button("",0,top+194,18,builder::togglePreview);
         button("Close",1,top+194,18,this::close);
         tick();
     }
     private ButtonWidget button(String label,int col,int y,int height,Runnable action){return addDrawableChild(ButtonWidget.builder(Text.literal(label),b->action.run()).dimensions(left+18+col*(column+6),y,column,height).build());}
-    private ButtonWidget smallButton(String label,int col,int y,Runnable action){int w=(panelWidth-48)/3;return addDrawableChild(ButtonWidget.builder(Text.literal(label),b->action.run()).dimensions(left+18+col*(w+6),y,w,18).build());}
+    private ButtonWidget smallButton(String label,int col,int y,Runnable action){int w=(panelWidth-54)/4;return addDrawableChild(ButtonWidget.builder(Text.literal(label),b->action.run()).dimensions(left+18+col*(w+6),y,w,18).build());}
     @Override public void tick(){
         boolean loaded=builder.schematic()!=null&&!builder.loading();start.active=loaded&&!builder.buying()&&!builder.depositing();buy.active=loaded&&builder.auctionBudget()>0&&!builder.buying()&&!builder.depositing();preview.active=loaded;restart.active=loaded;cancel.active=loaded||builder.loading()||builder.depositing();deposit.active=!builder.buying()&&!builder.depositing();
         start.setMessage(Text.literal(builder.building()?"Resume Build":"Start Build"));mode.setMessage(Text.literal(builder.buildMode().equals("Semi Auto")?"Mode: Hold Right Click":"Mode: Automatic"));preview.setMessage(Text.literal(builder.previewVisible()?"Hide Preview":"Show Preview"));
@@ -55,6 +56,7 @@ public final class BuilderControlScreen extends Screen {
         var schematic=builder.schematic();String name=builder.loading()?"Loading schematic…":schematic==null?"Choose a schematic to start":schematic.name+"  ·  "+schematic.width+" × "+schematic.height+" × "+schematic.length;
         SmoothHudText.draw(ctx,SmoothHudText.trim(ctx,name,panelWidth-36,false,.85f),left+18,top+31,0xFFBDD0E8,false,.85f);
         SmoothHudText.draw(ctx,"Origin: "+(builder.origin()==null?"automatic":builder.origin().toShortString()),left+18,top+43,0xFF93ABC9,false,.65f);
+        SmoothHudText.draw(ctx,SmoothHudText.trim(ctx,"Chest: "+(builder.selectedSupplyChest()==null?"look at chest, press R":builder.selectedSupplyChest().toShortString()),panelWidth-220,false,.65f),left+202,top+54,0xFF93ABC9,false,.65f);
         SmoothHudText.draw(ctx,"Budget",left+18,top+76,0xFFBDCEE5,false,.7f);
         String status=builder.auctionBudget()<=0&&!builder.buying()?"AH buying: enter a budget above 0":builder.status();
         SmoothHudText.draw(ctx,SmoothHudText.trim(ctx,status,panelWidth-36,false,.7f),left+18,top+217,builder.buying()?0xFF7EF0C1:0xFFA4BAD5,false,.7f);

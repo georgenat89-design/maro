@@ -67,6 +67,8 @@ public final class Schematic {
     }
     public static Item material(BlockState state){
         if(state.isAir()||state.isOf(Blocks.STRUCTURE_VOID)||companion(state))return Items.AIR;
+        if(state.isOf(Blocks.WATER))return state.get(net.minecraft.block.FluidBlock.LEVEL)==0?Items.WATER_BUCKET:Items.AIR;
+        if(state.isOf(Blocks.LAVA))return state.get(net.minecraft.block.FluidBlock.LEVEL)==0?Items.LAVA_BUCKET:Items.AIR;
         return state.getBlock().asItem();
     }
     public static int units(BlockState state){return state.contains(Properties.SLAB_TYPE)&&state.get(Properties.SLAB_TYPE)==net.minecraft.block.enums.SlabType.DOUBLE?2:1;}

@@ -314,7 +314,7 @@ and is not bundled into Maro.
 
 ### Schematic Auto Builder
 
-Right-click **Player → Auto Builder** for a compact panel with schematic selection, origin/nudges, auction budget and **Start Build**. **Automatic** builds without holding right mouse. Imports `.schem`, `.schematic`, `.litematic` and vanilla `.nbt`, previews textured ghosts, restocks from marked chests, buys missing materials and cleans its temporary dirt. Optional head smoothing and timing variation are in **Options → Build**. See [Auto Builder setup and limits](docs/AUTO_BUILDER.md).
+Right-click **Player → Auto Builder** for a compact panel with schematic selection, origin/nudges, auction budget and **Start Build**. **Automatic** builds without holding right mouse. Imports `.schem`, `.schematic`, `.litematic` and vanilla `.nbt`, previews textured ghosts, prepares the whole material list in your selected double chest (look at it and press R), restocks each layer, buys missing materials and cleans its temporary dirt. Optional head smoothing and timing variation are in **Options → Build**. See [Auto Builder setup and limits](docs/AUTO_BUILDER.md).
 
 Run its focused in-game checks with `./gradlew runProductionClientGameTest -PbuilderTestOnly=true`.
 
