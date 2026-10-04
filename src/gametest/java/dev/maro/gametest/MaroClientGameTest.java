@@ -35,6 +35,12 @@ public class MaroClientGameTest implements FabricClientGameTest {
             // make sure nothing (pause menu, toasts...) is in the way before testing the keybind
             context.setScreen(() -> null);
             context.waitTicks(5);
+            // Optional startup probe for an externally supplied companion addon.
+            if (Boolean.getBoolean("maro.gametest.launchOnly")) {
+                context.waitTicks(100);
+                context.takeScreenshot("maro-companion-launch");
+                return;
+            }
             if (Boolean.getBoolean("maro.gametest.staffOnly")) {
                 StaffNotifierChecks.run(context);
                 return;
