@@ -86,16 +86,20 @@ public class Keystrokes extends Module {
     private static final String COUNTER_STAND_IN = "00 CPS";
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
-    private final SettingGroup sgLook = settings.createGroup("Look");
+    private final SettingGroup sgKeys = settings.createGroup("Keys");
+    private final SettingGroup sgPlacement = settings.createGroup("Placement");
+    private final SettingGroup sgStyle = settings.createGroup("Style");
+    private final SettingGroup sgColors = settings.createGroup("Colors");
+    private final SettingGroup sgAnimation = settings.createGroup("Animation");
 
-    private final Setting<Boolean> mouse = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> mouse = sgKeys.add(new BoolSetting.Builder()
         .name("mouse")
         .description("Show the left and right mouse buttons under the keys.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<Boolean> cps = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> cps = sgKeys.add(new BoolSetting.Builder()
         .name("cps")
         .description("While you are clicking a mouse button, show how fast in place of its name.")
         .defaultValue(true)
@@ -103,14 +107,14 @@ public class Keystrokes extends Module {
         .build()
     );
 
-    private final Setting<Boolean> spaceBar = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> spaceBar = sgKeys.add(new BoolSetting.Builder()
         .name("space-bar")
         .description("Show the jump key along the bottom.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<Integer> x = sgGeneral.add(new IntSetting.Builder()
+    private final Setting<Integer> x = sgPlacement.add(new IntSetting.Builder()
         .name("x")
         .description("Distance from the left of the window, in pixels.")
         .defaultValue(410)
@@ -119,7 +123,7 @@ public class Keystrokes extends Module {
         .build()
     );
 
-    private final Setting<Integer> y = sgGeneral.add(new IntSetting.Builder()
+    private final Setting<Integer> y = sgPlacement.add(new IntSetting.Builder()
         .name("y")
         .description("Distance from the top of the window, in pixels.")
         .defaultValue(170)
@@ -128,7 +132,7 @@ public class Keystrokes extends Module {
         .build()
     );
 
-    private final Setting<Integer> keySize = sgGeneral.add(new IntSetting.Builder()
+    private final Setting<Integer> keySize = sgPlacement.add(new IntSetting.Builder()
         .name("key-size")
         .description("Width and height of one key, in pixels. Everything else scales from it.")
         .defaultValue(44)
@@ -137,21 +141,21 @@ public class Keystrokes extends Module {
         .build()
     );
 
-    private final Setting<Boolean> shadow = sgLook.add(new BoolSetting.Builder()
+    private final Setting<Boolean> shadow = sgStyle.add(new BoolSetting.Builder()
         .name("text-shadow")
         .description("Shadow under the labels. Worth having with no background, where the letters sit straight on the world.")
         .defaultValue(false)
         .build()
     );
 
-    private final Setting<Boolean> animation = sgLook.add(new BoolSetting.Builder()
+    private final Setting<Boolean> animation = sgAnimation.add(new BoolSetting.Builder()
         .name("animation")
         .description("Ease into the pressed look and back out of it, rather than flipping.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<Double> animationSpeed = sgLook.add(new DoubleSetting.Builder()
+    private final Setting<Double> animationSpeed = sgAnimation.add(new DoubleSetting.Builder()
         .name("animation-speed")
         .description("How quick a press is. At 1 a key goes down in 80 ms and comes back up in 150.")
         .defaultValue(1)
@@ -162,14 +166,14 @@ public class Keystrokes extends Module {
         .build()
     );
 
-    private final Setting<SettingColor> highlight = sgLook.add(new ColorSetting.Builder()
+    private final Setting<SettingColor> highlight = sgColors.add(new ColorSetting.Builder()
         .name("highlight-color")
         .description("The theme a held key takes on: a soft wash of it behind the key, a rim of it, and a faint glow of it inside.")
         .defaultValue(new SettingColor(255, 176, 64))
         .build()
     );
 
-    private final Setting<Boolean> pressEffect = sgLook.add(new BoolSetting.Builder()
+    private final Setting<Boolean> pressEffect = sgAnimation.add(new BoolSetting.Builder()
         .name("press-effect")
         .description("A held key's face shrinks a little and sinks, its shadow pulls in, and a thin ripple of the highlight leaves its edge. Off, a press is a change of colour only.")
         .defaultValue(true)
@@ -177,7 +181,7 @@ public class Keystrokes extends Module {
         .build()
     );
 
-    private final Setting<Boolean> glow = sgLook.add(new BoolSetting.Builder()
+    private final Setting<Boolean> glow = sgAnimation.add(new BoolSetting.Builder()
         .name("pressed-glow")
         .description("A faint glow of the highlight colour round the inside of a held key.")
         .defaultValue(true)
@@ -185,21 +189,21 @@ public class Keystrokes extends Module {
         .build()
     );
 
-    private final Setting<Boolean> customPressed = sgLook.add(new BoolSetting.Builder()
+    private final Setting<Boolean> customPressed = sgColors.add(new BoolSetting.Builder()
         .name("custom-pressed-colors")
         .description("Choose a held key's background, rim and text yourself instead of taking them from the highlight colour.")
         .defaultValue(false)
         .build()
     );
 
-    private final Setting<Boolean> background = sgLook.add(new BoolSetting.Builder()
+    private final Setting<Boolean> background = sgStyle.add(new BoolSetting.Builder()
         .name("background")
         .description("Draw a box behind each key. Off leaves only the letters, which change colour when pressed.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<Integer> roundness = sgLook.add(new IntSetting.Builder()
+    private final Setting<Integer> roundness = sgStyle.add(new IntSetting.Builder()
         .name("roundness")
         .description("How round the corners are. 0 is square, 100 is as round as a key allows. Every box gets the same corner, and the space bar is always a pill.")
         .defaultValue(45)
@@ -209,7 +213,7 @@ public class Keystrokes extends Module {
         .build()
     );
 
-    private final Setting<SettingColor> backgroundColor = sgLook.add(new ColorSetting.Builder()
+    private final Setting<SettingColor> backgroundColor = sgColors.add(new ColorSetting.Builder()
         .name("background-color")
         .description("The box behind a key that is not held.")
         .defaultValue(new SettingColor(28, 29, 34, 225))
@@ -217,7 +221,7 @@ public class Keystrokes extends Module {
         .build()
     );
 
-    private final Setting<SettingColor> pressedBackgroundColor = sgLook.add(new ColorSetting.Builder()
+    private final Setting<SettingColor> pressedBackgroundColor = sgColors.add(new ColorSetting.Builder()
         .name("pressed-background-color")
         .description("The box behind a key that is held.")
         .defaultValue(new SettingColor(70, 73, 84, 235))
@@ -225,7 +229,7 @@ public class Keystrokes extends Module {
         .build()
     );
 
-    private final Setting<Boolean> border = sgLook.add(new BoolSetting.Builder()
+    private final Setting<Boolean> border = sgStyle.add(new BoolSetting.Builder()
         .name("border")
         .description("A thin rim round each box. It is what keeps a dark box readable over a dark part of the world, and a pale one over the sky.")
         .defaultValue(true)
@@ -233,7 +237,7 @@ public class Keystrokes extends Module {
         .build()
     );
 
-    private final Setting<SettingColor> borderColor = sgLook.add(new ColorSetting.Builder()
+    private final Setting<SettingColor> borderColor = sgColors.add(new ColorSetting.Builder()
         .name("border-color")
         .description("The rim round each box.")
         .defaultValue(new SettingColor(122, 126, 138, 150))
@@ -241,7 +245,7 @@ public class Keystrokes extends Module {
         .build()
     );
 
-    private final Setting<SettingColor> pressedBorderColor = sgLook.add(new ColorSetting.Builder()
+    private final Setting<SettingColor> pressedBorderColor = sgColors.add(new ColorSetting.Builder()
         .name("pressed-border-color")
         .description("The rim round a key that is held.")
         .defaultValue(new SettingColor(214, 218, 228, 230))
@@ -249,14 +253,14 @@ public class Keystrokes extends Module {
         .build()
     );
 
-    private final Setting<SettingColor> textColor = sgLook.add(new ColorSetting.Builder()
+    private final Setting<SettingColor> textColor = sgColors.add(new ColorSetting.Builder()
         .name("text-color")
         .description("The label on a key that is not held.")
         .defaultValue(new SettingColor(226, 228, 234))
         .build()
     );
 
-    private final Setting<SettingColor> pressedTextColor = sgLook.add(new ColorSetting.Builder()
+    private final Setting<SettingColor> pressedTextColor = sgColors.add(new ColorSetting.Builder()
         .name("pressed-text-color")
         .description("The label on a key that is held. With no background, this is the only thing that shows a press.")
         .defaultValue(new SettingColor(255, 255, 255))
@@ -267,7 +271,7 @@ public class Keystrokes extends Module {
     // Never shown. It records which defaults the saved colours were chosen
     // against, so that a look saved under the old defaults - a white flash on a
     // see-through box - is replaced once by the new one and never again.
-    private final Setting<Integer> lookVersion = sgLook.add(new IntSetting.Builder()
+    private final Setting<Integer> lookVersion = sgStyle.add(new IntSetting.Builder()
         .name("look-version")
         .description("Which set of default colours these settings were saved under.")
         .defaultValue(0)

@@ -141,11 +141,14 @@ public class RegionMap extends Module {
     }
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
-    private final SettingGroup sgLook = settings.createGroup("Look");
+    private final SettingGroup sgPlacement = settings.createGroup("Placement");
+    private final SettingGroup sgContent = settings.createGroup("Content");
+    private final SettingGroup sgLook = settings.createGroup("Style");
+    private final SettingGroup sgPanel = settings.createGroup("Panel Colors");
     private final SettingGroup sgCorrection = settings.createGroup("Color Correction");
     private final SettingGroup sgColors = settings.createGroup("Map Colors", false);
 
-    private final Setting<Integer> x = sgGeneral.add(new IntSetting.Builder()
+    private final Setting<Integer> x = sgPlacement.add(new IntSetting.Builder()
         .name("x")
         .description("Distance from the left of the screen, in interface pixels. Easier set by dragging.")
         .defaultValue(8)
@@ -154,7 +157,7 @@ public class RegionMap extends Module {
         .build()
     );
 
-    private final Setting<Integer> y = sgGeneral.add(new IntSetting.Builder()
+    private final Setting<Integer> y = sgPlacement.add(new IntSetting.Builder()
         .name("y")
         .description("Distance from the top of the screen, in interface pixels. Easier set by dragging.")
         .defaultValue(8)
@@ -163,7 +166,7 @@ public class RegionMap extends Module {
         .build()
     );
 
-    private final Setting<Double> scale = sgGeneral.add(new DoubleSetting.Builder()
+    private final Setting<Double> scale = sgPlacement.add(new DoubleSetting.Builder()
         .name("scale")
         .description("How big the map is. Everything in it scales together, so it keeps its shape.")
         .defaultValue(1)
@@ -173,21 +176,21 @@ public class RegionMap extends Module {
         .build()
     );
 
-    private final Setting<Boolean> header = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> header = sgContent.add(new BoolSetting.Builder()
         .name("header")
         .description("Over the map: the region you are in, written large, its group, and the way you are facing.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<Boolean> numbers = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> numbers = sgContent.add(new BoolSetting.Builder()
         .name("numbers")
         .description("The region's number on its cell. All numbers use Text Color.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<RegionMapRaster.NumberFont> numberFont = sgGeneral.add(new EnumSetting.Builder<RegionMapRaster.NumberFont>()
+    private final Setting<RegionMapRaster.NumberFont> numberFont = sgContent.add(new EnumSetting.Builder<RegionMapRaster.NumberFont>()
         .name("number-font")
         .description("Rounded and Rounded Bold use normal-width digits. Condensed fits more text in narrow cells.")
         .defaultValue(RegionMapRaster.NumberFont.RoundedBold)
@@ -195,7 +198,7 @@ public class RegionMap extends Module {
         .build()
     );
 
-    private final Setting<Double> numberSize = sgGeneral.add(new DoubleSetting.Builder()
+    private final Setting<Double> numberSize = sgContent.add(new DoubleSetting.Builder()
         .name("number-size")
         .description("Size of the numbers, without resizing the map. Disable Fit Numbers to enlarge digits past a small cell's bounds.")
         .defaultValue(1.25)
@@ -205,7 +208,7 @@ public class RegionMap extends Module {
         .build()
     );
 
-    private final Setting<Boolean> fitNumbers = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> fitNumbers = sgContent.add(new BoolSetting.Builder()
         .name("fit-numbers")
         .description("Shrink numbers to fit their cells. When off, Number Size is respected and labels may overlap neighbouring cells.")
         .defaultValue(true)
@@ -213,28 +216,28 @@ public class RegionMap extends Module {
         .build()
     );
 
-    private final Setting<Boolean> footer = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> footer = sgContent.add(new BoolSetting.Builder()
         .name("footer")
         .description("Your x and z, in two chips under the map.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<Boolean> legend = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> legend = sgContent.add(new BoolSetting.Builder()
         .name("legend")
         .description("The seven groups as chips under the map, with yours lit up.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<Boolean> marker = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> marker = sgContent.add(new BoolSetting.Builder()
         .name("marker")
         .description("An arrow where you are, pointing the way you are looking.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<Double> markerSize = sgGeneral.add(new DoubleSetting.Builder()
+    private final Setting<Double> markerSize = sgContent.add(new DoubleSetting.Builder()
         .name("marker-size")
         .description("How big the arrow is. It grows about its own middle, so it stays on the spot it marks.")
         .defaultValue(1)
@@ -245,7 +248,7 @@ public class RegionMap extends Module {
         .build()
     );
 
-    private final Setting<Boolean> details = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> details = sgContent.add(new BoolSetting.Builder()
         .name("hover-details")
         .description("While a screen is open - the placement screen included - the pointer on a cell says its region, its group and the blocks it runs between.")
         .defaultValue(true)
@@ -337,7 +340,7 @@ public class RegionMap extends Module {
         .build()
     );
 
-    private final Setting<Integer> backgroundOpacity = sgLook.add(new IntSetting.Builder()
+    private final Setting<Integer> backgroundOpacity = sgPanel.add(new IntSetting.Builder()
         .name("panel-opacity")
         .description("How solid the panel is, as a percentage. The panel only: the cells, the rim and the lettering keep their own.")
         .defaultValue(88)
@@ -346,28 +349,28 @@ public class RegionMap extends Module {
         .build()
     );
 
-    private final Setting<SettingColor> backgroundColor = sgLook.add(new ColorSetting.Builder()
+    private final Setting<SettingColor> backgroundColor = sgPanel.add(new ColorSetting.Builder()
         .name("panel-color")
         .description("The panel behind the map. How solid it is is the setting over this one.")
         .defaultValue(new SettingColor(11, 13, 18))
         .build()
     );
 
-    private final Setting<SettingColor> borderColor = sgLook.add(new ColorSetting.Builder()
+    private final Setting<SettingColor> borderColor = sgPanel.add(new ColorSetting.Builder()
         .name("rim-color")
         .description("The fine rim round the panel and round each chip.")
         .defaultValue(new SettingColor(255, 255, 255, 26))
         .build()
     );
 
-    private final Setting<SettingColor> accentColor = sgLook.add(new ColorSetting.Builder()
+    private final Setting<SettingColor> accentColor = sgPanel.add(new ColorSetting.Builder()
         .name("tile-outline-color")
         .description("The fine outline round the raised tile you are standing in.")
         .defaultValue(new SettingColor(255, 255, 255, 110))
         .build()
     );
 
-    private final Setting<SettingColor> markerColor = sgLook.add(new ColorSetting.Builder()
+    private final Setting<SettingColor> markerColor = sgPanel.add(new ColorSetting.Builder()
         .name("marker-color")
         .description("The arrow and its glow. Its outline is worked out from it, dark on a light arrow and light on a dark one.")
         .defaultValue(new SettingColor(245, 248, 255))
@@ -375,14 +378,14 @@ public class RegionMap extends Module {
         .build()
     );
 
-    private final Setting<SettingColor> textColor = sgLook.add(new ColorSetting.Builder()
+    private final Setting<SettingColor> textColor = sgPanel.add(new ColorSetting.Builder()
         .name("text-color")
         .description("One color for all region numbers and panel lettering. Labels use it at lower opacity.")
         .defaultValue(new SettingColor(240, 243, 250))
         .build()
     );
 
-    private final Setting<Boolean> shadow = sgLook.add(new BoolSetting.Builder()
+    private final Setting<Boolean> shadow = sgPanel.add(new BoolSetting.Builder()
         .name("text-shadow")
         .description("Shadow under the lettering on the panel. Cell numbers have their own with Glossy tiles.")
         .defaultValue(false)

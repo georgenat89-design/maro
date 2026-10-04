@@ -8,6 +8,7 @@ import dev.maro.setting.ColorSetting;
 import dev.maro.setting.KeybindSetting;
 import dev.maro.setting.ModeSetting;
 import dev.maro.setting.NumberSetting;
+import dev.maro.setting.SettingSection;
 import dev.maro.util.ColorUtil;
 import dev.maro.util.KeyUtil;
 import net.minecraft.client.gui.DrawContext;
@@ -152,6 +153,12 @@ public class ItemInspect extends Module {
     public ItemInspect() {
         super("Item Inspect", "A Valorant-style inspect animation for what you hold", Category.VISUALS);
         instance = this;
+    }
+
+    @Override
+    public java.util.List<SettingSection> getSettingSections() {
+        return java.util.List.of(SettingSection.of("Inspect", key, template, duration, onEquip, sound),
+                SettingSection.of("Swoosh", trail, color, rainbow, trailSize));
     }
 
     @Override

@@ -43,8 +43,11 @@ public class ColorCorrect extends Module {
     private static final Identifier SCRATCH = PostEffect.ours("scratch");
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
+    private final SettingGroup sgColor = settings.createGroup("Color");
+    private final SettingGroup sgLight = settings.createGroup("Light");
+    private final SettingGroup sgTint = settings.createGroup("Tint");
 
-    private final Setting<Double> saturation = sgGeneral.add(new DoubleSetting.Builder()
+    private final Setting<Double> saturation = sgColor.add(new DoubleSetting.Builder()
         .name("saturation")
         .description("0 is greyscale, 1 leaves it alone, higher is more colourful.")
         .defaultValue(1)
@@ -52,7 +55,7 @@ public class ColorCorrect extends Module {
         .build()
     );
 
-    private final Setting<Double> hue = sgGeneral.add(new DoubleSetting.Builder()
+    private final Setting<Double> hue = sgColor.add(new DoubleSetting.Builder()
         .name("hue")
         .description("Turns every colour round the colour wheel by this many degrees. 0 leaves them alone; 180 and -180 are the same place. How bright and how colourful things are is left as it was.")
         .defaultValue(0)
@@ -62,7 +65,7 @@ public class ColorCorrect extends Module {
         .build()
     );
 
-    private final Setting<Double> colorBoost = sgGeneral.add(new DoubleSetting.Builder()
+    private final Setting<Double> colorBoost = sgColor.add(new DoubleSetting.Builder()
         .name("color-boost")
         .description("More colour where there is little and hardly any more where there is already a lot, so dull things come up without bright things burning out. Below 0 it takes colour away evenly. 0 leaves it alone.")
         .defaultValue(0)
@@ -72,7 +75,7 @@ public class ColorCorrect extends Module {
         .build()
     );
 
-    private final Setting<Double> brightness = sgGeneral.add(new DoubleSetting.Builder()
+    private final Setting<Double> brightness = sgLight.add(new DoubleSetting.Builder()
         .name("brightness")
         .description("Multiplies every channel. 1 leaves it alone.")
         .defaultValue(1)
@@ -80,7 +83,7 @@ public class ColorCorrect extends Module {
         .build()
     );
 
-    private final Setting<Double> shadows = sgGeneral.add(new DoubleSetting.Builder()
+    private final Setting<Double> shadows = sgLight.add(new DoubleSetting.Builder()
         .name("shadows")
         .description("Brightens the dark parts of the picture, or below 0 darkens them, and leaves the bright parts nearly alone. Black stays black. 0 leaves it alone.")
         .defaultValue(0)
@@ -90,7 +93,7 @@ public class ColorCorrect extends Module {
         .build()
     );
 
-    private final Setting<Double> contrast = sgGeneral.add(new DoubleSetting.Builder()
+    private final Setting<Double> contrast = sgLight.add(new DoubleSetting.Builder()
         .name("contrast")
         .description("Pushes light and dark apart around mid grey. 1 leaves it alone.")
         .defaultValue(1)
@@ -98,7 +101,7 @@ public class ColorCorrect extends Module {
         .build()
     );
 
-    private final Setting<Double> gamma = sgGeneral.add(new DoubleSetting.Builder()
+    private final Setting<Double> gamma = sgLight.add(new DoubleSetting.Builder()
         .name("gamma")
         .description("Lifts or crushes the midtones without moving black or white. 1 leaves it alone.")
         .defaultValue(1)
@@ -106,7 +109,7 @@ public class ColorCorrect extends Module {
         .build()
     );
 
-    private final Setting<SettingColor> tint = sgGeneral.add(new ColorSetting.Builder()
+    private final Setting<SettingColor> tint = sgTint.add(new ColorSetting.Builder()
         .name("tint")
         .description("Colour the frame is washed towards. Its alpha is ignored - how much is Tint Amount.")
         .defaultValue(new SettingColor(255, 255, 255))
@@ -116,7 +119,7 @@ public class ColorCorrect extends Module {
     // Under a new name because it is on a new scale: the old Tint Strength ran
     // from 0 to 1, and a saved 0.5 read as a percentage would be half a percent.
     // The old value is carried over once; see fromTag.
-    private final Setting<Double> tintAmount = sgGeneral.add(new DoubleSetting.Builder()
+    private final Setting<Double> tintAmount = sgTint.add(new DoubleSetting.Builder()
         .name("tint-amount")
         .description("How far towards the tint colour to go, as a percentage. 0 is off.")
         .defaultValue(0)
@@ -140,7 +143,7 @@ public class ColorCorrect extends Module {
         WButton reset = list.add(theme.button("Reset")).expandX().widget();
 
         reset.action = () -> {
-            for (Setting<?> setting : sgGeneral) setting.reset();
+            for (SettingGroup group : settings) for (Setting<?> setting : group) setting.reset();
         };
 
         return list;

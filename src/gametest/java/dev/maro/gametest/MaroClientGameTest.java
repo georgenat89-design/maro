@@ -109,6 +109,27 @@ public class MaroClientGameTest implements FabricClientGameTest {
             settle(context);
             context.takeScreenshot("maro-module-settings");
 
+            // Bigger modules open on a card per category; a card opens just that category.
+            context.runOnClient(client -> ((ClickGuiScreen) client.currentScreen)
+                    .openModuleSettings(ModuleManager.get(dev.maro.module.impl.visuals.Compass.class)));
+            settle(context);
+            context.takeScreenshot("maro-settings-categories");
+            context.runOnClient(client -> ((ClickGuiScreen) client.currentScreen)
+                    .openModuleSettings(ModuleManager.get(dev.maro.module.impl.visuals.Compass.class), "Look"));
+            settle(context);
+            context.takeScreenshot("maro-settings-category");
+            context.runOnClient(client -> ((ClickGuiScreen) client.currentScreen)
+                    .openModuleSettings(ModuleManager.getByName("Keystrokes")));
+            settle(context);
+            context.takeScreenshot("maro-settings-categories-keystrokes");
+            context.runOnClient(client -> ((ClickGuiScreen) client.currentScreen)
+                    .openModuleSettings(ModuleManager.getByName("Keystrokes"), "Colors"));
+            settle(context);
+            context.takeScreenshot("maro-settings-category-keystrokes");
+            context.getInput().pressKey(GLFW.GLFW_KEY_ESCAPE); // back to the categories
+            settle(context);
+            context.takeScreenshot("maro-settings-back");
+
             context.getInput().pressKey(GLFW.GLFW_KEY_ESCAPE); // back to the grid
             settle(context);
             context.getInput().typeChars("exa");

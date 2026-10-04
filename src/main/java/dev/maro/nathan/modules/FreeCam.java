@@ -52,8 +52,10 @@ public class FreeCam extends Module {
     private static FreeCam instance;
 
     private final SettingGroup sgMain = settings.getDefaultGroup();
+    private final SettingGroup sgMovement = settings.createGroup("Movement");
+    private final SettingGroup sgCamera = settings.createGroup("Camera");
 
-    private final Setting<Double> speed = sgMain.add(new DoubleSetting.Builder()
+    private final Setting<Double> speed = sgMovement.add(new DoubleSetting.Builder()
         .name("speed")
         .description("How fast the camera flies, in blocks a second.")
         .defaultValue(16)
@@ -63,7 +65,7 @@ public class FreeCam extends Module {
         .build()
     );
 
-    private final Setting<Double> lookSpeed = sgMain.add(new DoubleSetting.Builder()
+    private final Setting<Double> lookSpeed = sgCamera.add(new DoubleSetting.Builder()
         .name("look-speed")
         .description("How far the camera turns for a given move of the mouse. 0.15 is how the game turns you; your own mouse sensitivity applies on top, as it does for you.")
         .defaultValue(0.10)
@@ -73,7 +75,7 @@ public class FreeCam extends Module {
         .build()
     );
 
-    private final Setting<Double> smoothing = sgMain.add(new DoubleSetting.Builder()
+    private final Setting<Double> smoothing = sgCamera.add(new DoubleSetting.Builder()
         .name("smoothing")
         .description("How much the camera glides into and out of a move. 0 starts and stops dead; nearer 1 is a longer, softer glide.")
         .defaultValue(0.98)
@@ -83,7 +85,7 @@ public class FreeCam extends Module {
         .build()
     );
 
-    private final Setting<Integer> renderDistance = sgMain.add(new IntSetting.Builder()
+    private final Setting<Integer> renderDistance = sgCamera.add(new IntSetting.Builder()
         .name("render-distance")
         .description("How far the game is asked to draw while the camera is out, in blocks. It only ever raises your own render distance, never lowers it, and puts it back afterwards. It draws more of what the server has sent; it cannot load what it has not.")
         .defaultValue(64)
@@ -92,14 +94,14 @@ public class FreeCam extends Module {
         .build()
     );
 
-    private final Setting<Boolean> scrollSpeed = sgMain.add(new BoolSetting.Builder()
+    private final Setting<Boolean> scrollSpeed = sgMovement.add(new BoolSetting.Builder()
         .name("scroll-speed")
         .description("The mouse wheel changes the camera's speed while it is out, and does nothing else: it does not change your hotbar slot or zoom.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<Double> scrollStep = sgMain.add(new DoubleSetting.Builder()
+    private final Setting<Double> scrollStep = sgMovement.add(new DoubleSetting.Builder()
         .name("scroll-step")
         .description("How much one notch of the wheel changes the speed, as a share of it: 0.10 is a tenth faster or slower.")
         .defaultValue(0.10)
@@ -110,7 +112,7 @@ public class FreeCam extends Module {
         .build()
     );
 
-    private final Setting<Double> sprintMultiplier = sgMain.add(new DoubleSetting.Builder()
+    private final Setting<Double> sprintMultiplier = sgMovement.add(new DoubleSetting.Builder()
         .name("sprint-multiplier")
         .description("How many times faster the camera flies while your sprint key is held.")
         .defaultValue(2)
@@ -120,7 +122,7 @@ public class FreeCam extends Module {
         .build()
     );
 
-    private final Setting<Boolean> holdPosition = sgMain.add(new BoolSetting.Builder()
+    private final Setting<Boolean> holdPosition = sgMovement.add(new BoolSetting.Builder()
         .name("hold-position")
         .description("Let go of the movement keys and the camera stops where it is. Off, it drifts on and slows to a stop by Smoothing.")
         .defaultValue(true)

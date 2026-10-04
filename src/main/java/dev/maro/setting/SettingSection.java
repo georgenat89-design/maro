@@ -12,6 +12,13 @@ public class SettingSection {
         this.title = title;
     }
 
+    /** A section holding {@code settings}, in that order. */
+    public static SettingSection of(String title, Setting<?>... settings) {
+        SettingSection section = new SettingSection(title);
+        for (Setting<?> setting : settings) section.add(setting);
+        return section;
+    }
+
     public String getTitle() {
         return title;
     }

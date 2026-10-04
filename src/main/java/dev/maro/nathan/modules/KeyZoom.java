@@ -98,16 +98,18 @@ public class KeyZoom extends Module {
     private static KeyZoom instance;
 
     private final SettingGroup sgMain = settings.getDefaultGroup();
-    private final SettingGroup sgAdvanced = settings.createGroup("Advanced", false);
+    private final SettingGroup sgZoom = settings.createGroup("Zoom");
+    private final SettingGroup sgAnimation = settings.createGroup("Animation");
+    private final SettingGroup sgView = settings.createGroup("View");
 
-    private final Setting<Keybind> zoomKey = sgMain.add(new KeybindSetting.Builder()
+    private final Setting<Keybind> zoomKey = sgZoom.add(new KeybindSetting.Builder()
         .name("zoom-key")
         .description("Hold to zoom, let go to stop.")
         .defaultValue(Keybind.fromKey(GLFW.GLFW_KEY_C))
         .build()
     );
 
-    private final Setting<Double> initialZoom = sgMain.add(new DoubleSetting.Builder()
+    private final Setting<Double> initialZoom = sgZoom.add(new DoubleSetting.Builder()
         .name("initial-zoom")
         .description("How strong the zoom is when the key goes down. 0.90 shows a tenth as much, which is ten times closer; Logical Zoom's own fixed zoom is 0.77.")
         .defaultValue(0.90)
@@ -116,14 +118,14 @@ public class KeyZoom extends Module {
         .build()
     );
 
-    private final Setting<Boolean> rememberZoom = sgMain.add(new BoolSetting.Builder()
+    private final Setting<Boolean> rememberZoom = sgZoom.add(new BoolSetting.Builder()
         .name("remember-zoom-level")
         .description("Start each zoom at the level you last left the mouse wheel on, instead of at Initial Zoom. Letting go of the key still gives you your normal view back.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<Double> sensitivityMultiplier = sgMain.add(new DoubleSetting.Builder()
+    private final Setting<Double> sensitivityMultiplier = sgZoom.add(new DoubleSetting.Builder()
         .name("zoom-sensitivity-multiplier")
         .description("The mouse while zoomed, on top of the slowing that matches the zoom. 1 leaves that as it is, less is slower, more is faster.")
         .defaultValue(1)
@@ -132,7 +134,7 @@ public class KeyZoom extends Module {
         .build()
     );
 
-    private final Setting<Boolean> smoothF5 = sgMain.add(new BoolSetting.Builder()
+    private final Setting<Boolean> smoothF5 = sgAnimation.add(new BoolSetting.Builder()
         .name("smooth-f5")
         .description("Move the camera out and back when you change perspective, instead of cutting. Nothing to do with the zoom key.")
         .defaultValue(true)
@@ -142,14 +144,14 @@ public class KeyZoom extends Module {
         .build()
     );
 
-    private final Setting<Boolean> smooth = sgAdvanced.add(new BoolSetting.Builder()
+    private final Setting<Boolean> smooth = sgAnimation.add(new BoolSetting.Builder()
         .name("smooth")
         .description("Ease in and out of the zoom rather than jumping.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<Integer> transitionTime = sgAdvanced.add(new IntSetting.Builder()
+    private final Setting<Integer> transitionTime = sgAnimation.add(new IntSetting.Builder()
         .name("transition-time")
         .description("How long the zoom's ease takes, in milliseconds.")
         .defaultValue(140)
@@ -159,35 +161,35 @@ public class KeyZoom extends Module {
         .build()
     );
 
-    private final Setting<Boolean> scrollAdjust = sgAdvanced.add(new BoolSetting.Builder()
+    private final Setting<Boolean> scrollAdjust = sgZoom.add(new BoolSetting.Builder()
         .name("scroll-to-adjust")
         .description("While zoomed, the mouse wheel zooms further in or back out, and does not change your hotbar slot.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<Boolean> adjustSensitivity = sgAdvanced.add(new BoolSetting.Builder()
+    private final Setting<Boolean> adjustSensitivity = sgZoom.add(new BoolSetting.Builder()
         .name("adjust-sensitivity")
         .description("Slow the mouse by as much as the picture is magnified, so aiming feels the same zoomed as not.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<Boolean> cinematicCamera = sgAdvanced.add(new BoolSetting.Builder()
+    private final Setting<Boolean> cinematicCamera = sgView.add(new BoolSetting.Builder()
         .name("cinematic-camera")
         .description("Turn the game's smooth camera on while the key is held, as Logical Zoom does, and put back whatever it was when you let go.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<Boolean> hideHands = sgAdvanced.add(new BoolSetting.Builder()
+    private final Setting<Boolean> hideHands = sgView.add(new BoolSetting.Builder()
         .name("hide-hands")
         .description("Do not draw your hands in first person while zoomed, as Logical Zoom does. At ten times closer they are most of the screen.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<Integer> f5Time = sgAdvanced.add(new IntSetting.Builder()
+    private final Setting<Integer> f5Time = sgAnimation.add(new IntSetting.Builder()
         .name("f5-transition-time")
         .description("How long the camera takes to move out or back when you change perspective, in milliseconds.")
         .defaultValue(160)
@@ -200,7 +202,7 @@ public class KeyZoom extends Module {
     // Never shown: where the wheel was last left, as a strength like Initial
     // Zoom's, or less than nothing for nowhere yet. It is a setting so that it
     // is saved with the rest and is still there after a restart.
-    private final Setting<Double> rememberedZoom = sgAdvanced.add(new DoubleSetting.Builder()
+    private final Setting<Double> rememberedZoom = sgZoom.add(new DoubleSetting.Builder()
         .name("remembered-zoom")
         .description("The zoom level last chosen with the mouse wheel.")
         .defaultValue(-1)

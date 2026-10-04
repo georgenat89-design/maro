@@ -34,16 +34,26 @@ public class SettingsList {
      * @return total content height
      */
     public float render(ClickGuiScreen gui, DrawContext ctx, float x, float y, float w, List<SettingSection> sections) {
+        return render(gui, ctx, x, y, w, sections, true);
+    }
+
+    /**
+     * @param labels whether each section gets its title above its rows
+     * @return total content height
+     */
+    public float render(ClickGuiScreen gui, DrawContext ctx, float x, float y, float w, List<SettingSection> sections, boolean labels) {
         float start = y;
         boolean firstSection = true;
         for (SettingSection section : sections) {
             boolean any = false;
             for (Setting<?> s : section.getSettings()) any |= s.isVisible();
             if (!any) continue;
-            if (!firstSection) y += 6;
+            if (labels) {
+                if (!firstSection) y += 6;
+                Widgets.sectionLabel(ctx, section.getTitle(), x + 2, y, w - 4);
+                y += 12;
+            }
             firstSection = false;
-            Widgets.sectionLabel(ctx, section.getTitle(), x + 2, y, w - 4);
-            y += 12;
             for (Setting<?> s : section.getSettings()) {
                 float vis = Anims.of(s, "visible", s.isVisible());
                 if (vis < 0.01f) continue;

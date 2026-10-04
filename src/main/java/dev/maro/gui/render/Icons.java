@@ -183,6 +183,78 @@ public final class Icons {
         Render2D.circle(ctx, cx, cy - s * 0.24f, s * 0.08f, hole);
     };
 
+    // ---- setting category icons -----------------------------------------------------------
+
+    /** A frame with corner marks: placement, layout, size. */
+    public static final Icon LAYOUT = (ctx, cx, cy, s, c, h) -> {
+        float t = stroke(s), b = s * (0.46f + 0.04f * h), k = s * 0.22f;
+        for (int i = 0; i < 4; i++) {
+            float sx = i % 2 == 0 ? -1 : 1, sy = i < 2 ? -1 : 1;
+            float px = cx + sx * b, py = cy + sy * b;
+            Render2D.line(ctx, px, py, px - sx * k, py, t, c);
+            Render2D.line(ctx, px, py, px, py - sy * k, t, c);
+        }
+        Render2D.roundRect(ctx, cx - s * 0.16f, cy - s * 0.16f, s * 0.32f, s * 0.32f, s * 0.06f, c);
+    };
+
+    /** A play mark with motion lines: animation. */
+    public static final Icon PLAY = (ctx, cx, cy, s, c, h) -> {
+        float t = stroke(s), o = h * s * 0.06f;
+        float lx = cx - s * 0.12f + o, top = cy - s * 0.34f, bot = cy + s * 0.34f, tip = cx + s * 0.34f + o;
+        Render2D.line(ctx, lx, top, lx, bot, t, c);
+        Render2D.line(ctx, lx, top, tip, cy, t, c);
+        Render2D.line(ctx, lx, bot, tip, cy, t, c);
+        int faint = ColorUtil.mulAlpha(c, 0.55f);
+        Render2D.line(ctx, cx - s * 0.5f, cy - s * 0.16f, cx - s * 0.3f, cy - s * 0.16f, t, faint);
+        Render2D.line(ctx, cx - s * 0.5f, cy + s * 0.16f, cx - s * 0.3f, cy + s * 0.16f, t, faint);
+    };
+
+    /** A clock face: timing and delays. */
+    public static final Icon CLOCK = (ctx, cx, cy, s, c, h) -> {
+        float t = stroke(s);
+        Render2D.ring(ctx, cx, cy, s * 0.46f, t, c);
+        double a = Math.toRadians(-90 + h * 90);
+        Render2D.line(ctx, cx, cy, cx + (float) Math.cos(a) * s * 0.28f, cy + (float) Math.sin(a) * s * 0.28f, t, c);
+        Render2D.line(ctx, cx, cy, cx + s * 0.2f, cy, t, c);
+    };
+
+    /** A map pin: markers, regions, places. */
+    public static final Icon PIN = (ctx, cx, cy, s, c, h) -> {
+        float t = stroke(s), o = -h * s * 0.06f;
+        float r = s * 0.28f, py = cy - s * 0.12f + o;
+        Render2D.arc(ctx, cx, py, r, t, 150, 240, c, c);
+        Render2D.line(ctx, cx - r * 0.87f, py + r * 0.5f, cx, cy + s * 0.48f + o, t, c);
+        Render2D.line(ctx, cx + r * 0.87f, py + r * 0.5f, cx, cy + s * 0.48f + o, t, c);
+        Render2D.circle(ctx, cx, py, s * 0.09f, c);
+    };
+
+    /** A key cap: keybinds and controls. */
+    public static final Icon KEY = (ctx, cx, cy, s, c, h) -> {
+        float t = stroke(s), w = s * 0.92f, hh = s * 0.68f, o = h * s * 0.05f;
+        Render2D.roundOutline(ctx, cx - w / 2, cy - hh / 2 + o, w, hh, s * 0.14f, t, c);
+        Render2D.line(ctx, cx - w * 0.22f, cy + s * 0.1f + o, cx + w * 0.22f, cy + s * 0.1f + o, t, c);
+    };
+
+    /** A shield: stops, safety and alarms. */
+    public static final Icon SHIELD = (ctx, cx, cy, s, c, h) -> {
+        float t = stroke(s), w = s * 0.4f, top = cy - s * 0.46f, mid = cy + s * 0.08f, bot = cy + s * 0.5f;
+        Render2D.line(ctx, cx - w, top + s * 0.1f, cx, top, t, c);
+        Render2D.line(ctx, cx, top, cx + w, top + s * 0.1f, t, c);
+        Render2D.line(ctx, cx - w, top + s * 0.1f, cx - w, mid, t, c);
+        Render2D.line(ctx, cx + w, top + s * 0.1f, cx + w, mid, t, c);
+        Render2D.line(ctx, cx - w, mid, cx, bot, t, c);
+        Render2D.line(ctx, cx + w, mid, cx, bot, t, c);
+        if (h > 0.01f) Render2D.circle(ctx, cx, cy, s * 0.1f * h, c);
+    };
+
+    /** A lightning bolt: behaviour, actions and what it does. */
+    public static final Icon BOLT = (ctx, cx, cy, s, c, h) -> {
+        float t = stroke(s) * 1.1f, o = h * s * 0.04f;
+        Render2D.line(ctx, cx + s * 0.12f + o, cy - s * 0.5f, cx - s * 0.22f, cy + s * 0.04f, t, c);
+        Render2D.line(ctx, cx - s * 0.22f, cy + s * 0.04f, cx + s * 0.22f, cy - s * 0.04f, t, c);
+        Render2D.line(ctx, cx + s * 0.22f, cy - s * 0.04f, cx - s * 0.12f - o, cy + s * 0.5f, t, c);
+    };
+
     /** Small red diamond used to flag experimental modules. */
     public static final Icon WARNING = (ctx, cx, cy, s, c, h) -> rotated(ctx, cx, cy, 45f, () -> {
         float b = s * 0.66f;

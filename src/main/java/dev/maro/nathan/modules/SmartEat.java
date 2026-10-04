@@ -68,8 +68,11 @@ public class SmartEat extends Module {
     }
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
+    private final SettingGroup sgWhen = settings.createGroup("When To Eat");
+    private final SettingGroup sgFood = settings.createGroup("Food Choice");
+    private final SettingGroup sgSlots = settings.createGroup("Hotbar");
 
-    private final Setting<Integer> threshold = sgGeneral.add(new IntSetting.Builder()
+    private final Setting<Integer> threshold = sgWhen.add(new IntSetting.Builder()
         .name("hunger-threshold")
         .description("Start eating when hunger drops below this. 20 is a full bar.")
         .defaultValue(14)
@@ -79,7 +82,7 @@ public class SmartEat extends Module {
         .build()
     );
 
-    private final Setting<Priority> priority = sgGeneral.add(new EnumSetting.Builder<Priority>()
+    private final Setting<Priority> priority = sgFood.add(new EnumSetting.Builder<Priority>()
         .name("food-priority")
         .description("Best Nutrition: the most filling. Lowest Waste: the one that overfills you least. Preferred Item: the food below, falling back to the most filling.")
         .defaultValue(Priority.LowestWaste)
@@ -93,7 +96,7 @@ public class SmartEat extends Module {
      * item setting by calling {@code get().getDefaultInstance()}, so one without a
      * default takes the game down the moment its settings are opened.
      */
-    private final Setting<Item> preferred = sgGeneral.add(new ItemSetting.Builder()
+    private final Setting<Item> preferred = sgFood.add(new ItemSetting.Builder()
         .name("preferred-item")
         .description("The food to reach for first, when Food Priority is Preferred Item.")
         .defaultValue(Items.COOKED_BEEF)
@@ -101,7 +104,7 @@ public class SmartEat extends Module {
         .build()
     );
 
-    private final Setting<List<Item>> allowed = sgGeneral.add(new ItemListSetting.Builder()
+    private final Setting<List<Item>> allowed = sgFood.add(new ItemListSetting.Builder()
         .name("allowed-foods")
         .description("What it is allowed to eat. Starts as every food that has no harmful effect, minus both golden apples.")
         .defaultValue(safeFoods())
@@ -109,28 +112,28 @@ public class SmartEat extends Module {
         .build()
     );
 
-    private final Setting<Boolean> hotbarOnly = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> hotbarOnly = sgSlots.add(new BoolSetting.Builder()
         .name("hotbar-only")
         .description("Only eat what is already on the hotbar. Off, and food is moved up from the inventory when the hotbar has none.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<Boolean> restoreSlot = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> restoreSlot = sgSlots.add(new BoolSetting.Builder()
         .name("restore-previous-slot")
         .description("Go back to the slot you were holding once the meal is over.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<Boolean> pauseWhileAttacking = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> pauseWhileAttacking = sgWhen.add(new BoolSetting.Builder()
         .name("pause-while-attacking")
         .description("Do not start a meal while you are holding attack.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<Keybind> keybind = sgGeneral.add(new KeybindSetting.Builder()
+    private final Setting<Keybind> keybind = sgWhen.add(new KeybindSetting.Builder()
         .name("keybind")
         .description("Turns the module on and off.")
         .defaultValue(Keybind.none())

@@ -12,6 +12,7 @@ import dev.maro.setting.ButtonSetting;
 import dev.maro.setting.ColorSetting;
 import dev.maro.setting.ModeSetting;
 import dev.maro.setting.NumberSetting;
+import dev.maro.setting.SettingSection;
 import dev.maro.util.ColorUtil;
 import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gui.DrawContext;
@@ -76,6 +77,13 @@ public class InventoryHud extends Module implements HudElement {
 
     public InventoryHud() {
         super("Inventory", "Shows your whole inventory on screen", Category.VISUALS);
+    }
+
+    @Override
+    public List<SettingSection> getSettingSections() {
+        return List.of(SettingSection.of("Placement", position, x, y, scale),
+                SettingSection.of("Contents", header, capacity, equipment, hotbar, tooltips, hideInInventory),
+                SettingSection.of("Look", slots, rarity, lowDurability, opacity, background));
     }
 
     // ---- placement ----------------------------------------------------------------------

@@ -50,6 +50,7 @@ public class SpotifyHud extends Module {
     private static final int DEFAULT_TINT = 0x8A9FC2;
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
+    private final SettingGroup sgPlacement = settings.createGroup("Placement");
     private final SettingGroup sgControls = settings.createGroup("Controls");
     private final Setting<Boolean> volumeControl = sgControls.add(new BoolSetting.Builder()
         .name("volume-control").description("Show a Windows output volume slider and mute button in F9 controls. Changes system volume for all apps.")
@@ -73,15 +74,15 @@ public class SpotifyHud extends Module {
         .name("lyrics-offset-ms").description("Adjust lyric timing. Positive values show lines earlier.")
         .defaultValue(0).range(-10000, 10000).sliderRange(-3000, 3000).visible(showLyrics::get).build());
 
-    private final Setting<Integer> x = sgGeneral.add(new IntSetting.Builder()
+    private final Setting<Integer> x = sgPlacement.add(new IntSetting.Builder()
         .name("x").description("Horizontal offset from the selected screen anchor, in pixels.")
         .defaultValue(20).min(0).sliderRange(0, 1920).build());
 
-    private final Setting<Integer> y = sgGeneral.add(new IntSetting.Builder()
+    private final Setting<Integer> y = sgPlacement.add(new IntSetting.Builder()
         .name("y").description("Vertical offset from the selected screen anchor, in pixels.")
         .defaultValue(20).min(0).sliderRange(0, 1080).build());
 
-    private final Setting<Double> scale = sgGeneral.add(new DoubleSetting.Builder()
+    private final Setting<Double> scale = sgPlacement.add(new DoubleSetting.Builder()
         .name("scale").description("Size of the whole player, including its text and mouse targets.")
         .defaultValue(1).range(0.65, 2).sliderRange(0.65, 2).build());
 
@@ -97,27 +98,27 @@ public class SpotifyHud extends Module {
     private final Setting<Boolean> scrollTitles = sgAppearance.add(new BoolSetting.Builder()
         .name("scroll-titles").description("Gently scroll long song and artist names so you can read them fully.")
         .defaultValue(true).build());
-    private final Setting<Boolean> seekTooltip = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> seekTooltip = sgControls.add(new BoolSetting.Builder()
         .name("seek-preview").description("Show the exact time under the mouse before seeking.").defaultValue(true).build());
-    private final Setting<Boolean> autoHide = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> autoHide = sgPlacement.add(new BoolSetting.Builder()
         .name("auto-hide").description("Fade out when no music session is available. F9 always reveals the player.").defaultValue(true).build());
-    private final Setting<Boolean> dragPlayer = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> dragPlayer = sgPlacement.add(new BoolSetting.Builder()
         .name("drag-player").description("Drag the song text or empty card space to move the player in F9 controls.").defaultValue(true).build());
-    private final Setting<Boolean> snapEdges = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> snapEdges = sgPlacement.add(new BoolSetting.Builder()
         .name("snap-to-edges").description("Snap the player to nearby screen edges when you finish dragging.").defaultValue(true).build());
-    private final Setting<Anchor> anchor = sgGeneral.add(new EnumSetting.Builder<Anchor>()
+    private final Setting<Anchor> anchor = sgPlacement.add(new EnumSetting.Builder<Anchor>()
         .name("anchor").description("Keep the player attached to an edge or corner when the window or player size changes.")
         .defaultValue(Anchor.TopRight).build());
 
-    private final Setting<Boolean> visualizer = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> visualizer = sgAppearance.add(new BoolSetting.Builder()
         .name("audio-bars").description("Small bars that react to audio playing through Windows. Other desktop audio can also affect them.")
         .defaultValue(true).build());
 
-    private final Setting<Boolean> albumAccent = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> albumAccent = sgAppearance.add(new BoolSetting.Builder()
         .name("album-accent").description("Give the card a soft glow using colours from the album cover.")
         .defaultValue(true).build());
 
-    private final Setting<SettingColor> barColor = sgGeneral.add(new ColorSetting.Builder()
+    private final Setting<SettingColor> barColor = sgAppearance.add(new ColorSetting.Builder()
         .name("bar-color").description("The colour of the small audio bars.")
         .defaultValue(new SettingColor(210, 215, 226)).visible(visualizer::get).build());
 

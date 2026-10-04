@@ -56,9 +56,10 @@ public class FreeLook extends Module {
     private static FreeLook instance;
 
     private final SettingGroup sgMain = settings.getDefaultGroup();
-    private final SettingGroup sgAdvanced = settings.createGroup("Advanced", false);
+    private final SettingGroup sgCamera = settings.createGroup("Camera");
+    private final SettingGroup sgControls = settings.createGroup("Controls");
 
-    private final Setting<Activation> activation = sgMain.add(new EnumSetting.Builder<Activation>()
+    private final Setting<Activation> activation = sgControls.add(new EnumSetting.Builder<Activation>()
         .name("activation")
         .description("Toggle: press the keybind to turn it on and again to turn it off. Hold: it is on only while the keybind is held.")
         .defaultValue(Activation.Hold)
@@ -66,21 +67,21 @@ public class FreeLook extends Module {
         .build()
     );
 
-    private final Setting<Mode> mode = sgMain.add(new EnumSetting.Builder<Mode>()
+    private final Setting<Mode> mode = sgCamera.add(new EnumSetting.Builder<Mode>()
         .name("mode")
         .description("Player swings the camera round you at Camera Distance. Camera turns the view where the camera already is.")
         .defaultValue(Mode.Player)
         .build()
     );
 
-    private final Setting<Boolean> togglePerspective = sgMain.add(new BoolSetting.Builder()
+    private final Setting<Boolean> togglePerspective = sgCamera.add(new BoolSetting.Builder()
         .name("toggle-perspective")
         .description("Go to third person while it is on, and back to whatever you were in afterwards.")
         .defaultValue(true)
         .build()
     );
 
-    private final Setting<Boolean> throughWalls = sgMain.add(new BoolSetting.Builder()
+    private final Setting<Boolean> throughWalls = sgCamera.add(new BoolSetting.Builder()
         .name("through-walls")
         .description("Let the camera swing through blocks. Off, it is pulled in in front of whatever is in the way, as the game's own third person is.")
         .defaultValue(false)
@@ -88,7 +89,7 @@ public class FreeLook extends Module {
         .build()
     );
 
-    private final Setting<Double> distance = sgMain.add(new DoubleSetting.Builder()
+    private final Setting<Double> distance = sgCamera.add(new DoubleSetting.Builder()
         .name("camera-distance")
         .description("How far from you the camera swings, in blocks.")
         .defaultValue(4)
@@ -99,7 +100,7 @@ public class FreeLook extends Module {
         .build()
     );
 
-    private final Setting<Double> sensitivity = sgMain.add(new DoubleSetting.Builder()
+    private final Setting<Double> sensitivity = sgCamera.add(new DoubleSetting.Builder()
         .name("camera-sensitivity")
         .description("How far the camera turns for a given move of the mouse. 10 is how the game turns you; your own mouse sensitivity applies on top.")
         .defaultValue(10)
@@ -109,14 +110,14 @@ public class FreeLook extends Module {
         .build()
     );
 
-    private final Setting<Boolean> arrowsOpposite = sgAdvanced.add(new BoolSetting.Builder()
+    private final Setting<Boolean> arrowsOpposite = sgControls.add(new BoolSetting.Builder()
         .name("arrows-control-opposite")
         .description("Turn the camera the other way for each arrow key.")
         .defaultValue(false)
         .build()
     );
 
-    private final Setting<Double> arrowSpeed = sgAdvanced.add(new DoubleSetting.Builder()
+    private final Setting<Double> arrowSpeed = sgControls.add(new DoubleSetting.Builder()
         .name("arrow-speed")
         .description("How fast the arrow keys turn the camera. 0.50 is a quarter turn a second.")
         .defaultValue(0.5)
