@@ -69,5 +69,7 @@ public class Maro implements ClientModInitializer {
             return;
         }
         ModuleManager.onBind(code);
+        var builder=ModuleManager.get(dev.maro.module.impl.player.AutoBuilder.class);
+        if(builder!=null)builder.onActionBind(code);
     }
 }

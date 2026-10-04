@@ -31,6 +31,11 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq xvfb imagemagick > /dev/null
           ./gradlew runProductionClientGameTest --no-daemon --stacktrace
 
+      - name: Schematic builder and auction tests
+        env:
+          ALSOFT_DRIVERS: "null"
+        run: ./gradlew runProductionClientGameTest -PbuilderTestOnly=true --no-daemon --stacktrace
+
       - name: Print screenshot previews
         if: always()
         run: |

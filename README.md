@@ -312,6 +312,12 @@ and is not bundled into Maro.
 
 ## Building
 
+### Schematic Auto Builder
+
+**Player → Auto Builder** imports `.schem`, `.schematic`, `.litematic` and vanilla `.nbt` files, previews textured ghosts, builds through normal interactions, and offers materials, marked-chest restocking and configurable Donut auction controls. See [Auto Builder setup and limits](docs/AUTO_BUILDER.md).
+
+Run its focused in-game checks with `./gradlew runProductionClientGameTest -PbuilderTestOnly=true`.
+
 Requires Java 21.
 
 ```
