@@ -6,6 +6,14 @@ Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 
 ## Included modules
 
+**Base ESP** (Visuals) ports the underground base detector from the user-provided
+Krypton Avengers source (`dev.dexter.kryptionians.modules.BaseESP`). It groups
+storage and nearby built blocks into base shells, matches the included signature
+catalog, and draws configurable green outlines and translucent faces through
+terrain. Optional chat/sound alerts and **Chunk Mark** (Pillar or Slab) are included.
+Only loaded chunks between Y −64 and −1 are scanned. Workers analyze copied chunk
+sections; old results are discarded when disabling or changing worlds.
+
 **Pet** (Visuals) adds a cosmetic companion: Wolf, Cat, Fox, Bunny, Bee, Allay,
 Parrot, Axolotl, Slime, Turtle, Panda, or Pig. Choose **Follow**, **Sidekick**, or
 **Orbit**, adjust size, distance, speed, and hover height, and enable baby models,

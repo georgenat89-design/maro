@@ -30,6 +30,7 @@ public class Maro implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         ModuleManager.init();
+        dev.maro.render.esp.Renderer3D.init();
         ConfigManager.init();
         dev.maro.runtime.commands.Commands.add(new dev.maro.nathan.commands.BloomCommand());
 
