@@ -11,9 +11,24 @@ public static class NathanAudioBands
 {
     private static readonly Guid AudioClientId = new Guid("1CB9AD4C-DBFA-4C32-B178-C2F568A703B2");
     private static readonly Guid CaptureClientId = new Guid("C8ADBD64-E71E-48A0-A4DE-185C395CD317");
+    private static readonly Guid EndpointVolumeId = new Guid("5CDF2C82-841E-4546-9722-0CF74078229A");
+    private static readonly object CommandLock = new object();
+    private static VolumeCommand pendingVolume;
+    private static long appliedSequence;
+
+    private sealed class VolumeCommand
+    {
+        public long Sequence;
+        public float Level;
+        public bool Muted;
+    }
 
     public static void Run(int durationMs)
     {
+        // Only this reader touches stdin. COM calls stay on the capture thread.
+        Thread commands = new Thread(ReadCommands);
+        commands.IsBackground = true;
+        commands.Start();
         Stopwatch lifetime = Stopwatch.StartNew();
         while (durationMs <= 0 || lifetime.ElapsedMilliseconds < durationMs)
         {
@@ -22,11 +37,46 @@ public static class NathanAudioBands
             catch (Exception error)
             {
                 Console.WriteLine("ERROR " + error.Message.Replace('\r', ' ').Replace('\n', ' '));
+                Console.WriteLine("VOLUME_ERROR Windows output volume is unavailable");
                 Console.WriteLine("LEVELS 0 0 0 0 0 0 0");
                 Console.Out.Flush();
                 Thread.Sleep(1500);
             }
         }
+    }
+
+    private static void ReadCommands()
+    {
+        try
+        {
+            string line;
+            while ((line = Console.ReadLine()) != null)
+            {
+                string[] parts = line.Split(' ');
+                long sequence;
+                float level;
+                if (parts.Length != 4 || parts[0] != "VOLUME" ||
+                    !Int64.TryParse(parts[1], out sequence) || sequence <= 0 ||
+                    !Single.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out level) ||
+                    Single.IsNaN(level) || Single.IsInfinity(level) || (parts[3] != "0" && parts[3] != "1")) continue;
+                lock (CommandLock)
+                {
+                    // Dragging replaces pending work instead of building a command backlog.
+                    pendingVolume = new VolumeCommand { Sequence = sequence, Level = Math.Max(0, Math.Min(1, level)), Muted = parts[3] == "1" };
+                }
+            }
+        }
+        catch (System.IO.IOException) { }
+    }
+
+    private static void PublishVolume(IAudioEndpointVolume volume)
+    {
+        float level;
+        bool muted;
+        Check(volume.GetMasterVolumeLevelScalar(out level));
+        Check(volume.GetMute(out muted));
+        Console.WriteLine("VOLUME " + appliedSequence.ToString(CultureInfo.InvariantCulture) + " " +
+            level.ToString("F4", CultureInfo.InvariantCulture) + " " + (muted ? "1" : "0"));
     }
 
     private static void Check(int result)
@@ -45,6 +95,7 @@ public static class NathanAudioBands
         IMMDevice device = null;
         IAudioClient client = null;
         IAudioCaptureClient capture = null;
+        IAudioEndpointVolume volume = null;
         IntPtr format = IntPtr.Zero;
         bool started = false;
         try
@@ -53,6 +104,16 @@ public static class NathanAudioBands
             Check(devices.GetDefaultAudioEndpoint(0, 1, out device)); // render / multimedia
             string deviceId;
             Check(device.GetId(out deviceId));
+            try
+            {
+                object volumeObject;
+                Guid volumeId = EndpointVolumeId;
+                Check(device.Activate(ref volumeId, 23, IntPtr.Zero, out volumeObject));
+                volume = (IAudioEndpointVolume)volumeObject;
+                PublishVolume(volume);
+            }
+            catch (Exception) { Console.WriteLine("VOLUME_ERROR Windows output volume is unavailable"); }
+            Console.Out.Flush();
             object audio;
             Guid clientId = AudioClientId;
             Check(device.Activate(ref clientId, 23, IntPtr.Zero, out audio));
@@ -84,6 +145,7 @@ public static class NathanAudioBands
             long lastPublished = -40;
             long lastPacket = 0;
             long lastDeviceCheck = 0;
+            long lastVolumeCheck = 0;
             StringBuilder output = new StringBuilder(100);
             while (durationMs <= 0 || lifetime.ElapsedMilliseconds < durationMs)
             {
@@ -131,6 +193,33 @@ public static class NathanAudioBands
                 }
 
                 long now = tick.ElapsedMilliseconds;
+                VolumeCommand command;
+                lock (CommandLock) { command = pendingVolume; pendingVolume = null; }
+                if (command != null)
+                {
+                    try
+                    {
+                        Guid context = Guid.Empty;
+                        Check(volume.SetMasterVolumeLevelScalar(command.Level, ref context));
+                        Check(volume.SetMute(command.Muted, ref context));
+                        appliedSequence = command.Sequence;
+                        PublishVolume(volume);
+                    }
+                    catch (Exception) { Console.WriteLine("VOLUME_ERROR Windows could not change output volume"); }
+                    Console.Out.Flush();
+                    lastVolumeCheck = now;
+                }
+                else if (volume != null && now - lastVolumeCheck >= 250)
+                {
+                    try { PublishVolume(volume); }
+                    catch (Exception)
+                    {
+                        Release(volume); volume = null;
+                        Console.WriteLine("VOLUME_ERROR Windows output volume is unavailable");
+                    }
+                    Console.Out.Flush();
+                    lastVolumeCheck = now;
+                }
                 if (now - lastPublished >= 33)
                 {
                     float[] levels = analyzer.Measure(now - lastPacket > 120);
@@ -165,6 +254,7 @@ public static class NathanAudioBands
             if (started && client != null) client.Stop();
             if (format != IntPtr.Zero) Marshal.FreeCoTaskMem(format);
             Release(capture);
+            Release(volume);
             Release(client);
             Release(device);
             Release(devices);
@@ -307,5 +397,24 @@ public static class NathanAudioBands
         [PreserveSig] int GetBuffer(out IntPtr data, out uint frames, out uint flags, out ulong devicePosition, out ulong performancePosition);
         [PreserveSig] int ReleaseBuffer(uint frames);
         [PreserveSig] int GetNextPacketSize(out uint frames);
+    }
+
+    // Vtable order from endpointvolume.h. All HRESULTs are checked by the caller.
+    [ComImport, Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IAudioEndpointVolume
+    {
+        [PreserveSig] int RegisterControlChangeNotify(IntPtr callback);
+        [PreserveSig] int UnregisterControlChangeNotify(IntPtr callback);
+        [PreserveSig] int GetChannelCount(out uint channels);
+        [PreserveSig] int SetMasterVolumeLevel(float level, ref Guid context);
+        [PreserveSig] int SetMasterVolumeLevelScalar(float level, ref Guid context);
+        [PreserveSig] int GetMasterVolumeLevel(out float level);
+        [PreserveSig] int GetMasterVolumeLevelScalar(out float level);
+        [PreserveSig] int SetChannelVolumeLevel(uint channel, float level, ref Guid context);
+        [PreserveSig] int SetChannelVolumeLevelScalar(uint channel, float level, ref Guid context);
+        [PreserveSig] int GetChannelVolumeLevel(uint channel, out float level);
+        [PreserveSig] int GetChannelVolumeLevelScalar(uint channel, out float level);
+        [PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] bool mute, ref Guid context);
+        [PreserveSig] int GetMute([MarshalAs(UnmanagedType.Bool)] out bool mute);
     }
 }

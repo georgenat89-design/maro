@@ -71,6 +71,16 @@ The Nathan modules use Maro's settings, keybinds, friend list, and saved configs
 
 Spotify HUD supports the existing desktop/browser media bridge on Windows, album covers, playback controls, draggable positioning, seeking, and animated audio bars. Press **F9** while enabled to interact. Audio-reactive bars use Windows system output; they do not record a microphone. Live media/audio integration needs Windows; other systems keep the HUD's preview/fallback state. Spotify control integration is retained from Nathan, with Maro's renderer underneath.
 
+Enable **Controls → Volume control** to show the **SYSTEM** slider in F9 controls.
+Drag it from 0–100%, scroll over it in 2% steps, or click the speaker to mute/unmute.
+This changes Windows output volume for all apps, covering both desktop and browser playback.
+The percentage follows keyboard/Windows changes; moving the slider unmutes, and the speaker
+restores a remembered audible level after setting it to zero. The row replaces the playback
+status while interacting, so the normal HUD stays the same size. Mini mode expands in F9 to
+reveal the controls. Unsupported/disconnected audio shows an unavailable state.
+The existing persistent WASAPI helper handles reads and coalesced writes away from the render
+thread using [Windows endpoint volume controls](https://learn.microsoft.com/en-us/windows/win32/api/endpointvolume/nn-endpointvolume-iaudioendpointvolume).
+
 Region Map retains Nathan's updated region divisions and sharp labels. Keystrokes retains its Poppins labels. Their initial positions leave room for each other and Spotify, and can be changed in settings.
 
 Swing Speed accepts **-10 to 10**: negative values slow the arm animation, **-10** makes it take 3.5 times as long, **0 or 1** is normal, and **2 to 10** retains the original faster speeds. The selected hand setting still applies.

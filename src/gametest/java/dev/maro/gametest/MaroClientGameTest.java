@@ -46,6 +46,11 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 AntiVanishChecks.run(context);
                 return;
             }
+            if (Boolean.getBoolean("maro.gametest.spotifyOnly")) {
+                SpotifyLyricsChecks.run(context);
+                SpotifyVolumeChecks.run(context);
+                return;
+            }
             if (Boolean.getBoolean("maro.gametest.baseEspOnly")) {
                 BaseEspChecks.run(context, singleplayer);
                 return;
@@ -60,6 +65,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             }
             checkNathanPort(context);
             SpotifyLyricsChecks.run(context);
+            SpotifyVolumeChecks.run(context);
             checkSlowSwing(context);
             checkKeySounds(context);
             checkRegionMap(context);
