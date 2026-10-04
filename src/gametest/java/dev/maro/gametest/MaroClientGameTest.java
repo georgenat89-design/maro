@@ -35,6 +35,10 @@ public class MaroClientGameTest implements FabricClientGameTest {
             // make sure nothing (pause menu, toasts...) is in the way before testing the keybind
             context.setScreen(() -> null);
             context.waitTicks(5);
+            if (Boolean.getBoolean("maro.gametest.baseEspOnly")) {
+                BaseEspChecks.run(context, singleplayer);
+                return;
+            }
             if (Boolean.getBoolean("maro.gametest.petOnly")) {
                 PetChecks.run(context, singleplayer);
                 return;
@@ -54,6 +58,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             CrosshairPngChecks.run(context);
             SkinAccessoriesChecks.run(context);
             PetChecks.run(context, singleplayer);
+            BaseEspChecks.run(context, singleplayer);
             String before = context.computeOnClient(client -> describe(client));
             context.takeScreenshot("maro-00-world");
 
@@ -210,7 +215,8 @@ public class MaroClientGameTest implements FabricClientGameTest {
     private static void checkNathanPort(ClientGameTestContext context) {
         long failures = context.computeOnClient(client -> dev.maro.runtime.MeteorClient.EVENT_BUS.failureCount());
         context.runOnClient(client -> {
-            if (dev.maro.runtime.systems.modules.Modules.get().getAll().size() != 20)
+            if (dev.maro.runtime.systems.modules.Modules.get().getAll().stream()
+                    .filter(m -> m.getClass().getPackageName().equals("dev.maro.nathan.modules")).count() != 20)
                 throw new AssertionError("Expected all 20 current Nathan modules");
             for (var module : dev.maro.runtime.systems.modules.Modules.get().getAll()) {
                 if (module.getSettings().isEmpty()) throw new AssertionError("No settings for " + module.name);

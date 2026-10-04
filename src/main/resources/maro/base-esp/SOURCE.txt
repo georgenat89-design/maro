@@ -1,0 +1,12 @@
+Base ESP source provenance
+
+Original module: dev.dexter.kryptionians.modules.BaseESP
+Original catalog loader: dev.dexter.kryptionians.signatures.DonutSignatureCatalog
+Original data: kryptionians/donut-signatures.json
+Provided by the user in: KryptonAvengersAddonLeak (1).zip
+
+The original detection, region clustering, shell construction, and catalog matching
+algorithms are adapted to Maro's settings and Minecraft 1.21.11 Yarn mappings.
+Scanning now uses copied chunk sections, a bounded queue, and session checks.
+World geometry is submitted through Maro's Fabric rendering hook.
+The signature JSON is preserved in gzip form for packaging.
