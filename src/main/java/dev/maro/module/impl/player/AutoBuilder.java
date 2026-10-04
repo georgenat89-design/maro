@@ -73,19 +73,19 @@ public final class AutoBuilder extends Module {
     private final ModeSetting rotation=mode("Placement","Rotation","Rotate positions and block states clockwise","0","0","90","180","270").onChange(v->replan());
     private final ModeSetting mirror=mode("Placement","Mirror","Mirror positions and facing properties before rotation","None","None","X","Z").onChange(v->replan());
     private final BooleanSetting useOffset=fixedBool("Apply File Offset","Include the schematic's stored origin offset",false).onChange(v->replan());
-    private final KeybindSetting markBind=bind("Materials","Mark Restock Bind","Select the double chest you are looking at",GLFW.GLFW_KEY_R);
-    private final BooleanSetting restock=bool("Materials","Restock When Empty","Take missing building materials from your selected double chest",true);
+    private final KeybindSetting markBind=bind("Materials","Mark Restock Bind","R adds or refreshes the double chest you are looking at; Shift + R removes it",GLFW.GLFW_KEY_R);
+    private final BooleanSetting restock=bool("Materials","Restock When Empty","Take missing building materials from your selected double chests",true);
     private final NumberSetting walkDistance=fixedNumber("Restock Walk Distance","Maximum distance to a marked container",64,4,64,1);
     private final NumberSetting restockDirt=number("Materials","Support Dirt Reserve","Dirt reserved for temporary supports when restocking or buying",64,0,512,1);
     private final BooleanSetting stockpile=bool("Materials","Stockpile In Chests","Deposit surplus whole stacks of building materials into marked chests",false);
-    private final ModeSetting depositWhen=mode("Materials","Deposit All Items","Move inventory and hotbar into your selected double chest and continue buying when full","Inventory Full","Inventory Full","Manual","After Buying","After Build");
+    private final ModeSetting depositWhen=mode("Materials","Deposit All Items","Move inventory and hotbar into your selected double chests and continue buying when full","Inventory Full","Inventory Full","Manual","After Buying","After Build");
     public final BooleanSetting showContainers=fixedBool("Show Restock Containers","Outline marked chests",true);
     public final BooleanSetting showLabels=fixedBool("Show Restock Labels","Show marked container coordinates on the progress panel",true);
     public final NumberSetting containerRange=fixedNumber("Restock Render Distance","Visible range of marked chest outlines",64,8,128,1);
     public final NumberSetting containerAlpha=fixedNumber("Restock Outline Alpha","Opacity of marked chest outlines",.85,.05,1,.05);
     public final NumberSetting labelScale=fixedNumber("Restock Label Scale","Size of chest information in the progress panel",.8,.5,1.5,.05);
     private final KeybindSetting buyBind=fixedBind("Auto Buy Key","Start a material buying session",-1);
-    private final BooleanSetting autoBuy=bool("Materials","Auto Buy When Missing","Use inventory first, then your selected chest, then buy the current layer's missing materials",true);
+    private final BooleanSetting autoBuy=bool("Materials","Auto Buy When Missing","Use inventory first, then your selected chests, then buy the current layer's missing materials",true);
     private final BooleanSetting autoTools=bool("Materials","Auto Buy Tools","Supply a pickaxe and shovel for incorrect blocks and temporary-support cleanup",true);
     private final BooleanSetting preferStacks=fixedBool("Prefer Stacks","Prefer full stacks when their unit price is within tolerance",false);
     private final NumberSetting tolerance=fixedNumber("Stack Price Tolerance %","Maximum premium for a preferred stack",15,0,100,1);
@@ -157,7 +157,7 @@ public final class AutoBuilder extends Module {
     private final Set<BlockPos> triedContainers=new HashSet<>();
     private final Map<BlockPos,Set<Item>> emptyChestItems=new HashMap<>();
     private final Map<Item,Integer> preparedStock=new HashMap<>();
-    private BlockPos preparationChest,selectedChest;
+    private final Map<BlockPos,Map<Item,Integer>> chestStocks=new HashMap<>();
     private int preparationStage;
     private boolean preparationReady,buildBudgetActive;
     private double buildBudgetSpent;
@@ -186,7 +186,7 @@ public final class AutoBuilder extends Module {
     private BlockPos mining,restockTarget;
     private BlockPos tuningTarget,tuningSession;
     private int tuningObserved,tuningExpected,tuningDeadline,tuningClicks;
-    private Item needed;
+    private Item needed,restockAttemptItem;
     private int restockWait,inventoryWait;
     private int partialSource=-1,partialDestination,partialRemaining;
     private Item partialItem;
@@ -221,6 +221,7 @@ public final class AutoBuilder extends Module {
     private boolean marketInventoryBlocked;
     private boolean depositing;
     private BlockPos depositTarget;
+    private final Deque<BlockPos> depositQueue=new ArrayDeque<>();
     private int depositOpenWait,depositSlot=-1,depositCount,depositDeadline,depositAckDeadline;
     private boolean resumeShoppingAfterDeposit;
     private final LinkedHashMap<Item,Integer> depositedShopping=new LinkedHashMap<>();
@@ -237,12 +238,12 @@ public final class AutoBuilder extends Module {
         button("Start","Restart Build","Rescan the current schematic and restart at the same origin","Restart",this::restartBuild);
         button("Start","Cancel Schematic","Stop all actions and unload the schematic; placed blocks remain","Cancel",this::cancelSchematic);
         button("Snapshot","Capture Snapshot","Save the configured area from the placement origin to a vanilla .nbt file","Capture",this::startCapture);
-        button("Materials","Mark Restock Container","Select the double chest you are looking at","Mark",this::markContainer);
-        button("Materials","Clear Restock Marks","Clear this world's selected supply chest","Clear",()->{pause("Supply chest cleared");selectedChest=null;preparationReady=false;containers.clear();triedContainers.clear();emptyChestItems.clear();});
+        button("Materials","Mark Restock Container","R adds or refreshes the double chest you are looking at; Shift + R removes it","Add",this::markContainer);
+        button("Materials","Clear Restock Marks","Clear this world's selected supply chests","Clear",()->{pause("Supply chests cleared");preparationReady=false;containers.clear();triedContainers.clear();emptyChestItems.clear();chestStocks.clear();preparedStock.clear();});
         button("Materials","Buy Materials","Buy missing materials within your configured budget","Buy",()->startBuying(false));
         button("Materials","Estimate Cost","Read current auction listings without buying","Estimate",()->startBuying(true));
         button("Materials","Cancel Buying","Stop the shopping session","Cancel",()->finishBuying("Buying cancelled"));
-        button("Materials","Deposit All","Move inventory and hotbar items into your selected double chest","Deposit",this::depositAll);
+        button("Materials","Deposit All","Move inventory and hotbar items into your selected double chests","Deposit",this::depositAll);
         ClientTickEvents.START_CLIENT_TICK.register(client->{digging=false;if(isEnabled())tickWork();});
         ClientReceiveMessageEvents.GAME.register((message,overlay)->{if(buying&&pendingOffer!=null&&(marketStage==2||marketStage==3)&&AuctionMarket.unavailable(message.getString()))soldNotice=true;});
     }
@@ -330,12 +331,12 @@ public final class AutoBuilder extends Module {
         if(pos==null||!inGame())return;pause("Origin moved");
         String nextDimension=mc.world.getRegistryKey().getValue().toString();
         String nextScope=scope();
-        if(!dimension.isEmpty()&&(!dimension.equals(nextDimension)||!worldScope.equals(nextScope))){selectedChest=null;containers.clear();supports.clear();}
+        if(!dimension.isEmpty()&&(!dimension.equals(nextDimension)||!worldScope.equals(nextScope))){containers.clear();supports.clear();}
         worldScope=nextScope;
         origin=pos.toImmutable();world=mc.world;dimension=nextDimension;replan();
     }
     private void replan(){
-        preparationReady=false;preparationChest=null;emptyChestItems.clear();buildBudgetActive=false;buildBudgetSpent=0;
+        preparationReady=false;chestStocks.clear();preparedStock.clear();emptyChestItems.clear();buildBudgetActive=false;buildBudgetSpent=0;
         if(schematic==null)return;pause("Placement changed");transformedStates.clear();triedStands.clear();states=new byte[schematic.size()];unitsLeft=new byte[schematic.size()];scanCursor=correct=completedScans=passTasks=0;lastPassTasks=schematic.size();solid=schematic.solidCount();
         for(int i=0;i<schematic.size();i++)if(materialIgnored(schematic.state(i))&&!schematic.state(i).isAir()&&!schematic.state(i).isOf(Blocks.STRUCTURE_VOID))solid--;
         remaining.clear();remaining.putAll(schematic.materials());remaining.keySet().removeAll(ignoredMaterials);remainingByLayer.clear();activeLayer=-1;scanLayer=Integer.MAX_VALUE;
@@ -358,8 +359,8 @@ public final class AutoBuilder extends Module {
     private void startPreparation(){
         if(mc.player.currentScreenHandler!=mc.player.playerScreenHandler){notify("Close the current container before preparing supplies");return;}
         pause("Preparing supplies for the whole build");setEnabled(true);building=false;preview=true;
-        preparationChest=supplyChest();if(preparationChest==null){status="Look at your double chest and press R before starting";notify(status);return;}
-        preparedStock.clear();preparationReady=false;buildBudgetActive=true;buildBudgetSpent=spent=0;preparationStage=1;depositAll();
+        if(supplyChests().isEmpty()){status="Look at your double chests and press R before starting";notify(status);return;}
+        chestStocks.clear();preparedStock.clear();preparationReady=false;buildBudgetActive=true;buildBudgetSpent=spent=0;preparationStage=1;depositAll();
     }
     private Map<Item,Integer> wholeBuildNeeds(){
         var needs=new HashMap<>(remaining);needs.keySet().removeAll(ignoredMaterials);if(support.get())needs.merge(Items.DIRT,buyDirt.getInt(),Integer::sum);addRequiredTools(needs);
@@ -373,7 +374,7 @@ public final class AutoBuilder extends Module {
         startBuild();
     }
     public void cancelSchematic(){
-        ++ioGeneration;loading=false;pause("Schematic cancelled");setEnabled(false);preparationReady=false;preparedStock.clear();emptyChestItems.clear();buildBudgetActive=false;buildBudgetSpent=0;
+        ++ioGeneration;loading=false;pause("Schematic cancelled");setEnabled(false);preparationReady=false;chestStocks.clear();preparedStock.clear();emptyChestItems.clear();buildBudgetActive=false;buildBudgetSpent=0;
         schematic=null;selected="";preview=false;captureStates=null;capture=null;
         states=unitsLeft=new byte[0];scanCursor=correct=solid=completedScans=passTasks=lastPassTasks=0;
         remaining.clear();remainingByLayer.clear();activeLayer=-1;scanLayer=Integer.MAX_VALUE;ignoredMaterials.clear();supports.clear();cleanupStands.clear();triedStands.clear();retryAt.clear();transformedStates.clear();
@@ -391,7 +392,7 @@ public final class AutoBuilder extends Module {
     public void pause(String reason){
         yawVelocity=pitchVelocity=0;
         stopEating();navigatingCell=-1;foodRestock=foodShopping=false;
-        preparationStage=0;
+        preparationStage=0;depositQueue.clear();
         if(partialSource>=0&&ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler&&!ownedHandler.getCursorStack().isEmpty())mc.interactionManager.clickSlot(ownedHandler.syncId,partialSource,0,SlotActionType.PICKUP,mc.player);
         partialSource=-1;partialItem=null;
         building=false;pasting=false;depositing=false;depositTarget=null;depositSlot=-1;resumeShoppingAfterDeposit=false;depositedShopping.clear();placement=null;mining=null;tuningTarget=tuningSession=null;tuningClicks=0;standGoal=null;digging=false;walker.stop();releaseSneak();endRecovery();
@@ -406,7 +407,10 @@ public final class AutoBuilder extends Module {
         BlockPos pos=hit.getBlockPos();var block=mc.world.getBlockState(pos).getBlock();
         if(!doubleChest(pos)){notify("Look at the double chest you want to use");return;}
         if(world!=mc.world)setOrigin(mc.player.getBlockPos());
-        pause("Supply chest selected");selectedChest=pos.toImmutable();preparationReady=false;preparedStock.clear();containers.clear();containers.add(selectedChest);triedContainers.clear();emptyChestItems.clear();notify("Supply chest selected: "+pos.toShortString());
+        var partner=pos.offset(ChestBlock.getFacing(mc.world.getBlockState(pos)));var existing=containers.stream().filter(p->p.equals(pos)||p.equals(partner)).findFirst().orElse(null);
+        boolean remove=mc.player.isSneaking()||mc.options.sneakKey.isPressed();pause("Supply chest selection changed");preparationReady=false;chestStocks.clear();preparedStock.clear();triedContainers.clear();emptyChestItems.clear();
+        if(remove){if(existing!=null)containers.remove(existing);notify("Supply chest removed — "+containers.size()+" selected");}
+        else{if(existing==null)containers.add((pos.compareTo(partner)<0?pos:partner).toImmutable());notify("Supply chest added / refreshed — "+containers.size()+" selected");}
     }
     private void tickWork(){
         ticks++;if(delay>0)delay--;
@@ -826,8 +830,9 @@ public final class AutoBuilder extends Module {
     private static boolean clickable(Block block){return block instanceof BlockWithEntity||block instanceof NoteBlock||block instanceof AbstractRedstoneGateBlock||block instanceof ComposterBlock||block instanceof CakeBlock||dev.maro.runtime.utils.world.BlockUtils.isClickable(block);}
     private void releaseSneak(){if(ownsSneak){mc.options.sneakKey.setPressed(false);ownsSneak=false;}}
     private boolean beginRestock(){
+        if(needed!=restockAttemptItem){triedContainers.clear();restockAttemptItem=needed;}
         var excluded=new HashSet<>(triedContainers);if(needed!=null)emptyChestItems.forEach((pos,items)->{if(items.contains(needed))excluded.add(pos);});
-        var chest=supplyChest();restockTarget=chest!=null&&!excluded.contains(chest)&&!excluded.contains(chest.offset(ChestBlock.getFacing(mc.world.getBlockState(chest))))?chest:null;
+        restockTarget=supplyChests().stream().filter(chest->!excluded.contains(chest)&&!excluded.contains(chest.offset(ChestBlock.getFacing(mc.world.getBlockState(chest))))).findFirst().orElse(null);
         if(restockTarget==null)return false;foodRestock=false;restockWait=inventoryWait=0;partialSource=-1;partialItem=null;restockTriedSlots.clear();walker.stop();status="Restocking";return true;
     }
     private void restockTick(){
@@ -883,14 +888,27 @@ public final class AutoBuilder extends Module {
     public void depositAll(){
         if(!inGame()){notify("Join a world before depositing");return;}
         if(mc.player.currentScreenHandler!=mc.player.playerScreenHandler&&ownedHandler!=mc.player.currentScreenHandler){notify("Close the current container before depositing");return;}
-        int prep=preparationStage;pause("Returning to your selected double chest");preparationStage=prep;
-        BlockPos nearest=supplyChest();
-        if(nearest==null){preparationStage=0;status="Look at your double chest and press R to select it";notify(status);return;}
-        setEnabled(true);building=false;depositing=true;depositTarget=nearest;depositOpenWait=inventoryWait=0;depositSlot=-1;depositDeadline=ticks+1200;walker.stop();
-        containers.add(nearest);status="Depositing all inventory items";mc.setScreen(null);
+        int prep=preparationStage;pause("Returning to your selected double chests");preparationStage=prep;
+        var selected=supplyChests();
+        if(selected.isEmpty()||prep==1&&selected.size()!=containers.size()){preparationStage=0;status=containers.isEmpty()?"Look at your double chests and press R to add them":"A selected chest is unavailable — load it or remove its selection";notify(status);return;}
+        depositQueue.addAll(selected);setEnabled(true);building=false;depositing=true;nextDepositChest();status="Depositing inventory into selected chests";mc.setScreen(null);
     }
-    public BlockPos selectedSupplyChest(){return selectedChest;}
-    private BlockPos supplyChest(){return selectedChest!=null&&mc.world.isChunkLoaded(selectedChest)&&selectedChest.getSquaredDistance(mc.player.getBlockPos())<=walkDistance.get()*walkDistance.get()&&doubleChest(selectedChest)?selectedChest:null;}
+    public BlockPos selectedSupplyChest(){return containers.stream().findFirst().orElse(null);}
+    private List<BlockPos> supplyChests(){
+        var normalized=new LinkedHashSet<BlockPos>();for(var pos:containers){if(mc.world.isChunkLoaded(pos)&&doubleChest(pos)){var partner=pos.offset(ChestBlock.getFacing(mc.world.getBlockState(pos)));normalized.add(pos.compareTo(partner)<0?pos:partner);}else normalized.add(pos);}containers.clear();containers.addAll(normalized);
+        return containers.stream().filter(pos->mc.world.isChunkLoaded(pos)&&pos.getSquaredDistance(mc.player.getBlockPos())<=walkDistance.get()*walkDistance.get()&&doubleChest(pos)).sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).toList();}
+    private void recordChestStock(){
+        if(ownedHandler==null||depositTarget==null)return;
+        var contents=new HashMap<Item,Integer>();for(var slot:ownedHandler.slots)if(slot.inventory!=mc.player.getInventory()&&!slot.getStack().isEmpty())contents.merge(slot.getStack().getItem(),slot.getStack().getCount(),Integer::sum);
+        chestStocks.put(depositTarget,contents);preparedStock.clear();chestStocks.forEach((chest,items)->{if(containers.contains(chest))items.forEach((item,count)->preparedStock.merge(item,count,Integer::sum));});
+        emptyChestItems.remove(depositTarget);if(doubleChest(depositTarget))emptyChestItems.remove(depositTarget.offset(ChestBlock.getFacing(mc.world.getBlockState(depositTarget))));
+    }
+    private boolean nextDepositChest(){
+        recordChestStock();if(ownedHandler!=null&&mc.player.currentScreenHandler==ownedHandler)mc.player.closeHandledScreen();ownedHandler=null;
+        if(depositQueue.isEmpty())return false;
+        depositTarget=depositQueue.removeFirst();depositOpenWait=inventoryWait=0;depositSlot=-1;depositDeadline=ticks+1200;walker.stop();status="Continuing storage in selected chest "+depositTarget.toShortString();return true;
+    }
+    private boolean chestHasRoom(ItemStack stack){return ownedHandler.slots.stream().anyMatch(slot->slot.inventory!=mc.player.getInventory()&&slot.canInsert(stack)&&(slot.getStack().isEmpty()||ItemStack.areItemsAndComponentsEqual(slot.getStack(),stack)&&slot.getStack().getCount()<slot.getMaxItemCount(stack)));}
     private boolean doubleChest(BlockPos pos){
         var state=mc.world.getBlockState(pos);if(!(state.getBlock() instanceof ChestBlock)||state.get(ChestBlock.CHEST_TYPE)==net.minecraft.block.enums.ChestType.SINGLE)return false;
         var partner=pos.offset(ChestBlock.getFacing(state));if(!mc.world.isChunkLoaded(partner))return false;var other=mc.world.getBlockState(partner);
@@ -901,10 +919,7 @@ public final class AutoBuilder extends Module {
     }
     private void finishDeposit(String reason,boolean success){
         int prep=preparationStage;
-        if(success&&ownedHandler!=null){
-            emptyChestItems.remove(depositTarget);if(doubleChest(depositTarget))emptyChestItems.remove(depositTarget.offset(ChestBlock.getFacing(mc.world.getBlockState(depositTarget))));
-            if(prep>0){preparedStock.clear();for(var slot:ownedHandler.slots)if(slot.inventory!=mc.player.getInventory()&&!slot.getStack().isEmpty())preparedStock.merge(slot.getStack().getItem(),slot.getStack().getCount(),Integer::sum);}
-        }
+        if(ownedHandler!=null)recordChestStock();depositQueue.clear();
         if(ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler)mc.player.closeHandledScreen();
         ownedHandler=null;depositing=false;depositTarget=null;depositSlot=-1;walker.stop();status=reason;notify(reason);
         boolean resume=success&&resumeShoppingAfterDeposit;
@@ -928,11 +943,13 @@ public final class AutoBuilder extends Module {
                 depositSlot=-1;
             }
             for(var slot:ownedHandler.slots){
-                if(slot.inventory!=mc.player.getInventory()||slot.getStack().isEmpty())continue;
+                if(slot.inventory!=mc.player.getInventory()||slot.getStack().isEmpty()||!chestHasRoom(slot.getStack()))continue;
                 depositSlot=slot.id;depositCount=slot.getStack().getCount();
                 mc.interactionManager.clickSlot(ownedHandler.syncId,slot.id,0,SlotActionType.QUICK_MOVE,mc.player);inventoryWait=actionDelay();depositAckDeadline=ticks+80;status="Moving items into double chest";return;
             }
-            finishDeposit("Inventory deposited into double chest",true);return;
+            boolean remaining=ownedHandler.slots.stream().anyMatch(slot->slot.inventory==mc.player.getInventory()&&!slot.getStack().isEmpty());
+            if((remaining||preparationStage==1)&&nextDepositChest())return;
+            finishDeposit(remaining?"Selected chests are full — add another chest; remaining items kept":"Inventory stored across selected chests",!remaining);return;
         }
         if(mc.currentScreen instanceof HandledScreen<?> screen){
             if(depositOpenWait>0&&screen.getScreenHandler() instanceof GenericContainerScreenHandler chest){
@@ -1161,14 +1178,14 @@ public final class AutoBuilder extends Module {
     @Override public JsonObject saveExtra(){
         var result=new JsonObject();result.addProperty("file",selected);result.addProperty("dimension",dimension);result.addProperty("world-scope",worldScope);
         var ignored=new JsonArray();for(var item:ignoredMaterials)ignored.add(Registries.ITEM.getId(item).toString());result.add("ignored-materials",ignored);
-        if(selectedChest!=null)result.add("supply-chest",posJson(selectedChest));if(origin!=null)result.add("origin",posJson(origin));var marks=new JsonArray();for(var pos:containers)marks.add(posJson(pos));result.add("restock",marks);return result;
+        if(selectedSupplyChest()!=null)result.add("supply-chest",posJson(selectedSupplyChest()));if(origin!=null)result.add("origin",posJson(origin));var marks=new JsonArray();for(var pos:containers)marks.add(posJson(pos));result.add("restock",marks);return result;
     }
     private static JsonArray posJson(BlockPos pos){var a=new JsonArray();a.add(pos.getX());a.add(pos.getY());a.add(pos.getZ());return a;}
     private static BlockPos jsonPos(JsonElement value){var a=value.getAsJsonArray();if(a.size()!=3)throw new IllegalArgumentException("Position");return new BlockPos(a.get(0).getAsInt(),a.get(1).getAsInt(),a.get(2).getAsInt());}
     @Override public void loadExtra(JsonObject data){
         try{ignoredMaterials.clear();if(data.has("ignored-materials"))for(var value:data.getAsJsonArray("ignored-materials")){var id=net.minecraft.util.Identifier.tryParse(value.getAsString());if(id!=null){var item=Registries.ITEM.get(id);if(item!=Items.AIR)ignoredMaterials.add(item);}}
             if(data.has("world-scope"))worldScope=data.get("world-scope").getAsString();if(data.has("dimension"))dimension=data.get("dimension").getAsString();if(data.has("origin"))origin=jsonPos(data.get("origin"));containers.clear();if(data.has("restock"))for(var pos:data.getAsJsonArray("restock"))containers.add(jsonPos(pos));
-            selectedChest=data.has("supply-chest")?jsonPos(data.get("supply-chest")):null;containers.clear();if(selectedChest!=null)containers.add(selectedChest);
+            if(containers.isEmpty()&&data.has("supply-chest"))containers.add(jsonPos(data.get("supply-chest")));
             if(data.has("file")){selected=data.get("file").getAsString();if(!selected.isBlank()&&Files.isRegularFile(folder().resolve(selected)))load(folder().resolve(selected));}
         }catch(RuntimeException e){Maro.LOGGER.warn("Invalid Auto Builder saved placement",e);}
     }
