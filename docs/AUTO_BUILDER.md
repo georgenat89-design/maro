@@ -49,7 +49,7 @@ Replace Wrong Blocks and Mine Out Schematic are off by default. Mine Out clears 
 
 Each material row has **Ignore / Include**. Ignored materials are excluded from buying, estimates and restocking, and their schematic blocks are skipped by building, paste and preview. Including a material again rescans the plan. Ignore choices are saved; Cancel Schematic clears them.
 
-Look at your double chest and press R, or use **Options → Materials → Mark Restock Container**. The selected chest is scoped to the server/world and dimension. Restocking walks only to that chest within 64 blocks; it never chooses another chest automatically. Missing items are cached per chest until your own deposit or selecting the chest again, so later layers go to AH without repeatedly visiting an empty chest. Stockpile In Chests deposits surplus whole stacks of schematic materials; unrelated items are preserved.
+Look at each double chest and press R, or use **Options → Materials → Mark Restock Container**. Selections are scoped to the server/world and dimension. Restocking checks only your selected chests within 64 blocks, in distance order. Missing items are cached per chest until your own deposit or selecting the chest again, so later layers go to AH without repeatedly visiting an empty chest. Stockpile In Chests deposits surplus whole stacks of schematic materials; unrelated items are preserved.
 
 Preview presets coordinate textures and outlines. Opacity, range and layers remain adjustable. Scanning has a time budget and previews have a hard cell cap; rendering does not scan the whole file each frame.
 
