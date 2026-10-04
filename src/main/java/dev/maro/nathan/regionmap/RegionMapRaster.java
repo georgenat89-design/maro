@@ -1,6 +1,7 @@
 package dev.maro.nathan.regionmap;
 
 import java.awt.Font;
+import java.awt.BasicStroke;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
@@ -59,6 +60,12 @@ public final class RegionMapRaster {
     public static Rendered create(int size, int[] fills, int[] inks, boolean numbers,
                                   NumberFont numberFont, double numberSize, boolean fitNumbers,
                                   boolean gloss, int spotlight, double dim) {
+        return create(size, fills, inks, numbers, numberFont, numberSize, fitNumbers, gloss, spotlight, dim, true);
+    }
+
+    public static Rendered create(int size, int[] fills, int[] inks, boolean numbers,
+                                  NumberFont numberFont, double numberSize, boolean fitNumbers,
+                                  boolean gloss, int spotlight, double dim, boolean compactNumberFit) {
         if (size <= 0 || fills.length != RegionGrid.Locale.values().length || inks.length != fills.length
             || numberFont == null || !Double.isFinite(numberSize) || numberSize < 0.5 || numberSize > 2.5)
             throw new IllegalArgumentException("Invalid region-map raster size or colours");
@@ -127,7 +134,7 @@ public final class RegionMapRaster {
                     double height = shard.height() * pitch - gutter;
                     int locale = shard.locale().ordinal();
                     String label = Integer.toString(shard.number());
-                    double padding = Math.min(0.65 * unit, Math.min(width, height) * 0.10);
+                    double padding = Math.min(0.4 * unit, Math.min(width, height) * 0.06);
                     double caps = NUMBER_CAPS * unit * numberSize;
                     int availableWidth = Math.max(1, (int) Math.floor(width - padding * 2));
                     int availableHeight = Math.max(1, (int) Math.floor(fitNumbers ? Math.min(caps, height - padding * 2) : caps));
@@ -142,6 +149,23 @@ public final class RegionMapRaster {
                         if (((!fitNumbers || bounds.width <= availableWidth) && bounds.height <= availableHeight) || fontSize == 1) break;
                         fontSize--;
                     } while (true);
+                    // Two digits in a narrow shard can otherwise shrink to only
+                    // a few pixels high. Use the narrower cut only when it lets
+                    // that label be taller; ordinary cells keep the chosen font.
+                    if (compactNumberFit && fitNumbers && label.length() > 1 && numberFont != NumberFont.Condensed
+                        && bounds.height < availableHeight - 1) {
+                        Font narrow = font(NumberFont.Condensed);
+                        double ratio = narrow.deriveFont(100f).createGlyphVector(graphics.getFontRenderContext(), "0").getVisualBounds().getHeight() / 100;
+                        int narrowSize = Math.max(1, (int) Math.ceil(caps / ratio));
+                        GlyphVector narrowGlyphs; Rectangle narrowBounds;
+                        do {
+                            narrowGlyphs = narrow.deriveFont((float)narrowSize).createGlyphVector(graphics.getFontRenderContext(), label);
+                            narrowBounds = narrowGlyphs.getPixelBounds(graphics.getFontRenderContext(), 0, 0);
+                            if ((narrowBounds.width <= availableWidth && narrowBounds.height <= availableHeight) || narrowSize == 1) break;
+                            narrowSize--;
+                        } while (true);
+                        if (narrowBounds.height > bounds.height) { glyphs = narrowGlyphs; bounds = narrowBounds; }
+                    }
                     float glyphX = (float) (Math.round(left + (width - bounds.width) / 2) - bounds.x);
                     float glyphY = (float) (Math.round(top + (height - bounds.height) / 2) - bounds.y);
                     boolean faded = spotlight >= 0 && locale != spotlight;
@@ -151,6 +175,11 @@ public final class RegionMapRaster {
                         graphics.setColor(new java.awt.Color(0, 0, 0, (int) (90 * alpha(ink))));
                         graphics.drawGlyphVector(glyphs, glyphX, glyphY + Math.max(1, Math.round(0.3f * (float) unit)));
                     }
+
+                    // A thin dark rim preserves contrast on bright region fills.
+                    graphics.setStroke(new BasicStroke(1f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                    graphics.setColor(new java.awt.Color(0, 0, 0, (int)(155 * alpha(ink))));
+                    graphics.draw(glyphs.getOutline(glyphX, glyphY));
 
                     graphics.setColor(new java.awt.Color(ink, true));
                     graphics.drawGlyphVector(glyphs, glyphX, glyphY);
