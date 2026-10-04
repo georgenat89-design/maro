@@ -13,7 +13,6 @@ import dev.maro.module.Module;
 import dev.maro.module.ModuleManager;
 import dev.maro.module.impl.visuals.StaffNotifier;
 import dev.maro.setting.*;
-import dev.maro.runtime.settings.SettingAdapters;
 import dev.maro.runtime.settings.StringSetting;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
@@ -46,88 +45,91 @@ public final class AutoBuilder extends Module {
     public static final byte UNKNOWN=0,CORRECT=1,MISSING=2,WRONG_BLOCK=3,WRONG_STATE=4,IGNORED=5;
     private static final ExecutorService IO=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"maro-schematic-io");t.setDaemon(true);return t;});
     private final LinkedHashMap<String,SettingSection> groups=new LinkedHashMap<>();
-    private final ModeSetting mode=mode("Build","Build Mode","Hold Use in Semi Auto; Automatic keeps working after you start","Semi Auto","Preview Only","Semi Auto","Automatic");
+    private final ModeSetting mode=mode("Start","Build Mode","Automatic starts immediately; Semi Auto builds while right mouse is held","Automatic","Semi Auto","Automatic");
     private final BooleanSetting autoMove=bool("Build","Auto Move","Walk safe ground routes toward out-of-reach blocks",true);
     private final BooleanSetting mineOut=bool("Build","Mine Out Schematic","Also clear blocks where the schematic explicitly contains air",false);
     private final BooleanSetting replaceWrong=bool("Build","Replace Wrong Blocks","Mine mismatching block types before placing the requested block",false);
-    private final BooleanSetting repairStates=bool("Build","Repair Wrong States","Break and replace mismatching states when their placement can be reproduced",false);
-    private final BooleanSetting protectContainers=bool("Build","Protect Containers","Never mine block entities such as chests, signs or machines",true);
+    private final BooleanSetting repairStates=fixedBool("Repair Wrong States","Break and replace mismatching states when their placement can be reproduced",false);
+    private final BooleanSetting protectContainers=fixedBool("Protect Containers","Never mine block entities such as chests, signs or machines",true);
     private final NumberSetting spacing=number("Build","Action Delay","Ticks between placements and inventory operations",3,0,20,1);
-    private final NumberSetting reach=number("Build","Reach","Maximum vanilla interaction distance; also clamped to player reach",4.4,2,5, .1);
-    private final NumberSetting turnSpeed=number("Build","Turn Speed","Maximum view rotation per tick",45,5,180,1);
+    private final NumberSetting timingVariation=number("Build","Timing Variation","Extra random ticks added to action delay",1,0,6,1);
+    private final BooleanSetting smoothTurning=bool("Build","Head Smoothing","Ease visible turns into and out of the target angle",true);
+    private float yawVelocity,pitchVelocity;
+    private final NumberSetting reach=fixedNumber("Reach","Maximum vanilla interaction distance; also clamped to player reach",4.4,2,5, .1);
+    private final NumberSetting turnSpeed=fixedNumber("Turn Speed","Maximum view rotation per tick",45,5,180,1);
     private final BooleanSetting support=bool("Build","Temporary Supports","Place dirt under floating targets when an adjacent face is reachable",true);
-    private final NumberSetting tempDirt=number("Build","Temporary Dirt Limit","Maximum temporary supports placed during this build",128,0,512,1);
-    private final BooleanSetting cleanup=bool("Build","Clean Temporary Supports","Remove supports created by this builder after completion",true);
-    private final ModeSetting rotation=mode("Schematic","Rotation","Rotate positions and block states clockwise","0","0","90","180","270").onChange(v->replan());
-    private final ModeSetting mirror=mode("Schematic","Mirror","Mirror positions and facing properties before rotation","None","None","X","Z").onChange(v->replan());
-    private final BooleanSetting useOffset=bool("Schematic","Apply File Offset","Include the schematic's stored origin offset",false).onChange(v->replan());
-    private final KeybindSetting markBind=bind("Restock","Mark Restock Bind","Mark or unmark the chest you are looking at",GLFW.GLFW_KEY_R);
-    private final BooleanSetting restock=bool("Restock","Restock When Empty","Take missing building materials from marked containers",true);
-    private final NumberSetting walkDistance=number("Restock","Restock Walk Distance","Maximum distance to a marked container",64,4,64,1);
-    private final NumberSetting restockDirt=number("Restock","Restock Temp Dirt","Reserve this much dirt when restocking",128,0,512,1);
-    private final BooleanSetting stockpile=bool("Restock","Stockpile In Chests","Deposit surplus whole stacks of building materials into marked chests",false);
-    public final BooleanSetting showContainers=bool("Restock","Show Restock Containers","Outline marked chests",true);
-    public final BooleanSetting showLabels=bool("Restock","Show Restock Labels","Show marked container coordinates on the progress panel",true);
-    public final NumberSetting containerRange=number("Restock","Restock Render Distance","Visible range of marked chest outlines",64,8,128,1);
-    public final NumberSetting containerAlpha=number("Restock","Restock Outline Alpha","Opacity of marked chest outlines",.85,.05,1,.05);
-    public final NumberSetting labelScale=number("Restock","Restock Label Scale","Size of chest information in the progress panel",.8,.5,1.5,.05);
-    private final KeybindSetting buyBind=bind("Auto Buy","Auto Buy Key","Start a material buying session",-1);
-    private final BooleanSetting autoBuy=bool("Auto Buy","Auto Buy When Missing","Start buying after marked containers are exhausted",false);
-    private final BooleanSetting preferStacks=bool("Auto Buy","Prefer Stacks","Prefer full stacks when their unit price is within tolerance",true);
-    private final NumberSetting tolerance=number("Auto Buy","Stack Price Tolerance %","Maximum premium for a preferred stack",15,0,100,1);
-    private final NumberSetting overbuy=number("Auto Buy","Max Overbuy","Maximum extra items beyond the missing quantity",16,0,64,1);
-    private final NumberSetting maxItem=number("Auto Buy","Max Price Per Item","0 disables the per-item ceiling; total budget still applies",1000,0,1_000_000_000,1);
-    private final NumberSetting maxSpend=number("Auto Buy","Max Total Spend","Session budget in server currency; 0 disables buying",0,0,1_000_000_000,1);
-    private final NumberSetting maxPages=number("Auto Buy","Max AH Pages","Maximum auction pages checked per material",3,1,20,1);
-    private final NumberSetting buySpacing=number("Auto Buy","Buy Click Spacing","Minimum ticks between menu clicks",4,2,40,1);
-    private final BooleanSetting buyNotifications=bool("Auto Buy","Buy Notifications","Notify when buying starts, finishes, or stops",true);
-    private final NumberSetting buyDirt=number("Auto Buy","Buy Temp Dirt","Include dirt reserve in the shopping list",64,0,512,1);
-    private final ModeSetting ahSearch=mode("Auto Buy","AH Search By","How item registry names are written in the search command","Spaced","Spaced","Underscored","Registry ID");
-    private final dev.maro.runtime.settings.Setting<String> ahCommand=text("Auction Menu","AH Command","Auction search command without a leading slash","ah");
-    private final dev.maro.runtime.settings.Setting<String> ahTitle=text("Auction Menu","AH Title Word","Expected auction menu title","Auction");
-    private final dev.maro.runtime.settings.Setting<String> priceKeyword=text("Auction Menu","Price Keyword","Marker preceding the listing's total price","$");
-    private final dev.maro.runtime.settings.Setting<String> confirmYes=text("Auction Menu","Confirm Yes Word","Accepted confirmation labels, separated with ;","Confirm;Purchase;Buy;Yes");
-    private final dev.maro.runtime.settings.Setting<String> confirmNo=text("Auction Menu","Confirm No Word","Rejected/cancel labels, separated with ;","Cancel;No");
-    private final dev.maro.runtime.settings.Setting<String> confirmTitle=text("Auction Menu","Confirm Title Word","Recognized confirmation titles, separated with ;","Confirm;Purchase;Sure");
-    private final dev.maro.runtime.settings.Setting<String> nextWord=text("Auction Menu","Next Page Word","Label on the next-page button","Next page");
-    private final dev.maro.runtime.settings.Setting<String> boughtWord=text("Auction Menu","Already Bought Word","Label indicating an unavailable auction","already bought");
-    public final BooleanSetting showPreview=bool("Preview & Render","Show Preview","Render the schematic while the module is enabled",true);
-    public final BooleanSetting textured=bool("Preview & Render","Textured Preview","Render the actual block models and textures",true);
-    public final ModeSetting previewMode=mode("Preview & Render","Preview Mode","Full blueprint or only cells which need work","Missing & Wrong","Full","Missing & Wrong","Outline Only");
-    public final NumberSetting previewRange=number("Preview & Render","Preview Range","Maximum distance from the camera",48,8,96,1);
-    public final NumberSetting ghostFill=number("Preview & Render","Ghost Fill","Overall textured preview opacity",.5,.05,1,.05);
-    public final BooleanSetting renderCorrect=bool("Preview & Render","Render Correct","Include matching blocks",false);
-    public final BooleanSetting renderMissing=bool("Preview & Render","Render Missing","Include missing blocks",true);
-    public final BooleanSetting renderIncorrect=bool("Preview & Render","Render Incorrect","Include wrong block types or states",true);
-    public final BooleanSetting buildBox=bool("Preview & Render","Show Build Box","Outline the schematic's transformed bounds",true);
-    public final BooleanSetting originMarker=bool("Preview & Render","Show Origin Marker","Draw the placement anchor",true);
-    private final ModeSetting preset=mode("Preview & Render","Preview Preset","Apply coordinated ghost and outline settings","Building","Building","Blueprint","Verification").onChange(v->applyPreset(v));
-    public final ModeSetting outlineStrength=mode("Preview & Render","Outline Strength","Outline contrast","Strong","Soft","Strong","Bright");
-    public final ModeSetting clarity=mode("Preview & Render","Interior Clarity","Fade ghosts near the camera to keep the view clear","Fade Near Camera","None","Fade Near Camera","Surface Only");
-    public final NumberSetting fadeRadius=number("Preview & Render","Interior Fade Radius","Radius of camera-adjacent fade",2,.5,8,.25);
-    public final BooleanSetting throughWalls=bool("Preview & Render","Missing Through Walls","Show a faint outline for hidden missing blocks",false);
-    public final NumberSetting missingOpacity=number("Preview & Render","Missing Opacity","Colored fill for missing blocks",.14,0,1,.01);
-    public final NumberSetting wrongOpacity=number("Preview & Render","Wrong Block Opacity","Colored fill for wrong block types",.2,0,1,.01);
-    public final NumberSetting stateOpacity=number("Preview & Render","Wrong State Opacity","Colored fill for wrong block states",.18,0,1,.01);
-    public final NumberSetting occludedOpacity=number("Preview & Render","Occluded Opacity","Faint outline opacity when through-walls is enabled",.07,0,.5,.01);
-    public final BooleanSetting outlines=bool("Preview & Render","Outlines","Outline individual cells",true);
-    public final NumberSetting outlineWidth=number("Preview & Render","Outline Width","Line width in pixels",1,.5,3,.25);
-    public final ModeSetting layerMode=mode("Preview & Render","Layer Mode","Preview and build every layer or the selected height","All","All","Single","Below");
-    public final NumberSetting layer=number("Preview & Render","Layer","Local Y level for Single / Below modes",0,0,2047,1);
-    private final NumberSetting budget=number("Preview & Render","Rebuild Budget","Maximum scan time per client tick in milliseconds",2,.25,8,.25);
-    public final NumberSetting renderLimit=number("Preview & Render","Max Preview Blocks","Hard cap on rendered cells per frame",1500,100,6000,100);
+    private final NumberSetting tempDirt=fixedNumber("Temporary Dirt Limit","Maximum temporary supports placed during this build",128,0,512,1);
+    private final BooleanSetting cleanup=bool("Build","Clean Temporary Supports","Break this builder's temporary dirt after the schematic is complete",true);
+    private final ModeSetting rotation=mode("Placement","Rotation","Rotate positions and block states clockwise","0","0","90","180","270").onChange(v->replan());
+    private final ModeSetting mirror=mode("Placement","Mirror","Mirror positions and facing properties before rotation","None","None","X","Z").onChange(v->replan());
+    private final BooleanSetting useOffset=fixedBool("Apply File Offset","Include the schematic's stored origin offset",false).onChange(v->replan());
+    private final KeybindSetting markBind=bind("Materials","Mark Restock Bind","Mark or unmark the chest you are looking at",GLFW.GLFW_KEY_R);
+    private final BooleanSetting restock=bool("Materials","Restock When Empty","Take missing building materials from marked containers",true);
+    private final NumberSetting walkDistance=fixedNumber("Restock Walk Distance","Maximum distance to a marked container",64,4,64,1);
+    private final NumberSetting restockDirt=number("Materials","Support Dirt Reserve","Dirt reserved for temporary supports when restocking or buying",64,0,512,1);
+    private final BooleanSetting stockpile=bool("Materials","Stockpile In Chests","Deposit surplus whole stacks of building materials into marked chests",false);
+    public final BooleanSetting showContainers=fixedBool("Show Restock Containers","Outline marked chests",true);
+    public final BooleanSetting showLabels=fixedBool("Show Restock Labels","Show marked container coordinates on the progress panel",true);
+    public final NumberSetting containerRange=fixedNumber("Restock Render Distance","Visible range of marked chest outlines",64,8,128,1);
+    public final NumberSetting containerAlpha=fixedNumber("Restock Outline Alpha","Opacity of marked chest outlines",.85,.05,1,.05);
+    public final NumberSetting labelScale=fixedNumber("Restock Label Scale","Size of chest information in the progress panel",.8,.5,1.5,.05);
+    private final KeybindSetting buyBind=fixedBind("Auto Buy Key","Start a material buying session",-1);
+    private final BooleanSetting autoBuy=bool("Materials","Auto Buy When Missing","Start buying after marked containers are exhausted",false);
+    private final BooleanSetting preferStacks=fixedBool("Prefer Stacks","Prefer full stacks when their unit price is within tolerance",true);
+    private final NumberSetting tolerance=fixedNumber("Stack Price Tolerance %","Maximum premium for a preferred stack",15,0,100,1);
+    private final NumberSetting overbuy=fixedNumber("Max Overbuy","Maximum extra items beyond the missing quantity",16,0,64,1);
+    private final NumberSetting maxItem=number("Materials","Max Price Per Item","0 disables the per-item ceiling; total budget still applies",1000,0,1_000_000_000,1);
+    private final NumberSetting maxSpend=number("Materials","Max Total Spend","Session budget in server currency; 0 disables buying",0,0,1_000_000_000,1);
+    private final NumberSetting maxPages=fixedNumber("Max AH Pages","Maximum auction pages checked per material",3,1,20,1);
+    private final NumberSetting buySpacing=fixedNumber("Buy Click Spacing","Minimum ticks between menu clicks",4,2,40,1);
+    private final BooleanSetting buyNotifications=fixedBool("Buy Notifications","Notify when buying starts, finishes, or stops",true);
+    private final NumberSetting buyDirt=restockDirt;
+    private final ModeSetting ahSearch=fixedMode("AH Search By","How item registry names are written in the search command","Spaced","Spaced","Underscored","Registry ID");
+    private final dev.maro.runtime.settings.Setting<String> ahCommand=fixedText("AH Command","Auction search command without a leading slash","ah");
+    private final dev.maro.runtime.settings.Setting<String> ahTitle=fixedText("AH Title Word","Expected auction menu title","Auction");
+    private final dev.maro.runtime.settings.Setting<String> priceKeyword=fixedText("Price Keyword","Marker preceding the listing's total price","$");
+    private final dev.maro.runtime.settings.Setting<String> confirmYes=fixedText("Confirm Yes Word","Accepted confirmation labels, separated with ;","Confirm;Purchase;Buy;Yes");
+    private final dev.maro.runtime.settings.Setting<String> confirmNo=fixedText("Confirm No Word","Rejected/cancel labels, separated with ;","Cancel;No");
+    private final dev.maro.runtime.settings.Setting<String> confirmTitle=fixedText("Confirm Title Word","Recognized confirmation titles, separated with ;","Confirm;Purchase;Sure");
+    private final dev.maro.runtime.settings.Setting<String> nextWord=fixedText("Next Page Word","Label on the next-page button","Next page");
+    private final dev.maro.runtime.settings.Setting<String> boughtWord=fixedText("Already Bought Word","Label indicating an unavailable auction","already bought");
+    public final BooleanSetting showPreview=bool("Preview","Show Preview","Render the schematic while the module is enabled",true);
+    public final BooleanSetting textured=fixedBool("Textured Preview","Render the actual block models and textures",true);
+    public final ModeSetting previewMode=fixedMode("Preview Mode","Full blueprint or only cells which need work","Missing & Wrong","Full","Missing & Wrong","Outline Only");
+    public final NumberSetting previewRange=number("Preview","Preview Range","Maximum distance from the camera",48,8,96,1);
+    public final NumberSetting ghostFill=number("Preview","Ghost Fill","Overall textured preview opacity",.5,.05,1,.05);
+    public final BooleanSetting renderCorrect=fixedBool("Render Correct","Include matching blocks",false);
+    public final BooleanSetting renderMissing=fixedBool("Render Missing","Include missing blocks",true);
+    public final BooleanSetting renderIncorrect=fixedBool("Render Incorrect","Include wrong block types or states",true);
+    public final BooleanSetting buildBox=fixedBool("Show Build Box","Outline the schematic's transformed bounds",true);
+    public final BooleanSetting originMarker=fixedBool("Show Origin Marker","Draw the placement anchor",true);
+    private final ModeSetting preset=mode("Preview","Preview Preset","Apply coordinated ghost and outline settings","Building","Building","Blueprint","Verification").onChange(v->applyPreset(v));
+    public final ModeSetting outlineStrength=fixedMode("Outline Strength","Outline contrast","Strong","Soft","Strong","Bright");
+    public final ModeSetting clarity=fixedMode("Interior Clarity","Fade ghosts near the camera to keep the view clear","Fade Near Camera","None","Fade Near Camera","Surface Only");
+    public final NumberSetting fadeRadius=fixedNumber("Interior Fade Radius","Radius of camera-adjacent fade",2,.5,8,.25);
+    public final BooleanSetting throughWalls=fixedBool("Missing Through Walls","Show a faint outline for hidden missing blocks",false);
+    public final NumberSetting missingOpacity=fixedNumber("Missing Opacity","Colored fill for missing blocks",.14,0,1,.01);
+    public final NumberSetting wrongOpacity=fixedNumber("Wrong Block Opacity","Colored fill for wrong block types",.2,0,1,.01);
+    public final NumberSetting stateOpacity=fixedNumber("Wrong State Opacity","Colored fill for wrong block states",.18,0,1,.01);
+    public final NumberSetting occludedOpacity=fixedNumber("Occluded Opacity","Faint outline opacity when through-walls is enabled",.07,0,.5,.01);
+    public final BooleanSetting outlines=fixedBool("Outlines","Outline individual cells",true);
+    public final NumberSetting outlineWidth=fixedNumber("Outline Width","Line width in pixels",1,.5,3,.25);
+    public final ModeSetting layerMode=mode("Preview","Layer Mode","Preview and build every layer or the selected height","All","All","Single","Below");
+    public final NumberSetting layer=number("Preview","Layer","Local Y level for Single / Below modes",0,0,2047,1).visible(()->!layerMode.is("All"));
+    private final NumberSetting budget=fixedNumber("Rebuild Budget","Maximum scan time per client tick in milliseconds",2,.25,8,.25);
+    public final NumberSetting renderLimit=fixedNumber("Max Preview Blocks","Hard cap on rendered cells per frame",1500,100,6000,100);
     private final BooleanSetting stopStaff=bool("Safety","Stop On Staff Nearby","Pause for loaded players whose names are in your staff list",true);
-    private final NumberSetting staffRange=number("Safety","Staff Detect Range","Distance to a configured staff player",48,4,96,1);
-    private final BooleanSetting logoff=bool("Safety","Log Off After Staff Stop","Disconnect after the selected delay; off by default",false);
-    private final NumberSetting logoffDelay=number("Safety","Logoff Delay","Seconds after staff proximity stop",5,0,30,.5).visible(logoff::get);
-    private final dev.maro.runtime.settings.Setting<String> logoffMessage=text("Safety","Logoff Message","Local disconnect reason","Auto Builder stopped — staff nearby");
+    private final NumberSetting staffRange=fixedNumber("Staff Detect Range","Distance to a configured staff player",48,4,96,1);
+    private final BooleanSetting logoff=fixedBool("Log Off After Staff Stop","Disconnect after the selected delay; off by default",false);
+    private final NumberSetting logoffDelay=fixedNumber("Logoff Delay","Seconds after staff proximity stop",5,0,30,.5).visible(logoff::get);
+    private final dev.maro.runtime.settings.Setting<String> logoffMessage=fixedText("Logoff Message","Local disconnect reason","Auto Builder stopped — staff nearby");
     private final NumberSetting minHealth=number("Safety","Minimum Health","Pause building below this health in hearts",4,0,10,.5);
-    private final BooleanSetting pausePlayers=bool("Multiplayer","Pause Near Players","Pause automatic actions for other nearby players",false);
-    private final NumberSetting playerRange=number("Multiplayer","Player Pause Range","Radius of the optional player pause",8,2,32,1);
+    private final BooleanSetting pausePlayers=bool("Safety","Pause Near Players","Pause automatic actions for other nearby players",false);
+    private final NumberSetting playerRange=fixedNumber("Player Pause Range","Radius of the optional player pause",8,2,32,1);
     private final BooleanSetting statusHud=bool("Build","Progress HUD","Show progress, materials and the current task",true);
-    private final NumberSetting captureX=number("Capture","Capture Width","X size of the snapshot, beginning at the origin",16,1,64,1);
-    private final NumberSetting captureY=number("Capture","Capture Height","Y size of the snapshot",8,1,64,1);
-    private final NumberSetting captureZ=number("Capture","Capture Length","Z size of the snapshot",16,1,64,1);
+    private final NumberSetting captureX=number("Snapshot","Capture Width","X size of the snapshot, beginning at the origin",16,1,64,1);
+    private final NumberSetting captureY=number("Snapshot","Capture Height","Y size of the snapshot",8,1,64,1);
+    private final NumberSetting captureZ=number("Snapshot","Capture Length","Z size of the snapshot",16,1,64,1);
     private Schematic schematic;
     private BlockPos origin;
     private ClientWorld world;
@@ -142,8 +144,9 @@ public final class AutoBuilder extends Module {
     private final Set<Integer> restockTriedSlots=new HashSet<>();
     private final Map<Integer,Integer> retryAt=new HashMap<>();
     private final Map<Integer,Set<BlockPos>> triedStands=new HashMap<>();
+    private final Map<BlockPos,Set<BlockPos>> cleanupStands=new HashMap<>();
     private BlockPos standGoal;
-    private int standIndex,standStarted;
+    private int standStarted;
     private final IdentityHashMap<BlockState,BlockState> transformedStates=new IdentityHashMap<>();
     private final BuilderWalk walker=new BuilderWalk();
     private List<Integer> visible=List.of();
@@ -171,46 +174,43 @@ public final class AutoBuilder extends Module {
     private boolean resumeAfterMarket;
     private String worldScope="";
     private Item buyingItem;
-    private int marketPage,marketWait,marketStage,marketSync=-1,inventoryBefore;
+    private int marketPage,marketWait,marketStage,marketDeadline,inventoryBefore;
     private double spent,estimate;
     private AuctionMarket.Offer pendingOffer;
     private final Set<String> boughtListings=new HashSet<>();
 
     public AutoBuilder(){
         super("Auto Builder","Load, preview and build schematics with materials, chest restocking and auction buying",Category.PLAYER);
-        button("Files","Open Folder","Open the schematic folder","Open",()->net.minecraft.util.Util.getOperatingSystem().open(folder().toFile()));
-        button("Files","Choose Schematic","Choose a .schem, .schematic, .litematic or .nbt file","Choose",()->mc.setScreen(new BuilderScreen(mc.currentScreen,this,false)));
-        button("Files","Refresh","Refresh the file list and reload the current file","Refresh",()->{if(!selected.isEmpty())load(folder().resolve(selected));else mc.setScreen(new BuilderScreen(mc.currentScreen,this,false));});
-        button("Files","Show Materials","Show total, remaining and inventory counts","Materials",()->mc.setScreen(new BuilderScreen(mc.currentScreen,this,true)));
-        button("Files","Creative Materials Get","Fill empty inventory slots with needed materials in creative","Get Materials",this::creativeMaterials);
-        button("Files","Paste Schematic","Paste block states using setblock commands; needs creative and server permission","Paste",this::startPaste);
-        button("Files","Preview Schematic","Show the blueprint without starting actions","Preview",this::preview);
-        button("Files","Cancel Preview","Hide ghosts and stop building","Cancel",()->{preview=false;pause("Preview hidden");});
-        button("Files","Start / Resume Build","Start using the selected Build Mode","Build",this::startBuild);
-        button("Files","Pause Build","Keep the preview visible and release all inputs","Pause",()->pause("Paused"));
-        button("Capture","Capture Snapshot","Save the configured area from the placement origin to a vanilla .nbt file","Capture",this::startCapture);
-        button("Schematic","Origin: Player","Anchor at your feet","Set to Player",()->setOrigin(mc.player==null?null:mc.player.getBlockPos()));
-        button("Schematic","Origin: Looking","Anchor at the exposed side of the target block","Set to Target",()->{if(mc.crosshairTarget instanceof BlockHitResult hit&&hit.getType()==HitResult.Type.BLOCK)setOrigin(hit.getBlockPos().offset(hit.getSide()));});
-        for(var dir:Direction.values())button("Schematic","Nudge "+switch(dir){case EAST->"X+";case WEST->"X-";case UP->"Y+";case DOWN->"Y-";case SOUTH->"Z+";case NORTH->"Z-";},"Move the schematic one block",dir.asString(),()->{if(origin!=null)setOrigin(origin.offset(dir));});
-        button("Restock","Mark Restock Container","Mark or unmark the container you are looking at","Mark",this::markContainer);
-        button("Restock","Clear Restock Marks","Clear this world's marked containers","Clear",()->{containers.clear();triedContainers.clear();});
-        button("Auto Buy","Buy Materials","Buy missing materials within your configured budget","Buy",()->startBuying(false));
-        button("Auto Buy","Estimate Cost","Read current auction listings without buying","Estimate",()->startBuying(true));
-        button("Auto Buy","Cancel Buying","Stop the shopping session","Cancel",()->finishBuying("Buying cancelled"));
+        button("Start","Builder Panel","Open the simple schematic, position and build controls","Open Builder",()->mc.setScreen(new BuilderControlScreen(mc.currentScreen,this)));
+        button("Start","Choose Schematic","Choose a .schem, .schematic, .litematic or .nbt file","Choose",()->mc.setScreen(new BuilderScreen(mc.currentScreen,this,false)));
+        button("Materials","Show Materials","Show total, remaining and inventory counts","Materials",()->mc.setScreen(new BuilderScreen(mc.currentScreen,this,true)));
+        button("Snapshot","Creative Materials Get","Fill empty inventory slots with needed materials in creative","Get Materials",this::creativeMaterials).visible(()->mc.player!=null&&mc.player.getAbilities().creativeMode);
+        button("Snapshot","Paste Schematic","Paste block states using setblock commands; needs creative and server permission","Paste",this::startPaste).visible(()->mc.player!=null&&mc.player.getAbilities().creativeMode);
+        button("Start","Start / Resume Build","Start using the selected Build Mode","Build",this::startBuild);
+        button("Start","Pause Build","Keep the preview visible and release all inputs","Pause",()->pause("Paused"));
+        button("Snapshot","Capture Snapshot","Save the configured area from the placement origin to a vanilla .nbt file","Capture",this::startCapture);
+        button("Materials","Mark Restock Container","Mark or unmark the container you are looking at","Mark",this::markContainer);
+        button("Materials","Clear Restock Marks","Clear this world's marked containers","Clear",()->{containers.clear();triedContainers.clear();});
+        button("Materials","Buy Materials","Buy missing materials within your configured budget","Buy",()->startBuying(false));
+        button("Materials","Estimate Cost","Read current auction listings without buying","Estimate",()->startBuying(true));
+        button("Materials","Cancel Buying","Stop the shopping session","Cancel",()->finishBuying("Buying cancelled"));
         ClientTickEvents.START_CLIENT_TICK.register(client->{digging=false;if(isEnabled())tickWork();});
     }
+    // Rendering/protocol defaults are internal; they no longer clutter the saved settings UI.
+    private BooleanSetting fixedBool(String n,String d,boolean value){return new BooleanSetting(n,d,value);}
+    private NumberSetting fixedNumber(String n,String d,double value,double min,double max,double step){return new NumberSetting(n,d,value,min,max,step);}
+    private ModeSetting fixedMode(String n,String d,String value,String... options){return new ModeSetting(n,d,value,options);}
+    private KeybindSetting fixedBind(String n,String d,int value){return new KeybindSetting(n,d,value);}
+    private dev.maro.runtime.settings.Setting<String> fixedText(String n,String d,String value){return new StringSetting.Builder().name(n).description(d).defaultValue(value).build();}
     private <S extends Setting<?>> S setting(String group,S value){add(value);groups.computeIfAbsent(group,SettingSection::new).add(value);return value;}
     private BooleanSetting bool(String g,String n,String d,boolean v){return setting(g,new BooleanSetting(n,d,v));}
     private NumberSetting number(String g,String n,String d,double v,double min,double max,double step){return setting(g,new NumberSetting(n,d,v,min,max,step));}
     private ModeSetting mode(String g,String n,String d,String v,String... choices){return setting(g,new ModeSetting(n,d,v,choices));}
     private KeybindSetting bind(String g,String n,String d,int v){return setting(g,new KeybindSetting(n,d,v));}
-    private void button(String g,String n,String d,String label,Runnable action){setting(g,new ButtonSetting(n,d,label,action));}
-    private dev.maro.runtime.settings.Setting<String> text(String g,String n,String d,String value){
-        var nativeSetting=new StringSetting.Builder().name(n).description(d).defaultValue(value).build();setting(g,SettingAdapters.adapt(nativeSetting));return nativeSetting;
-    }
+    private ButtonSetting button(String g,String n,String d,String label,Runnable action){return setting(g,new ButtonSetting(n,d,label,action));}
     @Override public List<SettingSection> getSettingSections(){
-        List<SettingSection> result=new ArrayList<>();if(groups.containsKey("Files"))result.add(groups.get("Files"));
-        groups.forEach((name,section)->{if(!name.equals("Files"))result.add(section);});return result;
+        List<SettingSection> result=new ArrayList<>();if(groups.containsKey("Start"))result.add(groups.get("Start"));
+        groups.forEach((name,section)->{if(!name.equals("Start"))result.add(section);});return result;
     }
     public static boolean holdingBreak(){return digging;}
     public static boolean consumesUse(){var module=ModuleManager.get(AutoBuilder.class);return module!=null&&module.isEnabled()&&module.building&&module.mode.is("Semi Auto")&&mc.currentScreen==null;}
@@ -231,13 +231,19 @@ public final class AutoBuilder extends Module {
             }));
     }
     private static String rootMessage(Throwable error){while(error.getCause()!=null)error=error.getCause();return error.getMessage()==null?error.getClass().getSimpleName():error.getMessage();}
-    public void install(Schematic data){pause("Schematic loaded");schematic=data;supports.clear();replan();}
+    public void install(Schematic data){pause("Schematic loaded");schematic=data;supports.clear();cleanupStands.clear();replan();}
     public Schematic schematic(){return schematic;}
     public String status(){return status;}
     public boolean loading(){return loading;}
     public boolean building(){return building;}
     public boolean buying(){return buying;}
     public double sessionSpend(){return spent;}
+    public double auctionBudget(){return maxSpend.get();}
+    public void auctionBudget(double value){maxSpend.set(value);}
+    public String buildMode(){return mode.get();}
+    public void cycleBuildMode(){mode.cycle(1);}
+    public void buyMaterials(){startBuying(false);}
+    public void togglePreview(){boolean show=!previewVisible();showPreview.set(show);if(show&&!isEnabled())preview();}
     public boolean previewVisible(){return isEnabled()&&preview&&showPreview.get()&&schematic!=null&&origin!=null&&world==mc.world;}
     public BlockPos origin(){return origin;}
     public int turns(){return rotation.index();}
@@ -246,6 +252,7 @@ public final class AutoBuilder extends Module {
     public byte state(int index){return states[index];}
     public List<Integer> visibleCells(){return visible;}
     public Set<BlockPos> restockContainers(){return Collections.unmodifiableSet(containers);}
+    public Set<BlockPos> temporarySupports(){return Set.copyOf(supports);}
     public BlockPos anchor(){return useOffset.get()?origin.add(schematic.offset):origin;}
     public boolean layerAllows(int index){int y=schematic.local(index).getY();return layerMode.is("All")||layerMode.is("Single")&&y==layer.getInt()||layerMode.is("Below")&&y<=layer.getInt();}
     public boolean showCell(int index){
@@ -274,19 +281,19 @@ public final class AutoBuilder extends Module {
         if(!inGame()||schematic==null||loading){notify("Join a world and load a schematic first");return;}
         if(world==null&&origin!=null&&dimension.equals(mc.world.getRegistryKey().getValue().toString())&&worldScope.equals(scope()))world=mc.world;
         if(origin==null||world!=mc.world)setOrigin(mc.player.getBlockPos().offset(mc.player.getHorizontalFacing(),3));
-        if(mode.is("Preview Only")){preview();return;}
         var miner=ModuleManager.get(AutoMine.class);if(miner!=null&&miner.isEnabled())miner.setEnabled(false);
-        setEnabled(true);building=true;preview=true;staffStopAt=0;triedContainers.clear();retryAt.clear();status=mode.is("Semi Auto")?"Hold right mouse to build":"Building";
+        setEnabled(true);building=true;preview=true;staffStopAt=0;triedContainers.clear();retryAt.clear();status=mode.is("Semi Auto")?"Hold right mouse to build":"Building";mc.setScreen(null);
     }
     @Override protected void onEnable(){
         if(!inGame()){setEnabled(false);return;}
         originalSlot=mc.player.getInventory().getSelectedSlot();
         if(world==null&&origin!=null&&dimension.equals(mc.world.getRegistryKey().getValue().toString())&&worldScope.equals(scope()))world=mc.world;
         if(origin==null||world!=mc.world)setOrigin(mc.player.getBlockPos().offset(mc.player.getHorizontalFacing(),3));
-        building=schematic!=null&&!mode.is("Preview Only");preview=true;
+        building=schematic!=null;preview=true;
     }
     @Override protected void onDisable(){pause("Disabled");staffStopAt=0;captureStates=null;if(mc.player!=null&&originalSlot>=0)select(originalSlot);originalSlot=-1;}
     public void pause(String reason){
+        yawVelocity=pitchVelocity=0;
         building=false;pasting=false;placement=null;mining=null;standGoal=null;digging=false;walker.stop();releaseSneak();
         if(mc.interactionManager!=null)mc.interactionManager.cancelBlockBreaking();
         if(ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler)mc.player.closeHandledScreen();
@@ -380,9 +387,19 @@ public final class AutoBuilder extends Module {
         if(completedScans==0){status="Checking schematic: "+(100L*scanCursor/Math.max(1,states.length))+"%";return;}
         if((lastPassTasks==0||correct==solid&&!supports.isEmpty())&&ticks-lastAction>=20){
             if(cleanup.get()&&!supports.isEmpty()){
-                var pos=supports.iterator().next();
-                if(mc.world.getBlockState(pos).isOf(Blocks.DIRT)&&!new Box(pos).intersects(mc.player.getBoundingBox())){mining=pos;mineTick();return;}
-                supports.remove(pos);return;
+                var pos=supports.stream().min(Comparator.comparingDouble(p->p.getSquaredDistance(mc.player.getBlockPos()))).orElseThrow();
+                if(!mc.world.isChunkLoaded(pos)){status="Cleanup paused — support chunk is unloaded";return;}
+                if(!mc.world.getBlockState(pos).isOf(Blocks.DIRT)){supports.remove(pos);cleanupStands.remove(pos);return;}
+                int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());
+                if(cell>=0&&desired(cell).isOf(Blocks.DIRT)){supports.remove(pos);return;}
+                if(mc.player.getEyePos().squaredDistanceTo(Vec3d.ofCenter(pos))>effectiveReach()*effectiveReach()){
+                    if(autoMove.get()){walker.approach(pos,effectiveReach()-.75);status="Returning to temporary supports";}else status="Move closer to clean temporary supports";return;
+                }
+                if(new Box(pos).intersects(mc.player.getBoundingBox().offset(0,-1,0))||visibleHit(pos)==null){
+                    if(autoMove.get()&&repositionTarget(pos,cleanupStands.computeIfAbsent(pos,p->new HashSet<>())))status="Moving to clean temporary support";
+                    else status="Cleanup needs a clear path — move off / around the support";return;
+                }
+                mining=pos;mineTick();return;
             }
             pause("Build complete");notify("Build complete: "+solid+" blocks");return;
         }
@@ -432,6 +449,9 @@ public final class AutoBuilder extends Module {
     }
     private boolean reposition(int index){
         var target=position(index);Set<BlockPos> tried=triedStands.computeIfAbsent(index,i->new HashSet<>());
+        if(repositionTarget(target,tried))return true;retryAt.put(index,ticks+60);return false;
+    }
+    private boolean repositionTarget(BlockPos target,Set<BlockPos> tried){
         List<BlockPos> options=new ArrayList<>();
         for(var side:Direction.Type.HORIZONTAL)for(int distance:new int[]{2,3})for(int dy:new int[]{-2,-1,0,1}){
             var stand=target.offset(side,distance).up(dy);
@@ -443,8 +463,8 @@ public final class AutoBuilder extends Module {
             options.add(stand);
         }
         standGoal=options.stream().min(Comparator.comparingDouble(p->p.getSquaredDistance(mc.player.getBlockPos()))).orElse(null);
-        if(standGoal==null){retryAt.put(index,ticks+60);return false;}
-        tried.add(standGoal);standIndex=index;standStarted=ticks;walker.stop();status="Moving around an obstructed block";return true;
+        if(standGoal==null)return false;
+        tried.add(standGoal);standStarted=ticks;walker.stop();status="Moving around an obstructed block";return true;
     }
     private Place placement(BlockPos target,BlockState wanted,Item item,int index,boolean temporary){
         if(!(item instanceof BlockItem blockItem)||new Box(target).intersects(mc.player.getBoundingBox())&&!wanted.getCollisionShape(mc.world,target).isEmpty())return null;
@@ -499,7 +519,7 @@ public final class AutoBuilder extends Module {
         var context=((BlockItem)job.item).getPlacementContext(new ItemPlacementContext(mc.player,Hand.MAIN_HAND,mc.player.getMainHandStack(),aimed));
         if(context==null||!context.getBlockPos().equals(job.target)||!compatible(((BlockItemAccessor)(Object)job.item).maro$placementState(context),job.state)){placement=null;releaseSneak();return;}
         if(mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,aimed).isAccepted()){
-            mc.player.swingHand(Hand.MAIN_HAND);delay=Math.max(2,spacing.getInt());lastAction=ticks;
+            mc.player.swingHand(Hand.MAIN_HAND);delay=actionDelay();lastAction=ticks;
             if(job.temporary)supports.add(job.target);status=job.temporary?"Placing temporary support":"Placing "+job.item.getName().getString();
         }else if(job.index>=0)retryAt.put(job.index,ticks+40);
         placement=null;releaseSneak();
@@ -507,7 +527,7 @@ public final class AutoBuilder extends Module {
     private void mineTick(){
         walker.release();if(mining==null)return;
         var state=mc.world.getBlockState(mining);
-        if(state.isAir()){supports.remove(mining);mining=null;digging=false;mc.interactionManager.cancelBlockBreaking();delay=spacing.getInt();return;}
+        if(state.isAir()){supports.remove(mining);mining=null;digging=false;mc.interactionManager.cancelBlockBreaking();delay=actionDelay();return;}
         if(protectContainers.get()&&state.hasBlockEntity()||state.getHardness(mc.world,mining)<0||!state.getFluidState().isEmpty()){mining=null;return;}
         if(new Box(mining).intersects(mc.player.getBoundingBox().offset(0,-1,0))){status="Move off the block before clearing it";mining=null;return;}
         var visibleHit=visibleHit(mining);
@@ -534,9 +554,19 @@ public final class AutoBuilder extends Module {
     private float[] angles(Vec3d point){var delta=point.subtract(mc.player.getEyePos());return new float[]{(float)(Math.toDegrees(Math.atan2(delta.z,delta.x))-90),(float)-Math.toDegrees(Math.atan2(delta.y,Math.sqrt(delta.x*delta.x+delta.z*delta.z)))};}
     private boolean aim(Vec3d point){
         float[] goal=angles(point);float yaw=MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()),pitch=goal[1]-mc.player.getPitch();
-        mc.player.setYaw(mc.player.getYaw()+MathHelper.clamp(yaw,-turnSpeed.getFloat(),turnSpeed.getFloat()));mc.player.setPitch(MathHelper.clamp(mc.player.getPitch()+MathHelper.clamp(pitch,-turnSpeed.getFloat(),turnSpeed.getFloat()),-90,90));
-        return Math.abs(yaw)<1&&Math.abs(pitch)<1;
+        float speed=turnSpeed.getFloat();
+        if(smoothTurning.get()){
+            float acceleration=speed*.2f;
+            yawVelocity+=MathHelper.clamp(MathHelper.clamp(yaw*.35f,-speed,speed)-yawVelocity,-acceleration,acceleration);
+            pitchVelocity+=MathHelper.clamp(MathHelper.clamp(pitch*.35f,-speed,speed)-pitchVelocity,-acceleration,acceleration);
+            mc.player.setYaw(mc.player.getYaw()+MathHelper.clamp(yawVelocity,-Math.abs(yaw),Math.abs(yaw)));
+            mc.player.setPitch(MathHelper.clamp(mc.player.getPitch()+MathHelper.clamp(pitchVelocity,-Math.abs(pitch),Math.abs(pitch)),-90,90));
+        }else{
+            mc.player.setYaw(mc.player.getYaw()+MathHelper.clamp(yaw,-speed,speed));mc.player.setPitch(MathHelper.clamp(mc.player.getPitch()+MathHelper.clamp(pitch,-speed,speed),-90,90));
+        }
+        return Math.abs(MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()))<1&&Math.abs(goal[1]-mc.player.getPitch())<1;
     }
+    private int actionDelay(){return Math.max(2,spacing.getInt()+ThreadLocalRandom.current().nextInt(timingVariation.getInt()+1));}
     private void select(int slot){if(mc.player==null||mc.interactionManager==null)return;if(mc.player.getInventory().getSelectedSlot()!=slot){mc.player.getInventory().setSelectedSlot(slot);((ClientPlayerInteractionManagerAccessor)mc.interactionManager).maro$syncSelectedSlot();}}
     private boolean selectMaterial(Item item){
         for(int i=0;i<9;i++)if(mc.player.getInventory().getStack(i).isOf(item)){select(i);return true;}
@@ -544,7 +574,7 @@ public final class AutoBuilder extends Module {
         for(int i=0;i<9;i++)if(mc.player.getInventory().getStack(i).isEmpty()){dest=i;break;}
         if(dest<0)dest=mc.player.getInventory().getSelectedSlot();
         if(source<0||mc.player.currentScreenHandler!=mc.player.playerScreenHandler||!mc.player.currentScreenHandler.getCursorStack().isEmpty())return false;
-        mc.interactionManager.clickSlot(mc.player.playerScreenHandler.syncId,source,dest,SlotActionType.SWAP,mc.player);select(dest);delay=Math.max(2,spacing.getInt());return false;
+        mc.interactionManager.clickSlot(mc.player.playerScreenHandler.syncId,source,dest,SlotActionType.SWAP,mc.player);select(dest);delay=actionDelay();return false;
     }
     private static boolean clickable(Block block){return dev.maro.runtime.utils.world.BlockUtils.isClickable(block);}
     private void releaseSneak(){if(ownsSneak){mc.options.sneakKey.setPressed(false);ownsSneak=false;}}
@@ -649,7 +679,8 @@ public final class AutoBuilder extends Module {
         String command=ahCommand.get().strip().replaceFirst("^/","");
         if(!command.matches("[a-zA-Z0-9_]+")){finishBuying("Invalid AH command");return;}
         if(mc.currentScreen instanceof HandledScreen<?>)mc.player.closeHandledScreen();
-        mc.getNetworkHandler().sendChatCommand(command+" "+key);marketWait=30;marketStage=1;marketSync=-1;status="Searching "+buyingItem.getName().getString();
+        boughtListings.clear();
+        mc.getNetworkHandler().sendChatCommand(command+" "+key);marketWait=10;marketStage=1;marketDeadline=ticks+160;status="Searching "+buyingItem.getName().getString();
     }
     private void marketTick(){
         if(marketWait>0){marketWait--;return;}
@@ -657,33 +688,52 @@ public final class AutoBuilder extends Module {
             if(shopping.isEmpty()){boolean resume=resumeAfterMarket&&!estimating;finishBuying(estimating?"Estimated material cost: "+Math.round(estimate):"Buying finished — spent "+Math.round(spent));if(resume){building=true;delay=6;status="Continuing build after buying";}return;}
             buyingItem=shopping.keySet().iterator().next();marketPage=1;searchMarket();return;
         }
-        if(marketStage==3){
+        // Some AH servers buy on the listing click; others reuse the same handler for confirmation.
+        // Observe actual inventory receipt before deciding which menu transition happened.
+        if(marketStage==2||marketStage==3){
             int gained=inventoryCount(buyingItem)-inventoryBefore;
-            if(gained<=0){finishBuying("Purchase not confirmed in inventory; no retry");return;}
-            shopping.computeIfPresent(buyingItem,(k,v)->Math.max(0,v-gained));if(shopping.getOrDefault(buyingItem,0)<=0)shopping.remove(buyingItem);
-            pendingOffer=null;buyingItem=null;marketStage=0;marketWait=buySpacing.getInt();return;
+            if(gained>=pendingOffer.count()){
+                if(marketStage==2)spent+=pendingOffer.total();
+                shopping.computeIfPresent(buyingItem,(k,v)->Math.max(0,v-gained));if(shopping.getOrDefault(buyingItem,0)<=0)shopping.remove(buyingItem);
+                status="Bought "+gained+" "+buyingItem.getName().getString();
+                pendingOffer=null;buyingItem=null;marketStage=0;marketWait=buySpacing.getInt();return;
+            }
+            if(marketStage==3){if(ticks>=marketDeadline)finishBuying("Purchase not confirmed in inventory; no retry");else status="Waiting for purchased items";return;}
         }
-        if(!(mc.currentScreen instanceof HandledScreen<?> screen)){finishBuying("Auction menu did not open or was closed");return;}
+        if(!(mc.currentScreen instanceof HandledScreen<?> screen)){
+            if(ticks>=marketDeadline)finishBuying(marketStage==2?"No purchase receipt or recognized confirmation; no retry":"Auction menu did not open");return;
+        }
         ScreenHandler handler=screen.getScreenHandler();
-        if(!handler.getCursorStack().isEmpty()){finishBuying("Buying stopped — cursor is occupied");return;}
+        if(!handler.getCursorStack().isEmpty()){if(ticks>=marketDeadline)finishBuying("Buying stopped — cursor is occupied");return;}
         String title=screen.getTitle().getString();
         if(marketStage==2){
             if(AuctionMarket.word(title,boughtWord.get())){finishBuying("Auction is no longer available");return;}
-            if(handler.syncId==marketSync||!AuctionMarket.word(title,confirmTitle.get())){finishBuying("Unrecognized purchase confirmation — stopped");return;}
-            boolean itemVerified=AuctionMarket.offers(handler,mc.player.getInventory(),buyingItem,priceKeyword.get()).stream()
-                .anyMatch(o->o.count()==pendingOffer.count()&&Math.abs(o.total()-pendingOffer.total())<.01);
-            if(!itemVerified){finishBuying("Confirmation item, count or price changed — stopped");return;}
-            ownedHandler=handler;
-            for(var slot:handler.slots){
-                var stack=slot.getStack();String label=stack.getName().getString();
-                if(slot.inventory==mc.player.getInventory()||stack.isEmpty()||AuctionMarket.word(label,confirmNo.get())||!AuctionMarket.word(label,confirmYes.get()))continue;
-                if(spent+pendingOffer.total()>maxSpend.get()){finishBuying("Session budget reached");return;}
-                inventoryBefore=inventoryCount(buyingItem);spent+=pendingOffer.total();
-                mc.interactionManager.clickSlot(handler.syncId,slot.id,0,SlotActionType.PICKUP,mc.player);marketStage=3;marketWait=30;return;
+            var yes=handler.slots.stream().filter(slot->slot.inventory!=mc.player.getInventory()&&!slot.getStack().isEmpty())
+                .filter(slot->!AuctionMarket.word(slot.getStack().getName().getString(),confirmNo.get())&&AuctionMarket.word(slot.getStack().getName().getString(),confirmYes.get()))
+                .filter(slot->!slot.getStack().isOf(buyingItem)||!Double.isFinite(AuctionMarket.price(slot.getStack(),priceKeyword.get()))).findFirst().orElse(null);
+            boolean hasCancel=handler.slots.stream().anyMatch(slot->slot.inventory!=mc.player.getInventory()&&!slot.getStack().isEmpty()&&AuctionMarket.word(slot.getStack().getName().getString(),confirmNo.get()));
+            // A title is a hint, not a protocol ID. Unknown/reused titles need both confirmation controls.
+            if(yes==null||!hasCancel&&!AuctionMarket.word(title,confirmTitle.get())){
+                if(ticks>=marketDeadline)finishBuying("No purchase receipt or recognized confirmation; no retry");else status="Waiting for purchase confirmation";return;
             }
-            finishBuying("No recognized confirmation button");return;
+            ownedHandler=handler;
+            double controlPrice=AuctionMarket.price(yes.getStack(),priceKeyword.get());
+            if(Double.isFinite(controlPrice)&&Math.abs(controlPrice-pendingOffer.total())>=.01){finishBuying("Confirmation price changed — stopped");return;}
+            boolean itemVerified=handler.slots.stream().filter(slot->slot.inventory!=mc.player.getInventory()&&slot!=yes)
+                .anyMatch(slot->{var item=slot.getStack();if(!item.isOf(buyingItem)||item.getCount()!=pendingOffer.count())return false;
+                    double price=AuctionMarket.price(item,priceKeyword.get());
+                    return Double.isFinite(price)?Math.abs(price-pendingOffer.total())<.01:!AuctionMarket.hasPriceField(item,priceKeyword.get())&&Double.isFinite(controlPrice);
+                });
+            if(!itemVerified){
+                boolean populated=handler.slots.stream().anyMatch(slot->slot.inventory!=mc.player.getInventory()&&slot.getStack().isOf(buyingItem)&&Double.isFinite(AuctionMarket.price(slot.getStack(),priceKeyword.get())));
+                if(populated||ticks>=marketDeadline)finishBuying("Confirmation item, count or price changed — stopped");return;
+            }
+            ownedHandler=handler;
+            if(spent+pendingOffer.total()>maxSpend.get()){finishBuying("Session budget reached");return;}
+            spent+=pendingOffer.total();
+            mc.interactionManager.clickSlot(handler.syncId,yes.id,0,SlotActionType.PICKUP,mc.player);marketStage=3;marketWait=buySpacing.getInt();marketDeadline=ticks+160;return;
         }
-        if(!AuctionMarket.word(title,ahTitle.get())){finishBuying("Unexpected auction menu title — stopped");return;}
+        if(!AuctionMarket.word(title,ahTitle.get())){if(ticks>=marketDeadline)finishBuying("Unexpected auction menu title: "+title);return;}
         ownedHandler=handler;
         var offers=AuctionMarket.offers(handler,mc.player.getInventory(),buyingItem,priceKeyword.get()).stream()
             .filter(o->!boughtListings.contains(handler.syncId+":"+o.slot()+":"+o.total()+":"+o.count())).toList();
@@ -694,8 +744,9 @@ public final class AutoBuilder extends Module {
             int requested=shopping.getOrDefault(buyingItem,0);
             var choice=AuctionMarket.choose(offers,requested,overbuy.getInt(),maxItem.get(),maxSpend.get()-spent,preferStacks.get(),tolerance.get());
             if(choice!=null){
-                pendingOffer=choice;marketSync=handler.syncId;boughtListings.add(handler.syncId+":"+choice.slot()+":"+choice.total()+":"+choice.count());
-                mc.interactionManager.clickSlot(handler.syncId,choice.slot(),0,SlotActionType.PICKUP,mc.player);marketStage=2;marketWait=Math.max(12,buySpacing.getInt());return;
+                if(!canReceiveOffer(buyingItem,choice.count())){finishBuying("Inventory full — make space for purchased materials");return;}
+                pendingOffer=choice;inventoryBefore=inventoryCount(buyingItem);boughtListings.add(handler.syncId+":"+choice.slot()+":"+choice.total()+":"+choice.count());
+                mc.interactionManager.clickSlot(handler.syncId,choice.slot(),0,SlotActionType.PICKUP,mc.player);marketStage=2;marketWait=buySpacing.getInt();marketDeadline=ticks+160;return;
             }
         }
         if(marketPage<maxPages.getInt())for(var slot:handler.slots){
@@ -703,7 +754,10 @@ public final class AutoBuilder extends Module {
                 mc.interactionManager.clickSlot(handler.syncId,slot.id,0,SlotActionType.PICKUP,mc.player);marketPage++;marketWait=20;return;
             }
         }
-        finishBuying("No suitable listing for "+buyingItem.getName().getString()+" within price / quantity limits");
+        if(ticks>=marketDeadline)finishBuying("No suitable listing for "+buyingItem.getName().getString()+" within price / quantity limits");
+    }
+    private boolean canReceiveOffer(Item item,int count){
+        var ordinary=new ItemStack(item);int space=0;for(int i=0;i<36;i++){var stack=mc.player.getInventory().getStack(i);if(stack.isEmpty())space+=item.getMaxCount();else if(ItemStack.areItemsAndComponentsEqual(stack,ordinary))space+=Math.max(0,stack.getMaxCount()-stack.getCount());}return space>=count;
     }
     private void finishBuying(String reason){
         buying=false;buyingItem=null;pendingOffer=null;shopping.clear();

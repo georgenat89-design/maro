@@ -248,8 +248,14 @@ public class ClickGuiScreen extends Screen {
     }
 
     /** Opens a module's settings straight at one of its categories, by title. */
+    public void openModuleOptions(dev.maro.module.Module module) {
+        int index=module.getCategory().ordinal();openPage(index);
+        if(entries.get(index).page() instanceof ModulesPage page)page.openOptions(module);
+    }
+
+    /** Opens a module's settings straight at one of its categories, by title. */
     public void openModuleSettings(dev.maro.module.Module module, String category) {
-        openModuleSettings(module);
+        openModuleOptions(module);
         if (entries.get(module.getCategory().ordinal()).page() instanceof ModulesPage page) page.openSection(category);
     }
 
