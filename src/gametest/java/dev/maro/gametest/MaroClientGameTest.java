@@ -239,6 +239,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             checkItemInspect(context, singleplayer);
             checkViewModel(context, singleplayer);
             checkBlockDisconnect(context, singleplayer);
+            checkCompass(context);
         }
     }
 
@@ -625,6 +626,27 @@ public class MaroClientGameTest implements FabricClientGameTest {
         });
         if (before) throw new AssertionError("Block Disconnect found something on an empty world: " + found);
         if (!after || !found.contains("Beacon")) throw new AssertionError("Block Disconnect did not find the beacon (" + found + ")");
+    }
+
+    /** Compass: a home set behind you, the strip and then the dial. */
+    private static void checkCompass(ClientGameTestContext context) {
+        var compass = ModuleManager.get(dev.maro.module.impl.visuals.Compass.class);
+        context.runOnClient(client -> {
+            compass.setEnabled(true);
+            for (var s : compass.getSettings()) if (s instanceof dev.maro.setting.ButtonSetting b && s.getName().equals("Set Home Here")) b.press();
+            client.player.setYaw(client.player.getYaw() + 140f);
+        });
+        context.waitTicks(10);
+        context.takeScreenshot("maro-compass-strip");
+        context.runOnClient(client -> {
+            for (var s : compass.getSettings()) if (s.getName().equals("Style")) ((dev.maro.setting.ModeSetting) s).set("Dial");
+        });
+        context.waitTicks(5);
+        context.takeScreenshot("maro-compass-dial");
+        context.runOnClient(client -> {
+            compass.setEnabled(false);
+            for (var s : compass.getSettings()) s.reset();
+        });
     }
 
     /** Average brightness of a screenshot, 0 to 255. */
