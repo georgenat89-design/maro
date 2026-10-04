@@ -6,6 +6,14 @@ Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 
 ## Included modules
 
+**Staff Notifier** (Visuals) recreates SignalDebug's recovered staff-list settings
+and default account names in Maro. Edit **staff names** for your server. It shows
+staff currently listed in tab, their heads and ping, and join/leave toast and sound
+alerts. Matching uses exact account names, case insensitive. Hidden tab entries
+are excluded; this does not establish whether someone has disconnected or vanished.
+Use **Place staff list** to drag/resize the panel. Native SignalDebug method bodies
+were unavailable, so the tracker, HUD, and alerts are implemented independently.
+
 **Base ESP** (Visuals) ports the underground base detector from the user-provided
 Krypton Avengers source (`dev.dexter.kryptionians.modules.BaseESP`). It groups
 storage and nearby built blocks into base shells, matches the included signature
