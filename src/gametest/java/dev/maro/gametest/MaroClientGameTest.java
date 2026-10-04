@@ -236,6 +236,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             checkNoRender(context, singleplayer);
             checkItemInspect(context, singleplayer);
             checkViewModel(context, singleplayer);
+            checkBlockDisconnect(context, singleplayer);
         }
     }
 
@@ -602,6 +603,26 @@ public class MaroClientGameTest implements FabricClientGameTest {
             for (var s : viewModel.getSettings()) s.reset();
         });
         if (Math.abs(x + 0.25) > 1e-6) throw new AssertionError("Apply Preset did not set Main X (got " + x + ")");
+    }
+
+    /** Block Disconnect: nothing found on an empty flat world, then a beacon a few chunks away is found. */
+    private static void checkBlockDisconnect(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+        var finder = ModuleManager.get(dev.maro.module.impl.misc.BlockDisconnect.class);
+        context.runOnClient(client -> {
+            for (var s : finder.getSettings()) if (s.getName().equals("Action")) ((dev.maro.setting.ModeSetting) s).set("Stop");
+        });
+        boolean before = context.computeOnClient(client -> finder.scanAroundNow());
+        singleplayer.getServer().runCommand("execute as @a at @s run setblock ~20 ~ ~35 minecraft:beacon");
+        settle(context);
+        boolean after = context.computeOnClient(client -> finder.scanAroundNow());
+        String found = context.computeOnClient(client -> finder.lastFound());
+        context.runOnClient(client -> {
+            finder.setEnabled(true);
+            finder.setEnabled(false);
+            for (var s : finder.getSettings()) s.reset();
+        });
+        if (before) throw new AssertionError("Block Disconnect found something on an empty world: " + found);
+        if (!after || !found.contains("Beacon")) throw new AssertionError("Block Disconnect did not find the beacon (" + found + ")");
     }
 
     /** Average brightness of a screenshot, 0 to 255. */
