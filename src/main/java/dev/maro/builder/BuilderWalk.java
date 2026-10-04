@@ -15,9 +15,11 @@ public final class BuilderWalk {
     private Vec3d last;
     private boolean forward,jump;
     private boolean exact;
+    private int failedRoutes;
+    private boolean recoveryRequested;
     public String status="";
     public void stop(){
-        release();path=List.of();goal=null;cursor=retry=stuck=0;last=null;
+        release();path=List.of();goal=null;cursor=retry=stuck=failedRoutes=0;last=null;recoveryRequested=false;
     }
     public void release(){
         if(forward)mc.options.forwardKey.setPressed(false);
@@ -29,6 +31,8 @@ public final class BuilderWalk {
     }
     public boolean standAt(BlockPos target){return approach(target,.42,true);}
     public boolean canStand(BlockPos pos){return walkable(pos);}
+    public boolean needsRecovery(){return recoveryRequested;}
+    public boolean canPillar(BlockPos feet){return clear(feet)&&clear(feet.up())&&clear(feet.up(2))&&clear(feet.up(3))&&safe(feet.down())&&mc.world.getBlockState(feet.down()).isSideSolidFullSquare(mc.world,feet.down(),Direction.UP);}
     private boolean approach(BlockPos target,double distance,boolean stand){
         if(mc.player==null||mc.world==null)return false;
         if(!target.equals(goal)||exact!=stand){stop();goal=target;exact=stand;}
@@ -38,7 +42,7 @@ public final class BuilderWalk {
         if(cursor>=path.size()){
             if(retry>0){release();return false;}
             path=find(mc.player.getBlockPos(),target,distance);cursor=0;retry=20;
-            if(path.isEmpty()){release();status="No safe walking route — move closer or add stairs";return false;}
+            if(path.isEmpty()){if(++failedRoutes>=2)recoveryRequested=true;release();status="No safe walking route — move closer or add stairs";return false;}
         }
         var node=path.get(cursor);var point=Vec3d.ofBottomCenter(node);
         double dx=point.x-mc.player.getX(),dz=point.z-mc.player.getZ();
@@ -53,7 +57,7 @@ public final class BuilderWalk {
         Vec3d now=mc.player.getEntityPos();
         if(last!=null&&now.squaredDistanceTo(last)<.0025)stuck++;else stuck=0;
         last=now;
-        if(stuck>30){path=List.of();release();stuck=0;retry=20;}
+        if(stuck>30){recoveryRequested=true;path=List.of();release();stuck=0;retry=20;}
         status="Walking to build position";return false;
     }
     private List<BlockPos> find(BlockPos start,BlockPos target,double reach){

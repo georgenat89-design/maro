@@ -38,7 +38,7 @@ final class BuilderAuctionChecks {
         changed.set(false);purchases.set(0);noReceipt.set(false);rateScenario.set(0);soldScenario.set(0);soldAttempts.set(0);delayed.clear();
         singleplayer.getServer().computeOnServer(server->{
             server.getCommandManager().getDispatcher().register(CommandManager.literal("ah").then(CommandManager.argument("query",StringArgumentType.greedyString()).executes(command->{
-                var player=command.getSource().getPlayer();if(player!=null)open(player,false,command.getArgument("query",String.class).equals("glass")?Items.GLASS:Items.STONE);return 1;
+                var player=command.getSource().getPlayer();Item item=switch(command.getArgument("query",String.class)){case "glass"->Items.GLASS;case "diamond pickaxe"->Items.DIAMOND_PICKAXE;case "diamond shovel"->Items.DIAMOND_SHOVEL;default->Items.STONE;};if(player!=null)open(player,false,item);return 1;
             })));
             server.getPlayerManager().getPlayerList().forEach(server.getCommandManager()::sendCommandTree);return true;
         });
@@ -63,7 +63,7 @@ final class BuilderAuctionChecks {
         context.runOnClient(client->require(builder.status().contains("no retry")&&builder.inventoryCount(Items.STONE)==0&&builder.inventoryCount(Items.GLASS)==0,"Missing receipt did not stop buying: "+builder.status()));
         noReceipt.set(false);
         // The cheapest unit rate may be on a later page or require returning to an earlier one.
-        for(int scenario:new int[]{1,2}){
+        for(int scenario:new int[]{1,2,3}){
             rateScenario.set(scenario);purchases.set(0);singleplayer.getServer().runCommand("clear @a");context.waitTicks(5);
             context.runOnClient(client->{builder.install(new Schematic("rates-fixture.nbt","test",2,1,1,BlockPos.ORIGIN,new net.minecraft.block.BlockState[]{Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState()}));builder.preview();button(builder,"Buy Materials").press();});
             waitDone(context,builder);
@@ -81,6 +81,8 @@ final class BuilderAuctionChecks {
         }
         soldScenario.set(0);
         inventoryDeposit(context,singleplayer,builder);
+        layerSupply(context,singleplayer,builder);
+        toolSupply(context,singleplayer,builder);
     }
     private static void waitDone(ClientGameTestContext context,AutoBuilder builder){for(int i=0;i<600&&context.computeOnClient(client->builder.buying());i++)context.waitTick();require(!context.computeOnClient(client->builder.buying()),"Auction state machine did not finish: "+context.computeOnClient(client->builder.status()));}
     private static void inventoryDeposit(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder){
@@ -106,7 +108,47 @@ final class BuilderAuctionChecks {
         require(chestCount(world,near,Items.COBBLESTONE)==36*64&&chestCount(world,near,Items.STONE)==0,"Restock changed unrelated chest items");
     }
     private static String coords(BlockPos pos){return pos.getX()+" "+pos.getY()+" "+pos.getZ();}
+    private static void layerSupply(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder){
+        purchases.set(0);
+        world.getServer().runOnServer(server->{var player=server.getPlayerManager().getPlayerList().getFirst();for(int i=0;i<36;i++)player.getInventory().setStack(i,new ItemStack(i==0?Items.STONE:Items.COBBLESTONE,64));});context.waitTicks(5);
+        context.runOnClient(client->{var cells=new net.minecraft.block.BlockState[4096];Arrays.fill(cells,Blocks.STONE.getDefaultState());builder.install(new Schematic("batch-fixture.nbt","test",64,1,64,BlockPos.ORIGIN,cells));builder.preview();button(builder,"Buy Materials").press();});
+        waitDone(context,builder);
+        context.runOnClient(client->require(builder.status().contains("batch ready")&&builder.inventoryCount(Items.STONE)==64&&!builder.depositing(),"Large layer did not keep the usable inventory-sized batch: "+builder.status()));
+        require(purchases.get()==0,"Buyer bought into a full layer supply batch");
+
+        world.getServer().runCommand("clear @a");world.getServer().runOnServer(server->server.getPlayerManager().getPlayerList().getFirst().playerScreenHandler.syncState());for(int i=0;i<120&&context.computeOnClient(client->builder.inventoryCount(Items.STONE)>0||builder.inventoryCount(Items.COBBLESTONE)>0);i++)context.waitTick();
+        context.runOnClient(client->require(builder.inventoryCount(Items.STONE)==0&&builder.inventoryCount(Items.COBBLESTONE)==0,"Clear fixture did not synchronize inventory"));var origin=context.computeOnClient(client->builder.origin().add(-4,0,0));
+        world.getServer().runCommand("fill "+coords(origin.down())+" "+coords(origin.east().down())+" stone");world.getServer().runCommand("fill "+coords(origin)+" "+coords(origin.east().up())+" air");context.waitTicks(5);
+        world.getServer().runCommand("tp @a "+(origin.getX()+1.5)+" "+origin.getY()+" "+(origin.getZ()-2.5));context.waitTicks(8);
+        context.runOnClient(client->{builder.install(new Schematic("layer-fixture.nbt","test",2,2,1,BlockPos.ORIGIN,new net.minecraft.block.BlockState[]{Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState(),Blocks.GLASS.getDefaultState(),Blocks.GLASS.getDefaultState()}));builder.setOrigin(origin);builder.preview();button(builder,"Buy Materials").press();});
+        waitDone(context,builder);
+        context.runOnClient(client->require(builder.supplyLayer()==0&&builder.inventoryCount(Items.STONE)==2&&builder.inventoryCount(Items.GLASS)==0&&builder.sessionSpend()==40,"Buyer acquired future-layer blocks instead of current-layer needs: "+builder.status()+" layer="+builder.supplyLayer()+" stone="+builder.inventoryCount(Items.STONE)+" glass="+builder.inventoryCount(Items.GLASS)+" spent="+builder.sessionSpend()));
+        require(purchases.get()==1,"Current layer shopping did not buy exactly its material");
+        context.runOnClient(client->{setting(builder,"Auto Buy When Missing",true);builder.startBuild();});
+        for(int i=0;i<1500&&context.computeOnClient(client->builder.building()||builder.buying()||builder.depositing());i++)context.waitTick();
+        context.runOnClient(client->require(builder.status().equals("Build complete"),"Layer supply did not advance and buy the next layer: "+builder.status()));
+        require(purchases.get()==3,"Layer building bought extra materials or skipped the second layer");
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(origin).isOf(Blocks.STONE)&&server.getOverworld().getBlockState(origin.east()).isOf(Blocks.STONE)&&server.getOverworld().getBlockState(origin.up()).isOf(Blocks.GLASS)&&server.getOverworld().getBlockState(origin.east().up()).isOf(Blocks.GLASS)),"Layer-by-layer build differs on the server");
+        context.runOnClient(client->setting(builder,"Auto Buy When Missing",false));
+    }
     private static int chestCount(TestSingleplayerContext world,BlockPos pos,Item item){return world.getServer().computeOnServer(server->{int count=0;for(var half:List.of(pos,pos.east())){var chest=(net.minecraft.block.entity.ChestBlockEntity)server.getOverworld().getBlockEntity(half);for(int i=0;i<chest.size();i++)if(chest.getStack(i).isOf(item))count+=chest.getStack(i).getCount();}return count;});}
+    private static void toolSupply(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder){
+        purchases.set(0);world.getServer().runCommand("clear @a");context.waitTicks(8);
+        var pos=context.computeOnClient(client->builder.origin().add(0,0,-4));
+        world.getServer().runCommand("fill "+coords(pos.down())+" "+coords(pos.east().down())+" stone");
+        world.getServer().runCommand("tp @a "+(pos.getX()+1.5)+" "+pos.getY()+" "+(pos.getZ()-2.5));context.waitTicks(8);
+        world.getServer().runCommand("setblock "+coords(pos)+" dirt");world.getServer().runCommand("setblock "+coords(pos.east())+" cobblestone");context.waitTicks(5);
+        context.runOnClient(client->{setting(builder,"Auto Buy Tools",true);setting(builder,"Max Price Per Item",50);setting(builder,"Replace Wrong Blocks",true);builder.install(new Schematic("tools-fixture.nbt","test",2,1,1,BlockPos.ORIGIN,new net.minecraft.block.BlockState[]{Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState()}));builder.setOrigin(pos);builder.preview();button(builder,"Buy Materials").press();});
+        waitDone(context,builder);
+        context.runOnClient(client->require(builder.inventoryCount(Items.DIAMOND_PICKAXE)==1&&builder.inventoryCount(Items.DIAMOND_SHOVEL)==1&&builder.inventoryCount(Items.STONE)==2&&builder.sessionSpend()==90,"Required pickaxe/shovel were not bought once within budget: "+builder.status()));
+        world.getServer().runOnServer(server->{var inv=server.getPlayerManager().getPlayerList().getFirst().getInventory();for(int i=0;i<9;i++){var stack=inv.getStack(i);if(stack.isOf(Items.DIAMOND_PICKAXE)||stack.isOf(Items.DIAMOND_SHOVEL)){int dest=stack.isOf(Items.DIAMOND_PICKAXE)?15:16;inv.setStack(dest,stack.copy());inv.setStack(i,ItemStack.EMPTY);}}});context.waitTicks(5);
+        context.runOnClient(client->builder.startBuild());for(int i=0;i<800&&context.computeOnClient(client->builder.building()||builder.buying());i++)context.waitTick();
+        context.runOnClient(client->require(builder.status().equals("Build complete"),"Builder did not select inventory tools to clear incorrect dirt/stone: "+builder.status()));
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(pos).isOf(Blocks.STONE)&&server.getOverworld().getBlockState(pos.east()).isOf(Blocks.STONE)),"Tool clearing failed on the server");
+        require(purchases.get()==3,"Builder repurchased an available tool");
+        context.runOnClient(client->{setting(builder,"Auto Buy Tools",false);setting(builder,"Replace Wrong Blocks",false);});
+    }
+    private static int price(Item item){return item==Items.DIAMOND_PICKAXE?30:item==Items.DIAMOND_SHOVEL?20:item==Items.STONE?40:10;}
     private static void open(ServerPlayerEntity player,boolean confirm,Item item){
         open(player,confirm,item,1);
     }
@@ -117,8 +159,9 @@ final class BuilderAuctionChecks {
         if(confirm)lastConfirmationSync.set(player.currentScreenHandler.syncId);else lastListingSync.set(player.currentScreenHandler.syncId);
     }
     private static void contents(SimpleInventory inventory,boolean confirm,Item item,int page){
-        int price=rateScenario.get()==0?(item==Items.STONE?40:10):(page==(rateScenario.get()==1?2:1)?20:40);
+        int price=rateScenario.get()==0?price(item):(page==(rateScenario.get()==1?2:1)?20:40);
         inventory.clear();var listing=new ItemStack(item,item==Items.STONE?2:1);listing.set(DataComponentTypes.LORE,new LoreComponent(List.of(Text.literal("Price: $"+(confirm&&changed.get()?400:price)))));inventory.setStack(confirm?13:0,listing);
+        if(rateScenario.get()==3||soldScenario.get()!=0)listing.set(DataComponentTypes.LORE,new LoreComponent(List.of(Text.literal("Price: $"+price),Text.literal("Expires in "+UUID.randomUUID()))));
         if(!confirm&&rateScenario.get()!=0&&page==1){var next=new ItemStack(Items.ARROW);next.set(DataComponentTypes.CUSTOM_NAME,Text.literal("Next page"));inventory.setStack(26,next);}
         if(!confirm&&soldScenario.get()!=0){var fresh=listing.copy();fresh.set(DataComponentTypes.LORE,new LoreComponent(List.of(Text.literal("Price: $12"))));inventory.setStack(1,fresh);}
         if(confirm){var yes=new ItemStack(Items.LIME_STAINED_GLASS_PANE);yes.set(DataComponentTypes.CUSTOM_NAME,Text.literal("Yes"));inventory.setStack(11,yes);var no=new ItemStack(Items.RED_STAINED_GLASS_PANE);no.set(DataComponentTypes.CUSTOM_NAME,Text.literal("No"));inventory.setStack(15,no);}
@@ -147,7 +190,7 @@ final class BuilderAuctionChecks {
                 if(!changed.get()&&!noReceipt.get()&&purchases.get()==0){purchase(player);return;}
                 if(!changed.get()&&!noReceipt.get()&&purchases.get()==3){
                     confirm=true;clicked=false;contents(inventory,true,item,page);
-                    inventory.getStack(13).remove(DataComponentTypes.LORE);inventory.getStack(11).set(DataComponentTypes.LORE,new LoreComponent(List.of(Text.literal("Price: $"+(item==Items.STONE?40:10)))));
+                    inventory.getStack(13).remove(DataComponentTypes.LORE);inventory.getStack(11).set(DataComponentTypes.LORE,new LoreComponent(List.of(Text.literal("Price: $"+price(item)))));
                     lastConfirmationSync.set(syncId);sendContentUpdates();return;
                 }
                 after(player,35,()->open(player,true,item));return;

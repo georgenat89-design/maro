@@ -63,4 +63,13 @@ public final class AuctionMarket {
         String clean=message.replaceAll("§.","").toLowerCase(Locale.ROOT).replaceAll("\\s+"," ");
         return clean.matches(".*(?:already (?:been )?(?:purchased|bought|sold)|(?:item|listing|auction) (?:was |has been )?sold|(?:item|listing|auction) (?:is |has )?(?:no longer available|expired)).*");
     }
+    public static String listingIdentity(ItemStack stack){
+        StringBuilder key=new StringBuilder(stack.getName().getString());var lore=stack.get(DataComponentTypes.LORE);
+        if(lore!=null)for(var line:lore.lines()){
+            String text=line.getString().replaceAll("§.","");String lower=text.toLowerCase(Locale.ROOT);
+            if(lower.matches(".*(?:expir|time left|time remaining|remaining time|ends in|listed .*ago).*"))continue;
+            key.append('|').append(text);
+        }
+        return key.toString();
+    }
 }
