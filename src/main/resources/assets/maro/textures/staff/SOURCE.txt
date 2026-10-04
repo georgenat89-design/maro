@@ -1,0 +1,5 @@
+Staff face images copied from the user-provided SignalDebug-CrackedByEnvy-NEWEST.jar,
+assets/bypass/textures/admin/. Recovered module: dev.Dexter.\u0234.\u01a7 (Staff Notifier).
+Default account names and settings were decoded from its Java string table.
+The original tracking and rendering implementations were JNI native methods;
+Maro's StaffNotifier recreates those features with independently implemented code.

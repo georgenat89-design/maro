@@ -33,6 +33,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.SkinAccessories());
         register(new dev.maro.module.impl.visuals.Pet());
         register(new dev.maro.module.impl.visuals.BaseESP());
+        register(new dev.maro.module.impl.visuals.StaffNotifier());
         dev.maro.nathan.NameeProtectAddon.init();
 
         // Register your modules here, e.g.

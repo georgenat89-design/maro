@@ -35,6 +35,10 @@ public class MaroClientGameTest implements FabricClientGameTest {
             // make sure nothing (pause menu, toasts...) is in the way before testing the keybind
             context.setScreen(() -> null);
             context.waitTicks(5);
+            if (Boolean.getBoolean("maro.gametest.staffOnly")) {
+                StaffNotifierChecks.run(context);
+                return;
+            }
             if (Boolean.getBoolean("maro.gametest.baseEspOnly")) {
                 BaseEspChecks.run(context, singleplayer);
                 return;
@@ -59,6 +63,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             SkinAccessoriesChecks.run(context);
             PetChecks.run(context, singleplayer);
             BaseEspChecks.run(context, singleplayer);
+            StaffNotifierChecks.run(context);
             String before = context.computeOnClient(client -> describe(client));
             context.takeScreenshot("maro-00-world");
 
