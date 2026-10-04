@@ -198,6 +198,25 @@ public class MaroClientGameTest implements FabricClientGameTest {
             });
             if (cullingAfter != cullingBefore) throw new AssertionError("FreeCam did not restore chunk culling");
 
+            // Freelook through walls: the same, while the orbiting camera can pass through blocks.
+            boolean freelookOff = context.computeOnClient(client -> {
+                var freeLook = ModuleManager.get(dev.maro.nathan.modules.FreeLook.class);
+                freeLook.getSettings().stream().filter(s -> s.getName().equals("through walls")).findFirst()
+                        .orElseThrow().fromJson(new com.google.gson.JsonPrimitive(true));
+                freeLook.setEnabled(true);
+                return !client.chunkCullingEnabled;
+            });
+            settle(context);
+            context.takeScreenshot("maro-freelook-through-walls");
+            boolean freelookRestored = context.computeOnClient(client -> {
+                var freeLook = ModuleManager.get(dev.maro.nathan.modules.FreeLook.class);
+                freeLook.setEnabled(false);
+                for (var s : freeLook.getSettings()) if (s.getName().equals("through walls")) s.reset();
+                return client.chunkCullingEnabled == cullingBefore;
+            });
+            if (!freelookOff) throw new AssertionError("Freelook through walls left chunk culling on");
+            if (!freelookRestored) throw new AssertionError("Freelook did not restore chunk culling");
+
             checkInventoryHud(context, singleplayer);
             checkFullbright(context, singleplayer);
             checkAutoMine(context, singleplayer);

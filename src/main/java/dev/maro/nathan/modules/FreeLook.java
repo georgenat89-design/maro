@@ -1,6 +1,7 @@
 package dev.maro.nathan.modules;
 
 import dev.maro.runtime.events.game.GameLeftEvent;
+import dev.maro.runtime.events.world.TickEvent;
 import dev.maro.runtime.settings.BoolSetting;
 import dev.maro.runtime.settings.DoubleSetting;
 import dev.maro.runtime.settings.EnumSetting;
@@ -132,6 +133,14 @@ public class FreeLook extends Module {
     /** The perspective to go back to, if it was changed. */
     private Perspective before;
 
+    /**
+     * Whether chunk culling was on before the camera was let through walls; null while it is not.
+     * Culling works out what is visible from the block the camera is in, so with the camera inside
+     * the ground or a wall it hides whole chunks - the world loads in patches. Off while the camera
+     * can go through blocks, the same as Free Cam.
+     */
+    private Boolean ownChunkCulling;
+
     public FreeLook() {
         super(NameeProtectAddon.CATEGORY, "freelook", "Look around with the camera while your player keeps facing, aiming and moving the way it was.");
 
@@ -169,6 +178,8 @@ public class FreeLook extends Module {
             before = mc.options.getPerspective();
             mc.options.setPerspective(Perspective.THIRD_PERSON_BACK);
         }
+
+        updateCulling();
     }
 
     @Override
@@ -176,6 +187,38 @@ public class FreeLook extends Module {
         if (before != null && mc.options != null) mc.options.setPerspective(before);
 
         before = null;
+        restoreCulling();
+    }
+
+    @EventHandler
+    private void onTick(TickEvent.Post event) {
+        updateCulling();
+    }
+
+    /** Culling off while the camera may pass through blocks, back as it was otherwise. */
+    private void updateCulling() {
+        boolean throughBlocks = isActive() && mode.get() == Mode.Player && throughWalls.get();
+
+        if (throughBlocks && ownChunkCulling == null) {
+            ownChunkCulling = mc.chunkCullingEnabled;
+            mc.chunkCullingEnabled = false;
+            if (mc.worldRenderer != null) mc.worldRenderer.scheduleTerrainUpdate();
+        } else if (!throughBlocks) {
+            restoreCulling();
+        }
+    }
+
+    private void restoreCulling() {
+        if (ownChunkCulling == null) return;
+
+        mc.chunkCullingEnabled = ownChunkCulling;
+        ownChunkCulling = null;
+        if (mc.worldRenderer != null) mc.worldRenderer.scheduleTerrainUpdate();
+    }
+
+    /** Whether this has chunk culling turned off right now, for the in-game test. */
+    public boolean cullingOff() {
+        return ownChunkCulling != null;
     }
 
     @EventHandler
