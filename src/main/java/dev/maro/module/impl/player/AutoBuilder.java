@@ -15,6 +15,7 @@ import dev.maro.module.impl.visuals.StaffNotifier;
 import dev.maro.setting.*;
 import dev.maro.runtime.settings.StringSetting;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.block.*;
 import net.minecraft.client.gui.DrawContext;
@@ -68,6 +69,7 @@ public final class AutoBuilder extends Module {
     private final NumberSetting walkDistance=fixedNumber("Restock Walk Distance","Maximum distance to a marked container",64,4,64,1);
     private final NumberSetting restockDirt=number("Materials","Support Dirt Reserve","Dirt reserved for temporary supports when restocking or buying",64,0,512,1);
     private final BooleanSetting stockpile=bool("Materials","Stockpile In Chests","Deposit surplus whole stacks of building materials into marked chests",false);
+    private final ModeSetting depositWhen=mode("Materials","Deposit All Items","Move inventory and hotbar into the nearest double chest and continue buying when full","Inventory Full","Inventory Full","Manual","After Buying","After Build");
     public final BooleanSetting showContainers=fixedBool("Show Restock Containers","Outline marked chests",true);
     public final BooleanSetting showLabels=fixedBool("Show Restock Labels","Show marked container coordinates on the progress panel",true);
     public final NumberSetting containerRange=fixedNumber("Restock Render Distance","Visible range of marked chest outlines",64,8,128,1);
@@ -75,7 +77,7 @@ public final class AutoBuilder extends Module {
     public final NumberSetting labelScale=fixedNumber("Restock Label Scale","Size of chest information in the progress panel",.8,.5,1.5,.05);
     private final KeybindSetting buyBind=fixedBind("Auto Buy Key","Start a material buying session",-1);
     private final BooleanSetting autoBuy=bool("Materials","Auto Buy When Missing","Start buying after marked containers are exhausted",false);
-    private final BooleanSetting preferStacks=fixedBool("Prefer Stacks","Prefer full stacks when their unit price is within tolerance",true);
+    private final BooleanSetting preferStacks=fixedBool("Prefer Stacks","Prefer full stacks when their unit price is within tolerance",false);
     private final NumberSetting tolerance=fixedNumber("Stack Price Tolerance %","Maximum premium for a preferred stack",15,0,100,1);
     private final NumberSetting overbuy=fixedNumber("Max Overbuy","Maximum extra items beyond the missing quantity",16,0,64,1);
     private final NumberSetting maxItem=number("Materials","Max Price Per Item","0 disables the per-item ceiling; total budget still applies",1000,0,1_000_000_000,1);
@@ -92,7 +94,6 @@ public final class AutoBuilder extends Module {
     private final dev.maro.runtime.settings.Setting<String> confirmNo=fixedText("Confirm No Word","Rejected/cancel labels, separated with ;","Cancel;No");
     private final dev.maro.runtime.settings.Setting<String> confirmTitle=fixedText("Confirm Title Word","Recognized confirmation titles, separated with ;","Confirm;Purchase;Sure");
     private final dev.maro.runtime.settings.Setting<String> nextWord=fixedText("Next Page Word","Label on the next-page button","Next page");
-    private final dev.maro.runtime.settings.Setting<String> boughtWord=fixedText("Already Bought Word","Label indicating an unavailable auction","already bought");
     public final BooleanSetting showPreview=bool("Preview","Show Preview","Render the schematic while the module is enabled",true);
     public final BooleanSetting textured=fixedBool("Textured Preview","Render the actual block models and textures",true);
     public final ModeSetting previewMode=fixedMode("Preview Mode","Full blueprint or only cells which need work","Missing & Wrong","Full","Missing & Wrong","Outline Only");
@@ -140,6 +141,7 @@ public final class AutoBuilder extends Module {
     private boolean loading,building,preview=true,ownsSneak;
     private final Map<Item,Integer> remaining=new HashMap<>();
     private final Set<BlockPos> containers=new LinkedHashSet<>(),supports=new LinkedHashSet<>();
+    private final Set<Item> ignoredMaterials=new HashSet<>();
     private final Set<BlockPos> triedContainers=new HashSet<>();
     private final Set<Integer> restockTriedSlots=new HashSet<>();
     private final Map<Integer,Integer> retryAt=new HashMap<>();
@@ -178,6 +180,19 @@ public final class AutoBuilder extends Module {
     private double spent,estimate;
     private AuctionMarket.Offer pendingOffer;
     private final Set<String> boughtListings=new HashSet<>();
+    private final Set<String> unavailableListings=new HashSet<>();
+    private String pendingListing="";
+    private boolean soldNotice;
+    private int soldSkips;
+    private AuctionMarket.Offer bestMarketOffer;
+    private String bestMarketKey="";
+    private int bestMarketPage,marketRechecks;
+    private boolean returningToOffer;
+    private boolean depositing;
+    private BlockPos depositTarget;
+    private int depositOpenWait,depositSlot=-1,depositCount,depositDeadline,depositAckDeadline;
+    private boolean resumeShoppingAfterDeposit;
+    private final LinkedHashMap<Item,Integer> depositedShopping=new LinkedHashMap<>();
 
     public AutoBuilder(){
         super("Auto Builder","Load, preview and build schematics with materials, chest restocking and auction buying",Category.PLAYER);
@@ -188,13 +203,17 @@ public final class AutoBuilder extends Module {
         button("Snapshot","Paste Schematic","Paste block states using setblock commands; needs creative and server permission","Paste",this::startPaste).visible(()->mc.player!=null&&mc.player.getAbilities().creativeMode);
         button("Start","Start / Resume Build","Start using the selected Build Mode","Build",this::startBuild);
         button("Start","Pause Build","Keep the preview visible and release all inputs","Pause",()->pause("Paused"));
+        button("Start","Restart Build","Rescan the current schematic and restart at the same origin","Restart",this::restartBuild);
+        button("Start","Cancel Schematic","Stop all actions and unload the schematic; placed blocks remain","Cancel",this::cancelSchematic);
         button("Snapshot","Capture Snapshot","Save the configured area from the placement origin to a vanilla .nbt file","Capture",this::startCapture);
         button("Materials","Mark Restock Container","Mark or unmark the container you are looking at","Mark",this::markContainer);
         button("Materials","Clear Restock Marks","Clear this world's marked containers","Clear",()->{containers.clear();triedContainers.clear();});
         button("Materials","Buy Materials","Buy missing materials within your configured budget","Buy",()->startBuying(false));
         button("Materials","Estimate Cost","Read current auction listings without buying","Estimate",()->startBuying(true));
         button("Materials","Cancel Buying","Stop the shopping session","Cancel",()->finishBuying("Buying cancelled"));
+        button("Materials","Deposit All","Move inventory and hotbar items into the nearest loaded double chest within 64 blocks","Deposit",this::depositAll);
         ClientTickEvents.START_CLIENT_TICK.register(client->{digging=false;if(isEnabled())tickWork();});
+        ClientReceiveMessageEvents.GAME.register((message,overlay)->{if(buying&&pendingOffer!=null&&(marketStage==2||marketStage==3)&&AuctionMarket.unavailable(message.getString()))soldNotice=true;});
     }
     // Rendering/protocol defaults are internal; they no longer clutter the saved settings UI.
     private BooleanSetting fixedBool(String n,String d,boolean value){return new BooleanSetting(n,d,value);}
@@ -237,6 +256,7 @@ public final class AutoBuilder extends Module {
     public boolean loading(){return loading;}
     public boolean building(){return building;}
     public boolean buying(){return buying;}
+    public boolean depositing(){return depositing;}
     public double sessionSpend(){return spent;}
     public double auctionBudget(){return maxSpend.get();}
     public void auctionBudget(double value){maxSpend.set(value);}
@@ -253,10 +273,17 @@ public final class AutoBuilder extends Module {
     public List<Integer> visibleCells(){return visible;}
     public Set<BlockPos> restockContainers(){return Collections.unmodifiableSet(containers);}
     public Set<BlockPos> temporarySupports(){return Set.copyOf(supports);}
+    public boolean materialIgnored(Item item){return ignoredMaterials.contains(item);}
+    private boolean materialIgnored(BlockState state){var item=Schematic.material(state);return materialIgnored(item==Items.AIR?state.getBlock().asItem():item);}
+    public void toggleMaterialIgnored(Item item){
+        if(schematic==null||!schematic.materials().containsKey(item))return;
+        boolean resume=building;if(!ignoredMaterials.remove(item))ignoredMaterials.add(item);replan();building=resume;
+        status=(materialIgnored(item)?"Ignoring ":"Including ")+item.getName().getString();
+    }
     public BlockPos anchor(){return useOffset.get()?origin.add(schematic.offset):origin;}
     public boolean layerAllows(int index){int y=schematic.local(index).getY();return layerMode.is("All")||layerMode.is("Single")&&y==layer.getInt()||layerMode.is("Below")&&y<=layer.getInt();}
     public boolean showCell(int index){
-        if(!layerAllows(index))return false;byte s=states[index];
+        if(!layerAllows(index)||materialIgnored(desired(index)))return false;byte s=states[index];
         return s==CORRECT&&(renderCorrect.get()||previewMode.is("Full"))||s==MISSING&&renderMissing.get()||(s==WRONG_BLOCK||s==WRONG_STATE)&&renderIncorrect.get()||s==UNKNOWN&&!desired(index).isAir();
     }
     public Map<Item,Integer> remainingMaterials(){return Map.copyOf(remaining);}
@@ -270,7 +297,9 @@ public final class AutoBuilder extends Module {
         origin=pos.toImmutable();world=mc.world;dimension=nextDimension;replan();
     }
     private void replan(){
-        if(schematic==null)return;pause("Placement changed");transformedStates.clear();triedStands.clear();states=new byte[schematic.size()];unitsLeft=new byte[schematic.size()];scanCursor=correct=completedScans=passTasks=0;lastPassTasks=schematic.size();solid=schematic.solidCount();remaining.clear();remaining.putAll(schematic.materials());visible=workCells=List.of();visibleScan.clear();workScan.clear();retryAt.clear();triedContainers.clear();
+        if(schematic==null)return;pause("Placement changed");transformedStates.clear();triedStands.clear();states=new byte[schematic.size()];unitsLeft=new byte[schematic.size()];scanCursor=correct=completedScans=passTasks=0;lastPassTasks=schematic.size();solid=schematic.solidCount();
+        for(int i=0;i<schematic.size();i++)if(materialIgnored(schematic.state(i))&&!schematic.state(i).isAir()&&!schematic.state(i).isOf(Blocks.STRUCTURE_VOID))solid--;
+        remaining.clear();remaining.putAll(schematic.materials());remaining.keySet().removeAll(ignoredMaterials);visible=workCells=List.of();visibleScan.clear();workScan.clear();retryAt.clear();triedContainers.clear();
     }
     private void applyPreset(String name){
         if(ghostFill==null)return;
@@ -284,6 +313,19 @@ public final class AutoBuilder extends Module {
         var miner=ModuleManager.get(AutoMine.class);if(miner!=null&&miner.isEnabled())miner.setEnabled(false);
         setEnabled(true);building=true;preview=true;staffStopAt=0;triedContainers.clear();retryAt.clear();status=mode.is("Semi Auto")?"Hold right mouse to build":"Building";mc.setScreen(null);
     }
+    public void restartBuild(){
+        if(!inGame()||schematic==null||loading){notify("Join a world and load a schematic first");return;}
+        replan();cleanupStands.clear();delay=inventoryWait=0;needed=null;lastAction=ticks;
+        startBuild();
+    }
+    public void cancelSchematic(){
+        ++ioGeneration;loading=false;pause("Schematic cancelled");setEnabled(false);
+        schematic=null;selected="";preview=false;captureStates=null;capture=null;
+        states=unitsLeft=new byte[0];scanCursor=correct=solid=completedScans=passTasks=lastPassTasks=0;
+        remaining.clear();ignoredMaterials.clear();supports.clear();cleanupStands.clear();triedStands.clear();retryAt.clear();transformedStates.clear();
+        visible=workCells=List.of();visibleScan.clear();workScan.clear();needed=null;delay=inventoryWait=0;staffStopAt=0;
+        status="Schematic cancelled — choose another to start";
+    }
     @Override protected void onEnable(){
         if(!inGame()){setEnabled(false);return;}
         originalSlot=mc.player.getInventory().getSelectedSlot();
@@ -294,7 +336,7 @@ public final class AutoBuilder extends Module {
     @Override protected void onDisable(){pause("Disabled");staffStopAt=0;captureStates=null;if(mc.player!=null&&originalSlot>=0)select(originalSlot);originalSlot=-1;}
     public void pause(String reason){
         yawVelocity=pitchVelocity=0;
-        building=false;pasting=false;placement=null;mining=null;standGoal=null;digging=false;walker.stop();releaseSneak();
+        building=false;pasting=false;depositing=false;depositTarget=null;depositSlot=-1;resumeShoppingAfterDeposit=false;depositedShopping.clear();placement=null;mining=null;standGoal=null;digging=false;walker.stop();releaseSneak();
         if(mc.interactionManager!=null)mc.interactionManager.cancelBlockBreaking();
         if(ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler)mc.player.closeHandledScreen();
         ownedHandler=null;restockTarget=null;buying=false;pendingOffer=null;shopping.clear();status=reason;
@@ -314,8 +356,9 @@ public final class AutoBuilder extends Module {
         if(!mc.player.isAlive()||mc.player.isSpectator()){pause("Player is not able to build");return;}
         scan();captureTick();
         if(staffStopAt>0){if(logoff.get()&&System.currentTimeMillis()-staffStopAt>=logoffDelay.get()*1000){mc.world.disconnect(Text.literal(logoffMessage.get()));setEnabled(false);}return;}
-        if((building||buying||pasting)&&unsafe()){walker.release();return;}
+        if((building||buying||pasting||depositing)&&unsafe()){walker.release();return;}
         if(buying){marketTick();return;}
+        if(depositing){depositTick();return;}
         if(pasting){pasteTick();return;}
         if(!building||schematic==null||origin==null||loading)return;
         if(restockTarget!=null){restockTick();return;}
@@ -350,7 +393,7 @@ public final class AutoBuilder extends Module {
         do{
             int i=scanCursor++;updateState(i);BlockState expected=desired(i);
             double distance=Vec3d.ofCenter(position(i)).squaredDistanceTo(camera);
-            if(layerAllows(i)&&schematic.included(i)&&(!expected.isAir()||mineOut.get())&&states[i]!=CORRECT){
+            if(layerAllows(i)&&schematic.included(i)&&(!expected.isAir()||mineOut.get())&&states[i]!=CORRECT&&states[i]!=IGNORED){
                 passTasks++;var candidate=new Visible(i,distance+schematic.local(i).getY()*.3);
                 if(workScan.size()<256)workScan.add(candidate);else if(candidate.distance<workScan.peek().distance){workScan.poll();workScan.add(candidate);}
             }
@@ -366,7 +409,7 @@ public final class AutoBuilder extends Module {
         }while(++count<8192&&System.nanoTime()<deadline&&scanCursor!=0);
     }
     private byte classify(int i){
-        var wanted=desired(i);if(wanted.isOf(Blocks.STRUCTURE_VOID))return IGNORED;
+        var wanted=desired(i);if(wanted.isOf(Blocks.STRUCTURE_VOID)||materialIgnored(wanted))return IGNORED;
         var pos=position(i);if(!mc.world.isChunkLoaded(pos))return UNKNOWN;
         var actual=mc.world.getBlockState(pos);
         return wanted.equals(actual)||wanted.isAir()&&actual.isAir()?CORRECT:actual.isAir()||actual.isReplaceable()?MISSING:actual.getBlock()==wanted.getBlock()?WRONG_STATE:WRONG_BLOCK;
@@ -375,10 +418,10 @@ public final class AutoBuilder extends Module {
         byte next=classify(index),old=states[index];
         var expected=desired(index);if(!expected.isAir()&&!expected.isOf(Blocks.STRUCTURE_VOID)){
             int change=(next==CORRECT?1:0)-(old==CORRECT?1:0);correct+=change;
-            var item=Schematic.material(expected);int oldUnits=old==UNKNOWN?Schematic.units(expected):unitsLeft[index],newUnits=next==CORRECT?0:Schematic.units(expected);
+            var item=Schematic.material(expected);int oldUnits=old==UNKNOWN?Schematic.units(expected):unitsLeft[index],newUnits=next==CORRECT||next==IGNORED?0:Schematic.units(expected);
             if(newUnits==2&&mc.world.isChunkLoaded(position(index))){var actual=mc.world.getBlockState(position(index));if(actual.getBlock()==expected.getBlock()&&actual.contains(net.minecraft.state.property.Properties.SLAB_TYPE)&&actual.get(net.minecraft.state.property.Properties.SLAB_TYPE)!=net.minecraft.block.enums.SlabType.DOUBLE)newUnits=1;}
             unitsLeft[index]=(byte)newUnits;int delta=oldUnits-newUnits;
-            if(item!=Items.AIR&&delta!=0)remaining.compute(item,(k,v)->Math.max(0,(v==null?0:v)-delta));
+            if(item!=Items.AIR&&delta!=0&&!materialIgnored(item))remaining.compute(item,(k,v)->Math.max(0,(v==null?0:v)-delta));
         }
         states[index]=next;
     }
@@ -401,7 +444,7 @@ public final class AutoBuilder extends Module {
                 }
                 mining=pos;mineTick();return;
             }
-            pause("Build complete");notify("Build complete: "+solid+" blocks");return;
+            pause("Build complete");notify("Build complete: "+solid+" blocks");if(depositWhen.is("After Build"))depositAll();return;
         }
         List<Integer> candidates=new ArrayList<>();
         // A local neighborhood is cheap even for multi-million-cell schematics; global nearest cells
@@ -579,7 +622,8 @@ public final class AutoBuilder extends Module {
     private static boolean clickable(Block block){return dev.maro.runtime.utils.world.BlockUtils.isClickable(block);}
     private void releaseSneak(){if(ownsSneak){mc.options.sneakKey.setPressed(false);ownsSneak=false;}}
     private boolean beginRestock(){
-        restockTarget=containers.stream().filter(p->!triedContainers.contains(p)&&p.getSquaredDistance(mc.player.getBlockPos())<=walkDistance.get()*walkDistance.get()&&mc.world.isChunkLoaded(p))
+        var nearest=nearestDoubleChest(triedContainers);if(nearest!=null)containers.add(nearest);
+        restockTarget=nearest!=null?nearest:containers.stream().filter(p->!triedContainers.contains(p)&&p.getSquaredDistance(mc.player.getBlockPos())<=walkDistance.get()*walkDistance.get()&&mc.world.isChunkLoaded(p))
             .min(Comparator.comparingDouble(p->p.getSquaredDistance(mc.player.getBlockPos()))).orElse(null);
         if(restockTarget==null)return false;restockWait=inventoryWait=0;restockTriedSlots.clear();walker.stop();status="Restocking";return true;
     }
@@ -588,7 +632,7 @@ public final class AutoBuilder extends Module {
             if(!(mc.currentScreen instanceof HandledScreen<?> screen)||screen.getScreenHandler()!=ownedHandler){ownedHandler=null;triedContainers.add(restockTarget);restockTarget=null;return;}
             if(!ownedHandler.getCursorStack().isEmpty()){status="Restock paused — clear the cursor";return;}
             if(inventoryWait>0){inventoryWait--;return;}
-            Map<Item,Integer> required=new HashMap<>(remaining);if(support.get())required.merge(Items.DIRT,restockDirt.getInt(),Integer::sum);
+            Map<Item,Integer> required=new HashMap<>(remaining);if(support.get())required.merge(Items.DIRT,restockDirt.getInt(),Integer::sum);required.keySet().removeAll(ignoredMaterials);
             for(var slot:ownedHandler.slots){
                 var stack=slot.getStack();if(stack.isEmpty()||slot.inventory==mc.player.getInventory()||restockTriedSlots.contains(slot.id))continue;
                 if(inventoryCount(stack.getItem())<required.getOrDefault(stack.getItem(),0)&&canReceive(stack.getItem())){
@@ -615,6 +659,71 @@ public final class AutoBuilder extends Module {
         releaseSneak();mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,hit);restockWait=1;
     }
     private boolean canReceive(Item item){for(int i=0;i<36;i++){var stack=mc.player.getInventory().getStack(i);if(stack.isEmpty()||stack.isOf(item)&&stack.getCount()<stack.getMaxCount())return true;}return false;}
+    public void depositAll(){
+        if(!inGame()){notify("Join a world before depositing");return;}
+        if(mc.player.currentScreenHandler!=mc.player.playerScreenHandler&&ownedHandler!=mc.player.currentScreenHandler){notify("Close the current container before depositing");return;}
+        pause("Finding the nearest double chest");
+        BlockPos nearest=nearestDoubleChest(Set.of());
+        if(nearest==null){status="No loaded double chest within 64 blocks";notify(status);return;}
+        setEnabled(true);building=false;depositing=true;depositTarget=nearest;depositOpenWait=inventoryWait=0;depositSlot=-1;depositDeadline=ticks+1200;walker.stop();
+        containers.add(nearest);status="Depositing all inventory items";mc.setScreen(null);
+    }
+    private BlockPos nearestDoubleChest(Set<BlockPos> excluded){
+        BlockPos nearest=null;double best=64*64;int cx=mc.player.getChunkPos().x,cz=mc.player.getChunkPos().z;
+        for(int x=cx-4;x<=cx+4;x++)for(int z=cz-4;z<=cz+4;z++){
+            if(!mc.world.isChunkLoaded(new BlockPos(x<<4,mc.player.getBlockY(),z<<4)))continue;
+            for(var pos:mc.world.getChunk(x,z).getBlockEntities().keySet()){
+                double distance=pos.getSquaredDistance(mc.player.getBlockPos());if(distance>=best||!doubleChest(pos)||excluded.contains(pos)||excluded.contains(pos.offset(ChestBlock.getFacing(mc.world.getBlockState(pos)))))continue;
+                nearest=pos.toImmutable();best=distance;
+            }
+        }
+        return nearest;
+    }
+    private boolean doubleChest(BlockPos pos){
+        var state=mc.world.getBlockState(pos);if(!(state.getBlock() instanceof ChestBlock)||state.get(ChestBlock.CHEST_TYPE)==net.minecraft.block.enums.ChestType.SINGLE)return false;
+        var partner=pos.offset(ChestBlock.getFacing(state));if(!mc.world.isChunkLoaded(partner))return false;var other=mc.world.getBlockState(partner);
+        return other.getBlock()==state.getBlock()&&other.get(ChestBlock.CHEST_TYPE)!=net.minecraft.block.enums.ChestType.SINGLE&&other.get(ChestBlock.CHEST_TYPE)!=state.get(ChestBlock.CHEST_TYPE)&&other.get(ChestBlock.FACING)==state.get(ChestBlock.FACING);
+    }
+    private void finishDeposit(String reason){
+        finishDeposit(reason,false);
+    }
+    private void finishDeposit(String reason,boolean success){
+        if(ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler)mc.player.closeHandledScreen();
+        ownedHandler=null;depositing=false;depositTarget=null;depositSlot=-1;walker.stop();status=reason;notify(reason);
+        if(success&&resumeShoppingAfterDeposit){shopping.clear();shopping.putAll(depositedShopping);buyingItem=null;pendingOffer=null;buying=true;marketStage=0;marketWait=6;status="Continuing buying after deposit";}
+        resumeShoppingAfterDeposit=false;depositedShopping.clear();
+    }
+    private void depositTick(){
+        if(!doubleChest(depositTarget)){finishDeposit("Deposit stopped — double chest is no longer available");return;}
+        if(ticks>=depositDeadline){finishDeposit("Deposit stopped — no clear path or inventory update");return;}
+        if(ownedHandler!=null){
+            if(!(mc.currentScreen instanceof HandledScreen<?> menu)||menu.getScreenHandler()!=ownedHandler){finishDeposit("Deposit cancelled — chest closed");return;}
+            if(!ownedHandler.getCursorStack().isEmpty()){status="Deposit paused — clear the cursor";return;}
+            if(inventoryWait>0){inventoryWait--;return;}
+            if(depositSlot>=0){
+                var current=ownedHandler.getSlot(depositSlot).getStack();
+                if(!current.isEmpty()&&current.getCount()>=depositCount){if(ticks>=depositAckDeadline)finishDeposit("Double chest full or transfer rejected — remaining items kept");return;}
+                depositSlot=-1;
+            }
+            for(var slot:ownedHandler.slots){
+                if(slot.inventory!=mc.player.getInventory()||slot.getStack().isEmpty())continue;
+                depositSlot=slot.id;depositCount=slot.getStack().getCount();
+                mc.interactionManager.clickSlot(ownedHandler.syncId,slot.id,0,SlotActionType.QUICK_MOVE,mc.player);inventoryWait=actionDelay();depositAckDeadline=ticks+80;status="Moving items into double chest";return;
+            }
+            finishDeposit("Inventory deposited into double chest",true);return;
+        }
+        if(mc.currentScreen instanceof HandledScreen<?> screen){
+            if(depositOpenWait>0&&screen.getScreenHandler() instanceof GenericContainerScreenHandler chest){
+                ownedHandler=chest;walker.release();if(chest.getRows()!=6)finishDeposit("Deposit stopped — expected a double chest");return;
+            }
+            status="Close the current menu to deposit";walker.release();return;
+        }
+        if(depositOpenWait>0){if(++depositOpenWait>80)finishDeposit("Could not open double chest");return;}
+        if(!walker.approach(depositTarget,effectiveReach()-.5)){status=walker.status;return;}
+        var hit=visibleHit(depositTarget);if(hit==null){finishDeposit("Double chest is obstructed — clear the lid or path");return;}
+        if(!aim(hit.getPos())){status="Aiming at double chest";return;}
+        releaseSneak();mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,hit);depositOpenWait=1;
+    }
     private void creativeMaterials(){
         if(!inGame()||schematic==null||!mc.player.getAbilities().creativeMode){notify("Get Materials requires creative mode");return;}
         for(var entry:remaining.entrySet()){
@@ -633,7 +742,7 @@ public final class AutoBuilder extends Module {
     private void pasteTick(){
         if(mc.currentScreen!=null)return;int actions=0;
         while(pasteCursor<schematic.size()&&actions<2){
-            int i=pasteCursor++;if(!schematic.included(i)||!layerAllows(i))continue;var state=desired(i);if(state.isAir()&&!mineOut.get())continue;
+            int i=pasteCursor++;if(!schematic.included(i)||!layerAllows(i))continue;var state=desired(i);if(materialIgnored(state)||state.isAir()&&!mineOut.get())continue;
             var pos=position(i);mc.getNetworkHandler().sendChatCommand("setblock "+pos.getX()+" "+pos.getY()+" "+pos.getZ()+" "+blockString(state));actions++;
         }
         if(pasteCursor==schematic.size()){pasting=false;notify("Paste commands sent");status="Paste complete";}
@@ -656,12 +765,12 @@ public final class AutoBuilder extends Module {
         }
         if(captureCursor!=captureStates.length)return;
         String name="snapshot-"+DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").format(LocalDateTime.now())+".nbt";
-        capture=new Schematic(name,"Snapshot",w,capturedHeight,l,BlockPos.ORIGIN,captureStates);captureStates=null;Schematic snapshot=capture;Path path=folder().resolve(name);
+        capture=new Schematic(name,"Snapshot",w,capturedHeight,l,BlockPos.ORIGIN,captureStates);captureStates=null;Schematic snapshot=capture;Path path=folder().resolve(name);int generation=ioGeneration;
         CompletableFuture.runAsync(()->{try{NbtIo.writeCompressed(SchematicIO.encodeStructure(snapshot),path);}catch(IOException e){throw new CompletionException(e);}},IO)
-            .whenComplete((result,error)->mc.execute(()->{if(error!=null)notify("Snapshot save failed: "+rootMessage(error));else{load(path);notify("Saved "+name+" (block states)");}}));
+            .whenComplete((result,error)->mc.execute(()->{if(generation!=ioGeneration)return;if(error!=null)notify("Snapshot save failed: "+rootMessage(error));else{load(path);notify("Saved "+name+" (block states)");}}));
     }
     private Map<Item,Integer> shoppingNeeds(int dirt){
-        Map<Item,Integer> result=new HashMap<>(remaining);if(support.get())result.merge(Items.DIRT,dirt,Integer::sum);
+        Map<Item,Integer> result=new HashMap<>(remaining);if(support.get())result.merge(Items.DIRT,dirt,Integer::sum);result.keySet().removeAll(ignoredMaterials);
         result.replaceAll((item,count)->Math.max(0,count-inventoryCount(item)));result.values().removeIf(count->count<=0);return result;
     }
     private void startBuying(boolean estimateOnly){
@@ -671,21 +780,26 @@ public final class AutoBuilder extends Module {
         boolean resume=building&&!estimateOnly&&autoBuy.get();
         pause(estimateOnly?"Estimating auction cost":"Buying materials");setEnabled(true);building=false;buying=true;resumeAfterMarket=resume;estimating=estimateOnly;shopping.clear();
         shoppingNeeds(buyDirt.getInt()).entrySet().stream().sorted(Comparator.comparing(e->Registries.ITEM.getId(e.getKey()).toString())).forEach(e->shopping.put(e.getKey(),e.getValue()));
-        spent=estimate=0;buyingItem=null;marketWait=marketStage=0;pendingOffer=null;boughtListings.clear();
+        spent=estimate=0;buyingItem=null;marketWait=marketStage=0;pendingOffer=null;boughtListings.clear();unavailableListings.clear();pendingListing="";soldNotice=false;soldSkips=marketRechecks=0;
         if(buyNotifications.get())notify(estimateOnly?"Reading auction prices":"Material buying started — budget "+(long)maxSpend.get().doubleValue());
     }
     private void searchMarket(){
+        searchMarket(false);
+    }
+    private void searchMarket(boolean returnToBest){
         String key=Registries.ITEM.getId(buyingItem).toString();if(!ahSearch.is("Registry ID")){key=Registries.ITEM.getId(buyingItem).getPath();if(ahSearch.is("Spaced"))key=key.replace('_',' ');}
         String command=ahCommand.get().strip().replaceFirst("^/","");
         if(!command.matches("[a-zA-Z0-9_]+")){finishBuying("Invalid AH command");return;}
         if(mc.currentScreen instanceof HandledScreen<?>)mc.player.closeHandledScreen();
+        ownedHandler=null;marketPage=1;returningToOffer=returnToBest;
+        if(!returnToBest){bestMarketOffer=null;bestMarketKey="";bestMarketPage=0;}
         boughtListings.clear();
         mc.getNetworkHandler().sendChatCommand(command+" "+key);marketWait=10;marketStage=1;marketDeadline=ticks+160;status="Searching "+buyingItem.getName().getString();
     }
     private void marketTick(){
         if(marketWait>0){marketWait--;return;}
         if(buyingItem==null){
-            if(shopping.isEmpty()){boolean resume=resumeAfterMarket&&!estimating;finishBuying(estimating?"Estimated material cost: "+Math.round(estimate):"Buying finished — spent "+Math.round(spent));if(resume){building=true;delay=6;status="Continuing build after buying";}return;}
+            if(shopping.isEmpty()){boolean resume=resumeAfterMarket&&!estimating;boolean deposit=!estimating&&depositWhen.is("After Buying");finishBuying(estimating?"Estimated material cost: "+Math.round(estimate):"Buying finished — spent "+Math.round(spent));if(deposit)depositAll();else if(resume){building=true;delay=6;status="Continuing build after buying";}return;}
             buyingItem=shopping.keySet().iterator().next();marketPage=1;searchMarket();return;
         }
         // Some AH servers buy on the listing click; others reuse the same handler for confirmation.
@@ -696,7 +810,19 @@ public final class AutoBuilder extends Module {
                 if(marketStage==2)spent+=pendingOffer.total();
                 shopping.computeIfPresent(buyingItem,(k,v)->Math.max(0,v-gained));if(shopping.getOrDefault(buyingItem,0)<=0)shopping.remove(buyingItem);
                 status="Bought "+gained+" "+buyingItem.getName().getString();
-                pendingOffer=null;buyingItem=null;marketStage=0;marketWait=buySpacing.getInt();return;
+                pendingOffer=null;buyingItem=null;marketStage=0;marketRechecks=0;soldNotice=false;marketWait=buySpacing.getInt();return;
+            }
+            boolean unavailable=soldNotice;
+            if(mc.currentScreen instanceof HandledScreen<?> menu){
+                unavailable|=AuctionMarket.unavailable(menu.getTitle().getString())||menu.getScreenHandler().slots.stream().anyMatch(slot->slot.inventory!=mc.player.getInventory()&&AuctionMarket.unavailable(slot.getStack().getName().getString()));
+            }
+            if(unavailable){
+                soldNotice=false;
+                if(gained!=0){finishBuying("Partial purchase receipt — check inventory before buying again");return;}
+                if(marketStage==3)spent=Math.max(0,spent-pendingOffer.total());
+                unavailableListings.add(pendingListing);pendingOffer=null;ownedHandler=null;
+                if(++soldSkips>24){finishBuying("Too many sold listings — refresh the auction and try again");return;}
+                searchMarket();status="Listing already purchased — finding another";return;
             }
             if(marketStage==3){if(ticks>=marketDeadline)finishBuying("Purchase not confirmed in inventory; no retry");else status="Waiting for purchased items";return;}
         }
@@ -707,7 +833,6 @@ public final class AutoBuilder extends Module {
         if(!handler.getCursorStack().isEmpty()){if(ticks>=marketDeadline)finishBuying("Buying stopped — cursor is occupied");return;}
         String title=screen.getTitle().getString();
         if(marketStage==2){
-            if(AuctionMarket.word(title,boughtWord.get())){finishBuying("Auction is no longer available");return;}
             var yes=handler.slots.stream().filter(slot->slot.inventory!=mc.player.getInventory()&&!slot.getStack().isEmpty())
                 .filter(slot->!AuctionMarket.word(slot.getStack().getName().getString(),confirmNo.get())&&AuctionMarket.word(slot.getStack().getName().getString(),confirmYes.get()))
                 .filter(slot->!slot.getStack().isOf(buyingItem)||!Double.isFinite(AuctionMarket.price(slot.getStack(),priceKeyword.get()))).findFirst().orElse(null);
@@ -736,28 +861,52 @@ public final class AutoBuilder extends Module {
         if(!AuctionMarket.word(title,ahTitle.get())){if(ticks>=marketDeadline)finishBuying("Unexpected auction menu title: "+title);return;}
         ownedHandler=handler;
         var offers=AuctionMarket.offers(handler,mc.player.getInventory(),buyingItem,priceKeyword.get()).stream()
-            .filter(o->!boughtListings.contains(handler.syncId+":"+o.slot()+":"+o.total()+":"+o.count())).toList();
+            .filter(o->!boughtListings.contains(handler.syncId+":"+o.slot()+":"+o.total()+":"+o.count())&&!unavailableListings.contains(listingKey(handler,o))).toList();
         if(estimating){
             var cheapest=offers.stream().min(Comparator.comparingDouble(AuctionMarket.Offer::each)).orElse(null);
             if(cheapest!=null){estimate+=cheapest.each()*shopping.get(buyingItem);shopping.remove(buyingItem);buyingItem=null;marketWait=buySpacing.getInt();return;}
         }else{
             int requested=shopping.getOrDefault(buyingItem,0);
             var choice=AuctionMarket.choose(offers,requested,overbuy.getInt(),maxItem.get(),maxSpend.get()-spent,preferStacks.get(),tolerance.get());
+            if(returningToOffer&&marketPage<bestMarketPage){
+                if(nextMarketPage(handler))return;
+                if(++marketRechecks>3){finishBuying("Auction pages changed — try again");return;}searchMarket();return;
+            }
+            if(!returningToOffer){
+                if(choice!=null&&(bestMarketOffer==null||choice.each()<bestMarketOffer.each()||choice.each()==bestMarketOffer.each()&&choice.total()<bestMarketOffer.total())){bestMarketOffer=choice;bestMarketKey=listingKey(handler,choice);bestMarketPage=marketPage;}
+                if(nextMarketPage(handler))return;
+                if(bestMarketOffer!=null&&bestMarketPage!=marketPage){searchMarket(true);status="Returning to cheapest listing";return;}
+            }else if(offers.stream().noneMatch(offer->listingKey(handler,offer).equals(bestMarketKey))){
+                if(++marketRechecks>3){finishBuying("Cheapest listing changed — try again");return;}searchMarket();return;
+            }
             if(choice!=null){
-                if(!canReceiveOffer(buyingItem,choice.count())){finishBuying("Inventory full — make space for purchased materials");return;}
-                pendingOffer=choice;inventoryBefore=inventoryCount(buyingItem);boughtListings.add(handler.syncId+":"+choice.slot()+":"+choice.total()+":"+choice.count());
+                if(!canReceiveOffer(buyingItem,choice.count())){
+                    if(!depositWhen.is("Manual")){
+                        var outstanding=new LinkedHashMap<>(shopping);depositAll();
+                        if(depositing){depositedShopping.putAll(outstanding);resumeShoppingAfterDeposit=true;}return;
+                    }
+                    finishBuying("Inventory full — use Deposit All to make space");return;
+                }
+                pendingOffer=choice;pendingListing=listingKey(handler,choice);soldNotice=false;inventoryBefore=inventoryCount(buyingItem);boughtListings.add(handler.syncId+":"+choice.slot()+":"+choice.total()+":"+choice.count());
                 mc.interactionManager.clickSlot(handler.syncId,choice.slot(),0,SlotActionType.PICKUP,mc.player);marketStage=2;marketWait=buySpacing.getInt();marketDeadline=ticks+160;return;
             }
         }
+        if(estimating&&nextMarketPage(handler))return;
+        if(ticks>=marketDeadline)finishBuying("No suitable listing for "+buyingItem.getName().getString()+" within price / quantity limits");
+    }
+    private boolean nextMarketPage(ScreenHandler handler){
         if(marketPage<maxPages.getInt())for(var slot:handler.slots){
             if(slot.inventory!=mc.player.getInventory()&&!slot.getStack().isEmpty()&&AuctionMarket.word(slot.getStack().getName().getString(),nextWord.get())){
-                mc.interactionManager.clickSlot(handler.syncId,slot.id,0,SlotActionType.PICKUP,mc.player);marketPage++;marketWait=20;return;
+                mc.interactionManager.clickSlot(handler.syncId,slot.id,0,SlotActionType.PICKUP,mc.player);marketPage++;marketWait=20;marketDeadline=ticks+160;return true;
             }
         }
-        if(ticks>=marketDeadline)finishBuying("No suitable listing for "+buyingItem.getName().getString()+" within price / quantity limits");
+        return false;
     }
     private boolean canReceiveOffer(Item item,int count){
         var ordinary=new ItemStack(item);int space=0;for(int i=0;i<36;i++){var stack=mc.player.getInventory().getStack(i);if(stack.isEmpty())space+=item.getMaxCount();else if(ItemStack.areItemsAndComponentsEqual(stack,ordinary))space+=Math.max(0,stack.getMaxCount()-stack.getCount());}return space>=count;
+    }
+    private String listingKey(ScreenHandler handler,AuctionMarket.Offer offer){
+        var stack=handler.getSlot(offer.slot()).getStack();return Registries.ITEM.getId(offer.item())+":"+marketPage+":"+offer.slot()+":"+offer.count()+":"+offer.total()+":"+stack.getComponents().hashCode();
     }
     private void finishBuying(String reason){
         buying=false;buyingItem=null;pendingOffer=null;shopping.clear();
@@ -777,12 +926,14 @@ public final class AutoBuilder extends Module {
     }
     @Override public JsonObject saveExtra(){
         var result=new JsonObject();result.addProperty("file",selected);result.addProperty("dimension",dimension);result.addProperty("world-scope",worldScope);
+        var ignored=new JsonArray();for(var item:ignoredMaterials)ignored.add(Registries.ITEM.getId(item).toString());result.add("ignored-materials",ignored);
         if(origin!=null)result.add("origin",posJson(origin));var marks=new JsonArray();for(var pos:containers)marks.add(posJson(pos));result.add("restock",marks);return result;
     }
     private static JsonArray posJson(BlockPos pos){var a=new JsonArray();a.add(pos.getX());a.add(pos.getY());a.add(pos.getZ());return a;}
     private static BlockPos jsonPos(JsonElement value){var a=value.getAsJsonArray();if(a.size()!=3)throw new IllegalArgumentException("Position");return new BlockPos(a.get(0).getAsInt(),a.get(1).getAsInt(),a.get(2).getAsInt());}
     @Override public void loadExtra(JsonObject data){
-        try{if(data.has("world-scope"))worldScope=data.get("world-scope").getAsString();if(data.has("dimension"))dimension=data.get("dimension").getAsString();if(data.has("origin"))origin=jsonPos(data.get("origin"));containers.clear();if(data.has("restock"))for(var pos:data.getAsJsonArray("restock"))containers.add(jsonPos(pos));
+        try{ignoredMaterials.clear();if(data.has("ignored-materials"))for(var value:data.getAsJsonArray("ignored-materials")){var id=net.minecraft.util.Identifier.tryParse(value.getAsString());if(id!=null){var item=Registries.ITEM.get(id);if(item!=Items.AIR)ignoredMaterials.add(item);}}
+            if(data.has("world-scope"))worldScope=data.get("world-scope").getAsString();if(data.has("dimension"))dimension=data.get("dimension").getAsString();if(data.has("origin"))origin=jsonPos(data.get("origin"));containers.clear();if(data.has("restock"))for(var pos:data.getAsJsonArray("restock"))containers.add(jsonPos(pos));
             if(data.has("file")){selected=data.get("file").getAsString();if(!selected.isBlank()&&Files.isRegularFile(folder().resolve(selected)))load(folder().resolve(selected));}
         }catch(RuntimeException e){Maro.LOGGER.warn("Invalid Auto Builder saved placement",e);}
     }

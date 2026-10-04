@@ -69,10 +69,27 @@ final class AutoBuilderChecks {
             context.runOnClient(client->client.setScreen(new BuilderScreen(null,builder,true)));context.waitTicks(4);context.takeScreenshot("maro-builder-materials");
             context.getInput().resizeWindow(960,720);context.waitTicks(4);context.takeScreenshot("maro-builder-materials-compact");context.setScreen(()->null);context.getInput().resizeWindow(1280,720);
             singleplayer.getServer().runCommand("give @a minecraft:stone 64");singleplayer.getServer().runCommand("give @a minecraft:glass 64");context.waitTicks(6);
-            context.runOnClient(client->{set(builder,"Build Mode","Automatic");set(builder,"Temporary Supports",false);builder.startBuild();});
+            context.runOnClient(client->{
+                set(builder,"Build Mode","Automatic");set(builder,"Temporary Supports",false);builder.toggleMaterialIgnored(Items.GLASS);
+                require(builder.materialIgnored(Items.GLASS)&&!builder.remainingMaterials().containsKey(Items.GLASS)&&builder.saveExtra().getAsJsonArray("ignored-materials").toString().contains("minecraft:glass"),"Ignored material remains required or was not saved");
+                builder.startBuild();
+            });
+            await(context,builder,400);verify(singleplayer,origin,2,2,2,y->y==0?Blocks.STONE:Blocks.AIR);
+            context.runOnClient(client->require(builder.inventoryCount(Items.GLASS)==64&&builder.state(4)==AutoBuilder.IGNORED,"Builder placed an ignored material"));
+            context.runOnClient(client->{client.setScreen(new BuilderScreen(null,builder,true));});context.waitTicks(4);context.takeScreenshot("maro-builder-materials-ignored");
+            context.runOnClient(client->{builder.toggleMaterialIgnored(Items.GLASS);builder.restartBuild();});
             await(context,builder,400);
             verify(singleplayer,origin,2,2,2,y->y==0?Blocks.STONE:Blocks.GLASS);
             context.takeScreenshot("maro-builder-server-built");
+
+            // Restart rescans the same placement and repairs only the removed block.
+            var loaded=context.computeOnClient(client->builder.schematic());
+            int stoneBefore=context.computeOnClient(client->builder.inventoryCount(Items.STONE));
+            int glassBefore=context.computeOnClient(client->builder.inventoryCount(Items.GLASS));
+            command(singleplayer,"setblock",origin,"air");context.waitTicks(5);
+            context.runOnClient(client->{button(builder,"Restart Build").press();require(builder.schematic()==loaded&&builder.origin().equals(origin),"Restart changed the selected schematic or origin");require(builder.state(0)==AutoBuilder.UNKNOWN&&builder.building(),"Restart did not reset the scan and start building");});
+            await(context,builder,400);verify(singleplayer,origin,2,2,2,y->y==0?Blocks.STONE:Blocks.GLASS);
+            context.runOnClient(client->require(builder.inventoryCount(Items.STONE)==stoneBefore-1&&builder.inventoryCount(Items.GLASS)==glassBefore,"Restart replaced already-correct blocks"));
 
             // Missing stone is obtained from a real server chest and then placed, without a creative give.
             fixture(context,singleplayer,builder,start);
@@ -100,7 +117,7 @@ final class AutoBuilderChecks {
             BlockPos support=context.computeOnClient(client->builder.temporarySupports().iterator().next());
             context.runOnClient(client->builder.pause("Step-off cleanup fixture"));
             singleplayer.getServer().runCommand("tp @a "+(support.getX()+.5)+" "+(support.getY()+1)+" "+(support.getZ()+.5));context.waitTicks(8);
-            context.runOnClient(client->builder.startBuild());
+            context.runOnClient(client->{builder.restartBuild();require(builder.temporarySupports().contains(support),"Restart forgot temporary supports before cleanup");});
             await(context,builder,500);
             require(singleplayer.getServer().computeOnServer(server->server.getOverworld().getBlockState(start.add(0,0,2)).get(Properties.AXIS)==Direction.Axis.X),"Horizontal log was placed with wrong axis");
             require(singleplayer.getServer().computeOnServer(server->server.getOverworld().getBlockState(start.add(-1,0,2)).isAir()&&server.getOverworld().getBlockState(start.add(1,0,2)).isAir()),"Temporary log support was not cleaned");
@@ -133,6 +150,20 @@ final class AutoBuilderChecks {
                 require(builder.buildMode().equals("Automatic"),"Automatic build mode is unavailable");
             });context.waitTicks(5);context.takeScreenshot("maro-builder-control-panel");
             context.runOnClient(client->{client.setScreen(new ClickGuiScreen());((ClickGuiScreen)client.currentScreen).openModuleOptions(builder);});context.waitTicks(5);context.takeScreenshot("maro-builder-simplified-options");
+
+            context.runOnClient(client->{
+                button(builder,"Cancel Schematic").press();
+                require(builder.schematic()==null&&!builder.loading()&&!builder.building()&&!builder.buying()&&!builder.previewVisible()&&!builder.isEnabled(),"Cancel did not unload and stop the schematic");
+                require(builder.remainingMaterials().isEmpty()&&builder.visibleCells().isEmpty()&&builder.saveExtra().get("file").getAsString().isEmpty(),"Cancel retained schematic state");
+                require(!client.options.forwardKey.isPressed()&&!client.options.useKey.isPressed()&&!AutoBuilder.holdingBreak(),"Cancel retained builder input");
+            });
+            // Cancel a pending asynchronous load in the same client turn; its completion must be ignored.
+            var cancelFile=builder.folder().resolve("maro-cancel-fixture.nbt");
+            try{NbtIo.writeCompressed(SchematicIO.encodeStructure(loaded),cancelFile);}catch(java.io.IOException e){throw new AssertionError(e);}
+            context.runOnClient(client->{builder.load(cancelFile);require(builder.loading(),"Load fixture did not start");builder.cancelSchematic();});
+            context.waitTicks(30);
+            context.runOnClient(client->require(builder.schematic()==null&&!builder.loading()&&!builder.previewVisible(),"Cancelled load restored its schematic"));
+            try{java.nio.file.Files.deleteIfExists(cancelFile);}catch(java.io.IOException e){throw new AssertionError(e);}
         }finally{
             context.runOnClient(client->{builder.setEnabled(false);client.options.useKey.setPressed(false);client.options.forwardKey.setPressed(false);client.options.jumpKey.setPressed(false);client.setScreen(null);});
             singleplayer.getServer().runCommand("gamemode creative @a");
