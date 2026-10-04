@@ -39,6 +39,11 @@ final class AutoBuilderChecks {
             for(int turn=0;turn<4;turn++)for(String mirror:new String[]{"None","X","Z"})for(int i=0;i<sample.size();i++)require(sample.indexAt(sample.transformed(i,turn,mirror),turn,mirror)==i,"Inverse placement transform failed");
             var lite=new NbtCompound();var regions=new NbtCompound();var region=new NbtCompound();region.put("Position",vector(2,0,-1));region.put("Size",vector(-2,1,1));var lp=new NbtList();lp.add(NbtHelper.fromBlockState(Blocks.AIR.getDefaultState()));lp.add(NbtHelper.fromBlockState(Blocks.STONE.getDefaultState()));region.put("BlockStatePalette",lp);region.putLongArray("BlockStates",new long[]{1});regions.put("negative",region);lite.put("Regions",regions);
             var ls=SchematicIO.decode("fixture.litematic",lite);require(ls.width==2&&ls.offset.equals(new BlockPos(1,0,-1))&&ls.state(0).isOf(Blocks.STONE),"Signed litematic region import failed");
+            var stashFile=java.nio.file.Files.createTempFile("maro-stash-fixture", ".litematic");
+            try(var source=AutoBuilderChecks.class.getResourceAsStream("/fixtures/farex-small-stash.litematic")){
+                require(source!=null,"Missing supplied schematic fixture");java.nio.file.Files.copy(source,stashFile,java.nio.file.StandardCopyOption.REPLACE_EXISTING);var stash=SchematicIO.read(stashFile);require(stash.width==18&&stash.height==8&&stash.length==13&&stash.solidCount()==710,"Supplied stash schematic dimensions or signed-region import changed");
+                require(stash.materials().containsKey(Items.WATER_BUCKET)&&stash.materials().containsKey(Items.LAVA_BUCKET),"Fluid sources missing from stash supply list");
+            }finally{java.nio.file.Files.deleteIfExists(stashFile);}
             long[] packed=new long[3];for(int i=0;i<25;i++){long bit=(long)i*5;int word=(int)(bit/64),shift=(int)(bit%64);long value=i%17;packed[word]|=value<<shift;if(shift+5>64)packed[word+1]|=value>>>(64-shift);}
             for(int i=0;i<25;i++)require(SchematicIO.packedIndex(packed,i,5)==i%17,"Packed state straddling long boundary failed");
             require(AuctionMarket.price("Price: $1.25m","$")==1_250_000&&Double.isNaN(AuctionMarket.price("Seller: 123","$")),"Auction price parsing failed");
@@ -93,9 +98,22 @@ final class AutoBuilderChecks {
             await(context,builder,400);verify(singleplayer,origin,2,2,2,y->y==0?Blocks.STONE:Blocks.GLASS);
             context.runOnClient(client->require(builder.inventoryCount(Items.STONE)==stoneBefore-1&&builder.inventoryCount(Items.GLASS)==glassBefore,"Restart replaced already-correct blocks"));
 
+            // The supplied stash uses delay-3 repeaters and open trapdoors: place then configure.
+            for(boolean repeater:new boolean[]{true,false}){
+                fixture(context,singleplayer,builder,start);singleplayer.getServer().runCommand("give @a "+(repeater?"repeater":"warped_trapdoor")+" 1");context.waitTicks(5);
+                context.runOnClient(client->{var state=repeater?Blocks.REPEATER.getDefaultState().with(RepeaterBlock.DELAY,3):Blocks.WARPED_TRAPDOOR.getDefaultState().with(Properties.OPEN,true);builder.install(new Schematic("configurable-block.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{state}));builder.setOrigin(start.add(0,0,2));builder.startBuild();});
+                await(context,builder,600);require(singleplayer.getServer().computeOnServer(server->{var actual=server.getOverworld().getBlockState(start.add(0,0,2));return repeater?actual.isOf(Blocks.REPEATER)&&actual.get(RepeaterBlock.DELAY)==3:actual.isOf(Blocks.WARPED_TRAPDOOR)&&actual.get(Properties.OPEN);}),"Configurable block did not reach requested state");
+            }
+            // Source buckets use the item's vanilla raycast; they must not be treated as BlockItem.
+            for(boolean water:new boolean[]{true,false}){
+                fixture(context,singleplayer,builder,start);singleplayer.getServer().runCommand("give @a "+(water?"water_bucket":"lava_bucket")+" 1");var fluid=start.add(0,0,2);
+                for(var side:Direction.Type.HORIZONTAL)command(singleplayer,"setblock",fluid.offset(side),"stone");context.waitTicks(5);
+                context.runOnClient(client->{builder.install(new Schematic("fluid-source.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{(water?Blocks.WATER:Blocks.LAVA).getDefaultState()}));builder.setOrigin(fluid);builder.startBuild();});
+                await(context,builder,600);require(singleplayer.getServer().computeOnServer(server->{var actual=server.getOverworld().getBlockState(fluid);return actual.isOf(water?Blocks.WATER:Blocks.LAVA)&&actual.get(FluidBlock.LEVEL)==0;}),"Bucket did not create a server-confirmed fluid source");
+            }
             // Missing stone is obtained from a real server chest and then placed, without a creative give.
             fixture(context,singleplayer,builder,start);
-            BlockPos chest=start.add(2,0,0);command(singleplayer,"setblock",chest,"chest");
+            BlockPos chest=start.add(2,0,0);command(singleplayer,"setblock",chest,"chest[facing=north,type=left]");command(singleplayer,"setblock",chest.east(),"chest[facing=north,type=right]");
             singleplayer.getServer().runCommand("item replace block "+chest.toShortString().replace(",","")+" container.0 with minecraft:stone 64");
             context.waitTicks(8);
             context.runOnClient(client->{
@@ -112,6 +130,36 @@ final class AutoBuilderChecks {
             context.runOnClient(client->{builder.install(new Schematic("walk-fixture.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(start.add(0,0,12));builder.startBuild();});
             await(context,builder,500);verify(singleplayer,start.add(0,0,12),1,1,1,y->Blocks.STONE);
             context.runOnClient(client->require(client.player.getZ()>start.getZ()+6&&client.player.getY()>=start.getY()-.2,"Builder did not walk to its target safely"));
+
+            // A nearby visible standing cell behind a one-block-high window is sealed off.
+            // The builder must route around the enclosure instead of repeatedly choosing it.
+            fixture(context,singleplayer,builder,start);singleplayer.getServer().runCommand("give @a stone 1");
+            for(int x:new int[]{-1,1})singleplayer.getServer().runCommand("fill "+coords(start.add(x,0,2))+" "+coords(start.add(x,1,4))+" stone");
+            for(int z:new int[]{2,4})singleplayer.getServer().runCommand("fill "+coords(start.add(-1,0,z))+" "+coords(start.add(1,1,z))+" stone");
+            command(singleplayer,"setblock",start.add(0,0,4),"air");context.waitTicks(5);
+            context.runOnClient(client->{var walk=new BuilderWalk();require(walk.canStand(start.add(0,0,3))&&!walk.canReachStand(start.add(0,0,3)),"Sealed route fixture is not unreachable");builder.install(new Schematic("obstructed-route-fixture.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(start.add(0,0,5));builder.startBuild();});
+            await(context,builder,700);verify(singleplayer,start.add(0,0,5),1,1,1,y->Blocks.STONE);
+
+            // Food in the main inventory moves into the hotbar and is consumed before building.
+            fixture(context,singleplayer,builder,start);singleplayer.getServer().runCommand("give @a stone 1");singleplayer.getServer().runCommand("give @a cooked_beef 3");
+            singleplayer.getServer().runOnServer(server->{var player=server.getPlayerManager().getPlayerList().getFirst();player.getHungerManager().setFoodLevel(8);player.getHungerManager().setSaturationLevel(0);for(int i=0;i<9;i++)if(player.getInventory().getStack(i).isOf(Items.COOKED_BEEF)){player.getInventory().setStack(20,player.getInventory().getStack(i).copy());player.getInventory().setStack(i,ItemStack.EMPTY);}player.playerScreenHandler.syncState();});context.waitTicks(8);
+            context.runOnClient(client->{set(builder,"Auto Eat",true);set(builder,"Buy Steak",false);builder.install(new Schematic("food-inventory-fixture.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(start.add(0,0,2));builder.startBuild();});
+            await(context,builder,400);verify(singleplayer,start.add(0,0,2),1,1,1,y->Blocks.STONE);
+            require(singleplayer.getServer().computeOnServer(server->server.getPlayerManager().getPlayerList().getFirst().getHungerManager().getFoodLevel()>14),"Builder did not consume inventory steak");context.runOnClient(client->require(builder.inventoryCount(Items.COOKED_BEEF)==2&&!client.options.useKey.isPressed(),"Auto Eat consumed extra food or retained use input"));
+
+            fixture(context,singleplayer,builder,start);singleplayer.getServer().runCommand("give @a stone 1");singleplayer.getServer().runCommand("give @a cooked_beef 3");
+            singleplayer.getServer().runOnServer(server->{var player=server.getPlayerManager().getPlayerList().getFirst();player.getHungerManager().setFoodLevel(8);player.getHungerManager().setSaturationLevel(0);});context.waitTicks(8);
+            context.runOnClient(client->{set(builder,"Auto Eat",true);builder.install(new Schematic("food-pause-fixture.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(start.add(0,0,2));builder.startBuild();});
+            for(int i=0;i<80&&!context.computeOnClient(client->client.player.isUsingItem());i++)context.waitTick();
+            context.runOnClient(client->{require(client.player.isUsingItem(),"Auto Eat never started");builder.pause("Food pause test");require(!client.options.useKey.isPressed()&&!client.player.isUsingItem(),"Pause did not stop owned food use");});context.waitTicks(40);
+            context.runOnClient(client->require(builder.inventoryCount(Items.COOKED_BEEF)==3,"Paused eating continued consuming steak"));
+
+            fixture(context,singleplayer,builder,start);singleplayer.getServer().runCommand("give @a stone 1");
+            command(singleplayer,"setblock",start.add(2,0,0),"chest[facing=north,type=left]");command(singleplayer,"setblock",start.add(3,0,0),"chest[facing=north,type=right]");
+            singleplayer.getServer().runCommand("item replace block "+coords(start.add(2,0,0))+" container.0 with cooked_beef 64");singleplayer.getServer().runOnServer(server->{var player=server.getPlayerManager().getPlayerList().getFirst();player.getHungerManager().setFoodLevel(8);player.getHungerManager().setSaturationLevel(0);});context.waitTicks(8);
+            context.runOnClient(client->{set(builder,"Auto Eat",true);set(builder,"Steak Reserve",3);builder.auctionBudget(0);builder.install(new Schematic("food-chest-fixture.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(start.add(0,0,2));client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(start.add(2,0,0)),Direction.WEST,start.add(2,0,0),false);builder.markContainer();builder.startBuild();});
+            await(context,builder,500);verify(singleplayer,start.add(0,0,2),1,1,1,y->Blocks.STONE);
+            require(singleplayer.getServer().computeOnServer(server->((net.minecraft.block.entity.ChestBlockEntity)server.getOverworld().getBlockEntity(start.add(2,0,0))).getStack(0).getCount()==61),"Food restock did not take exactly its reserve");context.runOnClient(client->require(builder.inventoryCount(Items.COOKED_BEEF)==2,"Chest steak was not consumed before resuming"));
 
             // A two-block-deep pocket has no walking route until a jump places a dirt step below the player.
             fixture(context,singleplayer,builder,start);singleplayer.getServer().runCommand("give @a stone 64");singleplayer.getServer().runCommand("give @a dirt 64");
@@ -179,7 +227,7 @@ final class AutoBuilderChecks {
             context.runOnClient(client->{
                 builder.pause("Screenshot");client.setScreen(new ClickGuiScreen());((ClickGuiScreen)client.currentScreen).openModuleSettings(builder);
                 require(client.currentScreen instanceof BuilderControlScreen,"Builder settings did not open the simple control panel");
-                require(builder.getSettings().size()<55,"Unnecessary settings still clutter the builder");
+                require(builder.getSettings().size()<60,"Unnecessary settings still clutter the builder");
                 require(builder.buildMode().equals("Automatic"),"Automatic build mode is unavailable");
             });context.waitTicks(5);context.takeScreenshot("maro-builder-control-panel");
             context.runOnClient(client->{client.setScreen(new ClickGuiScreen());((ClickGuiScreen)client.currentScreen).openModuleOptions(builder);});context.waitTicks(5);context.takeScreenshot("maro-builder-simplified-options");
@@ -203,7 +251,8 @@ final class AutoBuilderChecks {
         }
     }
     private static void fixture(ClientGameTestContext context,TestSingleplayerContext singleplayer,AutoBuilder builder,BlockPos start){
-        context.runOnClient(client->{builder.setEnabled(false);client.setScreen(null);set(builder,"Build Mode","Automatic");set(builder,"Mine Out Schematic",false);set(builder,"Auto Buy Tools",false);set(builder,"Stop On Staff Nearby",false);set(builder,"Auto Buy When Missing",false);set(builder,"Support Dirt Reserve",0);set(builder,"Temporary Supports",false);set(builder,"Rotation","0");set(builder,"Mirror","None");button(builder,"Clear Restock Marks").press();});
+        context.runOnClient(client->{builder.setEnabled(false);client.setScreen(null);set(builder,"Build Mode","Automatic");set(builder,"Mine Out Schematic",false);set(builder,"Auto Eat",false);set(builder,"Prepare Whole Build",false);set(builder,"Buy Steak",true);set(builder,"Auto Buy Tools",false);set(builder,"Stop On Staff Nearby",false);set(builder,"Auto Buy When Missing",false);set(builder,"Support Dirt Reserve",0);set(builder,"Temporary Supports",false);set(builder,"Rotation","0");set(builder,"Mirror","None");button(builder,"Clear Restock Marks").press();});
+        singleplayer.getServer().runOnServer(server->{var player=server.getPlayerManager().getPlayerList().getFirst();player.getHungerManager().setFoodLevel(20);player.getHungerManager().setSaturationLevel(5);});
         singleplayer.getServer().runCommand("gamemode creative @a");singleplayer.getServer().runCommand("fill "+coords(start.add(-16,-1,-16))+" "+coords(start.add(16,-1,16))+" stone");
         singleplayer.getServer().runCommand("fill "+coords(start.add(-16,0,-16))+" "+coords(start.add(16,6,16))+" air");
         singleplayer.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+start.getY()+" "+(start.getZ()+.5)+" 0 0");singleplayer.getServer().runCommand("clear @a");singleplayer.getServer().runCommand("gamemode survival @a");context.waitTicks(10);

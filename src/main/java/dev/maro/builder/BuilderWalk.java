@@ -17,9 +17,12 @@ public final class BuilderWalk {
     private boolean exact;
     private int failedRoutes;
     private boolean recoveryRequested;
+    private boolean smooth=true;
+    private float yawVelocity,turnLimit=45;
+    public void turning(boolean smooth,float speed){this.smooth=smooth;turnLimit=speed;}
     public String status="";
     public void stop(){
-        release();path=List.of();goal=null;cursor=retry=stuck=failedRoutes=0;last=null;recoveryRequested=false;
+        release();path=List.of();goal=null;cursor=retry=stuck=failedRoutes=0;last=null;recoveryRequested=false;yawVelocity=0;
     }
     public void release(){
         if(forward)mc.options.forwardKey.setPressed(false);
@@ -31,7 +34,9 @@ public final class BuilderWalk {
     }
     public boolean standAt(BlockPos target){return approach(target,.42,true);}
     public boolean canStand(BlockPos pos){return walkable(pos);}
+    public boolean canReachStand(BlockPos pos){return walkable(pos)&&(mc.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(pos))<=.42*.42||!find(mc.player.getBlockPos(),pos,.42,true).isEmpty());}
     public boolean needsRecovery(){return recoveryRequested;}
+    public void requestRecovery(){recoveryRequested=true;}
     public boolean canPillar(BlockPos feet){return clear(feet)&&clear(feet.up())&&clear(feet.up(2))&&clear(feet.up(3))&&safe(feet.down())&&mc.world.getBlockState(feet.down()).isSideSolidFullSquare(mc.world,feet.down(),Direction.UP);}
     private boolean approach(BlockPos target,double distance,boolean stand){
         if(mc.player==null||mc.world==null)return false;
@@ -41,7 +46,7 @@ public final class BuilderWalk {
         if(retry>0)retry--;
         if(cursor>=path.size()){
             if(retry>0){release();return false;}
-            path=find(mc.player.getBlockPos(),target,distance);cursor=0;retry=20;
+            path=find(mc.player.getBlockPos(),target,distance,exact);cursor=0;retry=20;
             if(path.isEmpty()){if(++failedRoutes>=2)recoveryRequested=true;release();status="No safe walking route — move closer or add stairs";return false;}
         }
         var node=path.get(cursor);var point=Vec3d.ofBottomCenter(node);
@@ -49,18 +54,23 @@ public final class BuilderWalk {
         if(dx*dx+dz*dz<.14&&Math.abs(node.getY()-mc.player.getY())<.65){cursor++;release();return false;}
         if(!walkable(node)||!safe(mc.player.getBlockPos())){path=List.of();release();return false;}
         float yaw=(float)(Math.toDegrees(Math.atan2(dz,dx))-90);
-        mc.player.setYaw(mc.player.getYaw()+MathHelper.clamp(MathHelper.wrapDegrees(yaw-mc.player.getYaw()),-45,45));
-        if(Math.abs(MathHelper.wrapDegrees(yaw-mc.player.getYaw()))<35){forward=true;mc.options.forwardKey.setPressed(true);}
+        float error=MathHelper.wrapDegrees(yaw-mc.player.getYaw());
+        if(smooth){
+            if(Math.signum(yawVelocity)!=Math.signum(error))yawVelocity=0;
+            yawVelocity+=MathHelper.clamp(MathHelper.clamp(error*.28f,-turnLimit,turnLimit)-yawVelocity,-turnLimit*.15f,turnLimit*.15f);
+            mc.player.setYaw(mc.player.getYaw()+Math.copySign(Math.min(Math.abs(error),Math.abs(yawVelocity)),error));
+        }else mc.player.setYaw(mc.player.getYaw()+MathHelper.clamp(error,-turnLimit,turnLimit));
+        if(Math.abs(MathHelper.wrapDegrees(yaw-mc.player.getYaw()))<12){forward=true;mc.options.forwardKey.setPressed(true);}
         else if(forward){mc.options.forwardKey.setPressed(false);forward=false;}
         if(node.getY()>mc.player.getY()+.4&&mc.player.isOnGround()){jump=true;mc.options.jumpKey.setPressed(true);}
         else if(jump){mc.options.jumpKey.setPressed(false);jump=false;}
         Vec3d now=mc.player.getEntityPos();
-        if(last!=null&&now.squaredDistanceTo(last)<.0025)stuck++;else stuck=0;
+        if(forward&&last!=null&&now.squaredDistanceTo(last)<.0004)stuck++;else stuck=0;
         last=now;
         if(stuck>30){recoveryRequested=true;path=List.of();release();stuck=0;retry=20;}
         status="Walking to build position";return false;
     }
-    private List<BlockPos> find(BlockPos start,BlockPos target,double reach){
+    private List<BlockPos> find(BlockPos start,BlockPos target,double reach,boolean exactGoal){
         PriorityQueue<Node> open=new PriorityQueue<>(Comparator.comparingDouble(Node::score));
         Map<BlockPos,Double> costs=new HashMap<>();Set<BlockPos> closed=new HashSet<>();
         open.add(new Node(start,0,heuristic(start,target),null));costs.put(start,0.0);
@@ -68,7 +78,7 @@ public final class BuilderWalk {
         while(!open.isEmpty()&&visited++<2048&&System.nanoTime()<deadline){
             Node n=open.poll();if(!closed.add(n.pos))continue;
             Vec3d eye=Vec3d.ofBottomCenter(n.pos).add(0,mc.player.getStandingEyeHeight(),0);
-            if(exact?n.pos.equals(target):eye.squaredDistanceTo(Vec3d.ofCenter(target))<=reach*reach){
+            if(exactGoal?n.pos.equals(target):eye.squaredDistanceTo(Vec3d.ofCenter(target))<=reach*reach){
                 LinkedList<BlockPos> result=new LinkedList<>();for(Node p=n;p.parent!=null;p=p.parent)result.addFirst(p.pos);return result;
             }
             for(var side:Direction.Type.HORIZONTAL){
