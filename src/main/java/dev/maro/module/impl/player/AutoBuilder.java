@@ -632,27 +632,18 @@ public final class AutoBuilder extends Module {
     }
     private boolean canActFrom(Vec3d eye,BlockPos target){
         if(!mc.world.getBlockState(target).isReplaceable())return visibleHit(target,eye)!=null;
-        for(var side:Direction.values()){
-            var neighbor=target.offset(side.getOpposite());var state=mc.world.getBlockState(neighbor);
-            if(state.isAir()||state.isReplaceable()||!state.getFluidState().isEmpty())continue;
-            var shape=state.getOutlineShape(mc.world,neighbor);if(shape.isEmpty())continue;var box=shape.getBoundingBox();
-            double x=(box.minX+box.maxX)/2,y=(box.minY+box.maxY)/2,z=(box.minZ+box.maxZ)/2;
-            switch(side){case UP->y=box.maxY;case DOWN->y=box.minY;case EAST->x=box.maxX;case WEST->x=box.minX;case SOUTH->z=box.maxZ;case NORTH->z=box.minZ;}
-            for(double offset:new double[]{0,-.4,.4}){
-                var point=new Vec3d(neighbor.getX()+x+(side.getAxis()==Direction.Axis.Y?offset:0),neighbor.getY()+y,neighbor.getZ()+z);
-                if(eye.squaredDistanceTo(point)>effectiveReach()*effectiveReach())continue;
-                var ray=mc.world.raycast(new RaycastContext(eye,point.add(point.subtract(eye).normalize().multiply(.1)),RaycastContext.ShapeType.OUTLINE,RaycastContext.FluidHandling.NONE,mc.player));
-                if(ray.getType()==HitResult.Type.BLOCK&&ray.getBlockPos().equals(neighbor)&&ray.getSide()==side)return true;
-            }
-        }return false;
+        int cell=schematic.indexAt(target.subtract(anchor()),turns(),mirror.get());if(cell<0)return false;
+        var wanted=desired(cell);var body=mc.player.getBoundingBox().offset(eye.subtract(mc.player.getEyePos()));
+        return placement(target,wanted,Schematic.material(wanted),cell,false,eye,body)!=null;
     }
-    private Place placement(BlockPos target,BlockState wanted,Item item,int index,boolean temporary){
+    private Place placement(BlockPos target,BlockState wanted,Item item,int index,boolean temporary){return placement(target,wanted,item,index,temporary,mc.player.getEyePos(),mc.player.getBoundingBox());}
+    private Place placement(BlockPos target,BlockState wanted,Item item,int index,boolean temporary,Vec3d eye,Box body){
         if(item==Items.WATER_BUCKET||item==Items.LAVA_BUCKET){
             for(var side:Direction.values()){
-                var neighbor=target.offset(side.getOpposite());var hit=visibleHit(neighbor);if(hit!=null&&hit.getSide()==side&&mc.world.getBlockState(target).isReplaceable())return new Place(target,wanted,hit,item,index,false);
+                var neighbor=target.offset(side.getOpposite());var hit=visibleHit(neighbor,eye);if(hit!=null&&hit.getSide()==side&&mc.world.getBlockState(target).isReplaceable())return new Place(target,wanted,hit,item,index,false);
             }return null;
         }
-        if(!(item instanceof BlockItem blockItem)||new Box(target).intersects(mc.player.getBoundingBox())&&!wanted.getCollisionShape(mc.world,target).isEmpty())return null;
+        if(!(item instanceof BlockItem blockItem)||new Box(target).intersects(body)&&!wanted.getCollisionShape(mc.world,target).isEmpty())return null;
         ItemStack stack=new ItemStack(item);double range=effectiveReach();float oldYaw=mc.player.getYaw(),oldPitch=mc.player.getPitch();
         try{
             for(int direct=0;direct<2;direct++)for(var side:Direction.values()){
@@ -665,13 +656,13 @@ public final class AutoBuilder extends Module {
                     if(side.getAxis()==Direction.Axis.Y)point=new Vec3d(neighbor.getX()+sample[0],point.y,neighbor.getZ()+sample[1]);
                     if(side.getAxis()!=Direction.Axis.Y)point=new Vec3d(point.x,neighbor.getY()+height,point.z);
                     if(direct==1&&side==Direction.UP&&!supportState.getOutlineShape(mc.world,neighbor).isEmpty())point=new Vec3d(point.x,neighbor.getY()+supportState.getOutlineShape(mc.world,neighbor).getMax(Direction.Axis.Y),point.z);
-                    if(mc.player.getEyePos().squaredDistanceTo(point)>range*range)continue;
+                    if(eye.squaredDistanceTo(point)>range*range)continue;
                     boolean shapedSupport=direct==0&&clickable(supportState.getBlock());
-                    Vec3d rayEnd=shapedSupport?point.add(point.subtract(mc.player.getEyePos()).normalize().multiply(1.1)):point.add(Vec3d.of(side.getVector()).multiply(-.002));
-                    var ray=mc.world.raycast(new RaycastContext(mc.player.getEyePos(),rayEnd,RaycastContext.ShapeType.OUTLINE,RaycastContext.FluidHandling.NONE,mc.player));
+                    Vec3d rayEnd=shapedSupport?point.add(point.subtract(eye).normalize().multiply(1.1)):point.add(Vec3d.of(side.getVector()).multiply(-.002));
+                    var ray=mc.world.raycast(new RaycastContext(eye,rayEnd,RaycastContext.ShapeType.OUTLINE,RaycastContext.FluidHandling.NONE,mc.player));
                     if(ray.getType()!=HitResult.Type.BLOCK||!ray.getBlockPos().equals(neighbor)||ray.getSide()!=side)continue;
                     if(shapedSupport)point=ray.getPos();
-                    float[] angles=angles(point);mc.player.setYaw(angles[0]);mc.player.setPitch(angles[1]);
+                    float[] angles=angles(eye,point);mc.player.setYaw(angles[0]);mc.player.setPitch(angles[1]);
                     var hit=new BlockHitResult(point,side,neighbor,false);var context=new ItemPlacementContext(mc.player,Hand.MAIN_HAND,stack,hit);
                     context=blockItem.getPlacementContext(context);if(context==null)continue;
                     BlockState predicted=((BlockItemAccessor)(Object)blockItem).maro$placementState(context);
@@ -798,7 +789,8 @@ public final class AutoBuilder extends Module {
             if(hit.getType()==HitResult.Type.BLOCK&&hit.getBlockPos().equals(pos))return hit;
         }return null;
     }
-    private float[] angles(Vec3d point){var delta=point.subtract(mc.player.getEyePos());return new float[]{(float)(Math.toDegrees(Math.atan2(delta.z,delta.x))-90),(float)-Math.toDegrees(Math.atan2(delta.y,Math.sqrt(delta.x*delta.x+delta.z*delta.z)))};}
+    private float[] angles(Vec3d point){return angles(mc.player.getEyePos(),point);}
+    private float[] angles(Vec3d eye,Vec3d point){var delta=point.subtract(eye);return new float[]{(float)(Math.toDegrees(Math.atan2(delta.z,delta.x))-90),(float)-Math.toDegrees(Math.atan2(delta.y,Math.sqrt(delta.x*delta.x+delta.z*delta.z)))};}
     private boolean aim(Vec3d point){
         float[] goal=angles(point);float yaw=MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()),pitch=goal[1]-mc.player.getPitch();
         float speed=turnSpeed.getFloat();

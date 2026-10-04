@@ -83,9 +83,10 @@ public final class BuilderWalk {
             }
             for(var side:Direction.Type.HORIZONTAL){
                 var adjacent=n.pos.offset(side);BlockPos step=null;
-                for(int dy:new int[]{0,1,-1}){var p=adjacent.up(dy);if(walkable(p)){step=p;break;}}
+                for(int dy:new int[]{0,1,-1,-2}){var p=adjacent.up(dy);if(walkable(p)){step=p;break;}}
                 if(step==null||closed.contains(step)||step.getManhattanDistance(start)>64)continue;
                 if(step.getY()>n.pos.getY()&&!clear(n.pos.up(2)))continue;
+                if(step.getY()<n.pos.getY()-1&&!clear(step.up(2)))continue;
                 double cost=n.cost+1+(step.getY()!=n.pos.getY()?.35:0);
                 if(cost>=costs.getOrDefault(step,Double.POSITIVE_INFINITY))continue;
                 costs.put(step,cost);open.add(new Node(step,cost,cost+heuristic(step,target),n));
