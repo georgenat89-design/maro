@@ -40,6 +40,8 @@ public final class Renderer3D {
     }
     private final MatrixStack.Entry transform;
     private final Vec3d camera;
+    private float lineWidth = 1.5f;
+    public void lineWidth(float width) { lineWidth = Math.max(.5f,Math.min(4,width)); }
     private Renderer3D(WorldRenderContext context) {
         transform = context.matrices().peek(); camera = context.worldState().cameraRenderState.pos;
     }
@@ -67,9 +69,9 @@ public final class Renderer3D {
         if (direction.lengthSquared() < .0001) return;
         VertexConsumer buffer = BUFFERS.getBuffer(LINE);
         vertex(buffer,x1,y1,z1,color);
-        buffer.normal(transform,(float)direction.x,(float)direction.y,(float)direction.z).lineWidth(1.5f);
+        buffer.normal(transform,(float)direction.x,(float)direction.y,(float)direction.z).lineWidth(lineWidth);
         vertex(buffer,x2,y2,z2,color);
-        buffer.normal(transform,(float)direction.x,(float)direction.y,(float)direction.z).lineWidth(1.5f);
+        buffer.normal(transform,(float)direction.x,(float)direction.y,(float)direction.z).lineWidth(lineWidth);
     }
     public void box(double x1, double y1, double z1, double x2, double y2, double z2,
                     Color fill, Color line, ShapeMode mode, int excluded) {

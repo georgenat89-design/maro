@@ -27,6 +27,14 @@ import dev.maro.runtime.settings.BoolSetting;
 import dev.maro.runtime.settings.ColorSetting;
 import dev.maro.runtime.settings.EnumSetting;
 import dev.maro.runtime.settings.IntSetting;
+import dev.maro.runtime.settings.DoubleSetting;
+import dev.maro.runtime.events.world.BlockUpdateEvent;
+import dev.maro.gui.hud.HudElement;
+import dev.maro.gui.hud.HudPlacementScreen;
+import dev.maro.gui.render.Fonts;
+import dev.maro.gui.render.Render2D;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.util.math.Box;
 import dev.maro.runtime.settings.Setting;
 import dev.maro.runtime.settings.SettingGroup;
 import dev.maro.runtime.systems.modules.Module;
@@ -46,9 +54,9 @@ import net.minecraft.block.BlockState;
 import net.minecraft.world.chunk.WorldChunk;
 import net.minecraft.world.chunk.ChunkSection;
 
-public final class BaseESP extends Module {
-  private static final int CHUNKS_PER_TICK = 3;
-  private static final int RESCAN_INTERVAL_TICKS = 80;
+public final class BaseESP extends Module implements HudElement {
+  public enum ScanSpeed { Fast, Balanced, Eco, Custom }
+  public enum DisplayStyle { Both, Outline, Filled }
   private static final int SCAN_PADDING = 4;
   private static final int SCAN_MIN_Y = -64;
   private static final int SCAN_MAX_Y = -1;
@@ -89,7 +97,6 @@ public final class BaseESP extends Module {
   private static final int STRUCTURE_ONLY_MAX_ASPECT_SKEW = 5;
   private static final int STRUCTURE_ONLY_MAX_ASPECT_PADDING = 10;
   private static final int ENGINEERED_COLUMN_MIN_BLOCKS = 2;
-  private static final int REBUILD_DEBOUNCE_TICKS = 6;
   private static final int MATCH_MAX_VOTE_COLUMNS = 96;
   private static final int MATCH_MAX_TRANSLATIONS = 6;
   private static final double MIN_HISTOGRAM_OVERLAP = 0.45;
@@ -104,6 +111,27 @@ public final class BaseESP extends Module {
   private final SettingGroup sgGeneral = this.settings.getDefaultGroup();
   private final SettingGroup sgRender = this.settings.createGroup("Render");
   private final SettingGroup sgChunkMark = this.settings.createGroup("Chunk Mark");
+  private final SettingGroup sgScan = this.settings.createGroup("Scanning");
+  private final SettingGroup sgHud = this.settings.createGroup("Detector HUD");
+  private final Setting<ScanSpeed> scanSpeed = sgScan.add(new EnumSetting.Builder<ScanSpeed>()
+      .name("scan-speed").description("Fast prioritizes discoveries; Eco spreads scans over more ticks").defaultValue(ScanSpeed.Fast).build());
+  private final Setting<Integer> scanRange = sgScan.add(new IntSetting.Builder().name("scan-radius")
+      .description("Radius in chunks; scans only chunks the client has loaded").defaultValue(12).range(1,32).build());
+  private final Setting<Integer> customChunks = sgScan.add(new IntSetting.Builder().name("chunks-per-tick")
+      .defaultValue(6).range(1,8).visible(() -> scanSpeed.get() == ScanSpeed.Custom).build());
+  private final Setting<Integer> customInterval = sgScan.add(new IntSetting.Builder().name("rescan-interval")
+      .description("Ticks between routine scans; block changes get priority immediately").defaultValue(40).range(20,400)
+      .visible(() -> scanSpeed.get() == ScanSpeed.Custom).build());
+  private final Setting<Double> customBudget = sgScan.add(new DoubleSetting.Builder().name("scan-budget-ms")
+      .description("Time budget for client-thread snapshots; one chunk can exceed this budget").defaultValue(2).range(.25,5)
+      .visible(() -> scanSpeed.get() == ScanSpeed.Custom).build());
+  private final Setting<Integer> alertCooldown = sgGeneral.add(new IntSetting.Builder().name("alert-cooldown")
+      .description("Seconds before a rediscovered nearby base can alert again").defaultValue(120).range(0,600).build());
+  private final Setting<Boolean> detectorHud = sgHud.add(new BoolSetting.Builder().name("detector-hud").defaultValue(true).build());
+  private final Setting<Integer> hudEntries = sgHud.add(new IntSetting.Builder().name("hud-entries").defaultValue(3).range(1,5).build());
+  private final Setting<Double> hudX = sgHud.add(new DoubleSetting.Builder().name("hud-x").defaultValue(2).range(0,100).build());
+  private final Setting<Double> hudY = sgHud.add(new DoubleSetting.Builder().name("hud-y").defaultValue(25).range(0,100).build());
+  private final Setting<Double> hudSize = sgHud.add(new DoubleSetting.Builder().name("hud-scale").defaultValue(.8).range(.5,2.5).build());
   private final Setting<Integer> minBlocks =
       this.sgGeneral.add(
           new IntSetting.Builder().name("min-blocks").description("Minimum storage and utility blocks in a built underground base").defaultValue(15).range(1, 4096).build());
@@ -111,6 +139,10 @@ public final class BaseESP extends Module {
       this.sgGeneral.add(new BoolSetting.Builder().name("chat-alerts").defaultValue(true).build());
   private final Setting<Boolean> soundAlerts =
       this.sgGeneral.add(new BoolSetting.Builder().name("sound-alerts").defaultValue(true).build());
+  private final Setting<DisplayStyle> displayStyle = sgRender.add(new EnumSetting.Builder<DisplayStyle>()
+      .name("display-style").defaultValue(DisplayStyle.Both).build());
+  private final Setting<Double> outlineWidth = sgRender.add(new DoubleSetting.Builder().name("outline-width")
+      .defaultValue(1.5).range(.5,4).visible(() -> displayStyle.get()!=DisplayStyle.Filled).build());
   private final Setting<SettingColor> boxColor =
       this.sgRender.add(
           new ColorSetting.Builder()
@@ -155,6 +187,12 @@ public final class BaseESP extends Module {
   private final Map<ChunkPos, Integer> lastScanTickByChunk = new ConcurrentHashMap<>();
   private final List<BaseESP.BaseRegion> baseRegions = new ArrayList<>();
   private final Map<ChunkPos, Long> queuedChunks = new ConcurrentHashMap<>();
+  // Client-thread queues and versions coalesce block bursts without submitting unlimited work.
+  private final ArrayDeque<ChunkPos> urgentChunks = new ArrayDeque<>();
+  private final Set<ChunkPos> urgentSet = new HashSet<>();
+  private final Map<ChunkPos, Long> changeVersions = new HashMap<>();
+  private final ArrayDeque<AlertStamp> alertHistory = new ArrayDeque<>();
+  private long nextChangeVersion;
   private long nextScanId;
   private final Set<Long> alertedRegions = ConcurrentHashMap.newKeySet();
   private final List<BaseESP.ChunkOffset> scanOrder = new ArrayList<>();
@@ -183,6 +221,61 @@ public final class BaseESP extends Module {
     return this.baseRegions.stream().map(region -> new net.minecraft.util.math.Box(
         region.shell.minX, region.shell.minY, region.shell.minZ,
         region.shell.maxX + 1, region.shell.maxY + 1, region.shell.maxZ + 1)).toList();
+  }
+
+  public record Detection(Box bounds, int storageBlocks, int totalBlocks, int chunks, String title, double templateSimilarity) {}
+  public List<Detection> detections() {
+    return baseRegions.stream().map(r -> new Detection(bounds(r), r.storageBlocks, r.totalBlocks,
+        r.chunkCount, r.familyTitle == null ? "Built base" : r.familyTitle, r.matchScore))
+        .sorted(Comparator.comparingDouble(d -> mc.player == null ? 0 : d.bounds.getCenter().squaredDistanceTo(mc.player.getEntityPos()))).toList();
+  }
+  private static Box bounds(BaseRegion r) {
+    return new Box(r.shell.minX,r.shell.minY,r.shell.minZ,r.shell.maxX+1,r.shell.maxY+1,r.shell.maxZ+1);
+  }
+  public int pendingScans() { return queuedChunks.size(); }
+  public int checkedChunks() { return lastScanTickByChunk.size(); }
+  private int chunksPerTick() { return switch(scanSpeed.get()) { case Fast -> 6; case Balanced -> 3; case Eco -> 1; case Custom -> customChunks.get(); }; }
+  private int rescanTicks() { return switch(scanSpeed.get()) { case Fast -> 40; case Balanced -> 80; case Eco -> 160; case Custom -> customInterval.get(); }; }
+  private int rebuildTicks() { return switch(scanSpeed.get()) { case Fast, Custom -> 2; case Balanced -> 6; case Eco -> 10; }; }
+  private double snapshotBudget() { return switch(scanSpeed.get()) { case Fast -> 2; case Balanced -> 1.25; case Eco -> .6; case Custom -> customBudget.get(); }; }
+
+  @EventHandler private void onBlockUpdate(BlockUpdateEvent event) {
+    if (mc.world != lastWorld || event.pos.getY() < SCAN_MIN_Y || event.pos.getY() > SCAN_MAX_Y) return;
+    if (!isTrackedState(event.oldState) && !isTrackedState(event.newState)) return;
+    ChunkPos pos = new ChunkPos(event.pos);
+    if (mc.player == null || chunkDistanceSq(mc.player.getChunkPos(),pos) > scanRadius()*scanRadius()) return;
+    changeVersions.put(pos, ++nextChangeVersion);
+    requestUrgent(pos);
+  }
+  private void requestUrgent(ChunkPos pos) {
+    lastScanTickByChunk.remove(pos);
+    if (urgentSet.add(pos)) {
+      if (urgentChunks.size() >= 128) urgentSet.remove(urgentChunks.removeFirst());
+      urgentChunks.addLast(pos);
+    }
+  }
+
+  private ChunkPos nextCandidate(ChunkPos origin, int radius) {
+    // Never let updates bypass the twelve-job limit. A running stale snapshot is rejected on publication.
+    for (int n = urgentChunks.size(); n > 0; n--) {
+      ChunkPos pos = urgentChunks.removeFirst(); urgentSet.remove(pos);
+      if (chunkDistanceSq(origin,pos) > radius*radius || getLoadedChunk(pos.x,pos.z) == null) continue;
+      if (queuedChunks.containsKey(pos)) { urgentChunks.addLast(pos); urgentSet.add(pos); continue; }
+      return pos;
+    }
+    // Finish the first pass over new chunks before spending work on routine refreshes.
+    for (int pass=0; pass<2; pass++) {
+      for (int n=0; n<scanOrder.size(); n++) {
+        ChunkOffset offset = scanOrder.get(scanIndex);
+        scanIndex = (scanIndex+1)%scanOrder.size();
+        if (offset.distanceSq > radius*radius) continue;
+        ChunkPos pos = new ChunkPos(origin.x+offset.x,origin.z+offset.z);
+        if (queuedChunks.containsKey(pos) || (pass==0 && lastScanTickByChunk.containsKey(pos))
+            || !shouldScanChunk(pos,tickCounter) || getLoadedChunk(pos.x,pos.z)==null) continue;
+        return pos;
+      }
+    }
+    return null;
   }
 
   @Override public String getInfoString() { return Integer.toString(this.baseRegions.size()); }
@@ -235,21 +328,18 @@ public final class BaseESP extends Module {
         this.markRegionsDirty();
       }
 
-      int submitted = 0;
-
-      for (int attempts = 0; submitted < CHUNKS_PER_TICK && this.queuedChunks.size() < 12 && attempts < this.scanOrder.size(); attempts++) {
-        BaseESP.ChunkOffset offset = this.scanOrder.get(this.scanIndex);
-        this.scanIndex = (this.scanIndex + 1) % this.scanOrder.size();
-        ChunkPos chunkPos = new ChunkPos(playerChunk.x + offset.x, playerChunk.z + offset.z);
-        WorldChunk chunk;
-        if (!this.queuedChunks.containsKey(chunkPos)
-            && this.shouldScanChunk(chunkPos, this.tickCounter)
-            && (chunk = this.getLoadedChunk(chunkPos.x, chunkPos.z)) != null) {
+      long deadline = System.nanoTime() + (long)(snapshotBudget()*1_000_000);
+      for (int submitted=0; submitted<chunksPerTick() && queuedChunks.size()<12 && System.nanoTime()<deadline; submitted++) {
+        ChunkPos chunkPos = nextCandidate(playerChunk,radius);
+        if (chunkPos == null) break;
+        WorldChunk chunk = getLoadedChunk(chunkPos.x,chunkPos.z);
+        if (chunk != null) {
           int scanTick = this.tickCounter;
           long scanId = ++this.nextScanId;
           this.queuedChunks.put(chunkPos, scanId);
           WorldChunk sourceChunk = chunk;
           long scanSession = this.session;
+          long version = changeVersions.getOrDefault(chunkPos,0L);
           // Palette snapshots are copied on the client thread; workers never read mutable chunks.
           ChunkSection[] sections = chunk.getSectionArray();
           ChunkSection[] snapshot = new ChunkSection[sections.length];
@@ -261,8 +351,7 @@ public final class BaseESP extends Module {
                 && !sections[i].isEmpty() && sections[i].hasAny(BaseESP::isTrackedState)) snapshot[i] = sections[i].copy();
           }
           boolean touchesStorage = this.touchesStorageChunk(chunkPos);
-          this.scanExecutor.submit(() -> this.scanChunk(snapshot, bottomSection, bottomY, chunkPos, scanTick, touchesStorage, scanSession, sourceChunk, scanId));
-          submitted++;
+          this.scanExecutor.submit(() -> this.scanChunk(snapshot, bottomSection, bottomY, chunkPos, scanTick, touchesStorage, scanSession, sourceChunk, scanId, version));
         }
       }
 
@@ -274,7 +363,7 @@ public final class BaseESP extends Module {
 
   private boolean shouldScanChunk(ChunkPos chunkPos, int currentTick) {
     Integer lastTick = this.lastScanTickByChunk.get(chunkPos);
-    return lastTick == null || currentTick - lastTick >= 80;
+    return lastTick == null || currentTick - lastTick >= rescanTicks();
   }
 
   private void markRegionsDirty() {
@@ -294,7 +383,7 @@ public final class BaseESP extends Module {
         this.alertedRegions.retainAll(result.activeAnchors);
 
         for (BaseESP.BaseRegion region : this.baseRegions) {
-          if (this.alertedRegions.add(region.anchor)) {
+          if (this.alertedRegions.add(region.anchor) && shouldAlert(region)) {
             this.alertRegion(region);
           }
         }
@@ -304,7 +393,7 @@ public final class BaseESP extends Module {
 
   private void scheduleRegionRebuildIfNeeded() {
     if (this.regionsDirty && !this.rebuildQueued && this.scanExecutor != null) {
-      if (this.tickCounter - this.lastRebuildRequestTick >= 6) {
+      if (this.tickCounter - this.lastRebuildRequestTick >= rebuildTicks()) {
         this.lastRebuildRequestTick = this.tickCounter;
         this.regionsDirty = false;
         this.rebuildQueued = true;
@@ -330,7 +419,7 @@ public final class BaseESP extends Module {
   }
 
   private void scanChunk(ChunkSection[] sections, int baseSectionY, int worldBottom, ChunkPos chunkPos,
-                         int scanTick, boolean touchesStorage, long scanSession, WorldChunk sourceChunk, long scanId) {
+                         int scanTick, boolean touchesStorage, long scanSession, WorldChunk sourceChunk, long scanId, long version) {
     try {
       if (scanSession != this.session || Thread.currentThread().isInterrupted()) return;
       HashMap<Long, BaseESP.ChunkColumnBuilder> columns = new HashMap<>();
@@ -402,22 +491,24 @@ public final class BaseESP extends Module {
         if (!isActive() || scanSession != this.session || this.mc.world != this.lastWorld || this.mc.player == null) return;
         if (this.chunkDistanceSq(this.mc.player.getChunkPos(), chunkPos) > (this.lastRadius + SCAN_PADDING) * (this.lastRadius + SCAN_PADDING)) return;
         if (this.getLoadedChunk(chunkPos.x, chunkPos.z) != sourceChunk || !Long.valueOf(scanId).equals(this.queuedChunks.get(chunkPos))) return;
+        if (changeVersions.getOrDefault(chunkPos,0L) != version) { requestUrgent(chunkPos); return; }
         BaseESP.ChunkScan previous =
           result == null
               ? this.chunkScans.remove(chunkPos)
               : this.chunkScans.put(chunkPos, result);
       this.lastScanTickByChunk.put(chunkPos, scanTick);
-      if (result != null && anchors > 0) {
+      boolean changed = !this.sameScan(previous,result);
+      if (changed && result != null && anchors > 0) {
         for (int dx = -1; dx <= 1; dx++) {
           for (int dz = -1; dz <= 1; dz++) {
             if (dx != 0 || dz != 0) {
-              this.lastScanTickByChunk.remove(new ChunkPos(chunkPos.x + dx, chunkPos.z + dz));
+              requestUrgent(new ChunkPos(chunkPos.x + dx, chunkPos.z + dz));
             }
           }
         }
       }
 
-      if (!this.sameScan(previous, result)) {
+      if (changed) {
         this.markRegionsDirty();
       }
       });
@@ -553,6 +644,7 @@ public final class BaseESP extends Module {
                   new BaseESP.BaseRegion(
                       anchor,
                       builder.totalBlocks,
+                      storageAnchorBlocks(builder),
                       builder.chunkCounts.size(),
                       bestChunk,
                       bestChunkCount,
@@ -561,7 +653,8 @@ public final class BaseESP extends Module {
                       builder.maxY,
                       match == null ? null : match.family.familyHash,
                       match == null ? null : match.family.primarySlug,
-                      match == null ? 0.0 : match.score);
+                      match == null ? 0.0 : match.score,
+                      match == null ? null : match.family.title);
               nextRegions.add(region2);
               activeAnchors.add(anchor);
               if (bestChunkCount > bestMarkedCount
@@ -2442,6 +2535,70 @@ public final class BaseESP extends Module {
     return cols;
   }
 
+  private record AlertStamp(Box bounds, long time) {}
+  private boolean shouldAlert(BaseRegion region) {
+    long now = System.nanoTime(), cooldown = alertCooldown.get()*1_000_000_000L;
+    alertHistory.removeIf(stamp -> now-stamp.time >= cooldown);
+    Box box = bounds(region);
+    for (AlertStamp stamp : alertHistory) {
+      var a = stamp.bounds.getCenter(); var b = box.getCenter();
+      if (stamp.bounds.intersects(box) || (Math.abs(a.y-b.y)<=10 && Math.hypot(a.x-b.x,a.z-b.z)<=24)) return false;
+    }
+    if (alertHistory.size()>=256) alertHistory.removeFirst();
+    alertHistory.addLast(new AlertStamp(box,now));
+    return true;
+  }
+
+  @Override public dev.maro.runtime.gui.widgets.WWidget getWidget(dev.maro.runtime.gui.GuiTheme theme) {
+    var button = theme.button("Place detector HUD");
+    button.action = () -> { detectorHud.set(true); setEnabled(true); mc.setScreen(new HudPlacementScreen(mc.currentScreen,this)); };
+    return button;
+  }
+  @Override public String hudName() { return "Base ESP"; }
+  @Override public float hudScale() {
+    return (float)Math.min(hudSize.get(), Math.min((mc.getWindow().getScaledWidth()-8)/224.0,
+        (mc.getWindow().getScaledHeight()-8)/(double)panelHeight()));
+  }
+  private int panelHeight() { return 42+Math.max(1,Math.min(hudEntries.get(),baseRegions.size()))*42; }
+  @Override public float hudWidth() { return 224*hudScale(); }
+  @Override public float hudHeight() { return panelHeight()*hudScale(); }
+  private float roomX() { return Math.max(0,mc.getWindow().getScaledWidth()-hudWidth()-8); }
+  private float roomY() { return Math.max(0,mc.getWindow().getScaledHeight()-hudHeight()-8); }
+  @Override public float hudLeft() { return 4+Math.round(roomX()*hudX.get()/100); }
+  @Override public float hudTop() { return 4+Math.round(roomY()*hudY.get()/100); }
+  @Override public void hudMove(float left,float top) {
+    hudX.set(roomX()==0?0:clamp((left-4)/roomX()*100,0,100));
+    hudY.set(roomY()==0?0:clamp((top-4)/roomY()*100,0,100));
+  }
+  @Override public void hudResize(float by) { hudSize.set(clamp(hudSize.get()+by,.5,2.5)); }
+  @Override public void hudReset() { hudX.reset(); hudY.reset(); hudSize.reset(); }
+  @Override public void onRender2D(DrawContext ctx,float delta) {
+    if (!detectorHud.get() || mc.player==null || mc.world!=lastWorld || mc.options.hudHidden) return;
+    var matrix = ctx.getMatrices(); matrix.pushMatrix();
+    Fonts.beginRaw();
+    try {
+      matrix.translate(hudLeft(),hudTop()); matrix.scale(hudScale(),hudScale());
+      Render2D.roundRect(ctx,0,0,224,panelHeight(),8,0xE80B0D12);
+      Render2D.roundOutline(ctx,0,0,224,panelHeight(),8,.6f,0x504F645C);
+      Fonts.draw(ctx,"BASE ESP",10,9,0xFFECF5EF,true,.7f);
+      Fonts.drawRight(ctx,scanSpeed.get().name().toUpperCase(),214,10+Fonts.height(.6f)/2,0xFF83DCA0,false,.6f);
+      Fonts.draw(ctx,baseRegions.size()+" found  ·  "+checkedChunks()+" checked  ·  "+pendingScans()+" pending",10,25,0xFF98A69F,false,.6f);
+      var found = detections();
+      if (found.isEmpty()) {
+        Fonts.draw(ctx,"Scanning loaded underground chunks",10,49,0xFFCFDAD4,false,.65f);
+        Fonts.draw(ctx,"New chunks and block changes get priority",10,65,0xFF7F9186,false,.55f);
+      }
+      for (int i=0; i<Math.min(hudEntries.get(),found.size()); i++) {
+        Detection d = found.get(i); var center=d.bounds.getCenter(); int y=42+i*42;
+        Render2D.roundRect(ctx,7,y,210,37,5,0x70303B34);
+        Fonts.draw(ctx,Fonts.trim(d.title,148,true,.65f),12,y+5,0xFFF1F6F2,true,.65f);
+        Fonts.drawRight(ctx,Math.round(center.distanceTo(mc.player.getEntityPos()))+"m",210,y+5+Fonts.height(.65f)/2,0xFF83DCA0,true,.65f);
+        String info=(int)Math.floor(center.x)+" / "+(int)Math.floor(center.y)+" / "+(int)Math.floor(center.z)+"  ·  "+d.storageBlocks+" storage";
+        Fonts.draw(ctx,Fonts.trim(info,198,false,.55f),12,y+21,0xFFADBAB2,false,.55f);
+      }
+    } finally { Fonts.endRaw(); matrix.popMatrix(); }
+  }
+
   private void alertRegion(BaseESP.BaseRegion region) {
     this.mc.execute(
         () -> {
@@ -2452,7 +2609,9 @@ public final class BaseESP extends Module {
             if (this.chatAlerts.get()) {
               this.mc.player .sendMessage(
                   Text.literal(
-                          "Base found at x " + centerX + " y " + centerY + " z " + centerZ)
+                          "Base found at x " + centerX + " y " + centerY + " z " + centerZ
+                              + " · " + region.storageBlocks + " storage blocks · "
+                              + Math.round(bounds(region).getCenter().distanceTo(mc.player.getEntityPos())) + "m away")
                       .formatted(Formatting.BLUE),
                   false);
             }
@@ -2474,8 +2633,9 @@ public final class BaseESP extends Module {
   public void render(Renderer3D event) {
     if (isActive() && this.mc.world != null && this.mc.world == this.lastWorld && !this.baseRegions.isEmpty()) {
       SettingColor base = (SettingColor) this.boxColor.get();
-      SettingColor sideColor = new SettingColor(base.r, base.g, base.b, this.boxAlpha.get());
-      SettingColor lineColor = new SettingColor(base.r, base.g, base.b, 255);
+      event.lineWidth(outlineWidth.get().floatValue());
+      SettingColor sideColor = new SettingColor(base.r, base.g, base.b, displayStyle.get()==DisplayStyle.Outline?0:this.boxAlpha.get());
+      SettingColor lineColor = new SettingColor(base.r, base.g, base.b, displayStyle.get()==DisplayStyle.Filled?0:255);
       SettingColor mark = (SettingColor) this.chunkMarkColor.get();
       int markerAlpha = this.chunkMarkOpacity.get();
       SettingColor markSide = new SettingColor(mark.r, mark.g, mark.b, markerAlpha);
@@ -2552,6 +2712,8 @@ public final class BaseESP extends Module {
             ShapeMode.Both,
             0);
       }
+      event.box(shell.minX,shell.minY,shell.minZ,shell.maxX+1.0,shell.maxY+1.0,shell.maxZ+1.0,
+          noLine,lineColor,ShapeMode.Lines,0);
     } else {
       double minY = (double) shell.minY;
       double maxY = (double) shell.maxY + 1.0;
@@ -2577,6 +2739,14 @@ public final class BaseESP extends Module {
       this.renderNorthSouthFaces(event, shell.southSegments, minY, maxY, sideColor, lineColor);
       this.renderWestEastFaces(event, shell.westSegments, minY, maxY, sideColor, lineColor);
       this.renderWestEastFaces(event, shell.eastSegments, minY, maxY, sideColor, lineColor);
+      Set<Long> corners = new HashSet<>();
+      for (var segments : List.of(shell.northSegments,shell.southSegments)) for (var s : segments) {
+        corners.add(packXZ(s.from,s.fixed)); corners.add(packXZ(s.to+1,s.fixed));
+      }
+      for (var segments : List.of(shell.westSegments,shell.eastSegments)) for (var s : segments) {
+        corners.add(packXZ(s.fixed,s.from)); corners.add(packXZ(s.fixed,s.to+1));
+      }
+      for (long p : corners) event.line(unpackX(p),minY,unpackZ(p),unpackX(p),maxY,unpackZ(p),lineColor);
     }
   }
 
@@ -2848,11 +3018,11 @@ public final class BaseESP extends Module {
     } catch (RuntimeException ignored) {
     }
 
-    return Math.max(8, render + 1);
+    return Math.min(scanRange.get(), Math.max(1, render + 1));
   }
 
   private void resetCursor(ChunkPos origin, int radius) {
-    this.scanIndex = 0;
+    if (!origin.equals(this.lastOrigin) || radius != this.lastRadius) this.scanIndex = 0;
     this.lastOrigin = origin;
     this.lastRadius = radius;
     this.rebuildScanOrder(radius);
@@ -2878,13 +3048,12 @@ public final class BaseESP extends Module {
       if (this.chunkDistanceSq(center, chunkPos) > radiusSq || this.getLoadedChunk(chunkPos.x, chunkPos.z) == null) {
         this.chunkScans.remove(chunkPos);
         this.lastScanTickByChunk.remove(chunkPos);
-        this.queuedChunks.remove(chunkPos);
         removed = true;
       }
     }
 
     for (ChunkPos chunkPosx : Set.copyOf(this.lastScanTickByChunk.keySet())) {
-      if (this.chunkDistanceSq(center, chunkPosx) > radiusSq) {
+      if (this.chunkDistanceSq(center, chunkPosx) > radiusSq || getLoadedChunk(chunkPosx.x,chunkPosx.z)==null) {
         this.lastScanTickByChunk.remove(chunkPosx);
         removed = true;
       }
@@ -2893,6 +3062,7 @@ public final class BaseESP extends Module {
     if (removed) {
       this.markRegionsDirty();
     }
+    changeVersions.keySet().removeIf(pos -> chunkDistanceSq(center,pos)>radiusSq || getLoadedChunk(pos.x,pos.z)==null);
   }
 
   private int chunkDistanceSq(ChunkPos a, ChunkPos b) {
@@ -2911,6 +3081,7 @@ public final class BaseESP extends Module {
     this.lastScanTickByChunk.clear();
     this.baseRegions.clear();
     this.queuedChunks.clear();
+    this.urgentChunks.clear(); this.urgentSet.clear(); this.changeVersions.clear(); this.alertHistory.clear();
     this.alertedRegions.clear();
     this.scanOrder.clear();
     this.scanIndex = 0;
@@ -2947,6 +3118,8 @@ public final class BaseESP extends Module {
   private static class BaseRegion {
     final long anchor;
     final int totalBlocks;
+    final int storageBlocks;
+    final String familyTitle;
     final int chunkCount;
     final ChunkPos bestChunk;
     final int bestChunkCount;
@@ -2960,6 +3133,7 @@ public final class BaseESP extends Module {
     BaseRegion(
         long anchor,
         int totalBlocks,
+        int storageBlocks,
         int chunkCount,
         ChunkPos bestChunk,
         int bestChunkCount,
@@ -2968,9 +3142,11 @@ public final class BaseESP extends Module {
         int baseMaxY,
         String familyHash,
         String familySlug,
-        double matchScore) {
+        double matchScore, String familyTitle) {
       this.anchor = anchor;
       this.totalBlocks = totalBlocks;
+      this.storageBlocks = storageBlocks;
+      this.familyTitle = familyTitle;
       this.chunkCount = chunkCount;
       this.bestChunk = bestChunk;
       this.bestChunkCount = bestChunkCount;

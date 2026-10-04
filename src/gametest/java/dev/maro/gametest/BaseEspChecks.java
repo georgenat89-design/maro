@@ -15,7 +15,10 @@ final class BaseEspChecks {
     private static void require(boolean value, String message) { if (!value) throw new AssertionError(message); }
     private static Setting<?> setting(BaseESP module, String name) { return module.getSettings().stream().filter(s -> s.getName().equals(name)).findFirst().orElseThrow(); }
     private static void await(ClientGameTestContext context, java.util.function.BooleanSupplier condition, String failure) {
-        for (int i = 0; i < 100; i++) {
+        await(context,condition,300,failure);
+    }
+    private static void await(ClientGameTestContext context, java.util.function.BooleanSupplier condition, int ticks, String failure) {
+        for (int i = 0; i < ticks/3; i++) {
             if (context.computeOnClient(c -> condition.getAsBoolean())) return;
             context.waitTicks(3);
         }
@@ -61,6 +64,12 @@ final class BaseEspChecks {
                 require(bounds.minX <= 14 && bounds.maxX >= 18 && bounds.minZ <= 14 && bounds.maxZ >= 18,
                     "Base shell did not contain its storage: " + bounds);
                 require(bounds.maxY <= 0, "Above-ground base was included");
+                require(module.detections().getFirst().storageBlocks()==32,"HUD storage count included structure blocks");
+                require(module.pendingScans()<=12,"Scan queue exceeded its bound");
+                require(((ModeSetting)setting(module,"scan speed")).get().equals("Fast"),"Fast scan was not the default");
+                module.hudMove(10000,10000);
+                require(module.hudLeft()+module.hudWidth()<=c.getWindow().getScaledWidth(),"Detector HUD escaped the screen");
+                module.hudReset();
             });
             require(!DonutSignatureCatalog.get().families().isEmpty(), "Bundled source signature catalog did not load");
             // Solid natural rock hides the vanilla structure; ESP must still render through it.
@@ -80,6 +89,9 @@ final class BaseEspChecks {
                 ModuleManager.get(StretchRes.class).setEnabled(true);
             });
             context.waitTicks(4); context.takeScreenshot("maro-base-esp-pillar-stretched");
+            context.runOnClient(c -> ((ModeSetting)setting(module,"display style")).set("Outline"));
+            context.waitTicks(3); context.takeScreenshot("maro-base-esp-outline");
+            context.runOnClient(c -> ((ModeSetting)setting(module,"display style")).set("Both"));
             context.runOnClient(c -> ((ModeSetting)setting(module,"chunk mark mode")).set("Slab"));
             context.waitTicks(3); context.takeScreenshot("maro-base-esp-flat-marker");
             context.runOnClient(c -> {
@@ -95,8 +107,27 @@ final class BaseEspChecks {
             require(context.computeOnClient(c -> module.detectedBounds().isEmpty()), "A late worker restored disabled detections");
             context.runOnClient(c -> module.setEnabled(true));
             await(context, () -> !module.detectedBounds().isEmpty(), "Re-enabling did not restart scans");
+            // A long custom refresh interval makes this a real test of block-update priority,
+            // rather than letting the routine periodic scan hide a broken update path.
+            context.runOnClient(c -> {
+                ((ModeSetting)setting(module,"scan speed")).set("Custom");
+                ((NumberSetting)setting(module,"rescan interval")).set(400.0);
+            });
+            context.waitTicks(30);
             world.getServer().runCommand("fill 12 -40 12 23 -34 23 minecraft:air");
-            await(context, () -> module.detectedBounds().isEmpty(), "Removed base was not cleared after rescan");
+            await(context, () -> module.detectedBounds().isEmpty(),90,"Removed base did not get priority over the 400-tick rescan interval");
+            world.getServer().runCommand("fill 12 -40 12 23 -34 23 minecraft:deepslate_bricks");
+            world.getServer().runCommand("fill 13 -39 13 22 -35 22 minecraft:air");
+            world.getServer().runCommand("fill 14 -39 14 17 -38 17 minecraft:barrel");
+            await(context, () -> !module.detectedBounds().isEmpty(),90,"New base in previously checked chunks did not get priority");
+            context.runOnClient(c -> {
+                require(module.detections().getFirst().storageBlocks()==32,"A stale snapshot replaced changed block counts");
+                require(module.pendingScans()<=12,"Block updates submitted unbounded jobs");
+                ((ModeSetting)setting(module,"scan speed")).set("Eco");
+            });
+            context.waitTicks(10);
+            require(context.computeOnClient(c -> !module.detectedBounds().isEmpty()),"Switching scan speed lost existing detections");
+            world.getServer().runCommand("fill 12 -40 12 23 -34 23 minecraft:air");
             context.runOnClient(c -> { module.setEnabled(false); require(module.detectedBounds().isEmpty(), "Disable did not clear detections"); });
             context.waitTicks(12);
             require(context.computeOnClient(c -> module.detectedBounds().isEmpty()), "A late scan restored disabled detections");

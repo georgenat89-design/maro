@@ -11,6 +11,14 @@ Krypton Avengers source (`dev.dexter.kryptionians.modules.BaseESP`). It groups
 storage and nearby built blocks into base shells, matches the included signature
 catalog, and draws configurable green outlines and translucent faces through
 terrain. Optional chat/sound alerts and **Chunk Mark** (Pillar or Slab) are included.
+**Fast** scanning is the default, with **Balanced**, **Eco**, and **Custom** presets.
+New chunks and tracked block changes take priority over periodic rescans. Custom
+controls include chunks per tick, refresh interval, snapshot budget, and scan radius;
+the worker queue stays bounded to twelve jobs. Snapshots changed during a scan are
+discarded and refreshed. A movable **Detector HUD** lists nearby bases with distance,
+coordinates, storage count, and scan status; use **Place detector HUD** to drag/resize
+it. Choose **Both**, **Outline**, or **Filled**, and adjust outline width. A spatial
+alert cooldown reduces repeat notifications when a base is rediscovered.
 Only loaded chunks between Y −64 and −1 are scanned. Workers analyze copied chunk
 sections; old results are discarded when disabling or changing worlds.
 
