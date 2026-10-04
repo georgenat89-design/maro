@@ -3,6 +3,8 @@ package dev.maro.nathan.audio;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.OutputStreamWriter;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -18,6 +20,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicLong;
 
 import javax.imageio.ImageIO;
 
@@ -72,6 +75,17 @@ public final class SpotifyMedia implements AutoCloseable {
     private Thread audioReader;
     private volatile float[] audioLevels = SILENT_LEVELS;
     private volatile long audioSampleAt;
+    public record Volume(boolean available, double level, boolean muted, String error) {
+        public static Volume waiting() { return new Volume(false, 0, false, "Waiting for Windows audio"); }
+        public int percent() { return (int) Math.round(level * 100); }
+    }
+    private volatile Volume volume = Volume.waiting();
+    private volatile long volumeSampleAt;
+    private final Object volumeLock = new Object();
+    private long requestedVolumeSequence;
+    private final AtomicLong volumeSequence = new AtomicLong();
+    private record VolumeRequest(long sequence, double level, boolean muted) { }
+    private final AtomicReference<VolumeRequest> pendingVolume = new AtomicReference<>();
     private record SeekRequest(State track, long positionMs) { }
     private final AtomicReference<SeekRequest> pendingSeek = new AtomicReference<>();
     private final AtomicBoolean seeking = new AtomicBoolean();
@@ -83,6 +97,25 @@ public final class SpotifyMedia implements AutoCloseable {
 
     public Artwork artwork() {
         return artwork;
+    }
+
+    /** Windows output volume, shared by desktop Spotify and the browser player. */
+    public Volume volume() {
+        Volume current = volume;
+        return current.available && System.currentTimeMillis() - volumeSampleAt > 2500
+            ? new Volume(false, current.level, current.muted, "Windows audio is reconnecting") : current;
+    }
+
+    /** Nonblocking: the audio reader sends only the latest drag position through its persistent pipe. */
+    public void setVolume(double level, boolean muted) {
+        if (!Double.isFinite(level) || !volume().available || audioProcess == null) return;
+        double bounded = Math.max(0, Math.min(1, level));
+        synchronized (volumeLock) {
+            if (volume.level == bounded && volume.muted == muted) return;
+            requestedVolumeSequence = volumeSequence.incrementAndGet();
+            volume = new Volume(true, bounded, muted, "");
+            pendingVolume.set(new VolumeRequest(requestedVolumeSequence, bounded, muted));
+        }
     }
 
     /** Exact identity shared by metadata, artwork and HUD transitions. */
@@ -286,9 +319,40 @@ public final class SpotifyMedia implements AutoCloseable {
     }
 
     private void readAudio(Process process) {
-        try (BufferedReader input = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+        try (BufferedReader input = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+             BufferedWriter commands = new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8))) {
             String line;
             while ((line = input.readLine()) != null && process == audioProcess) {
+                VolumeRequest request = pendingVolume.getAndSet(null);
+                if (request != null) {
+                    commands.write("VOLUME " + request.sequence + " " + request.level + " " + (request.muted ? "1" : "0"));
+                    commands.newLine();
+                    commands.flush();
+                }
+                if (line.startsWith("VOLUME ")) {
+                    String[] values = line.substring(7).trim().split("\\s+");
+                    if (values.length == 3) {
+                        long sequence = Long.parseLong(values[0]);
+                        double level = Double.parseDouble(values[1]);
+                        synchronized (volumeLock) {
+                            if (process == audioProcess && Double.isFinite(level)) {
+                                volumeSampleAt = System.currentTimeMillis();
+                                if (sequence >= requestedVolumeSequence)
+                                    volume = new Volume(true, Math.max(0, Math.min(1, level)), values[2].equals("1"), "");
+                            }
+                        }
+                    }
+                    continue;
+                }
+                if (line.startsWith("VOLUME_ERROR ")) {
+                    synchronized (volumeLock) {
+                        if (process == audioProcess) {
+                            requestedVolumeSequence = 0;
+                            volume = new Volume(false, volume.level, volume.muted, line.substring(13));
+                        }
+                    }
+                    continue;
+                }
                 if (!line.startsWith("LEVELS ")) continue;
                 String[] values = line.substring(7).trim().split("\\s+");
                 if (values.length != 7) continue;
@@ -302,6 +366,8 @@ public final class SpotifyMedia implements AutoCloseable {
             }
         } catch (Exception e) {
             if (process == audioProcess) NameeProtectAddon.LOG.debug("Spotify audio bars stopped: {}", e.toString());
+        } finally {
+            if (process == audioProcess) volume = new Volume(false, volume.level, volume.muted, "Windows audio helper stopped");
         }
     }
 
@@ -572,6 +638,10 @@ public final class SpotifyMedia implements AutoCloseable {
         statusReader = null;
         audioLevels = SILENT_LEVELS;
         audioSampleAt = 0;
+        synchronized (volumeLock) {
+            volume = Volume.waiting(); volumeSampleAt = 0;
+            pendingVolume.set(null); volumeSequence.set(0); requestedVolumeSequence = 0;
+        }
         pendingSeek.set(null);
         seeking.set(false);
         if (active != null) active.shutdownNow();

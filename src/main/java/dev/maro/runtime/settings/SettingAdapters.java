@@ -61,6 +61,7 @@ public final class SettingAdapters {
     public static final class ValueSetting extends dev.maro.setting.Setting<String> {
         private final Setting<?> source;
         ValueSetting(Setting<?> source) { super(source.name.replace('-', ' '), source.description, ""); this.source=source; setVisibility(source.visible); }
+        @Override public void reset(){source.reset();}
         public String editText() {
             Object value=source.get();
             if(value instanceof List<?>) return toJson().toString();

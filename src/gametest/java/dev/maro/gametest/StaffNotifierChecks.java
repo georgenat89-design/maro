@@ -19,7 +19,7 @@ import java.util.*;
 final class StaffNotifierChecks {
     private static void require(boolean ok,String message) { if (!ok) throw new AssertionError(message); }
     private static Setting<?> setting(StaffNotifier m,String name) { return m.getSettings().stream().filter(s -> s.getName().equals(name)).findFirst().orElseThrow(); }
-    private static void tab(MinecraftClient client,UUID id,String name,boolean listed,boolean add) {
+    static void tab(MinecraftClient client,UUID id,String name,boolean listed,boolean add) {
         var actions = EnumSet.of(PlayerListS2CPacket.Action.UPDATE_LISTED,PlayerListS2CPacket.Action.UPDATE_LATENCY);
         if (add) actions.add(PlayerListS2CPacket.Action.ADD_PLAYER);
         var packet = new PlayerListS2CPacket(actions,List.of());
@@ -39,6 +39,7 @@ final class StaffNotifierChecks {
         UUID a=UUID.randomUUID(),b=UUID.randomUUID(),c=UUID.randomUUID(),d=UUID.randomUUID();
         try {
             context.runOnClient(client -> {
+                require(module.isStaffName("DOUGH4")&&module.isStaffName("u_vv")&&module.isStaffName("cryptodaveyt"),"New staff defaults were missing");
                 module.getSettings().forEach(Setting::reset);
                 ((BooleanSetting)setting(module,"sound alerts")).set(false);
                 ((BooleanSetting)setting(module,"notify existing")).set(false);
@@ -53,8 +54,9 @@ final class StaffNotifierChecks {
             });
             context.waitTicks(3);
             context.runOnClient(client -> {
-                require(module.onlineStaff().size()==1 && module.onlineStaff().getFirst().name().equals("SHOWERED"),"Case-sensitive match, substring match, or unlisted staff leaked into HUD");
+                require(module.onlineStaff().size()==1 && module.onlineStaff().getFirst().name().equals("SHOWERED"),"Incorrect visible staff: "+module.onlineStaff()+" enabled="+module.isEnabled()+" listed="+client.getNetworkHandler().getListedPlayerListEntries().stream().map(e->e.getProfile().name()).toList());
                 require(module.onlineStaff().getFirst().ping()==42,"Tab ping was not retained");
+                require(module.hudStaff().stream().anyMatch(s->s.name().equals("frwost")&&!s.listed()),"Unlisted profile was not shown with its own status");
                 require(module.recentChanges().size()==1 && module.recentChanges().getFirst().joined(),"Join was not tracked once");
                 tab(client,a,"SHOWERED",true,false); tab(client,c,"frwost",true,false);
             });
@@ -81,6 +83,10 @@ final class StaffNotifierChecks {
                 module.hudReset();
             });
             context.waitTicks(3); context.takeScreenshot("maro-staff-notifier-custom");
+            context.runOnClient(client -> {
+                var layout=(dev.maro.setting.ModeSetting)setting(module,"layout");layout.set("Compact");
+            });
+            context.waitTicks(3);context.takeScreenshot("maro-staff-notifier-compact");
             context.runOnClient(client -> client.getNetworkHandler().onPlayerRemove(new PlayerRemoveS2CPacket(List.of(d))));
             context.waitTicks(3);
             require(context.computeOnClient(client -> module.onlineStaff().isEmpty() && !module.recentChanges().getLast().joined()),"Player removal packet did not report staff leaving");

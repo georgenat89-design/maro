@@ -10,9 +10,30 @@ Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 and default account names in Maro. Edit **staff names** for your server. It shows
 staff currently listed in tab, their heads and ping, and join/leave toast and sound
 alerts. Matching uses exact account names, case insensitive. Hidden tab entries
-are excluded; this does not establish whether someone has disconnected or vanished.
+can optionally appear with an explicit **Hidden from tab** label; this does not establish why the server hid them.
 Use **Place staff list** to drag/resize the panel. Native SignalDebug method bodies
 were unavailable, so the tracker, HUD, and alerts are implemented independently.
+
+The refined staff panel includes player heads, visible/hidden counts, nearby distance,
+spectator labels, fading highlights, comfortable/compact layouts, and a proximity alert
+cooldown. Eight user-supplied names were added: Frenk_Btw, Napooo_, BobisFound,
+CryptoDaveYt, MunkerLich, u_vv, Fallerfly, and Dough4. Existing saved lists receive these
+names once; subsequent edits/removals persist. Choose **Sound mode → SelectedStaff**
+and edit **Sound staff** to play join sounds only for chosen accounts. Chime, Bell,
+Soft and Alert tones have volume/pitch controls; leave and proximity sounds are optional.
+
+**Anti Vanish** (Misc) adapts the Anubis detector into Maro. It consumes tab visibility,
+removal, game-mode and chat packets; command-target suggestions; invisible player
+metadata; and unexplained nearby sounds/particles. It suppresses ordinary departures,
+bulk tab removals, local interactions, explosions, visible causes, redstone mechanisms,
+villager door use, and ambient smoke sources. It shares Maro's editable staff names,
+resets across world/shard changes, coalesces/rate-limits alerts, and provides a movable
+evidence HUD. The completion probe requests suggestions for `minecraft:msg ` every
+5 seconds by default; it does not send a chat message and can be disabled. Range,
+probe interval, sounds, chat alerts, and notifications are configurable. Evidence can
+suggest a hidden player; it cannot reveal staff the server never exposes to the client.
+The original Anubis Staff List module was not ported. GPL notices and corresponding
+source are retained; see THIRD_PARTY.md.
 
 **Base ESP** (Visuals) ports the underground base detector from the user-provided
 Krypton Avengers source (`dev.dexter.kryptionians.modules.BaseESP`). It groups
@@ -49,6 +70,16 @@ attacked, collide with players, or interact with the server.
 The Nathan modules use Maro's settings, keybinds, friend list, and saved configs. Right-click a module to edit its settings. Chat Macros includes a manager and editor under its Actions section. Strings and item lists have an Edit button; lists accept JSON arrays or semicolon-separated entries.
 
 Spotify HUD supports the existing desktop/browser media bridge on Windows, album covers, playback controls, draggable positioning, seeking, and animated audio bars. Press **F9** while enabled to interact. Audio-reactive bars use Windows system output; they do not record a microphone. Live media/audio integration needs Windows; other systems keep the HUD's preview/fallback state. Spotify control integration is retained from Nathan, with Maro's renderer underneath.
+
+Enable **Controls → Volume control** to show the **SYSTEM** slider in F9 controls.
+Drag it from 0–100%, scroll over it in 2% steps, or click the speaker to mute/unmute.
+This changes Windows output volume for all apps, covering both desktop and browser playback.
+The percentage follows keyboard/Windows changes; moving the slider unmutes, and the speaker
+restores a remembered audible level after setting it to zero. The row replaces the playback
+status while interacting, so the normal HUD stays the same size. Mini mode expands in F9 to
+reveal the controls. Unsupported/disconnected audio shows an unavailable state.
+The existing persistent WASAPI helper handles reads and coalesced writes away from the render
+thread using [Windows endpoint volume controls](https://learn.microsoft.com/en-us/windows/win32/api/endpointvolume/nn-endpointvolume-iaudioendpointvolume).
 
 Region Map retains Nathan's updated region divisions and sharp labels. Keystrokes retains its Poppins labels. Their initial positions leave room for each other and Spotify, and can be changed in settings.
 

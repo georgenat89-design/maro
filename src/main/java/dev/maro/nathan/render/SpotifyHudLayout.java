@@ -40,6 +40,9 @@ public record SpotifyHudLayout(double left, double top, double scale, double exp
     public Rect previous() { return rect(lerp(184, 310), lerp(24, 21), lerp(24, 32), lerp(24, 32)); }
     public Rect toggle() { return rect(lerp(216, 343), lerp(20, 18), lerp(32, 38), lerp(32, 38)); }
     public Rect next() { return rect(lerp(240, 382), lerp(24, 21), lerp(24, 32), lerp(24, 32)); }
+    public Rect volumeMute() { return rect(158, 55, 22, 22); }
+    public Rect volumeTrack() { return rect(184, 65, 88, 4); }
+    public Rect volumeHit() { return rect(180, 56, 96, 20); }
     public Rect timeline() { return rect(lerp(72, 57), lerp(57, 87), lerp(128, 306), lerp(3, 6)); }
     public Rect timeline(double elapsedWidth, double remainingWidth) {
         double fullStart = Math.max(57, 14 + elapsedWidth / scale + 9);

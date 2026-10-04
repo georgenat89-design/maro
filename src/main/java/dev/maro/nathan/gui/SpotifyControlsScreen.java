@@ -53,7 +53,7 @@ public final class SpotifyControlsScreen extends Screen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
         double scale = client.getWindow().getScaleFactor();
-        return player.scrollLyrics(mouseX * scale, mouseY * scale, vertical)
+        return player.scrollVolume(mouseX * scale, mouseY * scale, vertical) || player.scrollLyrics(mouseX * scale, mouseY * scale, vertical)
             || super.mouseScrolled(mouseX, mouseY, horizontal, vertical);
     }
 

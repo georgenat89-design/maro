@@ -51,6 +51,9 @@ public class SpotifyHud extends Module {
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgControls = settings.createGroup("Controls");
+    private final Setting<Boolean> volumeControl = sgControls.add(new BoolSetting.Builder()
+        .name("volume-control").description("Show a Windows output volume slider and mute button in F9 controls. Changes system volume for all apps.")
+        .defaultValue(true).build());
     private final SettingGroup sgAnimation = settings.createGroup("Animations");
     private final SettingGroup sgAppearance = settings.createGroup("Appearance");
     private final SettingGroup sgLyrics = settings.createGroup("Lyrics");
@@ -185,6 +188,8 @@ public class SpotifyHud extends Module {
     private double lastExpansionTarget = -1;
     private double leavingScrollAge;
     private boolean draggingPlayer;
+    private boolean draggingVolume;
+    private double lastAudibleVolume = 0.5;
     private double dragOffsetX, dragOffsetY, dragExpansion;
     private double timelineHover;
     private boolean waitingArtwork;
@@ -236,6 +241,7 @@ public class SpotifyHud extends Module {
         timelineHover = 0;
         cardTheme = null;
         draggingPlayer = false;
+        draggingVolume = false;
     }
 
     private SpotifyHudLayout layout() {
@@ -264,7 +270,19 @@ public class SpotifyHud extends Module {
         SpotifyHudLayout layout = layout();
         SpotifyMedia.State state = media.state();
         Rect track = timelineRect(layout, state);
-        if (layout.controlOpacity() > 0.01 && layout.previous().contains(mouseX, mouseY)) control("previous");
+        if (volumeVisible(layout) && layout.volumeMute().contains(mouseX, mouseY)) {
+            SpotifyMedia.Volume current = media.volume();
+            if (current.available()) {
+                if (current.level() > 0) lastAudibleVolume = current.level();
+                media.setVolume(current.level() > 0 ? current.level() : lastAudibleVolume, !current.muted() && current.level() > 0);
+            }
+        } else if (volumeVisible(layout) && layout.volumeHit().contains(mouseX, mouseY)) {
+            if (media.volume().available()) {
+                draggingVolume = true; dragExpansion = expansion;
+                if (media.volume().level() > 0) lastAudibleVolume = media.volume().level();
+                media.setVolume(layout.fractionAt(mouseX, layout.volumeTrack()), false);
+            }
+        } else if (layout.controlOpacity() > 0.01 && layout.previous().contains(mouseX, mouseY)) control("previous");
         else if (layout.toggle().contains(mouseX, mouseY)) control("toggle");
         else if (layout.controlOpacity() > 0.01 && layout.next().contains(mouseX, mouseY)) control("next");
         else if (layout.cover().contains(mouseX, mouseY)) media.openSpotify();
@@ -283,6 +301,12 @@ public class SpotifyHud extends Module {
     }
 
     public boolean mouseDragged(double mouseX, double mouseY) {
+        if (draggingVolume) {
+            SpotifyHudLayout layout = layout();
+            if (media.volume().level() > 0) lastAudibleVolume = media.volume().level();
+            media.setVolume(layout.fractionAt(mouseX, layout.volumeTrack()), false);
+            return true;
+        }
         if (draggingPlayer) {
             SpotifyHudLayout layout = layout();
             SpotifyHudFeatures.Position position = SpotifyHudFeatures.position(Anchor.Free, mouseX - dragOffsetX, mouseY - dragOffsetY,
@@ -299,6 +323,10 @@ public class SpotifyHud extends Module {
     }
 
     public boolean mouseReleased(double mouseX, double mouseY) {
+        if (draggingVolume) {
+            mouseDragged(mouseX, mouseY); draggingVolume = false;
+            return true;
+        }
         if (draggingPlayer) {
             mouseDragged(mouseX, mouseY);
             SpotifyHudLayout layout = layout();
@@ -323,7 +351,22 @@ public class SpotifyHud extends Module {
         timeline.cancel();
     }
 
-    public void cancelInteraction() { cancelScrub(); draggingPlayer = false; }
+    public void cancelInteraction() { cancelScrub(); draggingPlayer = false; draggingVolume = false; }
+
+    private boolean volumeVisible(SpotifyHudLayout layout) {
+        return volumeControl.get() && mc.currentScreen instanceof SpotifyControlsScreen && layout.expansion() > 0.99;
+    }
+
+    public boolean scrollVolume(double mouseX, double mouseY, double amount) {
+        if (!isActive() || !volumeVisible(layout()) || (!layout().volumeHit().contains(mouseX, mouseY)
+            && !layout().volumeMute().contains(mouseX, mouseY))) return false;
+        SpotifyMedia.Volume current = media.volume();
+        if (current.available() && amount != 0) {
+            if (current.level() > 0) lastAudibleVolume = current.level();
+            media.setVolume(current.level() + Math.signum(amount) * 0.02, false);
+        }
+        return true;
+    }
 
     public boolean scrollLyrics(double mouseX, double mouseY, double amount) {
         if (!isActive() || !showLyrics.get() || !layout().lyrics().contains(mouseX, mouseY)
@@ -335,6 +378,7 @@ public class SpotifyHud extends Module {
 
     public String controlsHint() {
         SpotifyMedia.State state = media.state();
+        if (volumeControl.get() && !media.volume().available()) return media.volume().error();
         if (!state.error().isBlank()) return state.error();
         if (!state.available()) return "Open Spotify and play a track";
         if (showLyrics.get() && lyrics.snapshot().result().status() == SpotifyLyrics.Status.Plain) return "Untimed lyrics: scroll over the lyrics panel";
@@ -376,9 +420,10 @@ public class SpotifyHud extends Module {
         double mouseX = mc.currentScreen instanceof SpotifyControlsScreen ? mc.mouse.getScaledX(mc.getWindow()) * mc.getWindow().getScaleFactor() : -1;
         double mouseY = mc.currentScreen instanceof SpotifyControlsScreen ? mc.mouse.getScaledY(mc.getWindow()) * mc.getWindow().getScaleFactor() : -1;
         SpotifyHudLayout before = layout();
-        double targetExpansion = playerMode.get() == Mode.Expanded ? 1 : playerMode.get() == Mode.Mini ? 0
+        double targetExpansion = volumeControl.get() && mc.currentScreen instanceof SpotifyControlsScreen ? 1
+            : playerMode.get() == Mode.Expanded ? 1 : playerMode.get() == Mode.Mini ? 0
             : before.bounds().contains(mouseX, mouseY) ? 1 : 0;
-        if (draggingPlayer || timeline.active()) targetExpansion = dragExpansion;
+        if (draggingPlayer || draggingVolume || timeline.active()) targetExpansion = dragExpansion;
         if (targetExpansion != lastExpansionTarget) { scrollAge = 0; lastExpansionTarget = targetExpansion; }
         expansion = ease(expansion, targetExpansion, 13, seconds);
         if (Math.abs(expansion - targetExpansion) < 0.001) expansion = targetExpansion;
@@ -438,7 +483,8 @@ public class SpotifyHud extends Module {
         if (layout.controlOpacity() > 0) button(layout.next(), "next", 2, state.available(), unit, accent, layout.controlOpacity());
 
         Color statusInk = opacity(state.playing() ? mix(accent, WHITE, 0.25) : MUTED, layout.detailOpacity());
-        RoundedBox.draw(layout.textLeft() + 2.5 * unit, layout.y(66), 5 * unit, 5 * unit, 2.5 * unit, 0, unit, 0, statusInk, statusInk);
+        if (!volumeVisible(layout)) RoundedBox.draw(layout.textLeft() + 2.5 * unit, layout.y(66), 5 * unit, 5 * unit, 2.5 * unit, 0, unit, 0, statusInk, statusInk);
+        else volumeShapes(layout, mouseX, mouseY, accent);
 
         if (visualizer.get()) {
             renderVisualizer(layout, cover, unit, accent);
@@ -480,7 +526,12 @@ public class SpotifyHud extends Module {
             }
             double incoming = leavingState == null ? 1 : Math.max(0, (titleFade - 0.45) / 0.55);
             songText(state, layout, artist, title, incoming, 4 * (1 - incoming) * unit, scrollAge);
-            statusFont.draw(!state.available() ? "WAITING FOR MUSIC" : state.playing() ? "NOW PLAYING" : "PAUSED",
+            if (volumeVisible(layout)) {
+                SpotifyMedia.Volume current = media.volume();
+                statusFont.draw("SYSTEM", layout.textLeft(), layout.y(62.5) - statusFont.capsTop(), opacity(MUTED), 0, false);
+                statusFont.draw(current.available() ? current.muted() ? "MUTED" : current.percent() + "%" : "—",
+                    layout.x(280), layout.y(62.5) - statusFont.capsTop(), opacity(current.available() ? WHITE : MUTED), 0, false);
+            } else statusFont.draw(!state.available() ? "WAITING FOR MUSIC" : state.playing() ? "NOW PLAYING" : "PAUSED",
                 layout.textLeft() + 12 * unit, layout.y(62.5) - statusFont.capsTop(), opacity(MUTED, layout.detailOpacity()), 0, false);
             timeFont.draw(elapsed, layout.x(14), track.centerY() - timeFont.caps() / 2 - timeFont.capsTop(), opacity(MUTED, layout.detailOpacity()), 0, false);
             timeFont.draw(remaining, layout.x(layout.width() - 14) - timeFont.width(remaining, 0),
@@ -898,6 +949,35 @@ public class SpotifyHud extends Module {
 
     private static double ease(double from, double target, double rate, double seconds) {
         return from + (target - from) * (1 - Math.exp(-rate * seconds));
+    }
+
+    private void volumeShapes(SpotifyHudLayout layout, double mouseX, double mouseY, Color accent) {
+        SpotifyMedia.Volume current = media.volume();
+        double unit = layout.scale();
+        Rect mute = layout.volumeMute(), track = layout.volumeTrack();
+        Color ink = opacity(current.available() ? WHITE : MUTED, current.available() ? 1 : 0.5);
+        if (current.available() && mute.contains(mouseX, mouseY)) box(mute, 7 * unit, 0, opacity(FACE), opacity(FACE));
+        double cx = mute.centerX() - 2 * unit, cy = mute.centerY();
+        RoundedBox.draw(cx - 3 * unit, cy, 4 * unit, 6 * unit, unit, 0, 0.7 * unit, 0, ink, ink);
+        RoundedBox.polygon(new double[]{cx - 2 * unit, cx + 3 * unit, cx + 3 * unit, cx - 2 * unit},
+            new double[]{cy - 3 * unit, cy - 6 * unit, cy + 6 * unit, cy + 3 * unit}, 4, 0, 0.7 * unit, ink);
+        if (current.muted() || current.level() <= 0) {
+            RoundedBox.draw(cx + 7 * unit, cy, 1.4 * unit, 7 * unit, 0.7 * unit, 0, 0.7 * unit, 45, ink, ink);
+            RoundedBox.draw(cx + 7 * unit, cy, 1.4 * unit, 7 * unit, 0.7 * unit, 0, 0.7 * unit, -45, ink, ink);
+        } else {
+            for (int i = -2; i <= 2; i++) {
+                double angle = i * Math.PI / 8;
+                RoundedBox.draw(cx + 2 * unit + Math.cos(angle) * 6 * unit, cy + Math.sin(angle) * 6 * unit,
+                    1.4 * unit, 2.5 * unit, 0.7 * unit, 0, 0.6 * unit, Math.toDegrees(angle), ink, ink);
+            }
+        }
+        box(track, 2 * unit, 0, opacity(TRACK), opacity(TRACK));
+        double filled = track.width() * current.level();
+        Color fill = opacity(current.muted() ? MUTED : mix(accent, WHITE, .5), current.available() ? 1 : .3);
+        if (filled > 0) RoundedBox.draw(track.x() + filled / 2, track.centerY(), filled, track.height(),
+            Math.min(2 * unit, filled / 2), 0, .7 * unit, 0, fill, fill);
+        double size = (draggingVolume || layout.volumeHit().contains(mouseX, mouseY) ? 8 : 6) * unit;
+        RoundedBox.draw(track.x() + filled, track.centerY(), size, size, size / 2, 0, .7 * unit, 0, ink, ink);
     }
 
     private static Color mix(Color from, Color to, double amount) {
