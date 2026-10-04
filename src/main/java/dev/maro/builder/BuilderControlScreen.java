@@ -38,7 +38,7 @@ public final class BuilderControlScreen extends Screen {
         cancel=button("Cancel Schematic",1,top+154,18,()->{builder.cancelSchematic();tick();});
         buy=smallButton("Buy Missing",0,top+174,builder::buyMaterials);
         deposit=smallButton("Deposit All",1,top+174,builder::depositAll);
-        smallButton("Select Chest",2,top+174,builder::markContainer);
+        smallButton("Add Chest",2,top+174,builder::markContainer);
         smallButton("Options",3,top+174,()->{var gui=parent instanceof ClickGuiScreen existing?existing:new ClickGuiScreen();client.setScreen(gui);gui.openModuleOptions(builder);});
         preview=button("",0,top+194,18,builder::togglePreview);
         button("Close",1,top+194,18,this::close);
@@ -56,7 +56,7 @@ public final class BuilderControlScreen extends Screen {
         var schematic=builder.schematic();String name=builder.loading()?"Loading schematic…":schematic==null?"Choose a schematic to start":schematic.name+"  ·  "+schematic.width+" × "+schematic.height+" × "+schematic.length;
         SmoothHudText.draw(ctx,SmoothHudText.trim(ctx,name,panelWidth-36,false,.85f),left+18,top+31,0xFFBDD0E8,false,.85f);
         SmoothHudText.draw(ctx,"Origin: "+(builder.origin()==null?"automatic":builder.origin().toShortString()),left+18,top+43,0xFF93ABC9,false,.65f);
-        SmoothHudText.draw(ctx,SmoothHudText.trim(ctx,"Chest: "+(builder.selectedSupplyChest()==null?"look at chest, press R":builder.selectedSupplyChest().toShortString()),panelWidth-220,false,.65f),left+202,top+54,0xFF93ABC9,false,.65f);
+        SmoothHudText.draw(ctx,SmoothHudText.trim(ctx,"Chests: "+(builder.restockContainers().isEmpty()?"press R to add":builder.restockContainers().size()+" selected"),panelWidth-220,false,.65f),left+202,top+54,0xFF93ABC9,false,.65f);
         SmoothHudText.draw(ctx,"Budget",left+18,top+76,0xFFBDCEE5,false,.7f);
         String status=builder.auctionBudget()<=0&&!builder.buying()?"AH buying: enter a budget above 0":builder.status();
         SmoothHudText.draw(ctx,SmoothHudText.trim(ctx,status,panelWidth-36,false,.7f),left+18,top+217,builder.buying()?0xFF7EF0C1:0xFFA4BAD5,false,.7f);
