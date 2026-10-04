@@ -29,6 +29,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.NoRender());
         register(new dev.maro.module.impl.visuals.CustomCrosshair());
         register(new dev.maro.module.impl.visuals.SkinAccessories());
+        register(new dev.maro.module.impl.visuals.Pet());
         dev.maro.nathan.NameeProtectAddon.init();
 
         // Register your modules here, e.g.

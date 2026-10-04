@@ -6,6 +6,15 @@ Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 
 ## Included modules
 
+**Pet** (Visuals) adds a cosmetic companion: Wolf, Cat, Fox, Bunny, Bee, Allay,
+Parrot, Axolotl, Slime, Turtle, Panda, or Pig. Choose **Follow**, **Sidekick**, or
+**Orbit**, adjust size, distance, speed, and hover height, and enable baby models,
+nicknames, or a colored wolf/cat collar. Ground pets follow your recent trail;
+flying pets float with a gentle bob. Animation and fullbright are optional.
+The companion appears in first and third person, catches up after teleports, and
+has a **Recall Pet** button. It is visible only in your client and cannot be
+attacked, collide with players, or interact with the server.
+
 | Category | Modules |
 | --- | --- |
 | Movement | Auto Walk, Free Cam, Freelook |
