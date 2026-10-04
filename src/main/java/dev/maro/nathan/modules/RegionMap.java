@@ -166,12 +166,19 @@ public class RegionMap extends Module {
     private final Setting<Double> scale = sgGeneral.add(new DoubleSetting.Builder()
         .name("scale")
         .description("How big the map is. Everything in it scales together, so it keeps its shape.")
-        .defaultValue(1)
+        .defaultValue(0.8)
         .min(SCALE_MIN)
         .max(SCALE_MAX)
         .sliderRange(0.5, 2.5)
         .build()
     );
+
+    private final Setting<Boolean> autoFitScreen = sgGeneral.add(new BoolSetting.Builder()
+        .name("auto-fit-screen").description("Keep the map within a compact part of the screen, even with a large Minecraft GUI scale.")
+        .defaultValue(true).build());
+    private final Setting<Integer> screenHeight = sgGeneral.add(new IntSetting.Builder()
+        .name("max-screen-height").description("Maximum percentage of the screen the map may occupy with Auto Fit Screen.")
+        .defaultValue(42).range(20,90).visible(autoFitScreen::get).build());
 
     private final Setting<Boolean> header = sgGeneral.add(new BoolSetting.Builder()
         .name("header")
@@ -204,6 +211,9 @@ public class RegionMap extends Module {
         .visible(numbers::get)
         .build()
     );
+    private final Setting<Boolean> compactNumberFit = sgGeneral.add(new BoolSetting.Builder()
+        .name("compact-number-fit").description("Use narrower digits only when a small shard would otherwise force its number to become tiny.")
+        .defaultValue(true).visible(numbers::get).build());
 
     private final Setting<Boolean> fitNumbers = sgGeneral.add(new BoolSetting.Builder()
         .name("fit-numbers")
@@ -421,6 +431,7 @@ public class RegionMap extends Module {
     private RegionMapRaster.NumberFont rasterFont;
     private double rasterNumberSize;
     private boolean rasterFitNumbers;
+    private boolean rasterCompactNumberFit;
     private boolean rasterGloss;
     private int rasterSpotlight;
     private double rasterDim;
@@ -429,6 +440,14 @@ public class RegionMap extends Module {
 
     public RegionMap() {
         super(NameeProtectAddon.CATEGORY, "region-map", "The server's regions as a map on screen, with where you are on it.");
+    }
+
+    @Override public com.google.gson.JsonObject saveExtra() {
+        var data = super.saveExtra(); data.addProperty("region-layout-revision", 1); return data;
+    }
+    @Override public void loadExtra(com.google.gson.JsonObject data) {
+        var copy = data.deepCopy(); copy.remove("region-layout-revision"); super.loadExtra(copy);
+        if (!data.has("region-layout-revision") && Math.abs(scale.get() - 1) < .00001) scale.reset();
     }
 
     private ColorSetting.Builder group(String name, RegionGrid.Locale of) {
@@ -543,23 +562,25 @@ public class RegionMap extends Module {
     // Interface pixels, which is what a screen's mouse coordinates are in.
 
     public double mapLeft() {
-        return x.get();
+        return Math.max(0, Math.min(x.get(), mc.getWindow().getScaledWidth() - mapWidth()));
     }
 
     public double mapTop() {
-        return y.get();
+        return Math.max(0, Math.min(y.get(), mc.getWindow().getScaledHeight() - mapHeight()));
     }
 
     public double mapWidth() {
-        return WIDTH * scale.get();
+        return WIDTH * mapScale();
     }
 
     public double mapHeight() {
-        return panelUnits * scale.get();
+        return panelUnits * mapScale();
     }
 
     public double mapScale() {
-        return scale.get();
+        if (!autoFitScreen.get()) return scale.get();
+        return Math.max(.05, Math.min(scale.get(), Math.min(mc.getWindow().getScaledWidth() * .25 / WIDTH,
+            mc.getWindow().getScaledHeight() * screenHeight.get() / 100.0 / panelUnits)));
     }
 
     public boolean mapContains(double interfaceX, double interfaceY) {
@@ -605,9 +626,9 @@ public class RegionMap extends Module {
         double clock = animations.get() ? nanos / 1.0e9 : 0;
 
         double gui = mc.getWindow().getScaleFactor();
-        double unit = gui * scale.get();
-        double left = Math.round(x.get() * gui);
-        double top = Math.round(y.get() * gui);
+        double unit = gui * mapScale();
+        double left = Math.round(mapLeft() * gui);
+        double top = Math.round(mapTop() * gui);
 
         double worldX = mc.player.getX();
         double worldZ = mc.player.getZ();
@@ -1027,6 +1048,7 @@ public class RegionMap extends Module {
         RegionMapRaster.NumberFont chosenFont = numberFont.get();
         double chosenSize = numberSize.get();
         boolean fit = fitNumbers.get();
+        boolean compactFit = compactNumberFit.get();
         TileStyle style = tileStyle.get();
         boolean gloss = style == TileStyle.Glossy;
         double dim = spot < 0 ? 0 : spotlightStrength.get() / 100.0;
@@ -1048,11 +1070,11 @@ public class RegionMap extends Module {
         if (style == TileStyle.Midnight) dim = 0;
         int rasterSpot = style == TileStyle.Midnight ? -1 : spot;
         if (gridTexture != null && size == rasterSize && showNumbers == rasterNumbers
-            && (!showNumbers || chosenFont == rasterFont && chosenSize == rasterNumberSize && fit == rasterFitNumbers)
+            && (!showNumbers || chosenFont == rasterFont && chosenSize == rasterNumberSize && fit == rasterFitNumbers && compactFit == rasterCompactNumberFit)
             && gloss == rasterGloss && rasterSpot == rasterSpotlight && dim == rasterDim
             && Arrays.equals(fills, rasterFills) && Arrays.equals(inks, rasterInks)) return;
 
-        var image = RegionMapRaster.create(size, fills, inks, showNumbers, chosenFont, chosenSize, fit, gloss, rasterSpot, dim).image();
+        var image = RegionMapRaster.create(size, fills, inks, showNumbers, chosenFont, chosenSize, fit, gloss, rasterSpot, dim, compactFit).image();
         int[] pixels = image.getRGB(0, 0, size, size, null, 0, size);
         byte[] rgba = new byte[size * size * 4];
         for (int i = 0; i < pixels.length; i++) {
@@ -1070,6 +1092,7 @@ public class RegionMap extends Module {
         rasterFont = chosenFont;
         rasterNumberSize = chosenSize;
         rasterFitNumbers = fit;
+        rasterCompactNumberFit = compactFit;
         rasterGloss = gloss;
         rasterSpotlight = rasterSpot;
         rasterDim = dim;

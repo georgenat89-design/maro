@@ -51,6 +51,11 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 SpotifyVolumeChecks.run(context);
                 return;
             }
+            if (Boolean.getBoolean("maro.gametest.hudOnly")) {
+                StaffNotifierChecks.run(context);
+                HudReadabilityChecks.run(context);
+                return;
+            }
             if (Boolean.getBoolean("maro.gametest.baseEspOnly")) {
                 BaseEspChecks.run(context, singleplayer);
                 return;
@@ -77,6 +82,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             PetChecks.run(context, singleplayer);
             BaseEspChecks.run(context, singleplayer);
             StaffNotifierChecks.run(context);
+            HudReadabilityChecks.run(context);
             AntiVanishChecks.run(context);
             String before = context.computeOnClient(client -> describe(client));
             context.takeScreenshot("maro-00-world");

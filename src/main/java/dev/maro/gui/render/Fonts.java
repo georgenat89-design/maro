@@ -142,13 +142,18 @@ public final class Fonts {
 
     private static void drawRun(DrawContext ctx, String s, float x, float y, int c, boolean bold, float scale) {
         float p = Render2D.px();
-        x = Math.round(x / p) * p;
-        y = Math.round(y / p) * p;
         Matrix3x2fStack ms = ctx.getMatrices();
+        float matrixScale = (float) Math.hypot(ms.m00(), ms.m01());
+        // HUDs apply an outer resize before calling Fonts. Pick a glyph atlas
+        // for the final physical size, and snap after that outer transform.
+        if (ms.m01() == 0 && ms.m10() == 0 && ms.m00() != 0 && ms.m11() != 0) {
+            x = (Math.round((x * ms.m00() + ms.m20()) / p) * p - ms.m20()) / ms.m00();
+            y = (Math.round((y * ms.m11() + ms.m21()) / p) * p - ms.m21()) / ms.m11();
+        }
         ms.pushMatrix();
         ms.translate(x, y);
         if (scale != 1f) ms.scale(scale, scale);
-        ctx.drawText(tr(), styled(s, bold, scale), 0, 0, c, false);
+        ctx.drawText(tr(), styled(s, bold, scale * matrixScale), 0, 0, c, false);
         ms.popMatrix();
     }
 
