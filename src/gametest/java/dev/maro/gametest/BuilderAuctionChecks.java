@@ -157,18 +157,19 @@ final class BuilderAuctionChecks {
     private static void preparation(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder){
         var base=context.computeOnClient(client->client.player.getBlockPos().add(-6,0,0));var chest=base.add(3,0,-1);var origin=base.add(0,0,2);
         world.getServer().runCommand("fill "+coords(base.add(-4,-1,-4))+" "+coords(base.add(6,-1,6))+" stone");
-        for(int limit:new int[]{59,60}){
+        for(int limit:new int[]{0,59,60}){
             context.runOnClient(client->{builder.pause("Reset preparation test");button(builder,"Clear Restock Marks").press();});purchases.set(0);fillAfterGlass.set(limit==60);
             world.getServer().runCommand("fill "+coords(base.add(-4,0,-4))+" "+coords(base.add(6,4,6))+" air");world.getServer().runCommand("clear @a");world.getServer().runCommand("tp @a "+(base.getX()+.5)+" "+base.getY()+" "+(base.getZ()+.5));
-            world.getServer().runCommand("setblock "+coords(chest)+" chest[facing=north,type=left]");world.getServer().runCommand("setblock "+coords(chest.east())+" chest[facing=north,type=right]");context.waitTicks(8);
+            world.getServer().runCommand("setblock "+coords(chest)+" chest[facing=north,type=left]");world.getServer().runCommand("setblock "+coords(chest.east())+" chest[facing=north,type=right]");if(limit==0){world.getServer().runCommand("item replace block "+coords(chest)+" container.0 with stone 2");world.getServer().runCommand("item replace block "+coords(chest)+" container.1 with glass 2");}context.waitTicks(8);
             context.runOnClient(client->{setting(builder,"Prepare Whole Build",true);setting(builder,"Auto Buy When Missing",true);builder.auctionBudget(limit);builder.install(new Schematic("whole-preparation.nbt","test",2,2,1,BlockPos.ORIGIN,new net.minecraft.block.BlockState[]{Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState(),Blocks.GLASS.getDefaultState(),Blocks.GLASS.getDefaultState()}));builder.setOrigin(origin);selectChest(client,builder,chest);builder.startBuild();});
             boolean earlyBuild=false;
             for(int i=0;i<2000&&context.computeOnClient(client->builder.building()||builder.buying()||builder.depositing());i++){
-                if(purchases.get()<3&&world.getServer().computeOnServer(server->server.getOverworld().getBlockState(origin).isOf(Blocks.STONE)))earlyBuild=true;
+                if(limit>0&&purchases.get()<3&&world.getServer().computeOnServer(server->server.getOverworld().getBlockState(origin).isOf(Blocks.STONE)))earlyBuild=true;
                 context.waitTick();
             }
             require(!earlyBuild,"Building started before whole-build supplies were purchased and stored");
-            if(limit==59){require(purchases.get()==2&&chestCount(world,chest,Items.GLASS)==2,"Budget stop lost partial purchases or exceeded budget");context.runOnClient(client->require(!builder.building()&&builder.sessionSpend()==20,"Preparation budget was reset or build started with missing supplies: "+builder.status()));}
+            if(limit==0){require(purchases.get()==0,"Stored materials triggered a zero-budget purchase");context.runOnClient(client->require(builder.status().equals("Build complete")&&builder.sessionSpend()==0,"Stored whole-build supplies did not build without an AH budget: "+builder.status()));}
+            else if(limit==59){require(purchases.get()==2&&chestCount(world,chest,Items.GLASS)==2,"Budget stop lost partial purchases or exceeded budget");context.runOnClient(client->require(!builder.building()&&builder.sessionSpend()==20,"Preparation budget was reset or build started with missing supplies: "+builder.status()));}
             else{
                 require(purchases.get()==3,"Preparation repurchased existing supplies");context.runOnClient(client->require(builder.status().equals("Build complete")&&builder.sessionSpend()==60,"Preparation did not resume within one budget after deposit: "+builder.status()+" spent="+builder.sessionSpend()));
                 require(chestCount(world,chest,Items.COBBLESTONE)==35*64&&chestCount(world,chest,Items.STONE)==0&&chestCount(world,chest,Items.GLASS)==0,"Selected chest storage or exact layer withdrawal failed");

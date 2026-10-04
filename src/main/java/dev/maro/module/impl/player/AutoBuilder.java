@@ -911,7 +911,7 @@ public final class AutoBuilder extends Module {
         if(resume){shopping.clear();shopping.putAll(depositedShopping);buyingItem=null;pendingOffer=null;buying=true;marketStage=0;marketWait=6;status="Continuing buying after deposit";}
         resumeShoppingAfterDeposit=false;depositedShopping.clear();
         if(!success){preparationStage=0;return;}
-        if(prep==1){preparationStage=2;if(wholeBuildNeeds().isEmpty()){preparationStage=3;depositAll();}else if(maxSpend.get()<=0){preparationStage=0;status="Set an AH budget for the missing whole-build supplies";notify(status);}else startBuying(false);}
+        if(prep==1){preparationStage=2;startBuying(false);}
         else if(prep==3){preparationStage=0;preparationReady=true;triedContainers.clear();emptyChestItems.clear();startBuild();status="Whole-build supplies stored — building by layer";}
         else if(prep==4){preparationStage=0;status=preparationStopReason;notify(status);}
     }
@@ -998,7 +998,7 @@ public final class AutoBuilder extends Module {
     }
     private void startBuying(boolean estimateOnly){
         if(!inGame()||schematic==null){notify("Load a schematic first");return;}
-        if(!estimateOnly&&maxSpend.get()<=0){notify("Set Max Total Spend before buying");return;}
+        if(!estimateOnly&&maxSpend.get()<=0&&preparationStage!=2){notify("Set Max Total Spend before buying");return;}
         if(mc.player.currentScreenHandler!=mc.player.playerScreenHandler){notify("Close the current container before buying");return;}
         boolean resume=building&&!estimateOnly&&autoBuy.get();
         int prep=preparationStage;pause(estimateOnly?"Estimating auction cost":"Buying materials");preparationStage=prep;setEnabled(true);building=false;buying=true;resumeAfterMarket=resume;estimating=estimateOnly;shopping.clear();
@@ -1023,6 +1023,7 @@ public final class AutoBuilder extends Module {
         if(marketWait>0){marketWait--;return;}
         if(marketStage==-1){if(completedScans==0){status="Scanning material requirements";return;}var needs=foodShopping?Map.of(Items.COOKED_BEEF,Math.max(0,steakReserve.getInt()-inventoryCount(Items.COOKED_BEEF))):preparationStage==2?wholeBuildNeeds():shoppingNeeds(buyDirt.getInt());needs.entrySet().stream().filter(e->e.getValue()>0).sorted(Comparator.comparing(e->Registries.ITEM.getId(e.getKey()).toString())).forEach(e->shopping.put(e.getKey(),e.getValue()));marketStage=0;}
         if(buyingItem==null){
+            if(!estimating&&!shopping.isEmpty()&&maxSpend.get()<=spent){finishBuying("AH budget exhausted — increase the budget for missing supplies");return;}
             if(shopping.isEmpty()){boolean preparing=preparationStage==2;boolean resume=resumeAfterMarket&&!estimating;boolean deposit=!estimating&&depositWhen.is("After Buying");finishBuying(estimating?"Estimated material cost: "+Math.round(estimate):"Buying finished — spent "+Math.round(spent));if(preparing)return;if(deposit)depositAll();else if(resume){building=true;delay=6;status="Continuing build after buying";}return;}
             buyingItem=shopping.keySet().iterator().next();marketPage=1;searchMarket();return;
         }
