@@ -214,7 +214,7 @@ public class RegionMap extends Module {
         .visible(numbers::get)
         .build()
     );
-    private final Setting<Boolean> compactNumberFit = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> compactNumberFit = sgContent.add(new BoolSetting.Builder()
         .name("compact-number-fit").description("Use narrower digits only when a small shard would otherwise force its number to become tiny.")
         .defaultValue(true).visible(numbers::get).build());
 
