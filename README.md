@@ -22,6 +22,12 @@ names once; subsequent edits/removals persist. Choose **Sound mode → SelectedS
 and edit **Sound staff** to play join sounds only for chosen accounts. Chime, Bell,
 Soft and Alert tones have volume/pitch controls; leave and proximity sounds are optional.
 
+Staff names and details now use larger, brighter text in the same panel dimensions.
+**HUD → Text size** adjusts text independently of **Staff list size**. **Smooth text**
+is enabled by default: cached Inter lettering uses antialiasing and a 2× edge smoothing
+pass, then draws at one texture pixel per screen pixel through the normal GUI layers.
+Resizing creates the correct new text size rather than stretching the old lettering.
+
 **Anti Vanish** (Misc) adapts the Anubis detector into Maro. It consumes tab visibility,
 removal, game-mode and chat packets; command-target suggestions; invisible player
 metadata; and unexplained nearby sounds/particles. It suppresses ordinary departures,
@@ -82,6 +88,14 @@ The existing persistent WASAPI helper handles reads and coalesced writes away fr
 thread using [Windows endpoint volume controls](https://learn.microsoft.com/en-us/windows/win32/api/endpointvolume/nn-endpointvolume-iaudioendpointvolume).
 
 Region Map retains Nathan's updated region divisions and sharp labels. Keystrokes retains its Poppins labels. Their initial positions leave room for each other and Spotify, and can be changed in settings.
+
+Region Map defaults to **0.8×**. **Auto fit screen** limits its height to **42%** of
+the screen and width to 25%, including with a large Minecraft GUI scale or an old
+saved size. Change **Max screen height**, or disable Auto fit screen for unrestricted
+manual sizing. The old untouched 1× default migrates once; custom scales are preserved.
+**Compact number fit** uses narrower digits only when this keeps a cramped label taller.
+Numbers have a subtle dark outline for contrast; the raster is still cached at its actual
+display resolution. Number Font, Number Size, and Fit Numbers remain available.
 
 Swing Speed accepts **-10 to 10**: negative values slow the arm animation, **-10** makes it take 3.5 times as long, **0 or 1** is normal, and **2 to 10** retains the original faster speeds. The selected hand setting still applies.
 

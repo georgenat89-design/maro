@@ -5,6 +5,7 @@ import dev.maro.gui.hud.HudPlacementScreen;
 import dev.maro.gui.notification.Notifications;
 import dev.maro.gui.render.Fonts;
 import dev.maro.gui.render.Render2D;
+import dev.maro.gui.render.SmoothHudText;
 import dev.maro.nathan.NameeProtectAddon;
 import dev.maro.runtime.settings.*;
 import dev.maro.runtime.systems.modules.Module;
@@ -66,6 +67,10 @@ public final class StaffNotifier extends Module implements HudElement {
         .description("Seconds between proximity alerts for each staff player").defaultValue(120).range(10,600).build());
     public enum Layout { Comfortable, Compact }
     private final Setting<Layout> layout=hud.add(new EnumSetting.Builder<Layout>().name("layout").defaultValue(Layout.Comfortable).build());
+    private final Setting<Double> textSize = hud.add(new DoubleSetting.Builder().name("text-size")
+        .description("Increase names and details without enlarging the whole staff panel").defaultValue(1).range(.8,1.3).build());
+    private final Setting<Boolean> smoothText = hud.add(new BoolSetting.Builder().name("smooth-text")
+        .description("Antialiased Inter lettering rasterized at its final screen size").defaultValue(true).build());
     private final Setting<Integer> rows = hud.add(new IntSetting.Builder().name("max-rows").defaultValue(9).range(1,16).build());
     private final Setting<Double> x = hud.add(new DoubleSetting.Builder().name("hud-x").defaultValue(98).range(0,100).build());
     private final Setting<Double> y = hud.add(new DoubleSetting.Builder().name("hud-y").defaultValue(12).range(0,100).build());
@@ -245,8 +250,19 @@ public final class StaffNotifier extends Module implements HudElement {
     @Override public void hudResize(float by) { scale.set(clamp(scale.get()+by,.5,2)); }
     @Override public void hudReset() { x.reset(); y.reset(); scale.reset(); }
     private static double clamp(double n,double min,double max) { return Math.max(min,Math.min(max,n)); }
+    private float text(float size) { return size * textSize.get().floatValue(); }
+    private void draw(DrawContext ctx,String value,float x,float y,int color,boolean bold,float size) {
+        if(smoothText.get()) SmoothHudText.draw(ctx,value,x,y,color,bold,size); else Fonts.draw(ctx,value,x,y,color,bold,size);
+    }
+    private void drawRight(DrawContext ctx,String value,float x,float y,int color,boolean bold,float size) {
+        if(smoothText.get()) SmoothHudText.drawRight(ctx,value,x,y,color,bold,size); else Fonts.drawRight(ctx,value,x,y,color,bold,size);
+    }
+    private String trim(DrawContext ctx,String value,float width,boolean bold,float size) {
+        return smoothText.get()?SmoothHudText.trim(ctx,value,width,bold,size):Fonts.trim(value,width,bold,size);
+    }
     @Override public void onRender2D(DrawContext ctx,float delta) {
         if (!inGame() || !list.get() || mc.options.hudHidden || (!empty.get() && hudDisplay.isEmpty())) return;
+        if(smoothText.get()) SmoothHudText.beginFrame();
         ctx.getMatrices().pushMatrix(); Fonts.beginRaw();
         try {
             ctx.getMatrices().translate(hudLeft(),hudTop()); ctx.getMatrices().scale(hudScale(),hudScale());
@@ -254,18 +270,18 @@ public final class StaffNotifier extends Module implements HudElement {
             Render2D.roundRect(ctx,0,0,WIDTH,height(),10,0xF0131722);
             Render2D.roundOutline(ctx,0,0,WIDTH,height(),10,.6f,0x80525B6C);
             Render2D.roundRect(ctx,10,10,3,17,1.5f,0xFFE6C18A);
-            Fonts.draw(ctx,"STAFF LIST",19,10,0xFFF4EEE4,true,.78f);
-            Fonts.draw(ctx,"Presence & proximity",19,25,0xFF99A6BA,false,.48f);
+            draw(ctx,"STAFF LIST",19,10,0xFFF8F3EB,true,text(.96f));
+            draw(ctx,"Presence & proximity",19,25,0xFFBAC6D8,false,text(.67f));
             Render2D.roundRect(ctx,WIDTH-37,10,26,20,6,0x403F4C66);
-            Fonts.drawRight(ctx,Integer.toString(hudDisplay.size()),WIDTH-18,17,0xFFE8D5B3,true,.75f);
+            drawRight(ctx,Integer.toString(hudDisplay.size()),WIDTH-18,20,0xFFF0D9B3,true,text(.95f));
             long near=hudDisplay.stream().filter(s->s.distance>=0).count();
-            Fonts.draw(ctx,display.size()+" in tab",11,40,0xFF9CBAD4,false,.5f);
-            Fonts.draw(ctx,near+" nearby",77,40,0xFFA6DCC2,false,.5f);
-            Fonts.drawRight(ctx,(hudDisplay.size()-hudDisplay.stream().filter(HudStaff::listed).count())+" hidden",WIDTH-11,44,0xFFD8BA95,false,.5f);
+            draw(ctx,display.size()+" in tab",11,40,0xFFBFD9EE,false,text(.67f));
+            draw(ctx,near+" nearby",77,40,0xFFB6EBD0,false,text(.67f));
+            drawRight(ctx,(hudDisplay.size()-hudDisplay.stream().filter(HudStaff::listed).count())+" hidden",WIDTH-11,43,0xFFE8CBA6,false,text(.67f));
             if (hudDisplay.isEmpty()) {
                 Render2D.roundRect(ctx,7,51,WIDTH-14,rowHeight()-2,6,0x352F3D52);
-                Fonts.draw(ctx,"All clear",13,58,0xFFDDE7F4,true,.7f);
-                Fonts.draw(ctx,"No configured staff supplied by server",13,71,0xFF8796AC,false,.43f);
+                draw(ctx,"All clear",13,55,0xFFF0F4FC,true,text(.95f));
+                draw(ctx,"No staff reported by server",13,69,0xFFB9C7DB,false,text(.65f));
             }
             for (int i=0;i<Math.min(rows.get(),hudDisplay.size());i++) {
                 HudStaff staff=hudDisplay.get(i); int top=51+i*rowHeight();
@@ -280,12 +296,12 @@ public final class StaffNotifier extends Module implements HudElement {
                         ctx.drawTexture(RenderPipelines.GUI_TEXTURED,Identifier.of("maro","textures/staff/"+staff.name.toLowerCase(Locale.ROOT)+".png"),16,top+7,0,0,16,16,8,8,8,8);
                     } else if (entry!=null) PlayerSkinDrawer.draw(ctx,entry.getSkinTextures(),16,top+7,16);
                 }
-                Fonts.draw(ctx,Fonts.trim(staff.name,WIDTH-textX-(ping.get()?47:16),true,.72f),textX,top+5,0xFFF0F3F9,true,.72f);
-                Fonts.draw(ctx,staff.status(),textX,top+18,color,false,.46f);
-                if (ping.get()&&entry!=null) Fonts.drawRight(ctx,Math.max(0,staff.ping)+"ms",WIDTH-13,top+10,0xFFA0AEC1,false,.46f);
+                draw(ctx,trim(ctx,staff.name,WIDTH-textX-(ping.get()?42:16),true,text(1.04f)),textX,top+3,0xFFFAFCFF,true,text(1.04f));
+                draw(ctx,trim(ctx,staff.status(),WIDTH-textX-15,false,text(.68f)),textX,top+(layout.get()==Layout.Compact?16:18),color,false,text(.68f));
+                if (ping.get()&&entry!=null) drawRight(ctx,Math.max(0,staff.ping)+"ms",WIDTH-13,top+10,0xFFBDCADC,false,text(.66f));
             }
-            Fonts.draw(ctx,configured.size()+" tracked accounts",11,height()-12,0xFF8292A9,false,.43f);
-            Fonts.drawRight(ctx,hudDisplay.size()>rows.get()?"+"+(hudDisplay.size()-rows.get())+" more":"LIVE",WIDTH-11,height()-8,0xFFB4C5D7,true,.43f);
+            draw(ctx,configured.size()+" tracked accounts",11,height()-12,0xFFB8C5D8,false,text(.63f));
+            drawRight(ctx,hudDisplay.size()>rows.get()?"+"+(hudDisplay.size()-rows.get())+" more":"LIVE",WIDTH-11,height()-8,0xFFD5E1EF,true,text(.63f));
         } finally { Fonts.endRaw(); ctx.getMatrices().popMatrix(); }
     }
 }
