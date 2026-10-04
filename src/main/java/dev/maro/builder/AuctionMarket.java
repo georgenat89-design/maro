@@ -44,6 +44,9 @@ public final class AuctionMarket {
         }
         return result;
     }
+    public static boolean hasPriceField(ItemStack stack,String keyword){
+        var lore=stack.get(DataComponentTypes.LORE);return lore!=null&&!keyword.isBlank()&&lore.lines().stream().anyMatch(line->line.getString().toLowerCase(Locale.ROOT).contains(keyword.toLowerCase(Locale.ROOT)));
+    }
     public static Offer choose(List<Offer> offers,int needed,int overbuy,double perItem,double budget,boolean preferStacks,double tolerance){
         var valid=offers.stream().filter(o->o.count>0&&o.count<=needed+overbuy&&o.total<=budget&&(!Double.isFinite(perItem)||perItem<=0||o.each()<=perItem)).toList();
         Offer cheapest=valid.stream().min(Comparator.comparingDouble(Offer::each).thenComparingDouble(Offer::total)).orElse(null);

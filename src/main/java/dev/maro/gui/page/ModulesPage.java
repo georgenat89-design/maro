@@ -62,6 +62,13 @@ public class ModulesPage extends Page {
     }
 
     public void openSettings(Module m) {
+        if(m instanceof dev.maro.module.impl.player.AutoBuilder builder){
+            net.minecraft.client.MinecraftClient.getInstance().setScreen(new dev.maro.builder.BuilderControlScreen(gui,builder));return;
+        }
+        openOptions(m);
+    }
+
+    public void openOptions(Module m) {
         open = m;
         section = null;
         shownSection = null;

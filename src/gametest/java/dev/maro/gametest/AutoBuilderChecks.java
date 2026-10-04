@@ -96,9 +96,20 @@ final class AutoBuilderChecks {
             // Side-face placement creates a horizontal log. Only this builder's temporary support is cleaned.
             fixture(context,singleplayer,builder,start);singleplayer.getServer().runCommand("give @a oak_log 64");singleplayer.getServer().runCommand("give @a dirt 64");context.waitTicks(5);
             context.runOnClient(client->{set(builder,"Temporary Supports",true);builder.install(new Schematic("axis-fixture.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.OAK_LOG.getDefaultState().with(Properties.AXIS,Direction.Axis.X)}));builder.setOrigin(start.add(0,0,2));builder.startBuild();});
+            awaitSupport(context,builder);
+            BlockPos support=context.computeOnClient(client->builder.temporarySupports().iterator().next());
+            context.runOnClient(client->builder.pause("Step-off cleanup fixture"));
+            singleplayer.getServer().runCommand("tp @a "+(support.getX()+.5)+" "+(support.getY()+1)+" "+(support.getZ()+.5));context.waitTicks(8);
+            context.runOnClient(client->builder.startBuild());
             await(context,builder,500);
             require(singleplayer.getServer().computeOnServer(server->server.getOverworld().getBlockState(start.add(0,0,2)).get(Properties.AXIS)==Direction.Axis.X),"Horizontal log was placed with wrong axis");
             require(singleplayer.getServer().computeOnServer(server->server.getOverworld().getBlockState(start.add(-1,0,2)).isAir()&&server.getOverworld().getBlockState(start.add(1,0,2)).isAir()),"Temporary log support was not cleaned");
+
+            fixture(context,singleplayer,builder,start);singleplayer.getServer().runCommand("give @a oak_log 64");singleplayer.getServer().runCommand("give @a dirt 64");context.waitTicks(5);
+            context.runOnClient(client->{set(builder,"Temporary Supports",true);builder.install(new Schematic("far-cleanup-fixture.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.OAK_LOG.getDefaultState().with(Properties.AXIS,Direction.Axis.X)}));builder.setOrigin(start.add(0,0,2));builder.startBuild();});
+            awaitSupport(context,builder);var distantSupports=context.computeOnClient(client->builder.temporarySupports());context.runOnClient(client->builder.pause("Distant cleanup fixture"));
+            singleplayer.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+start.getY()+" "+(start.getZ()-10+.5));context.waitTicks(8);context.runOnClient(client->builder.startBuild());await(context,builder,600);
+            require(singleplayer.getServer().computeOnServer(server->distantSupports.stream().allMatch(pos->server.getOverworld().getBlockState(pos).isAir())),"Distant temporary supports were abandoned");
 
             fixture(context,singleplayer,builder,start);singleplayer.getServer().runCommand("give @a stone_slab 64");context.waitTicks(5);
             context.runOnClient(client->{builder.install(new Schematic("slab-fixture.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE_SLAB.getDefaultState().with(Properties.SLAB_TYPE,net.minecraft.block.enums.SlabType.DOUBLE)}));builder.setOrigin(start.add(0,0,2));builder.startBuild();});
@@ -117,14 +128,18 @@ final class AutoBuilderChecks {
 
             context.runOnClient(client->{
                 builder.pause("Screenshot");client.setScreen(new ClickGuiScreen());((ClickGuiScreen)client.currentScreen).openModuleSettings(builder);
-            });context.waitTicks(5);context.takeScreenshot("maro-builder-settings");
+                require(client.currentScreen instanceof BuilderControlScreen,"Builder settings did not open the simple control panel");
+                require(builder.getSettings().size()<50,"Unnecessary settings still clutter the builder");
+                require(builder.buildMode().equals("Automatic"),"Automatic build mode is unavailable");
+            });context.waitTicks(5);context.takeScreenshot("maro-builder-control-panel");
+            context.runOnClient(client->{client.setScreen(new ClickGuiScreen());((ClickGuiScreen)client.currentScreen).openModuleOptions(builder);});context.waitTicks(5);context.takeScreenshot("maro-builder-simplified-options");
         }finally{
             context.runOnClient(client->{builder.setEnabled(false);client.options.useKey.setPressed(false);client.options.forwardKey.setPressed(false);client.options.jumpKey.setPressed(false);client.setScreen(null);});
             singleplayer.getServer().runCommand("gamemode creative @a");
         }
     }
     private static void fixture(ClientGameTestContext context,TestSingleplayerContext singleplayer,AutoBuilder builder,BlockPos start){
-        context.runOnClient(client->{builder.setEnabled(false);client.setScreen(null);set(builder,"Build Mode","Automatic");set(builder,"Mine Out Schematic",false);set(builder,"Stop On Staff Nearby",false);set(builder,"Auto Buy When Missing",false);set(builder,"Restock Temp Dirt",0);set(builder,"Temporary Supports",false);set(builder,"Rotation","0");set(builder,"Mirror","None");button(builder,"Clear Restock Marks").press();});
+        context.runOnClient(client->{builder.setEnabled(false);client.setScreen(null);set(builder,"Build Mode","Automatic");set(builder,"Mine Out Schematic",false);set(builder,"Stop On Staff Nearby",false);set(builder,"Auto Buy When Missing",false);set(builder,"Support Dirt Reserve",0);set(builder,"Temporary Supports",false);set(builder,"Rotation","0");set(builder,"Mirror","None");button(builder,"Clear Restock Marks").press();});
         singleplayer.getServer().runCommand("gamemode creative @a");singleplayer.getServer().runCommand("fill "+coords(start.add(-16,-1,-16))+" "+coords(start.add(16,-1,16))+" stone");
         singleplayer.getServer().runCommand("fill "+coords(start.add(-16,0,-16))+" "+coords(start.add(16,6,16))+" air");
         singleplayer.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+start.getY()+" "+(start.getZ()+.5)+" 0 0");singleplayer.getServer().runCommand("clear @a");singleplayer.getServer().runCommand("gamemode survival @a");context.waitTicks(10);
@@ -138,6 +153,10 @@ final class AutoBuilderChecks {
             throw new AssertionError("Builder did not finish: "+status+details);
         }
         require(status.equals("Build complete"),"Builder stopped: "+status);
+    }
+    private static void awaitSupport(ClientGameTestContext context,AutoBuilder builder){
+        for(int i=0;i<500;i++){if(context.computeOnClient(client->builder.state(0)==AutoBuilder.CORRECT&&!builder.temporarySupports().isEmpty()))return;context.waitTick();}
+        throw new AssertionError("Horizontal log/support fixture did not reach cleanup");
     }
     private static String coords(BlockPos p){return p.getX()+" "+p.getY()+" "+p.getZ();}
     private static void command(TestSingleplayerContext world,String command,BlockPos p,String block){world.getServer().runCommand(command+" "+coords(p)+" "+block);}
