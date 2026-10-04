@@ -186,7 +186,7 @@ public final class AutoBuilder extends Module {
     private BlockPos mining,restockTarget;
     private BlockPos tuningTarget,tuningSession;
     private int tuningObserved,tuningExpected,tuningDeadline,tuningClicks;
-    private Item needed;
+    private Item needed,restockAttemptItem;
     private int restockWait,inventoryWait;
     private int partialSource=-1,partialDestination,partialRemaining;
     private Item partialItem;
@@ -830,6 +830,7 @@ public final class AutoBuilder extends Module {
     private static boolean clickable(Block block){return block instanceof BlockWithEntity||block instanceof NoteBlock||block instanceof AbstractRedstoneGateBlock||block instanceof ComposterBlock||block instanceof CakeBlock||dev.maro.runtime.utils.world.BlockUtils.isClickable(block);}
     private void releaseSneak(){if(ownsSneak){mc.options.sneakKey.setPressed(false);ownsSneak=false;}}
     private boolean beginRestock(){
+        if(needed!=restockAttemptItem){triedContainers.clear();restockAttemptItem=needed;}
         var excluded=new HashSet<>(triedContainers);if(needed!=null)emptyChestItems.forEach((pos,items)->{if(items.contains(needed))excluded.add(pos);});
         restockTarget=supplyChests().stream().filter(chest->!excluded.contains(chest)&&!excluded.contains(chest.offset(ChestBlock.getFacing(mc.world.getBlockState(chest))))).findFirst().orElse(null);
         if(restockTarget==null)return false;foodRestock=false;restockWait=inventoryWait=0;partialSource=-1;partialItem=null;restockTriedSlots.clear();walker.stop();status="Restocking";return true;
