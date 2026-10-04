@@ -12,6 +12,7 @@
     "GameRendererMixin",
     "LightmapMixin",
     "InspectMixin",
+    "ViewModelMixin",
     "NoRenderMixins$Overlays",
     "NoRenderMixins$Hud",
     "NoRenderMixins$BossBars",

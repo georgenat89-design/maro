@@ -205,6 +205,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             checkCrafterDisabler(context, singleplayer);
             checkNoRender(context, singleplayer);
             checkItemInspect(context, singleplayer);
+            checkViewModel(context, singleplayer);
         }
     }
 
@@ -543,6 +544,34 @@ public class MaroClientGameTest implements FabricClientGameTest {
         context.runOnClient(client -> inspect.setEnabled(false));
         if (!midway) throw new AssertionError("Item Inspect was not playing halfway through");
         if (!done) throw new AssertionError("Item Inspect never finished");
+    }
+
+    /** View Model: a preset applied, a spin swing and the off hand shown; drawn without trouble. */
+    private static void checkViewModel(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+        singleplayer.getServer().runCommand("item replace entity @a weapon.offhand with minecraft:shield");
+        context.waitTicks(3);
+        context.takeScreenshot("maro-view-model-off");
+        var viewModel = ModuleManager.get(dev.maro.module.impl.visuals.ViewModel.class);
+        context.runOnClient(client -> {
+            for (var s : viewModel.getSettings()) {
+                if (s.getName().equals("Preset")) ((dev.maro.setting.ModeSetting) s).set("Centered");
+                if (s.getName().equals("Swing Mode")) ((dev.maro.setting.ModeSetting) s).set("Spin");
+            }
+            for (var s : viewModel.getSettings()) if (s instanceof dev.maro.setting.ButtonSetting b) b.press();
+            viewModel.setEnabled(true);
+        });
+        context.waitTicks(5);
+        context.takeScreenshot("maro-view-model-on");
+        context.runOnClient(client -> client.player.swingHand(net.minecraft.util.Hand.MAIN_HAND));
+        context.waitTicks(2);
+        context.takeScreenshot("maro-view-model-swing");
+        double x = context.computeOnClient(client -> viewModel.getSettings().stream()
+                .filter(s -> s.getName().equals("Main X")).map(s -> ((dev.maro.setting.NumberSetting) s).get()).findFirst().orElse(0.0));
+        context.runOnClient(client -> {
+            viewModel.setEnabled(false);
+            for (var s : viewModel.getSettings()) s.reset();
+        });
+        if (Math.abs(x + 0.25) > 1e-6) throw new AssertionError("Apply Preset did not set Main X (got " + x + ")");
     }
 
     /** Average brightness of a screenshot, 0 to 255. */
