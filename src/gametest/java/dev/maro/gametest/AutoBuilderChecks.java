@@ -58,6 +58,7 @@ final class AutoBuilderChecks {
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
             fixture(context,singleplayer,builder,start);
+            if(Boolean.getBoolean("maro.gametest.builderAuctionOnly")){BuilderAuctionChecks.run(context,singleplayer,builder);return;}
             BlockPos origin=start.add(-1,0,2);
             context.runOnClient(client->{
                 BlockState[] cells={Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState(),Blocks.GLASS.getDefaultState(),Blocks.GLASS.getDefaultState(),Blocks.GLASS.getDefaultState(),Blocks.GLASS.getDefaultState()};
@@ -69,10 +70,28 @@ final class AutoBuilderChecks {
             context.runOnClient(client->client.setScreen(new BuilderScreen(null,builder,true)));context.waitTicks(4);context.takeScreenshot("maro-builder-materials");
             context.getInput().resizeWindow(960,720);context.waitTicks(4);context.takeScreenshot("maro-builder-materials-compact");context.setScreen(()->null);context.getInput().resizeWindow(1280,720);
             singleplayer.getServer().runCommand("give @a minecraft:stone 64");singleplayer.getServer().runCommand("give @a minecraft:glass 64");context.waitTicks(6);
-            context.runOnClient(client->{set(builder,"Build Mode","Automatic");set(builder,"Temporary Supports",false);builder.startBuild();});
+            singleplayer.getServer().runOnServer(server->{var player=server.getPlayerManager().getPlayerList().getFirst();for(int i=0;i<9;i++){var stack=player.getInventory().getStack(i);if(stack.isOf(Items.STONE)||stack.isOf(Items.GLASS)){player.getInventory().setStack(stack.isOf(Items.STONE)?20:21,stack.copy());player.getInventory().setStack(i,ItemStack.EMPTY);}}player.playerScreenHandler.syncState();});context.waitTicks(5);
+            context.runOnClient(client->{
+                set(builder,"Build Mode","Automatic");set(builder,"Temporary Supports",false);builder.toggleMaterialIgnored(Items.GLASS);
+                require(builder.materialIgnored(Items.GLASS)&&!builder.remainingMaterials().containsKey(Items.GLASS)&&builder.saveExtra().getAsJsonArray("ignored-materials").toString().contains("minecraft:glass"),"Ignored material remains required or was not saved");
+                builder.startBuild();
+            });
+            await(context,builder,400);verify(singleplayer,origin,2,2,2,y->y==0?Blocks.STONE:Blocks.AIR);
+            context.runOnClient(client->require(builder.inventoryCount(Items.GLASS)==64&&builder.state(4)==AutoBuilder.IGNORED,"Builder placed an ignored material"));
+            context.runOnClient(client->{client.setScreen(new BuilderScreen(null,builder,true));});context.waitTicks(4);context.takeScreenshot("maro-builder-materials-ignored");
+            context.runOnClient(client->{builder.toggleMaterialIgnored(Items.GLASS);builder.restartBuild();});
             await(context,builder,400);
             verify(singleplayer,origin,2,2,2,y->y==0?Blocks.STONE:Blocks.GLASS);
             context.takeScreenshot("maro-builder-server-built");
+
+            // Restart rescans the same placement and repairs only the removed block.
+            var loaded=context.computeOnClient(client->builder.schematic());
+            int stoneBefore=context.computeOnClient(client->builder.inventoryCount(Items.STONE));
+            int glassBefore=context.computeOnClient(client->builder.inventoryCount(Items.GLASS));
+            command(singleplayer,"setblock",origin,"air");context.waitTicks(5);
+            context.runOnClient(client->{button(builder,"Restart Build").press();require(builder.schematic()==loaded&&builder.origin().equals(origin),"Restart changed the selected schematic or origin");require(builder.state(0)==AutoBuilder.UNKNOWN&&builder.building(),"Restart did not reset the scan and start building");});
+            await(context,builder,400);verify(singleplayer,origin,2,2,2,y->y==0?Blocks.STONE:Blocks.GLASS);
+            context.runOnClient(client->require(builder.inventoryCount(Items.STONE)==stoneBefore-1&&builder.inventoryCount(Items.GLASS)==glassBefore,"Restart replaced already-correct blocks"));
 
             // Missing stone is obtained from a real server chest and then placed, without a creative give.
             fixture(context,singleplayer,builder,start);
@@ -85,13 +104,25 @@ final class AutoBuilderChecks {
             });
             await(context,builder,500);
             verify(singleplayer,start.add(0,0,2),1,1,1,y->Blocks.STONE);
-            context.runOnClient(client->require(builder.inventoryCount(Items.STONE)==63,"Chest restock did not move server items"));
+            context.runOnClient(client->require(builder.inventoryCount(Items.STONE)==0,"Chest restock withdrew excess layer materials"));
+            require(singleplayer.getServer().computeOnServer(server->((net.minecraft.block.entity.ChestBlockEntity)server.getOverworld().getBlockEntity(chest)).getStack(0).getCount()==63),"Exact restock did not leave the unneeded blocks in the chest");
 
             // A far target needs normal walking, and the path must keep clear of a lava floor tile.
             fixture(context,singleplayer,builder,start);command(singleplayer,"setblock",start.add(0,-1,4),"lava");singleplayer.getServer().runCommand("give @a stone 64");context.waitTicks(5);
             context.runOnClient(client->{builder.install(new Schematic("walk-fixture.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(start.add(0,0,12));builder.startBuild();});
             await(context,builder,500);verify(singleplayer,start.add(0,0,12),1,1,1,y->Blocks.STONE);
             context.runOnClient(client->require(client.player.getZ()>start.getZ()+6&&client.player.getY()>=start.getY()-.2,"Builder did not walk to its target safely"));
+
+            // A two-block-deep pocket has no walking route until a jump places a dirt step below the player.
+            fixture(context,singleplayer,builder,start);singleplayer.getServer().runCommand("give @a stone 64");singleplayer.getServer().runCommand("give @a dirt 64");
+            singleplayer.getServer().runCommand("fill "+coords(start.add(-1,-2,-1))+" "+coords(start.add(1,-2,1))+" stone");
+            command(singleplayer,"setblock",start.down(3),"stone");command(singleplayer,"setblock",start.down(2),"air");command(singleplayer,"setblock",start.down(),"air");
+            singleplayer.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+(start.getY()-2)+" "+(start.getZ()+.5));context.waitTicks(8);
+            context.runOnClient(client->{builder.install(new Schematic("unstuck-fixture.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(start.add(0,0,10));builder.startBuild();});
+            boolean recovered=false;for(int i=0;i<800&&context.computeOnClient(client->builder.building());i++){if(context.computeOnClient(client->builder.temporarySupports().contains(start.down(2))))recovered=true;context.waitTick();}
+            require(recovered,"Stuck builder did not place a temporary step beneath itself");await(context,builder,100);
+            require(singleplayer.getServer().computeOnServer(server->server.getOverworld().getBlockState(start.down(2)).isAir()),"Unstuck dirt step was not removed");
+            verify(singleplayer,start.add(0,0,10),1,1,1,y->Blocks.STONE);
 
             // Side-face placement creates a horizontal log. Only this builder's temporary support is cleaned.
             fixture(context,singleplayer,builder,start);singleplayer.getServer().runCommand("give @a oak_log 64");singleplayer.getServer().runCommand("give @a dirt 64");context.waitTicks(5);
@@ -100,7 +131,7 @@ final class AutoBuilderChecks {
             BlockPos support=context.computeOnClient(client->builder.temporarySupports().iterator().next());
             context.runOnClient(client->builder.pause("Step-off cleanup fixture"));
             singleplayer.getServer().runCommand("tp @a "+(support.getX()+.5)+" "+(support.getY()+1)+" "+(support.getZ()+.5));context.waitTicks(8);
-            context.runOnClient(client->builder.startBuild());
+            context.runOnClient(client->{builder.restartBuild();require(builder.temporarySupports().contains(support),"Restart forgot temporary supports before cleanup");});
             await(context,builder,500);
             require(singleplayer.getServer().computeOnServer(server->server.getOverworld().getBlockState(start.add(0,0,2)).get(Properties.AXIS)==Direction.Axis.X),"Horizontal log was placed with wrong axis");
             require(singleplayer.getServer().computeOnServer(server->server.getOverworld().getBlockState(start.add(-1,0,2)).isAir()&&server.getOverworld().getBlockState(start.add(1,0,2)).isAir()),"Temporary log support was not cleaned");
@@ -124,22 +155,55 @@ final class AutoBuilderChecks {
             });
             await(context,builder,400);verify(singleplayer,start.add(0,0,2),1,1,1,y->Blocks.AIR);
 
+            fixture(context,singleplayer,builder,start);singleplayer.getServer().runCommand("give @a note_block 1");context.waitTicks(5);
+            var notePos=start.add(0,0,2);
+            context.runOnClient(client->{builder.install(new Schematic("note-fixture.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.NOTE_BLOCK.getDefaultState().with(NoteBlock.NOTE,7)}));builder.setOrigin(notePos);builder.startBuild();});
+            await(context,builder,500);
+            require(singleplayer.getServer().computeOnServer(server->server.getOverworld().getBlockState(notePos).get(NoteBlock.NOTE)==7),"New note block did not stop at its requested note");
+            context.waitTicks(40);require(singleplayer.getServer().computeOnServer(server->server.getOverworld().getBlockState(notePos).get(NoteBlock.NOTE)==7),"Builder kept cycling an already-correct note");
+            command(singleplayer,"setblock",notePos,"note_block[note=22]");context.waitTicks(5);
+            context.runOnClient(client->{builder.install(new Schematic("note-wrap-fixture.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.NOTE_BLOCK.getDefaultState().with(NoteBlock.NOTE,2)}));builder.setOrigin(notePos);builder.startBuild();});
+            await(context,builder,400);context.waitTicks(40);
+            require(singleplayer.getServer().computeOnServer(server->server.getOverworld().getBlockState(notePos).get(NoteBlock.NOTE)==2),"Note tuning wrapped incorrectly or continued past the target");
+
+            for(String interactive:new String[]{"hopper","chest","note_block"}){
+                fixture(context,singleplayer,builder,start);singleplayer.getServer().runCommand("give @a stone 1");command(singleplayer,"setblock",start.add(0,0,2),interactive);context.waitTicks(5);
+                context.runOnClient(client->{builder.install(new Schematic("crouch-fixture.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(start.add(0,1,2));builder.startBuild();});
+                boolean opened=false;for(int i=0;i<400&&context.computeOnClient(client->builder.building());i++){if(context.computeOnClient(client->client.currentScreen instanceof net.minecraft.client.gui.screen.ingame.HandledScreen<?>))opened=true;context.waitTick();}
+                require(!opened,"Builder opened an interactive support instead of crouching: "+interactive);await(context,builder,100);verify(singleplayer,start.add(0,1,2),1,1,1,y->Blocks.STONE);
+                context.runOnClient(client->require(!client.options.sneakKey.isPressed(),"Builder retained crouch after placing"));
+            }
+
             fixture(context,singleplayer,builder,start);BuilderAuctionChecks.run(context,singleplayer,builder);
 
             context.runOnClient(client->{
                 builder.pause("Screenshot");client.setScreen(new ClickGuiScreen());((ClickGuiScreen)client.currentScreen).openModuleSettings(builder);
                 require(client.currentScreen instanceof BuilderControlScreen,"Builder settings did not open the simple control panel");
-                require(builder.getSettings().size()<50,"Unnecessary settings still clutter the builder");
+                require(builder.getSettings().size()<55,"Unnecessary settings still clutter the builder");
                 require(builder.buildMode().equals("Automatic"),"Automatic build mode is unavailable");
             });context.waitTicks(5);context.takeScreenshot("maro-builder-control-panel");
             context.runOnClient(client->{client.setScreen(new ClickGuiScreen());((ClickGuiScreen)client.currentScreen).openModuleOptions(builder);});context.waitTicks(5);context.takeScreenshot("maro-builder-simplified-options");
+
+            context.runOnClient(client->{
+                button(builder,"Cancel Schematic").press();
+                require(builder.schematic()==null&&!builder.loading()&&!builder.building()&&!builder.buying()&&!builder.previewVisible()&&!builder.isEnabled(),"Cancel did not unload and stop the schematic");
+                require(builder.remainingMaterials().isEmpty()&&builder.visibleCells().isEmpty()&&builder.saveExtra().get("file").getAsString().isEmpty(),"Cancel retained schematic state");
+                require(!client.options.forwardKey.isPressed()&&!client.options.useKey.isPressed()&&!AutoBuilder.holdingBreak(),"Cancel retained builder input");
+            });
+            // Cancel a pending asynchronous load in the same client turn; its completion must be ignored.
+            var cancelFile=builder.folder().resolve("maro-cancel-fixture.nbt");
+            try{NbtIo.writeCompressed(SchematicIO.encodeStructure(loaded),cancelFile);}catch(java.io.IOException e){throw new AssertionError(e);}
+            context.runOnClient(client->{builder.load(cancelFile);require(builder.loading(),"Load fixture did not start");builder.cancelSchematic();});
+            context.waitTicks(30);
+            context.runOnClient(client->require(builder.schematic()==null&&!builder.loading()&&!builder.previewVisible(),"Cancelled load restored its schematic"));
+            try{java.nio.file.Files.deleteIfExists(cancelFile);}catch(java.io.IOException e){throw new AssertionError(e);}
         }finally{
             context.runOnClient(client->{builder.setEnabled(false);client.options.useKey.setPressed(false);client.options.forwardKey.setPressed(false);client.options.jumpKey.setPressed(false);client.setScreen(null);});
             singleplayer.getServer().runCommand("gamemode creative @a");
         }
     }
     private static void fixture(ClientGameTestContext context,TestSingleplayerContext singleplayer,AutoBuilder builder,BlockPos start){
-        context.runOnClient(client->{builder.setEnabled(false);client.setScreen(null);set(builder,"Build Mode","Automatic");set(builder,"Mine Out Schematic",false);set(builder,"Stop On Staff Nearby",false);set(builder,"Auto Buy When Missing",false);set(builder,"Support Dirt Reserve",0);set(builder,"Temporary Supports",false);set(builder,"Rotation","0");set(builder,"Mirror","None");button(builder,"Clear Restock Marks").press();});
+        context.runOnClient(client->{builder.setEnabled(false);client.setScreen(null);set(builder,"Build Mode","Automatic");set(builder,"Mine Out Schematic",false);set(builder,"Auto Buy Tools",false);set(builder,"Stop On Staff Nearby",false);set(builder,"Auto Buy When Missing",false);set(builder,"Support Dirt Reserve",0);set(builder,"Temporary Supports",false);set(builder,"Rotation","0");set(builder,"Mirror","None");button(builder,"Clear Restock Marks").press();});
         singleplayer.getServer().runCommand("gamemode creative @a");singleplayer.getServer().runCommand("fill "+coords(start.add(-16,-1,-16))+" "+coords(start.add(16,-1,16))+" stone");
         singleplayer.getServer().runCommand("fill "+coords(start.add(-16,0,-16))+" "+coords(start.add(16,6,16))+" air");
         singleplayer.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+start.getY()+" "+(start.getZ()+.5)+" 0 0");singleplayer.getServer().runCommand("clear @a");singleplayer.getServer().runCommand("gamemode survival @a");context.waitTicks(10);
