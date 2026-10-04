@@ -204,6 +204,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             AutoMineRouteChecks.run(context, singleplayer);
             checkCrafterDisabler(context, singleplayer);
             checkNoRender(context, singleplayer);
+            checkItemInspect(context, singleplayer);
         }
     }
 
@@ -517,6 +518,31 @@ public class MaroClientGameTest implements FabricClientGameTest {
         });
         singleplayer.getServer().runCommand("weather clear");
         if (!hidden) throw new AssertionError("No Render did not hide dropped items");
+    }
+
+    /** Item Inspect plays through with a sword in hand, swoosh and all, and puts itself away when done. */
+    private static void checkItemInspect(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+        singleplayer.getServer().runCommand("clear @a");
+        singleplayer.getServer().runCommand("give @a minecraft:netherite_sword");
+        context.waitTicks(5);
+        var inspect = ModuleManager.get(dev.maro.module.impl.visuals.ItemInspect.class);
+        context.runOnClient(client -> {
+            client.player.getInventory().setSelectedSlot(0);
+            client.player.setPitch(10f);
+            inspect.setEnabled(true);
+        });
+        context.waitTicks(3);
+        context.runOnClient(client -> inspect.inspect());
+        long until = System.currentTimeMillis() + 700;
+        while (System.currentTimeMillis() < until) context.waitTick();
+        boolean midway = context.computeOnClient(client -> inspect.inspecting());
+        context.takeScreenshot("maro-item-inspect");
+        until = System.currentTimeMillis() + 2500;
+        while (System.currentTimeMillis() < until) context.waitTick();
+        boolean done = !context.computeOnClient(client -> inspect.inspecting());
+        context.runOnClient(client -> inspect.setEnabled(false));
+        if (!midway) throw new AssertionError("Item Inspect was not playing halfway through");
+        if (!done) throw new AssertionError("Item Inspect never finished");
     }
 
     /** Average brightness of a screenshot, 0 to 255. */

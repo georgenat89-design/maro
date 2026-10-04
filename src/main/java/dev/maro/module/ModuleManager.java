@@ -27,6 +27,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.InventoryHud());
         register(new dev.maro.module.impl.visuals.Fullbright());
         register(new dev.maro.module.impl.visuals.NoRender());
+        register(new dev.maro.module.impl.visuals.ItemInspect());
         register(new dev.maro.module.impl.visuals.CustomCrosshair());
         register(new dev.maro.module.impl.visuals.SkinAccessories());
         register(new dev.maro.module.impl.visuals.Pet());

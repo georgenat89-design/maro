@@ -11,6 +11,7 @@
     "DrawContextAccessor",
     "GameRendererMixin",
     "LightmapMixin",
+    "InspectMixin",
     "NoRenderMixins$Overlays",
     "NoRenderMixins$Hud",
     "NoRenderMixins$BossBars",
