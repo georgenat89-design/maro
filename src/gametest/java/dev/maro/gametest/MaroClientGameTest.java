@@ -311,7 +311,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
         context.runOnClient(client -> fullbright.setEnabled(false));
         settle(context);
         if (gammaAfter != gammaBefore) throw new AssertionError("Fullbright changed the Brightness option: " + gammaBefore + " -> " + gammaAfter);
-        if (bright < dark + 40) throw new AssertionError("Fullbright did not brighten the dark room (" + dark + " -> " + bright + ")");
+        if (bright < dark + 30 || bright < dark * 1.5) throw new AssertionError("Fullbright did not brighten the dark room (" + dark + " -> " + bright + ")");
     }
 
     /** Auto Mine digs a 1x2 tunnel through solid stone in survival, mines a wall ore, fills a hole and lights the way. */
@@ -551,8 +551,9 @@ public class MaroClientGameTest implements FabricClientGameTest {
             var image = javax.imageio.ImageIO.read(path.toFile());
             long total = 0;
             int samples = 0;
-            for (int y = 0; y < image.getHeight(); y += 4) {
-                for (int x = 0; x < image.getWidth(); x += 4) {
+            // The middle half of the screen: the world, without the HUD round the edges.
+            for (int y = image.getHeight() / 4; y < image.getHeight() * 3 / 4; y += 4) {
+                for (int x = image.getWidth() / 4; x < image.getWidth() * 3 / 4; x += 4) {
                     int rgb = image.getRGB(x, y);
                     total += (rgb >> 16 & 255) * 299 + (rgb >> 8 & 255) * 587 + (rgb & 255) * 114;
                     samples++;
