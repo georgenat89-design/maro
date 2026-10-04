@@ -7,6 +7,8 @@
     "SkinAccessoriesMixin",
     "PetRenderMixin",
     "AutoToolMixin",
+    "BlockItemAccessor",
+    "BuilderUseMixin",
     "ClientPlayerInteractionManagerAccessor",
     "DrawContextAccessor",
     "GameRendererMixin",

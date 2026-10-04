@@ -17,7 +17,7 @@ public abstract class AutoToolMixin {
     private void maro$selectMiningTool(BlockPos pos, Direction direction, CallbackInfoReturnable<Boolean> cir) {
         AutoTool tool = ModuleManager.get(AutoTool.class);
         // Auto Mine picks its own tool; two pickers could swap the slot mid-break and restart it.
-        if (dev.maro.module.impl.player.AutoMine.holdingBreak()) return;
+        if (dev.maro.module.impl.player.AutoMine.holdingBreak() || dev.maro.module.impl.player.AutoBuilder.holdingBreak()) return;
         if (tool != null && tool.isEnabled()) tool.selectTool(pos);
     }
 
@@ -27,6 +27,6 @@ public abstract class AutoToolMixin {
      */
     @Inject(method = "cancelBlockBreaking", at = @At("HEAD"), cancellable = true)
     private void maro$keepAutoMineBreak(CallbackInfo ci) {
-        if (dev.maro.module.impl.player.AutoMine.holdingBreak()) ci.cancel();
+        if (dev.maro.module.impl.player.AutoMine.holdingBreak() || dev.maro.module.impl.player.AutoBuilder.holdingBreak()) ci.cancel();
     }
 }

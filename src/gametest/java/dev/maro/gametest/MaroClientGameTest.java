@@ -41,6 +41,11 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 context.takeScreenshot("maro-companion-launch");
                 return;
             }
+            if (Boolean.getBoolean("maro.gametest.builderOnly")) {
+                AutoBuilderChecks.run(context,singleplayer);
+                return;
+            }
+            AutoBuilderChecks.imports();
             if (Boolean.getBoolean("maro.gametest.staffOnly")) {
                 StaffNotifierChecks.run(context);
                 AntiVanishChecks.run(context);
