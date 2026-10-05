@@ -870,7 +870,9 @@ public final class AutoBuilder extends Module {
         // Omitting those views traps the last cells along an elevated build's edge.
         for(int dx=-3;dx<=3;dx++)for(int dz=-3;dz<=3;dz++)for(int dy=-below;dy<=above;dy++){
             var stand=target.add(dx,dy,dz);
-            if(tried.containsKey(stand)||!walker.canStand(stand)||mc.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(stand))<.04)continue;
+            // A hotbar transfer can defer the next stair piece without changing
+            // geometry. Keep the committed view eligible during its retry window.
+            if(tried.containsKey(stand)&&!stand.equals(accessStand)||!walker.canStand(stand)||mc.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(stand))<.04)continue;
             Vec3d eye=walker.standingPoint(stand).add(0,mc.player.getStandingEyeHeight(),0);
             if(!extendedScaffold&&eye.squaredDistanceTo(Vec3d.ofCenter(target))>effectiveReach()*effectiveReach())continue;
             var body=mc.player.getBoundingBox().offset(eye.subtract(mc.player.getEyePos()));
@@ -1116,7 +1118,13 @@ public final class AutoBuilder extends Module {
         if(ticks-placementAttemptStarted>80){deferPlacement(job,"Placement stalled - trying another position");return;}
         if(job.index>=0){updateState(job.index);if(states[job.index]==CORRECT){placement=null;return;}}
         if(inventoryCount(job.item)==0){placement=null;return;}
-        if(!selectMaterial(job.item)){status=delay>0?"Moving material to hotbar":"Material unavailable";placement=null;return;}
+        if(!selectMaterial(job.item)){
+            status=delay>0?"Moving material to hotbar":"Material unavailable";
+            // The swap defers this exact job; its ray and placement context are
+            // checked again below after the hotbar update has settled.
+            if(delay<=0)placement=null;
+            return;
+        }
         boolean planting=potted(job.state)&&mc.world.getBlockState(job.target).isOf(Blocks.FLOWER_POT);
         if(planting){releaseSneak();if(mc.player.isSneaking())return;}
         if(!planting&&clickable(mc.world.getBlockState(job.hit.getBlockPos()).getBlock())&&!mc.player.isSneaking()){
