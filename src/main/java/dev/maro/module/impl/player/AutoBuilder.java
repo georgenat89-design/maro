@@ -167,6 +167,7 @@ public final class AutoBuilder extends Module {
     private final Set<BlockPos> containers=new LinkedHashSet<>(),supports=new LinkedHashSet<>();
     private final Set<Item> ignoredMaterials=new HashSet<>();
     private final Set<BlockPos> triedContainers=new HashSet<>();
+    private final Map<BlockPos,Integer> chestAccessRetryAt=new HashMap<>();
     private final Map<BlockPos,Set<Item>> emptyChestItems=new HashMap<>();
     private final Map<Item,Integer> preparedStock=new HashMap<>();
     private final Map<BlockPos,Map<Item,Integer>> chestStocks=new HashMap<>();
@@ -524,7 +525,7 @@ public final class AutoBuilder extends Module {
         building=false;pasting=false;depositing=false;depositTarget=null;depositSlot=-1;resumeShoppingAfterDeposit=false;depositedShopping.clear();placement=pendingPlacement=null;pendingServerState=null;routeMining=null;mining=null;tuningTarget=tuningSession=null;tuningClicks=0;standGoal=null;descentPost=descentView=null;accessStand=null;accessSupports.clear();digging=false;walker.stop();releaseSneak();endRecovery();
         if(mc.interactionManager!=null)mc.interactionManager.cancelBlockBreaking();
         if(ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler&&ownedHandler.getCursorStack().isEmpty())mc.player.closeHandledScreen();
-        ownedHandler=null;restockTarget=null;buying=false;pendingOffer=null;shopping.clear();status=reason;
+        ownedHandler=null;restockTarget=null;chestAccessRetryAt.clear();buying=false;pendingOffer=null;shopping.clear();status=reason;
     }
     private void notify(String message){Notifications.push("Auto Builder",message,Notifications.Type.INFO,5000);if(mc.player!=null)mc.player.sendMessage(Text.literal("[Auto Builder] "+message),false);}
     public void onActionBind(int key){if(markBind.matches(key)&&(isEnabled()||schematic!=null)){markContainer();return;}if(isEnabled()&&buyBind.matches(key))startBuying(false);}
@@ -566,15 +567,25 @@ public final class AutoBuilder extends Module {
         if(delay>0){walker.release();return;}
         if(placement!=null){placeTick();return;}
         if(mining!=null){mineTick();return;}
+        if(followStandGoal())return;
+        if(autoTools.get()&&!mc.player.getAbilities().creativeMode&&(!hasTool(false)||!hasTool(true))){
+            needed=!hasTool(false)?Items.DIAMOND_PICKAXE:Items.DIAMOND_SHOVEL;
+            if(restock.get()&&beginRestock()){status="Checking selected chests for build tools";return;}
+            if(autoBuy.get()&&maxSpend.get()>0){startBuying(false);if(buying)resumeAfterMarket=true;return;}
+        }
+        findWork();
+    }
+    /** Follow the same verified stand/descent intent during building and chest trips. */
+    private boolean followStandGoal(){
         if(standGoal!=null){
             if(standProgressPos==null||mc.player.getEntityPos().subtract(standProgressPos).horizontalLengthSquared()>.04||mc.player.isOnGround()&&Math.abs(mc.player.getY()-standProgressPos.y)>.2){standProgressPos=mc.player.getEntityPos();standProgressAt=ticks;}
             if(walker.standAt(standGoal)){
                 if(descentPost!=null&&standGoal.equals(descentPost.up())){
-                    if(mc.player.getVelocity().horizontalLengthSquared()>=.0001){status="Settling before scaffold descent";return;}
+                    if(mc.player.getVelocity().horizontalLengthSquared()>=.0001){status="Settling before scaffold descent";return true;}
                     var post=descentPost;var lower=descentView;descentPost=descentView=null;
                     if(lower!=null&&walker.standingPoint(lower).y<mc.player.getY()-.5&&post.equals(mc.player.getBlockPos().down())&&supports.contains(post)
                         &&mc.world.getBlockState(post).isOf(Blocks.DIRT)&&walker.canDescendThrough(post)&&safeToRecycle(post)){
-                        standGoal=lower;routeMining=mining=post;walker.stop();status="Descending temporary scaffold";return;
+                        standGoal=lower;routeMining=mining=post;walker.stop();status="Descending temporary scaffold";return true;
                     }
                 }
                 if(standGoal.equals(accessStand)){accessStand=null;accessSupports.clear();}
@@ -585,14 +596,9 @@ public final class AutoBuilder extends Module {
                 if(navigatingCell>=0){retryAt.put(navigatingCell,ticks+10);triedStands.computeIfAbsent(navigatingCell,i->new HashMap<>()).put(standGoal,ticks+600);}
                 navigatingCell=-1;standGoal=null;descentPost=descentView=null;accessStand=null;accessSupports.clear();walker.stop();status="Replanning blocked build position";
             }else status=walker.status;
-            return;
+            return true;
         }
-        if(autoTools.get()&&!mc.player.getAbilities().creativeMode&&(!hasTool(false)||!hasTool(true))){
-            needed=!hasTool(false)?Items.DIAMOND_PICKAXE:Items.DIAMOND_SHOVEL;
-            if(restock.get()&&beginRestock()){status="Checking selected chests for build tools";return;}
-            if(autoBuy.get()&&maxSpend.get()>0){startBuying(false);if(buying)resumeAfterMarket=true;return;}
-        }
-        findWork();
+        return false;
     }
     private void stopEating(){
         if(ownsFoodUse)mc.options.useKey.setPressed(false);ownsFoodUse=false;
@@ -625,9 +631,9 @@ public final class AutoBuilder extends Module {
     }
     private void endRecovery(){if(recoveryJump)mc.options.jumpKey.setPressed(false);recoveryJump=false;recoveryPhase=0;recoveryBase=null;}
     private boolean clearRouteSupportTick(){
-        if(buying||restockTarget!=null)return false;
+        if(buying||restockTarget!=null&&(ownedHandler!=null||restockWait>0))return false;
         if(routeMining!=null){
-            if(!mc.world.getBlockState(routeMining).isOf(Blocks.DIRT)){supports.remove(routeMining);escapeSupports.remove(routeMining);cleanupStands.clear();triedStands.clear();routeMining=null;mining=null;digging=false;mc.interactionManager.cancelBlockBreaking();walker.stop();recoveryAttempts=Math.min(recoveryAttempts,2);delay=actionDelay();return true;}
+            if(!mc.world.getBlockState(routeMining).isOf(Blocks.DIRT)){supports.remove(routeMining);escapeSupports.remove(routeMining);cleanupStands.clear();triedStands.clear();chestTriedStands.clear();chestProgressAt=ticks;routeMining=null;mining=null;digging=false;mc.interactionManager.cancelBlockBreaking();walker.stop();recoveryAttempts=Math.min(recoveryAttempts,2);delay=actionDelay();return true;}
             mining=routeMining;mineTick();if(mining==null)routeMining=null;return true;
         }
         if(!walker.routeUnavailable()&&!walker.movementStalled())return false;
@@ -1345,7 +1351,7 @@ public final class AutoBuilder extends Module {
         if(state.isAir()){supports.remove(mining);mining=null;digging=false;mc.interactionManager.cancelBlockBreaking();delay=actionDelay();return;}
         if(protectContainers.get()&&state.hasBlockEntity()||state.getHardness(mc.world,mining)<0||!state.getFluidState().isEmpty()){mining=null;return;}
         boolean shovel=state.isIn(BlockTags.SHOVEL_MINEABLE);
-        if(autoTools.get()&&!mc.player.getAbilities().creativeMode&&!hasTool(shovel)){
+        if(autoTools.get()&&!mc.player.getAbilities().creativeMode&&!hasTool(shovel)&&!(restockTarget!=null&&mining.equals(routeMining)&&supports.contains(mining)&&state.isOf(Blocks.DIRT))){
             needed=shovel?Items.DIAMOND_SHOVEL:Items.DIAMOND_PICKAXE;
             if(restock.get()&&beginRestock()){mining=null;return;}
             if(maxSpend.get()>0){startBuying(false);if(buying)resumeAfterMarket=true;}else status="Set AH budget to buy the missing "+(shovel?"shovel":"pickaxe");return;
@@ -1549,6 +1555,7 @@ public final class AutoBuilder extends Module {
         mc.player.swingHand(Hand.MAIN_HAND);return true;
     }
     private BlockHitResult approachChest(BlockPos chest){
+        if(standGoal!=null){followStandGoal();chestProgressAt=ticks;chestJourneyFailed=false;return null;}
         if(chestProgressPosition==null||mc.player.getEntityPos().squaredDistanceTo(chestProgressPosition)>.04){chestProgressPosition=mc.player.getEntityPos();chestProgressAt=ticks;}
         if(chestStand!=null){
             if(walker.standAt(chestStand)){chestStand=null;walker.stop();}
@@ -1569,6 +1576,7 @@ public final class AutoBuilder extends Module {
         options.sort(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos())));
         long deadline=System.nanoTime()+6_000_000;
         for(var stand:options){chestTriedStands.put(stand,ticks+200);if(walker.canReachStand(stand)){chestStand=stand;chestProgressAt=ticks;walker.stop();status="Walking around an obstructed chest";return null;}if(System.nanoTime()>deadline)break;}
+        if(prepareSupportDescent(options)){chestProgressAt=ticks;chestJourneyFailed=false;return null;}
         chestJourneyFailed=ticks-chestProgressAt>100||ticks-chestSessionStarted>1200;
         walker.release();status="Replanning route to selected chest";return null;
     }
@@ -1591,14 +1599,26 @@ public final class AutoBuilder extends Module {
     private static boolean clickable(Block block){return block instanceof BlockWithEntity||block instanceof NoteBlock||block instanceof AbstractRedstoneGateBlock||block instanceof ComposterBlock||block instanceof CakeBlock||block instanceof FlowerPotBlock||dev.maro.runtime.utils.world.BlockUtils.isClickable(block);}
     private void releaseSneak(){if(ownsSneak){mc.options.sneakKey.setPressed(false);ownsSneak=false;}}
     private boolean beginRestock(){
+        chestAccessRetryAt.values().removeIf(until->until<=ticks);
         if(needed!=restockAttemptItem){triedContainers.clear();restockAttemptItem=needed;}
         var excluded=new HashSet<>(triedContainers);if(needed!=null)emptyChestItems.forEach((pos,items)->{if(items.contains(needed))excluded.add(pos);});
-        restockTarget=supplyChests().stream().filter(chest->!excluded.contains(chest)&&!excluded.contains(chest.offset(ChestBlock.getFacing(mc.world.getBlockState(chest))))).findFirst().orElse(null);
-        if(restockTarget==null)return false;foodRestock=supportRestock=false;restockWait=inventoryWait=0;partialSource=-1;partialItem=null;restockTriedSlots.clear();restockSlotRetries.clear();resetChestJourney();walker.stop();status="Restocking";return true;
+        var selected=supplyChests();
+        restockTarget=selected.stream().filter(chest->!excluded.contains(chest)&&!excluded.contains(chest.offset(ChestBlock.getFacing(mc.world.getBlockState(chest)))))
+            .filter(chest->!chestAccessRetryAt.containsKey(chest)).findFirst().orElse(null);
+        if(restockTarget==null){
+            // A failed walk/open is not a stock check. Retry uninspected selected
+            // storage instead of declaring its supplies absent or buying duplicates.
+            if(selected.stream().anyMatch(chest->!excluded.contains(chest)&&chestAccessRetryAt.containsKey(chest))){walker.release();status="Retrying access to selected chest — contents not checked";return true;}
+            return false;
+        }
+        foodRestock=supportRestock=false;restockWait=inventoryWait=0;partialSource=-1;partialItem=null;restockTriedSlots.clear();restockSlotRetries.clear();resetChestJourney();walker.stop();status="Restocking";return true;
     }
     private void finishRestock(String reason){
         if(ownedHandler!=null&&mc.player.currentScreenHandler==ownedHandler)mc.player.closeHandledScreen();
-        if(restockTarget!=null)triedContainers.add(restockTarget);
+        if(restockTarget!=null){
+            if(ownedHandler!=null&&receivedChestInventory==ownedHandler){triedContainers.add(restockTarget);chestAccessRetryAt.remove(restockTarget);}
+            else chestAccessRetryAt.put(restockTarget,ticks+100);
+        }
         ownedHandler=null;restockTarget=null;partialSource=-1;partialItem=null;restockWait=0;
         resetChestJourney();walker.stop();delay=6;status=reason;
     }

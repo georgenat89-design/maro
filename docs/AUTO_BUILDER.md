@@ -29,6 +29,8 @@ Floating blocks can use short dirt columns. When dirt runs out, the builder chec
 
 If existing views, access stairs and safe scaffold descent cannot reach a missing block, the builder can add a temporary floor beneath a clear placement view. Both the dirt floor and the requested block must have valid native placement rays. The floor uses the same support limit, server confirmation and cleanup tracking as other temporary blocks; it never replaces a future solid schematic cell.
 
+Restock trips use the same safe owned-post descent and temporary-block route clearing as build movement. A failed walk or chest-open attempt is retried after a short cooldown and does not mark that chest's contents as checked. Auction fallback waits for actual stock checks of the selected accessible chests. Tools stored below a raised work area can be retrieved even when the builder must first break its own dirt support by hand.
+
 ## Auction purchases
 
 Enter a positive **Budget** and click **Buy Missing**. Zero disables buying. **Options → Materials → Max Price Per Item** sets the unit-price ceiling. **Auto Buy When Missing** defaults on: needed inventory items move to the hotbar first, then the builder checks your selected double chests, and finally buys missing materials and resumes building. **Support Dirt Reserve** is shared by auction buying and restocking.
