@@ -33,10 +33,10 @@ public final class BuilderWalk {
     public boolean approach(BlockPos target,double distance){
         return approach(target,distance,false);
     }
-    public boolean standAt(BlockPos target){return approach(target,.42,true);}
+    public boolean standAt(BlockPos target){return approach(target,.22,true);}
     public boolean canStand(BlockPos pos){return walkable(pos);}
     public Vec3d standingPoint(BlockPos pos){return Vec3d.ofBottomCenter(pos).add(0,footingHeight(pos.down())-1,0);}
-    public boolean canReachStand(BlockPos pos){return walkable(pos)&&(mc.player.getEntityPos().squaredDistanceTo(standingPoint(pos))<=.42*.42||!find(walkingCell(),pos,.42,true).isEmpty());}
+    public boolean canReachStand(BlockPos pos){return walkable(pos)&&(walkingCell().equals(pos)||mc.player.getEntityPos().squaredDistanceTo(standingPoint(pos))<=.22*.22||!find(walkingCell(),pos,.22,true).isEmpty());}
     private BlockPos walkingCell(){return BlockPos.ofFloored(mc.player.getEntityPos().add(0,.4,0));}
     public boolean needsRecovery(){return recoveryRequested;}
     public BlockPos destination(){return goal;}
@@ -71,11 +71,14 @@ public final class BuilderWalk {
     private boolean approach(BlockPos target,double distance,boolean stand){
         if(mc.player==null||mc.world==null)return false;
         if(!target.equals(goal)||exact!=stand){stop();goal=target;exact=stand;}
-        if((exact?mc.player.getEntityPos().squaredDistanceTo(standingPoint(target)):mc.player.getEyePos().squaredDistanceTo(Vec3d.ofCenter(target)))<=distance*distance){release();return true;}
+        if((exact?mc.player.getEntityPos().squaredDistanceTo(standingPoint(target)):mc.player.getEyePos().squaredDistanceTo(Vec3d.ofCenter(target)))<=distance*distance){
+            release();if(!exact||mc.player.isOnGround()&&mc.player.getVelocity().horizontalLengthSquared()<.0004)return true;
+            status="Settling at build position";return false;
+        }
         if(retry>0)retry--;
         if(cursor>=path.size()){
             if(retry>0){release();return false;}
-            path=find(walkingCell(),target,distance,exact,true);cursor=0;retry=20;
+            path=exact&&walkingCell().equals(target)&&walkable(target)?List.of(target):find(walkingCell(),target,distance,exact,true);cursor=0;retry=20;
             if(path.isEmpty()){if(++failedRoutes>=2)recoveryRequested=true;release();status="No safe walking route — move closer or add stairs";return false;}
         }
         var node=path.get(cursor);var point=standingPoint(node);

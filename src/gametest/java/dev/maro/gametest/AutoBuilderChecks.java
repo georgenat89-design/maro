@@ -766,6 +766,12 @@ final class AutoBuilderChecks {
             }
             require(arrived,"Turn-before-jump route did not reach its raised standing position");
             context.waitTicks(10);context.runOnClient(client->require(client.player.getY()>=start.getY()+.99&&client.player.getHealth()==20,"Turn-before-jump failed its native landing"));
+            // A zero-cell route still needs a real walk to its exact viewpoint.
+            world.getServer().runCommand("tp @a "+(goal.getX()+.85)+" "+goal.getY()+" "+(goal.getZ()+.15)+" 90 0");context.waitTicks(10);
+            context.runOnClient(client->{walker.stop();require(walker.canReachStand(goal),"Current-cell placement view was incorrectly treated as unreachable");});
+            arrived=false;for(int tick=0;tick<200&&!arrived;tick++){arrived=context.computeOnClient(client->walker.standAt(goal));context.waitTick();}
+            require(arrived,"Walker did not settle at its current-cell placement view");context.waitTicks(10);
+            context.runOnClient(client->require(client.player.getEntityPos().squaredDistanceTo(walker.standingPoint(goal))<.28*.28&&client.player.getVelocity().horizontalLengthSquared()<.0004&&client.player.getHealth()==20,"Placement view did not remain settled after native movement"));
         }finally{context.runOnClient(client->walker.stop());}
     }
     private static void layerTail(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
