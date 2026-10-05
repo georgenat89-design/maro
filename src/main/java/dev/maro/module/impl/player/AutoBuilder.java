@@ -180,6 +180,8 @@ public final class AutoBuilder extends Module {
     private final Map<Integer,Map<BlockPos,Integer>> triedStands=new HashMap<>();
     private final Map<BlockPos,Map<BlockPos,Integer>> cleanupStands=new HashMap<>();
     private BlockPos standGoal;
+    private BlockPos accessStand;
+    private final Set<BlockPos> accessSupports=new HashSet<>();
     private int navigatingCell=-1,navigationStarted,eatPreviousSlot=-1,eatBefore,eatDeadline;
     private boolean eating,ownsFoodUse,foodRestock,foodShopping,supportRestock,supportShopping;
     private int standStarted,standProgressAt;
@@ -518,7 +520,7 @@ public final class AutoBuilder extends Module {
         preparationStage=0;depositQueue.clear();
         if(partialSource>=0&&ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler&&!ownedHandler.getCursorStack().isEmpty())mc.interactionManager.clickSlot(ownedHandler.syncId,partialSource,0,SlotActionType.PICKUP,mc.player);
         partialSource=-1;partialItem=null;
-        building=false;pasting=false;depositing=false;depositTarget=null;depositSlot=-1;resumeShoppingAfterDeposit=false;depositedShopping.clear();placement=pendingPlacement=null;pendingServerState=null;routeMining=null;mining=null;tuningTarget=tuningSession=null;tuningClicks=0;standGoal=null;digging=false;walker.stop();releaseSneak();endRecovery();
+        building=false;pasting=false;depositing=false;depositTarget=null;depositSlot=-1;resumeShoppingAfterDeposit=false;depositedShopping.clear();placement=pendingPlacement=null;pendingServerState=null;routeMining=null;mining=null;tuningTarget=tuningSession=null;tuningClicks=0;standGoal=null;accessStand=null;accessSupports.clear();digging=false;walker.stop();releaseSneak();endRecovery();
         if(mc.interactionManager!=null)mc.interactionManager.cancelBlockBreaking();
         if(ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler&&ownedHandler.getCursorStack().isEmpty())mc.player.closeHandledScreen();
         ownedHandler=null;restockTarget=null;buying=false;pendingOffer=null;shopping.clear();status=reason;
@@ -565,10 +567,10 @@ public final class AutoBuilder extends Module {
         if(mining!=null){mineTick();return;}
         if(standGoal!=null){
             if(standProgressPos==null||mc.player.getEntityPos().subtract(standProgressPos).horizontalLengthSquared()>.04||mc.player.isOnGround()&&Math.abs(mc.player.getY()-standProgressPos.y)>.2){standProgressPos=mc.player.getEntityPos();standProgressAt=ticks;}
-            if(walker.standAt(standGoal)){standGoal=null;navigationStarted=ticks;walker.stop();}
+            if(walker.standAt(standGoal)){standGoal=null;accessStand=null;accessSupports.clear();navigationStarted=ticks;walker.stop();}
             else if(ticks-standProgressAt>50||ticks-standStarted>240||walker.routeUnavailable()){
                 if(navigatingCell>=0){retryAt.put(navigatingCell,ticks+10);triedStands.computeIfAbsent(navigatingCell,i->new HashMap<>()).put(standGoal,ticks+600);}
-                navigatingCell=-1;standGoal=null;walker.stop();status="Replanning blocked build position";
+                navigatingCell=-1;standGoal=null;accessStand=null;accessSupports.clear();walker.stop();status="Replanning blocked build position";
             }else status=walker.status;
             return;
         }
@@ -871,7 +873,7 @@ public final class AutoBuilder extends Module {
             if(direct)directStands.add(stand);
             options.add(stand);
         }
-        options.sort(Comparator.<BlockPos>comparingInt(p->directStands.contains(p)?0:1)
+        options.sort(Comparator.<BlockPos>comparingInt(p->p.equals(accessStand)?-1:directStands.contains(p)?0:1)
             .thenComparingInt(p->scaffoldDistance.getOrDefault(p,0)).thenComparingDouble(p->p.getSquaredDistance(mc.player.getBlockPos())));standGoal=null;
         long routeDeadline=System.nanoTime()+6_000_000;
         for(var option:options){
@@ -1142,7 +1144,8 @@ public final class AutoBuilder extends Module {
                 var job=placement(pos,Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true);
                 if(job==null)continue;
                 if(inventoryCount(Items.DIRT)==0){ensureSupportDirt();return true;}
-                placement=job;placeTick();return true;
+                if(!stand.equals(accessStand)){accessStand=stand;accessSupports.clear();}
+                accessSupports.add(pos);placement=job;placeTick();return true;
             }
         }
         return false;
@@ -1186,6 +1189,9 @@ public final class AutoBuilder extends Module {
     }
     /** Free an obsolete attachment base when the bounded scaffold pool is full. */
     private boolean servesActiveScaffold(BlockPos pos){
+        if(accessSupports.contains(pos))return true;
+        var destination=recoveryDestination();
+        if(escapeSupports.contains(pos)&&destination!=null&&destination.getY()>mc.player.getY()&&pos.getSquaredDistance(mc.player.getBlockPos())<16)return true;
         if(navigatingCell<0||states[navigatingCell]==CORRECT)return false;
         var target=position(navigatingCell);var side=attachmentSide(desired(navigatingCell));
         // Preserve the short column being assembled for this target. Otherwise
@@ -1265,7 +1271,7 @@ public final class AutoBuilder extends Module {
             placementAttemptTarget=null;failedPlacementUntil.remove(job.target);
             lastAction=ticks;triedContainers.clear();triedStands.clear();retryAt.clear();if(!job.temporary)navigatingCell=-1;else navigationStarted=ticks;
             if(job.temporary){supports.add(job.target);if(recoveryPhase==2&&job.target.equals(recoveryBase)){escapeSupports.add(job.target);mc.options.jumpKey.setPressed(false);recoveryJump=false;recoveryPhase=3;}}
-            else recoveryAttempts=0;
+            else{recoveryAttempts=0;accessStand=null;accessSupports.clear();}
             if(job.index>=0)updateState(job.index);status="Placement confirmed";
         }else{
             // A refused prediction must not remain as collision geometry or as a face for

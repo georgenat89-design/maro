@@ -59,6 +59,8 @@ Walking turns toward raised steps before jumping. Close placement approaches bra
 
 Recycling preserves the short attachment column serving the active target. A stranded finished ledge can use a reachable owned post up to two blocks lower, followed by safe incremental descent through that post. Completed schematic blocks remain intact.
 
+Access stair construction commits to its selected standing view and preserves its new pieces until arrival, a completed target, pause or route failure. Nearby escape steps are retained while the destination is higher, preventing a full pool from undoing an active climb.
+
 **Auto Unstuck** can escape a stuck ground route by jumping and placing a temporary dirt step beneath the player, then replanning the route. It requires dirt, solid safe footing and clear headroom. Recovery steps remain available for return routes and are removed by completion cleanup. Crouching is sent ahead of placements against interactive supports such as hoppers/chests. Note blocks are tuned one interaction at a time, waiting for the note update and stopping at the target; instrument/power changes do not trigger endless retuning.
 
 Recovery does not pillar above its destination. If the builder is stranded while routing down, it can walk onto a reachable owned scaffold and remove its footing block when stationary, with a verified safe landing at most two blocks below. Vanilla attachment checks still preserve neighbouring blocks and fluids. Unrelated blocks, schematic blocks and unsupported drops are excluded from this descent. When an anchored short support column has no reachable placement view, a second search can start a connected bridge from another side.
