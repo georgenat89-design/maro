@@ -61,6 +61,8 @@ When the temporary-support pool fills and a new build route needs scaffolding, t
 
 Placement views favour advancing the scaffold toward its target, with small access steps onto owned posts when necessary. If held dirt runs out, obsolete supports can be recycled and their drops collected with a bounded pickup route before chest/AH fallback. Cleanup removes upper pieces before lower access stairs, choosing nearby pieces within a height to reduce travel.
 
+Access construction retains its chosen view until the route is finished or that view fails. Walking to reclaim capacity retains the exact obsolete support being reclaimed. Its new access steps stay protected from recycling during that route. Placement-view ray searches keep their cursor across ticks, share a two-millisecond planning allowance, and retain at most 24 searches; walking-view candidates are also checked in bounded groups. Native placement and route clearance are rechecked before acting.
+
 Walking turns toward raised steps before jumping. Close placement approaches brake with short movement inputs and wait for a grounded, settled pose. Reaching a placement view renews its target commitment. Support recycling also works from upper pieces downward; removing a route support clears stale failed-view records so the changed route can be checked again.
 
 Recycling preserves the short attachment column serving the active target. A stranded finished ledge can use a reachable owned post up to two blocks lower, followed by safe incremental descent through that post. Completed schematic blocks remain intact.

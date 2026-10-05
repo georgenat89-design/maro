@@ -614,6 +614,7 @@ final class AutoBuilderChecks {
         }
     }
     private static void raisedChestReturn(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Raised ledge, rejected first chest-open and stored tools");
         fixture(context,world,builder,start);
         var chest=start.east(3);var ledge=start.up(6);var lowerPost=new HashSet<BlockPos>();
         command(world,"setblock",chest,"chest[facing=west,type=right]");command(world,"setblock",chest.south(),"chest[facing=west,type=left]");
@@ -649,6 +650,7 @@ final class AutoBuilderChecks {
         }finally{gate.set(false);context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
     }
     private static void sealedChestReturn(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Sealed build, selected storage and access floor restoration");
         fixture(context,world,builder,start);
         world.getServer().runCommand("fill "+coords(start.add(-5,0,-5))+" "+coords(start.add(8,10,5))+" air");
         var origin=start.add(-2,4,-2);var chest=start.east(6);var cells=new BlockState[100];
