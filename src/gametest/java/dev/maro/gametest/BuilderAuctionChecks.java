@@ -40,7 +40,7 @@ final class BuilderAuctionChecks {
         changed.set(false);purchases.set(0);noReceipt.set(false);rateScenario.set(0);soldScenario.set(0);soldAttempts.set(0);delayed.clear();
         singleplayer.getServer().computeOnServer(server->{
             server.getCommandManager().getDispatcher().register(CommandManager.literal("ah").then(CommandManager.argument("query",StringArgumentType.greedyString()).executes(command->{
-                var player=command.getSource().getPlayer();Item item=switch(command.getArgument("query",String.class)){case "glass"->Items.GLASS;case "steak"->Items.COOKED_BEEF;case "diamond pickaxe"->Items.DIAMOND_PICKAXE;case "diamond shovel"->Items.DIAMOND_SHOVEL;default->Items.STONE;};if(player!=null)open(player,false,item);return 1;
+                var player=command.getSource().getPlayer();Item item=switch(command.getArgument("query",String.class)){case "dirt"->Items.DIRT;case "glass"->Items.GLASS;case "steak"->Items.COOKED_BEEF;case "diamond pickaxe"->Items.DIAMOND_PICKAXE;case "diamond shovel"->Items.DIAMOND_SHOVEL;default->Items.STONE;};if(player!=null)open(player,false,item);return 1;
             })));
             server.getPlayerManager().getPlayerList().forEach(server.getCommandManager()::sendCommandTree);return true;
         });
@@ -69,7 +69,7 @@ final class BuilderAuctionChecks {
             rateScenario.set(scenario);purchases.set(0);singleplayer.getServer().runCommand("clear @a");context.waitTicks(5);
             context.runOnClient(client->{builder.install(new Schematic("rates-fixture.nbt","test",2,1,1,BlockPos.ORIGIN,new net.minecraft.block.BlockState[]{Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState()}));builder.preview();button(builder,"Buy Materials").press();});
             waitDone(context,builder);
-            require(purchases.get()==1&&purchasedPage.get()==(scenario==1?2:1),"Buyer did not select the cheapest auction page");
+            require(purchases.get()==1&&purchasedPage.get()==(scenario==1?2:1),"Buyer did not select the cheapest auction page: scenario="+scenario+" purchases="+purchases.get()+" page="+purchasedPage.get()+" status="+context.computeOnClient(client->builder.status()));
             context.runOnClient(client->require(builder.sessionSpend()==20&&builder.inventoryCount(Items.STONE)==2,"Buyer did not buy at the best available unit rate: "+builder.status()));
         }
         rateScenario.set(0);
@@ -89,6 +89,7 @@ final class BuilderAuctionChecks {
         missingChest(context,singleplayer,builder);
         steakSupply(context,singleplayer,builder);
         multipleChests(context,singleplayer,builder);
+        supportSupply(context,singleplayer,builder);
     }
     private static void waitDone(ClientGameTestContext context,AutoBuilder builder){for(int i=0;i<600&&context.computeOnClient(client->builder.buying());i++)context.waitTick();require(!context.computeOnClient(client->builder.buying()),"Auction state machine did not finish: "+context.computeOnClient(client->builder.status()));}
     private static void inventoryDeposit(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder){
@@ -212,6 +213,17 @@ final class BuilderAuctionChecks {
         for(int i=0;i<1600&&context.computeOnClient(client->builder.building()||builder.buying()||builder.depositing());i++)context.waitTick();watchChests.set(false);
         context.runOnClient(client->require(builder.status().equals("Build complete"),"Multiple missing chests did not fall back to AH: "+builder.status()));require(chestOpens.get()==2&&purchases.get()==4,"Missing-item cache repeated selected chest visits: opens="+chestOpens.get());
     }
+    private static void supportSupply(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder){
+        var base=context.computeOnClient(client->client.player.getBlockPos());var chest=base.add(3,0,-1);var origin=base.add(0,0,2);purchases.set(0);chestOpens.set(0);watchedSync.set(-1);watchChests.set(true);
+        context.runOnClient(client->{builder.pause("Support refill test");button(builder,"Clear Restock Marks").press();setting(builder,"Temporary Supports",true);setting(builder,"Support Dirt Reserve",0);setting(builder,"Auto Buy Tools",false);setting(builder,"Auto Buy When Missing",true);});
+        world.getServer().runCommand("fill "+coords(base.add(-4,-1,-4))+" "+coords(base.add(6,-1,6))+" stone");world.getServer().runCommand("fill "+coords(base.add(-4,0,-4))+" "+coords(base.add(6,5,6))+" air");world.getServer().runCommand("clear @a");world.getServer().runCommand("give @a stone 1");world.getServer().runCommand("give @a diamond_shovel 1");
+        world.getServer().runCommand("setblock "+coords(chest)+" chest[facing=north,type=left]");world.getServer().runCommand("setblock "+coords(chest.east())+" chest[facing=north,type=right]");context.waitTicks(8);
+        context.runOnClient(client->{builder.auctionBudget(100);builder.install(new Schematic("support-refill.nbt","test",1,3,1,BlockPos.ORIGIN,new net.minecraft.block.BlockState[]{Blocks.STRUCTURE_VOID.getDefaultState(),Blocks.STRUCTURE_VOID.getDefaultState(),Blocks.STONE.getDefaultState()}));builder.setOrigin(origin);selectChest(client,builder,chest);builder.startBuild();});
+        for(int i=0;i<1000&&context.computeOnClient(client->builder.building()||builder.buying()||builder.depositing());i++)context.waitTick();watchChests.set(false);
+        context.runOnClient(client->require(builder.status().equals("Build complete")&&builder.sessionSpend()==10&&builder.temporarySupports().isEmpty(),"Dirt refill did not resume/clean the build: "+builder.status()));
+        require(purchases.get()==1&&chestOpens.get()==1,"Support refill repeatedly checked the empty chest or bought extra materials: purchases="+purchases.get()+" opens="+chestOpens.get());
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(origin.up(2)).isOf(Blocks.STONE)),"Support refill did not place the actual server block");
+    }
     private static int price(Item item){return item==Items.DIAMOND_PICKAXE?30:item==Items.DIAMOND_SHOVEL?20:item==Items.STONE?40:10;}
     private static void open(ServerPlayerEntity player,boolean confirm,Item item){
         open(player,confirm,item,1);
@@ -224,7 +236,7 @@ final class BuilderAuctionChecks {
     }
     private static void contents(SimpleInventory inventory,boolean confirm,Item item,int page){
         int price=rateScenario.get()==0?price(item):(page==(rateScenario.get()==1?2:1)?20:40);
-        inventory.clear();var listing=new ItemStack(item,item==Items.STONE?2:1);listing.set(DataComponentTypes.LORE,new LoreComponent(List.of(Text.literal("Price: $"+(confirm&&changed.get()?400:price)))));inventory.setStack(confirm?13:0,listing);
+        inventory.clear();var listing=new ItemStack(item,item==Items.DIRT?8:item==Items.STONE?2:1);listing.set(DataComponentTypes.LORE,new LoreComponent(List.of(Text.literal("Price: $"+(confirm&&changed.get()?400:price)))));inventory.setStack(confirm?13:0,listing);
         if(rateScenario.get()==3||soldScenario.get()!=0)listing.set(DataComponentTypes.LORE,new LoreComponent(List.of(Text.literal("Price: $"+price),Text.literal("Expires in "+UUID.randomUUID()))));
         if(!confirm&&rateScenario.get()!=0&&page==1){var next=new ItemStack(Items.ARROW);next.set(DataComponentTypes.CUSTOM_NAME,Text.literal("Next page"));inventory.setStack(26,next);}
         if(!confirm&&soldScenario.get()!=0){var fresh=listing.copy();fresh.set(DataComponentTypes.LORE,new LoreComponent(List.of(Text.literal("Price: $12"))));inventory.setStack(1,fresh);}
@@ -242,6 +254,10 @@ final class BuilderAuctionChecks {
         Menu(int syncId,PlayerInventory player,SimpleInventory inventory,boolean confirm,Item item,int page){super(ScreenHandlerType.GENERIC_9X3,syncId,player,inventory,3);this.confirm=confirm;this.item=item;this.inventory=inventory;this.page=page;}
         @Override public void onSlotClick(int slot,int button,SlotActionType action,PlayerEntity entity){
             var player=(ServerPlayerEntity)entity;
+            // Plugin AH controls cancel vanilla inventory pickup. Resync after vanilla's
+            // click bookkeeping, which can otherwise copy the old predicted cursor into
+            // a newly opened page's tracked state under lag.
+            after(player,1,()->player.currentScreenHandler.syncState());
             if(!confirm&&slot==26&&rateScenario.get()!=0&&page==1){open(player,false,item,2);return;}
             if(!confirm&&(slot==0||slot==1&&soldScenario.get()!=0)&&!clicked){
                 clicked=true;
@@ -264,7 +280,7 @@ final class BuilderAuctionChecks {
         }
         private void purchase(ServerPlayerEntity player){purchases.incrementAndGet();purchasedPage.set(page);player.closeHandledScreen();if(!noReceipt.get())after(player,45,()->receive(player,item));}
     }
-    private static void receive(ServerPlayerEntity player,Item item){player.getInventory().insertStack(new ItemStack(item,item==Items.STONE?2:1));if(item==Items.GLASS&&purchases.get()==2&&fillAfterGlass.get())for(int i=0;i<36;i++)if(player.getInventory().getStack(i).isEmpty())player.getInventory().setStack(i,new ItemStack(Items.COBBLESTONE,64));}
+    private static void receive(ServerPlayerEntity player,Item item){player.getInventory().insertStack(new ItemStack(item,item==Items.DIRT?8:item==Items.STONE?2:1));if(item==Items.GLASS&&purchases.get()==2&&fillAfterGlass.get())for(int i=0;i<36;i++)if(player.getInventory().getStack(i).isEmpty())player.getInventory().setStack(i,new ItemStack(Items.COBBLESTONE,64));}
     private static void setting(AutoBuilder b,String name,Number value){b.getSettings().stream().filter(s->s.getName().equals(name)).findFirst().orElseThrow().fromJson(new JsonPrimitive(value));}
     private static void setting(AutoBuilder b,String name,boolean value){b.getSettings().stream().filter(s->s.getName().equals(name)).findFirst().orElseThrow().fromJson(new JsonPrimitive(value));}
     private static ButtonSetting button(AutoBuilder b,String name){return (ButtonSetting)b.getSettings().stream().filter(s->s.getName().equals(name)).findFirst().orElseThrow();}

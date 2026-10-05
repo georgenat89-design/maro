@@ -39,9 +39,10 @@ public final class BuilderControlScreen extends Screen {
         buy=smallButton("Buy Missing",0,top+174,builder::buyMaterials);
         deposit=smallButton("Deposit All",1,top+174,builder::depositAll);
         smallButton("Add Chest",2,top+174,builder::markContainer);
-        smallButton("Options",3,top+174,()->{var gui=parent instanceof ClickGuiScreen existing?existing:new ClickGuiScreen();client.setScreen(gui);gui.openModuleOptions(builder);});
+        smallButton("Saved Builds",3,top+174,()->client.setScreen(new BuilderPlacementsScreen(this,builder)));
+        button("Options",1,top+194,18,()->{var gui=parent instanceof ClickGuiScreen existing?existing:new ClickGuiScreen();client.setScreen(gui);gui.openModuleOptions(builder);});
         preview=button("",0,top+194,18,builder::togglePreview);
-        button("Close",1,top+194,18,this::close);
+
         tick();
     }
     private ButtonWidget button(String label,int col,int y,int height,Runnable action){return addDrawableChild(ButtonWidget.builder(Text.literal(label),b->action.run()).dimensions(left+18+col*(column+6),y,column,height).build());}

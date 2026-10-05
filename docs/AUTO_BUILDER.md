@@ -11,6 +11,18 @@ Automatic is the default for new configurations. Existing configurations retain 
 
 **Restart Build** rescans the same schematic at its current origin and starts again, preserving matching blocks and tracking its temporary supports for cleanup. **Cancel Schematic** stops building/buying, hides the preview and unloads the file, including cancelling an unfinished file load. Blocks already placed remain in the world. **Pause / Cancel Buy** keeps the schematic loaded for resuming.
 
+## Saved builds and reconnecting
+
+**Save Build Progress** is on by default. **Saved Builds** in the panel has a **Last Session** slot plus ten named slots. Choose a slot, enter a name and **Save Current Placement**. **Load Saved Placement** restores the schematic snapshot, origin, rotation/mirror, ignored materials, selected chests, temporary-support tracking and shared build budget. Loading pauses actions; join the saved server/dimension and press **Start / Resume**. A saved placement never silently moves to a different world.
+
+The active placement is checkpointed every ten seconds, when starting/completing and on disconnect. The next launch restores the selected active placement, paused. Resume rescans actual world blocks rather than replaying a stale completion counter. Snapshots live in the game's `maro/builder-placements` folder and remain usable if the original schematic file is moved. Loading another slot first checkpoints the active build. Cancelling unloads the active placement while keeping saved slots available. Choosing a new schematic keeps named saved builds available; **Last Session** can be replaced by the next unsaved build.
+
+## Placement and route recovery
+
+Placements wait for the server's block update before advancing or recording temporary dirt. Rejected/unconfirmed placements retry from a clear standing position. Walking considers safe diagonal paths and follows clear straight sections without a stop at every cell. Blocked standing positions become eligible again after a short timeout, and the builder tries other unfinished targets instead of waiting minutes on one failed route.
+
+Floating blocks can use short dirt columns. When dirt runs out, the builder checks selected chests once for the reserve and then buys missing dirt if **Auto Buy When Missing** and a positive budget are configured. Even with a reserve of zero, an emergency refill requests eight dirt. Only the builder's own temporary dirt obstructing a blocked walking corridor may be mined; footing, useful one-block steps and unrelated blocks are preserved. Completion cleanup works from the highest temporary supports downward.
+
 ## Auction purchases
 
 Enter a positive **Budget** and click **Buy Missing**. Zero disables buying. **Options → Materials → Max Price Per Item** sets the unit-price ceiling. **Auto Buy When Missing** defaults on: needed inventory items move to the hotbar first, then the builder checks your selected double chests, and finally buys missing materials and resumes building. **Support Dirt Reserve** is shared by auction buying and restocking.
@@ -60,6 +72,8 @@ Snapshot saves a configured area as block-state-only `.nbt`. Creative material s
 ## Formats and verification
 
 Readers support Sponge v1/v2/v3 `.schem`, legacy MCEdit `.schematic` numeric IDs/metadata/AddBlocks, multiregion/signed-size `.litematic`, and vanilla `.nbt` structures. Rotation/mirroring transforms coordinates and block states. Limits: 64 MB file, 256 MB NBT allocation, 2 million cells, dimension 2048. Entities, biomes, inventories and block-entity contents are not imported/pasted.
+
+Focused navigation/persistence checks: `./gradlew runProductionClientGameTest -PbuilderTestOnly=true -PbuilderNavigationTestOnly=true`. They verify diagonal final-block access, floating layer tails and support cleanup, durable named-placement resume with a completed block already present, and retry after server rejection. The auction suite also verifies empty-chest fallback to dirt buying and automatic build/cleanup resume.
 
 `./gradlew runProductionClientGameTest -PbuilderTestOnly=true` checks imports/transforms, previews, survival builds with materials outside the hotbar, exact chest withdrawals, lava-safe walking, temporary-step recovery, double slabs, air clearing, note tuning, crouching against interactive supports, material ignoring, cancellation/restart, and cleanup when standing on or far from a support. Auction tests cover consecutive purchases, cheapest rates on earlier/later pages, sold chat/menu notices with changing expiry lore, delayed updates, reused handlers, price changes and missing receipts. Full inventory is deposited into the selected double chest, shopping resumes without duplicated purchases, and building retrieves its missing blocks from the chest. Additional fixtures check multiple selections and config restoration, double-chest half deduplication, removal of one selection, partial-stack overflow storage, combined stock accounting and exact withdrawal from another chest, AH fallback after checking each selected chest once, selected farther-chest use, missing-item caching, whole-build preparation and one budget across deposits, auto-eating from inventory/chest, delay/open block configuration, source buckets, the supplied signed-region stash import, layer-sized purchases, full inventory supply batches, automatic shopping on the next layer, and pickaxe/shovel supply and selection. Screenshots are in `run/screenshots`.
 
