@@ -21,6 +21,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.block.*;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
+import net.minecraft.client.gui.screen.ingame.AbstractSignEditScreen;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.item.*;
 import net.minecraft.nbt.NbtIo;
@@ -953,6 +954,9 @@ public final class AutoBuilder extends Module {
     }
     private void syncBuildLook(){mc.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(mc.player.getYaw(),mc.player.getPitch(),mc.player.isOnGround(),mc.player.horizontalCollision));}
     private boolean recoverUnexpectedBuildMenu(){
+        if(mc.currentScreen instanceof AbstractSignEditScreen sign&&ticks-lastBuildInteraction<=160){
+            walker.release();releaseSneak();sign.close();delay=4;status="Sign placed - continuing build";return true;
+        }
         if(!(mc.currentScreen instanceof HandledScreen<?> menu)||mc.player.currentScreenHandler!=menu.getScreenHandler()){unexpectedBuildHandler=null;return false;}
         var handler=menu.getScreenHandler();
         if(restockTarget!=null&&(restockWait>0||ownedHandler==handler))return false;

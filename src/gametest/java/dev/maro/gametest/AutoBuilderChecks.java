@@ -391,6 +391,13 @@ final class AutoBuilderChecks {
         });
         await(context,builder,500);
         require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(obstruction).isAir()&&server.getOverworld().getBlockState(routeTarget).isOf(Blocks.STONE)),"Stuck route did not clear the builder's obstructing overhead dirt");
+
+        fixture(context,world,builder,start);world.getServer().runCommand("give @a oak_sign 1");world.getServer().runCommand("give @a stone 1");context.waitTicks(6);
+        var sign=Blocks.OAK_SIGN.getDefaultState().with(Properties.ROTATION,8);
+        context.runOnClient(client->{builder.install(new Schematic("sign-editor-resume.nbt","test",2,1,1,BlockPos.ORIGIN,new BlockState[]{sign,Blocks.STONE.getDefaultState()}));builder.setOrigin(target);builder.startBuild();});
+        await(context,builder,450);
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(target).isOf(Blocks.OAK_SIGN)&&server.getOverworld().getBlockState(target.east()).isOf(Blocks.STONE)),"Sign editor prevented placing the next block");
+        context.runOnClient(client->require(client.currentScreen==null,"Builder left the sign editor open"));
     }
     private static Object field(AutoBuilder builder,String name){try{var field=AutoBuilder.class.getDeclaredField(name);field.setAccessible(true);return field.get(builder);}catch(ReflectiveOperationException error){throw new AssertionError(error);}}
     private static void layerTail(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
