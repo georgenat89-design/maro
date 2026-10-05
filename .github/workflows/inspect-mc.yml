@@ -1,0 +1,36 @@
+# TEMPORARY: prints 1.21.11 rendering signatures for Player ESP development. Removed after use.
+name: Inspect MC
+on:
+  push:
+    branches: [claude/great-bohr-jytxzy]
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew compileJava --no-daemon -q || true
+      - name: Dump
+        run: |
+          set +e
+          find ~/.gradle .gradle -name '*.jar' 2>/dev/null | grep -i minecraft | xargs ls -la
+          NAMED=$(find ~/.gradle .gradle -name '*.jar' 2>/dev/null | grep -i minecraft | grep -iE 'yarn|named' | grep -v sources | xargs ls -S | head -1)
+          RAW=$(find ~/.gradle .gradle -name 'minecraft-client.jar' 2>/dev/null | head -1)
+          echo "NAMED=$NAMED RAW=$RAW"
+          C=net.minecraft.client
+          for cls in $C.render.WorldRenderer $C.render.GameRenderer $C.render.DefaultFramebufferSet $C.gl.PostEffectProcessor $C.gl.PostEffectPipeline '$C.gl.PostEffectPipeline$Pass' '$C.gl.PostEffectPipeline$Targets' $C.gl.ShaderLoader $C.render.OutlineVertexConsumerProvider $C.render.entity.state.EntityRenderState $C.gl.Framebuffer $C.gl.RenderPipelines $C.render.RenderLayer $C.render.command.OrderedRenderCommandQueueImpl $C.render.entity.EntityRenderDispatcher $C.render.entity.EntityRenderer $C.MinecraftClient $C.gl.PostEffectPass $C.render.FrameGraphBuilder $C.util.Handle; do
+            cls=$(eval echo "$cls")
+            echo "=================== $cls"
+            javap -p -cp "$NAMED" "$cls" | grep -iE "outline|class|render\(|framebuffer|post|blit|loadPost|getEntity|draw|hasOutline|ENTITY|Pass\(|Targets\(|record|parseEffect|STAGES|MAIN" | head -80
+          done
+          echo "=================== WorldRenderer bytecode (outline refs)"
+          javap -p -c -cp "$NAMED" $C.render.WorldRenderer | grep -n -iE "^  [a-z].*\(|outline|PostEffect|ShaderLoader|blit" | grep -B1 -iE "outline|PostEffect" | head -150
+          echo "=================== GameRenderer bytecode (outline refs)"
+          javap -p -c -cp "$NAMED" $C.render.GameRenderer | grep -n -iE "^  [a-z].*\(|outline|drawEntityOutlines" | grep -B1 -iE "outline" | head -40
+          echo "=================== assets"
+          for J in "$RAW" "$NAMED"; do unzip -l "$J" 2>/dev/null | grep -iE "outline|post_effect/|shaders/post/(blit|sobel|entity)|shaders/core/(blit|screenquad)" ; done
+          for f in assets/minecraft/post_effect/entity_outline.json assets/minecraft/shaders/post/entity_sobel.fsh assets/minecraft/shaders/post/entity_outline_box_blur.fsh assets/minecraft/shaders/post/box_blur.fsh assets/minecraft/shaders/post/blit.fsh assets/minecraft/shaders/core/screenquad.vsh assets/minecraft/shaders/post/sobel.fsh assets/minecraft/shaders/include/globals.glsl; do
+            echo "------ $f"; unzip -p "$RAW" "$f" 2>/dev/null || unzip -p "$NAMED" "$f"
+          done
