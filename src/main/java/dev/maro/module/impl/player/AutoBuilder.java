@@ -8,6 +8,7 @@ import dev.maro.gui.render.Render2D;
 import dev.maro.gui.render.SmoothHudText;
 import dev.maro.mixin.BlockItemAccessor;
 import dev.maro.mixin.ClientPlayerInteractionManagerAccessor;
+import dev.maro.mixin.ClientPlayerLookAccessor;
 import dev.maro.module.Category;
 import dev.maro.module.Module;
 import dev.maro.module.ModuleManager;
@@ -25,7 +26,6 @@ import net.minecraft.client.gui.screen.ingame.AbstractSignEditScreen;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.item.*;
 import net.minecraft.nbt.NbtIo;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.tag.ItemTags;
 import net.minecraft.registry.tag.BlockTags;
@@ -865,8 +865,8 @@ public final class AutoBuilder extends Module {
         }
         var context=((BlockItem)job.item).getPlacementContext(new ItemPlacementContext(mc.player,Hand.MAIN_HAND,mc.player.getMainHandStack(),aimed));
         if(context==null||!context.getBlockPos().equals(job.target)||!compatible(((BlockItemAccessor)(Object)job.item).maro$placementState(context),job.state)){deferPlacement(job,"Placement state changed - trying another position");return;}
-        beginPlacementReceipt(job);
-        syncBuildLook();lastBuildInteraction=ticks;
+        if(!buildLookReady())return;
+        beginPlacementReceipt(job);lastBuildInteraction=ticks;
         if(mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,aimed).isAccepted()){
             mc.player.swingHand(Hand.MAIN_HAND);delay=actionDelay();status=job.temporary?"Placing temporary support":"Placing "+job.item.getName().getString();
         }else{pendingPlacement=null;unconfirmedPlacements.remove(job.target);deferPlacement(job,"Placement refused - trying another position");}
@@ -915,7 +915,7 @@ public final class AutoBuilder extends Module {
         if(hit.getType()!=HitResult.Type.BLOCK||!hit.getBlockPos().equals(mining)){status="Mining target is obstructed";mining=null;return;}
         int best=mc.player.getInventory().getSelectedSlot();float speed=0;
         for(int i=0;i<36;i++){var stack=mc.player.getInventory().getStack(i);float candidate=stack.getMiningSpeedMultiplier(state);if(candidate>speed){best=i;speed=candidate;}}
-        if(!selectInventorySlot(best))return;digging=true;syncBuildLook();mc.interactionManager.updateBlockBreakingProgress(mining,hit.getSide());mc.player.swingHand(Hand.MAIN_HAND);lastAction=ticks;status="Clearing mismatching block";
+        if(!selectInventorySlot(best)||!buildLookReady())return;digging=true;mc.interactionManager.updateBlockBreakingProgress(mining,hit.getSide());mc.player.swingHand(Hand.MAIN_HAND);lastAction=ticks;status="Clearing mismatching block";
     }
     private void tuneNote(BlockPos pos,int wanted){
         if(!pos.equals(tuningSession)){tuningSession=pos;tuningTarget=null;tuningClicks=0;}
@@ -930,7 +930,7 @@ public final class AutoBuilder extends Module {
         var hit=visibleHit(pos);if(hit==null){status="Move closer to tune the note block";return;}
         releaseSneak();if(mc.player.isSneaking()){status="Release sneak to tune note block";return;}
         if(!aim(hit.getPos())){status="Aiming to tune note block";return;}
-        syncBuildLook();lastBuildInteraction=ticks;
+        if(!buildLookReady())return;lastBuildInteraction=ticks;
         if(mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,hit).isAccepted()){
             tuningObserved=note;tuningExpected=(note+1)%25;tuningTarget=pos;tuningDeadline=ticks+80;tuningClicks++;mc.player.swingHand(Hand.MAIN_HAND);lastAction=ticks;status="Tuning note "+wanted;
         }
@@ -947,7 +947,7 @@ public final class AutoBuilder extends Module {
         if(tuningClicks>=4){pause("Block configuration changed unexpectedly — paused");return;}
         var hit=visibleHit(pos);if(hit==null){if(autoMove.get())repositionTarget(pos,triedStands.computeIfAbsent(schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get()),i->new HashMap<>()));status="Moving to configure block";return;}
         releaseSneak();if(mc.player.isSneaking()||!aim(hit.getPos()))return;
-        syncBuildLook();lastBuildInteraction=ticks;
+        if(!buildLookReady())return;lastBuildInteraction=ticks;
         if(mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,hit).isAccepted()){tuningObserved=value;tuningTarget=pos;tuningDeadline=ticks+80;tuningClicks++;lastAction=ticks;mc.player.swingHand(Hand.MAIN_HAND);status="Configuring block";}
     }
     private BlockHitResult visibleHit(BlockPos pos){
@@ -985,7 +985,16 @@ public final class AutoBuilder extends Module {
             mc.player.setYaw(mc.player.getYaw()+MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()));mc.player.setPitch(goal[1]);yawVelocity=pitchVelocity=0;return true;
         }return false;
     }
-    private void syncBuildLook(){mc.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(mc.player.getYaw(),mc.player.getPitch(),mc.player.isOnGround(),mc.player.horizontalCollision));}
+    private boolean buildLookReady(){
+        // Work runs before vanilla's player tick. A changed aim must reach the server through
+        // that tick's normal movement packet before the following tick may interact.
+        var sent=(ClientPlayerLookAccessor)mc.player;
+        if(Math.abs(MathHelper.wrapDegrees(mc.player.getYaw()-sent.maro$lastSentYaw()))>.01f
+            ||Math.abs(mc.player.getPitch()-sent.maro$lastSentPitch())>.01f){
+            status="Waiting for normal look update";return false;
+        }
+        return true;
+    }
     private boolean recoverUnexpectedBuildMenu(){
         if(mc.currentScreen instanceof AbstractSignEditScreen sign&&ticks-lastBuildInteraction<=160){
             walker.release();releaseSneak();sign.close();delay=4;status="Sign placed - continuing build";return true;
@@ -1137,7 +1146,7 @@ public final class AutoBuilder extends Module {
         var hit=approachChest(restockTarget);if(hit==null){if(chestJourneyFailed)finishRestock("No route to this chest - checking other supplies");return;}
         if(!aim(hit.getPos()))return;
         releaseSneak();if(mc.player.isSneaking())return;
-        syncBuildLook();lastBuildInteraction=ticks;mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,hit);restockWait=1;
+        if(!buildLookReady())return;lastBuildInteraction=ticks;mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,hit);restockWait=1;
     }
     private void partialRestockTick(){
         var cursor=ownedHandler.getCursorStack();if(cursor.isEmpty()){
@@ -1239,7 +1248,7 @@ public final class AutoBuilder extends Module {
         var hit=approachChest(depositTarget);if(hit==null){if(chestJourneyFailed){if(!nextDepositChest())finishDeposit("No route to selected storage - remaining items kept");}return;}
         if(!aim(hit.getPos())){status="Aiming at double chest";return;}
         releaseSneak();if(mc.player.isSneaking())return;
-        syncBuildLook();lastBuildInteraction=ticks;mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,hit);depositOpenWait=1;
+        if(!buildLookReady())return;lastBuildInteraction=ticks;mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,hit);depositOpenWait=1;
     }
     private void creativeMaterials(){
         if(!inGame()||schematic==null||!mc.player.getAbilities().creativeMode){notify("Get Materials requires creative mode");return;}

@@ -339,11 +339,12 @@ final class AutoBuilderChecks {
         fixture(context,world,builder,start);
         var chest=start.east(3);command(world,"setblock",chest,"chest[facing=north,type=left]");command(world,"setblock",chest.east(),"chest[facing=north,type=right]");
         world.getServer().runCommand("item replace block "+coords(chest)+" container.0 with stone 64");context.waitTicks(6);
-        context.runOnClient(client->{builder.install(new Schematic("held-restock-item.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();builder.startBuild();});
+        context.runOnClient(client->{builder.install(new Schematic("held-restock-item.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();BuilderPacketChecks.begin();builder.startBuild();});
         for(int i=0;i<250&&context.computeOnClient(client->field(builder,"ownedHandler")==null);i++)context.waitTick();
         context.runOnClient(client->require(field(builder,"ownedHandler")!=null,"Restock fixture did not open its chest"));
         world.getServer().runOnServer(server->{var player=server.getPlayerManager().getPlayerList().getFirst();player.currentScreenHandler.setCursorStack(new ItemStack(Items.STONE,4));player.currentScreenHandler.syncState();});
         await(context,builder,450);verify(world,target,1,1,1,y->Blocks.STONE);
+        context.runOnClient(client->BuilderPacketChecks.verify());
         context.runOnClient(client->require(client.currentScreen==null&&client.player.currentScreenHandler.getCursorStack().isEmpty(),"Held restock item left the chest latched open"));
         require(world.getServer().computeOnServer(server->{var level=server.getOverworld();var player=server.getPlayerManager().getPlayerList().getFirst();int count=0;for(var half:List.of(chest,chest.east())){var inventory=(net.minecraft.block.entity.ChestBlockEntity)level.getBlockEntity(half);for(int i=0;i<inventory.size();i++)if(inventory.getStack(i).isOf(Items.STONE))count+=inventory.getStack(i).getCount();}for(int i=0;i<36;i++)if(player.getInventory().getStack(i).isOf(Items.STONE))count+=player.getInventory().getStack(i).getCount();return count==67;}),"Cursor recovery lost or duplicated stone");
 
