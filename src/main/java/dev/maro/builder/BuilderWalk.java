@@ -39,6 +39,8 @@ public final class BuilderWalk {
     public boolean canReachStand(BlockPos pos){return walkable(pos)&&(mc.player.getEntityPos().squaredDistanceTo(standingPoint(pos))<=.42*.42||!find(walkingCell(),pos,.42,true).isEmpty());}
     private BlockPos walkingCell(){return BlockPos.ofFloored(mc.player.getEntityPos().add(0,.4,0));}
     public boolean needsRecovery(){return recoveryRequested;}
+    public BlockPos destination(){return goal;}
+    public boolean canDescendThrough(BlockPos pos){return clear(pos.up())&&clear(pos.up(2))&&safe(pos.down())&&footingHeight(pos.down())>=.625;}
     public boolean movementStalled(){return movementStalled;}
     public boolean routeUnavailable(){return goal!=null&&path.isEmpty()&&failedRoutes>0;}
     public BlockPos blockingSupport(Set<BlockPos> supports){

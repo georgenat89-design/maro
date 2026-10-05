@@ -608,6 +608,7 @@ public final class AutoBuilder extends Module {
         }
         if(!walker.routeUnavailable()&&!walker.movementStalled())return false;
         var obstruction=walker.blockingSupport(supports);
+        if(obstruction==null){var footing=mc.player.getBlockPos().down();if(descendingOwnedSupport(footing))obstruction=footing;}
         if(obstruction==null||visibleHit(obstruction)==null)return false;
         routeSupportExclusions.put(obstruction,ticks+600);
         routeMining=obstruction;mining=obstruction;walker.release();status="Clearing temporary block from route";mineTick();return true;
@@ -619,8 +620,8 @@ public final class AutoBuilder extends Module {
             var feet=mc.player.getBlockPos();if(!walker.canPillar(feet)||!mc.world.getBlockState(feet).isReplaceable())return false;
             // A failed descent cannot be repaired by climbing farther above it.
             // Recycling capacity must not restart an endless upward pillar loop.
-            var recoveryTarget=standGoal!=null?standGoal:restockTarget!=null?restockTarget:depositTarget!=null?depositTarget:navigatingCell>=0?position(navigatingCell):null;
-            if(recoveryTarget!=null&&feet.getY()>=recoveryTarget.getY())return false;
+            var recoveryTarget=recoveryDestination();
+            if(recoveryTarget==null||feet.getY()>=recoveryTarget.getY())return false;
             int cell=schematic.indexAt(feet.subtract(anchor()),turns(),mirror.get());if(cell>=0&&!desired(cell).isAir()&&!desired(cell).isOf(Blocks.STRUCTURE_VOID)&&!desired(cell).isOf(Blocks.DIRT))return false;
             if(supports.size()>=tempDirt.getInt())return building&&support.get()&&recycleSupport();
             if(inventoryCount(Items.DIRT)==0){if(building){ensureSupportDirt();return true;}return false;}
@@ -831,21 +832,22 @@ public final class AutoBuilder extends Module {
         int cell=schematic.indexAt(target.subtract(anchor()),turns(),mirror.get());
         var wanted=cell<0?null:desired(cell);
         boolean supportFallback=wanted!=null&&!hasAttachment(target,wanted);
+        boolean extendedScaffold=supportFallback&&!straightSupportBase(target,attachmentSide(wanted));
         int below=(int)Math.floor(effectiveReach()+mc.player.getStandingEyeHeight()-.5),above=(int)Math.floor(effectiveReach()-mc.player.getStandingEyeHeight()+.5);
-        if(supportFallback)below=Math.max(below,8);
+        if(extendedScaffold)below=Math.max(below,8);
         // The eye can reach a block from ground more than two blocks below it.
         // Omitting those views traps the last cells along an elevated build's edge.
         for(int dx=-3;dx<=3;dx++)for(int dz=-3;dz<=3;dz++)for(int dy=-below;dy<=above;dy++){
             var stand=target.add(dx,dy,dz);
             if(tried.containsKey(stand)||!walker.canStand(stand)||mc.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(stand))<.04)continue;
             Vec3d eye=walker.standingPoint(stand).add(0,mc.player.getStandingEyeHeight(),0);
-            if(!supportFallback&&eye.squaredDistanceTo(Vec3d.ofCenter(target))>effectiveReach()*effectiveReach())continue;
+            if(!extendedScaffold&&eye.squaredDistanceTo(Vec3d.ofCenter(target))>effectiveReach()*effectiveReach())continue;
             var body=mc.player.getBoundingBox().offset(eye.subtract(mc.player.getEyePos()));
             boolean direct=!mc.world.getBlockState(target).isReplaceable()?visibleHit(target,eye)!=null
                 :wanted!=null&&placement(target,wanted,Schematic.material(wanted),cell,false,eye,body)!=null;
             // A connected bridge can start well below the final floating block.
             // Its first piece, rather than the final target, must be in reach.
-            if(!direct&&(!supportFallback||supportPlacement(target,eye,body)==null))continue;
+            if(!direct&&(!supportFallback||!extendedScaffold&&(dy< -2||dy>2)||supportPlacement(target,eye,body)==null))continue;
             if(direct)directStands.add(stand);
             options.add(stand);
         }
@@ -862,8 +864,7 @@ public final class AutoBuilder extends Module {
         if(!support.get()||supports.size()>=tempDirt.getInt())return null;
         int targetCell=schematic.indexAt(target.subtract(anchor()),turns(),mirror.get());
         var wanted=targetCell<0?null:desired(targetCell);
-        Direction attachment=wanted!=null&&wanted.getBlock() instanceof HopperBlock?wanted.get(HopperBlock.FACING)
-            :wanted!=null&&wanted.getBlock() instanceof ShulkerBoxBlock?wanted.get(ShulkerBoxBlock.FACING).getOpposite():null;
+        Direction attachment=attachmentSide(wanted);
         var sides=Direction.values();
         for(int depth=0;depth<3;depth++)for(var side:sides){
             // A face on another side cannot produce this block's requested orientation.
@@ -880,6 +881,7 @@ public final class AutoBuilder extends Module {
         }
         // A floating outer edge may need a short lateral bridge before a column
         // can start. Search backwards from its attachment to existing blocks.
+        if(straightSupportBase(target,attachment))return null;
         var roots=supportChainStarts.computeIfAbsent(target,key->scaffoldChainRoots(key,attachment));int attempts=0;
         for(var root:roots){
             if(eye.squaredDistanceTo(Vec3d.ofCenter(root))>Math.pow(effectiveReach()+.75,2))continue;
@@ -887,6 +889,21 @@ public final class AutoBuilder extends Module {
             if(plan!=null)return plan;if(++attempts>=12)break;
         }
         return null;
+    }
+    private Direction attachmentSide(BlockState wanted){return wanted!=null&&wanted.getBlock() instanceof HopperBlock?wanted.get(HopperBlock.FACING):wanted!=null&&wanted.getBlock() instanceof ShulkerBoxBlock?wanted.get(ShulkerBoxBlock.FACING).getOpposite():null;}
+    private boolean straightSupportBase(BlockPos target,Direction attachment){
+        for(int depth=0;depth<3;depth++)for(var side:Direction.values()){
+            if(attachment!=null&&side!=attachment)continue;
+            var top=target.offset(side);boolean allowed=true;
+            for(int down=0;down<=depth;down++)if(!scaffoldCell(top.down(down),target)){allowed=false;break;}
+            if(!allowed)continue;
+            var root=top.down(depth);
+            for(var face:Direction.values()){
+                var state=mc.world.getBlockState(root.offset(face));
+                if(!state.isAir()&&!state.isReplaceable()&&state.getFluidState().isEmpty())return true;
+            }
+        }
+        return false;
     }
     private List<BlockPos> scaffoldChainRoots(BlockPos target,Direction attachment){
         record Step(BlockPos pos,int length){}
@@ -1078,6 +1095,14 @@ public final class AutoBuilder extends Module {
         return false;
     }
     private boolean plannedSolid(BlockPos pos){int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());return cell>=0&&!desired(cell).isAir()&&!desired(cell).isOf(Blocks.STRUCTURE_VOID);}
+    private BlockPos recoveryDestination(){return standGoal!=null?standGoal:restockTarget!=null?restockTarget:depositTarget!=null?depositTarget:navigatingCell>=0?position(navigatingCell):walker.destination();}
+    private boolean descendingOwnedSupport(BlockPos pos){
+        var destination=recoveryDestination();
+        return destination!=null&&destination.getY()<mc.player.getY()&&(walker.routeUnavailable()||walker.movementStalled())
+            &&pos.equals(mc.player.getBlockPos().down())&&supports.contains(pos)&&!plannedSolid(pos)&&mc.world.getBlockState(pos).isOf(Blocks.DIRT)
+            &&mc.player.isOnGround()&&mc.player.getVelocity().horizontalLengthSquared()<.0001
+            &&walker.canDescendThrough(pos)&&safeToRecycle(pos);
+    }
     private boolean waitingForBuiltNeighbour(BlockPos target,BlockState wanted){
         var block=wanted.getBlock();Direction side=null;
         if(block instanceof HopperBlock)side=wanted.get(HopperBlock.FACING);
@@ -1178,7 +1203,7 @@ public final class AutoBuilder extends Module {
             if(restock.get()&&beginRestock()){mining=null;return;}
             if(maxSpend.get()>0){startBuying(false);if(buying)resumeAfterMarket=true;}else status="Set AH budget to buy the missing "+(shovel?"shovel":"pickaxe");return;
         }
-        if(new Box(mining).intersects(mc.player.getBoundingBox().offset(0,-1,0))){status="Move off the block before clearing it";mining=null;return;}
+        if(new Box(mining).intersects(mc.player.getBoundingBox().offset(0,-1,0))&&!(mining.equals(routeMining)&&descendingOwnedSupport(mining))){status="Move off the block before clearing it";mining=null;return;}
         var visibleHit=visibleHit(mining);
         if(visibleHit==null){status="Mining target is obstructed";mining=null;return;}
         if(!aim(visibleHit.getPos())){status="Aiming to mine";return;}

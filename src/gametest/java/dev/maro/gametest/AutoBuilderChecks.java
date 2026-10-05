@@ -441,6 +441,17 @@ final class AutoBuilderChecks {
             require(world.getServer().computeOnServer(server->{for(int z=-1;z<=1;z++)if(!server.getOverworld().getBlockState(start.west(3).south(z)).isOf(Blocks.STONE))return false;return true;}),"Support reuse changed a neighbouring schematic block");
             require(world.getServer().computeOnServer(server->{for(int x=-4;x<=6;x++)for(int y=0;y<=4;y++)for(int z=-3;z<=7;z++)if(server.getOverworld().getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Support reuse left obsolete dirt on the server");
         }finally{context.runOnClient(client->((dev.maro.setting.NumberSetting)field(builder,"tempDirt")).set(128d));}
+        fixture(context,world,builder,start);world.getServer().runCommand("give @a stone 1");world.getServer().runCommand("give @a diamond_shovel 1");
+        var post=Set.of(start,start.up(),start.up(2));for(var piece:post)command(world,"setblock",piece,"dirt");
+        world.getServer().runCommand("gamemode creative @a");world.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+(start.getY()+3)+" "+(start.getZ()+.5));context.waitTicks(12);world.getServer().runCommand("gamemode survival @a");context.waitTicks(6);
+        var lowerTarget=start.south(5);
+        context.runOnClient(client->{
+            set(builder,"Temporary Supports",true);builder.install(new Schematic("owned-post-descent.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(lowerTarget);
+            @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.addAll(post);builder.startBuild();
+        });
+        await(context,builder,900);verify(world,lowerTarget,1,1,1,y->Blocks.STONE);
+        require(world.getServer().computeOnServer(server->post.stream().allMatch(piece->server.getOverworld().getBlockState(piece).isAir())),"Stranded post descent left temporary dirt behind");
+        context.runOnClient(client->require(client.player.getHealth()==20&&builder.temporarySupports().isEmpty(),"Owned post descent caused damage or lost cleanup ownership"));
         fixture(context,world,builder,start);
         world.getServer().runCommand("fill "+coords(start.add(1,-1,0))+" "+coords(start.add(5,-1,6))+" lava");
         world.getServer().runCommand("fill "+coords(start.add(-5,-1,0))+" "+coords(start.add(-1,-1,6))+" lava");
@@ -768,7 +779,7 @@ final class AutoBuilderChecks {
         String status=context.computeOnClient(client->builder.status());
         if(context.computeOnClient(client->builder.building()||builder.buying()||builder.depositing())){
             context.takeScreenshot("maro-builder-stalled");
-            String details=context.computeOnClient(client->{StringBuilder text=new StringBuilder(" player="+client.player.getEntityPos()+" inventory="+builder.remainingMaterials()+" supports="+builder.temporarySupports().size()+" placement="+field(builder,"placement")+" goal="+field(builder,"standGoal")+" recovery="+field(builder,"recoveryAttempts"));int shown=0;for(int i=0;i<builder.schematic().size()&&shown<12;i++)if(builder.state(i)!=AutoBuilder.CORRECT&&builder.state(i)!=AutoBuilder.IGNORED){shown++;text.append(" cell ").append(i).append(" position=").append(builder.position(i)).append(" status=").append(builder.state(i)).append(" desired=").append(builder.desired(i)).append(" actual=").append(client.world.getBlockState(builder.position(i)));}return text.toString();});
+            String details=context.computeOnClient(client->{StringBuilder text=new StringBuilder(" player="+client.player.getEntityPos()+" inventory="+builder.remainingMaterials()+" supports="+builder.temporarySupports()+" placement="+field(builder,"placement")+" goal="+field(builder,"standGoal")+" recovery="+field(builder,"recoveryAttempts"));int shown=0;for(int i=0;i<builder.schematic().size()&&shown<12;i++)if(builder.state(i)!=AutoBuilder.CORRECT&&builder.state(i)!=AutoBuilder.IGNORED){shown++;text.append(" cell ").append(i).append(" position=").append(builder.position(i)).append(" status=").append(builder.state(i)).append(" desired=").append(builder.desired(i)).append(" actual=").append(client.world.getBlockState(builder.position(i)));}return text.toString();});
             throw new AssertionError("Builder did not finish: "+status+details);
         }
         require(status.equals("Build complete"),"Builder stopped: "+status);
