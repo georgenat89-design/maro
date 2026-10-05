@@ -43,7 +43,7 @@ public final class BuilderWalk {
     public BlockPos destination(){return goal;}
     public boolean canDescendThrough(BlockPos pos){
         if(!clear(pos.up())||!clear(pos.up(2)))return false;
-        for(int drop=1;drop<=2;drop++){
+        for(int drop=1;drop<=3;drop++){
             var floor=pos.down(drop);
             if(!safe(floor))return false;
             if(footingHeight(floor)>=.625)return true;

@@ -97,6 +97,7 @@ final class AutoBuilderChecks {
             startupChestScan(context,singleplayer,builder,start);
             distantChest(context,singleplayer,builder,start);
             raisedChestReturn(context,singleplayer,builder,start);
+            sealedChestReturn(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             if(Boolean.getBoolean("maro.gametest.builderNavigationOnly")){cancellation(context,builder,context.computeOnClient(client->builder.schematic()));return;}
             if(Boolean.getBoolean("maro.gametest.builderAuctionOnly")){BuilderAuctionChecks.run(context,singleplayer,builder);return;}
@@ -503,6 +504,16 @@ final class AutoBuilderChecks {
         await(context,builder,1000);verify(world,lowerTarget,1,1,1,y->Blocks.STONE);
         require(world.getServer().computeOnServer(server->lowerPost.stream().allMatch(piece->server.getOverworld().getBlockState(piece).isAir())&&server.getOverworld().getBlockState(highLedge).isOf(Blocks.STONE)),"Lower-post descent changed the finished ledge or left supports");
         context.runOnClient(client->require(client.player.getHealth()==20&&builder.temporarySupports().isEmpty(),"Lower-post descent caused damage or lost cleanup ownership"));
+        fixture(context,world,builder,start);var lastPost=start.up(2);var lastTarget=start.south(3);
+        command(world,"setblock",lastPost,"dirt");world.getServer().runCommand("give @a stone 1");world.getServer().runCommand("give @a diamond_shovel");
+        world.getServer().runCommand("gamemode creative @a");world.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+(start.getY()+3)+" "+(start.getZ()+.5));context.waitTicks(12);world.getServer().runCommand("gamemode survival @a");context.waitTicks(6);
+        context.runOnClient(client->{
+            set(builder,"Temporary Supports",true);builder.install(new Schematic("three-block-post-descent.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(lastTarget);
+            @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.add(lastPost);builder.startBuild();
+        });
+        await(context,builder,600);verify(world,lastTarget,1,1,1,y->Blocks.STONE);
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(lastPost).isAir()),"Final post was not removed before descent");
+        context.runOnClient(client->require(client.player.getHealth()==20&&builder.temporarySupports().isEmpty(),"Three-block post descent caused damage or left a support"));
         fixture(context,world,builder,start);
         world.getServer().runCommand("fill "+coords(start.add(1,-1,0))+" "+coords(start.add(5,-1,6))+" lava");
         world.getServer().runCommand("fill "+coords(start.add(-5,-1,0))+" "+coords(start.add(-1,-1,6))+" lava");
@@ -636,6 +647,37 @@ final class AutoBuilderChecks {
             });
             require(world.getServer().computeOnServer(server->{var level=server.getOverworld();if(!level.getBlockState(ledge).isOf(Blocks.STONE)||!level.getBlockState(ledge.east()).isOf(Blocks.STONE))return false;var stored=(net.minecraft.inventory.Inventory)level.getBlockEntity(chest);if(stored.getStack(0).getCount()!=63)return false;for(int x=-5;x<=5;x++)for(int y=0;y<=9;y++)for(int z=-5;z<=5;z++)if(level.getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Raised chest return did not withdraw exactly the missing stone or clean all temporary dirt");
         }finally{gate.set(false);context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
+    }
+    private static void sealedChestReturn(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        fixture(context,world,builder,start);
+        world.getServer().runCommand("fill "+coords(start.add(-5,0,-5))+" "+coords(start.add(8,10,5))+" air");
+        var origin=start.add(-2,4,-2);var chest=start.east(6);var cells=new BlockState[100];
+        for(int y=0;y<4;y++)for(int z=0;z<5;z++)for(int x=0;x<5;x++)cells[x+z*5+y*25]=(y==0||y==3||x==0||x==4||z==0||z==4)?Blocks.STONE.getDefaultState():Blocks.AIR.getDefaultState();
+        var room=new Schematic("sealed-chest-return.nbt","test",5,4,5,BlockPos.ORIGIN,cells);
+        world.getServer().runOnServer(server->{for(int i=0;i<room.size();i++)if(i!=75&&!room.state(i).isAir())server.getOverworld().setBlockState(origin.add(room.local(i)),room.state(i),net.minecraft.block.Block.NOTIFY_ALL);});
+        var posts=Set.of(start,start.up(),start.up(3));for(var post:posts)command(world,"setblock",post,"dirt");
+        command(world,"setblock",chest,"chest[facing=west,type=right]");command(world,"setblock",chest.south(),"chest[facing=west,type=left]");
+        world.getServer().runCommand("item replace block "+coords(chest)+" container.0 with stone 64");
+        world.getServer().runCommand("item replace block "+coords(chest)+" container.1 with diamond_pickaxe");
+        world.getServer().runCommand("item replace block "+coords(chest)+" container.2 with diamond_shovel");
+        world.getServer().runCommand("item replace block "+coords(chest)+" container.3 with dirt 64");
+        world.getServer().runCommand("gamemode creative @a");world.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+(start.getY()+5)+" "+(start.getZ()+.5));context.waitTicks(12);world.getServer().runCommand("gamemode survival @a");context.waitTicks(6);
+        try{
+            context.runOnClient(client->{
+                set(builder,"Temporary Supports",true);set(builder,"Auto Buy Tools",true);set(builder,"Auto Buy When Missing",true);builder.auctionBudget(1000);
+                builder.install(room);builder.setOrigin(origin);@SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.addAll(posts);
+                client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();BuilderPacketChecks.begin();builder.startBuild();
+            });
+            for(int tick=0;tick<2400&&context.computeOnClient(client->builder.building());tick++){
+                context.runOnClient(client->require(!builder.buying(),"Sealed build bought materials before reading selected storage"));context.waitTick();
+            }
+            context.runOnClient(client->{
+                require(builder.status().equals("Build complete"),"Sealed build did not return from storage: "+builder.status());
+                require(builder.inventoryCount(Items.DIAMOND_PICKAXE)==1&&builder.inventoryCount(Items.DIAMOND_SHOVEL)==1,"Sealed build missed stored tools");
+                require(client.player.getHealth()==20&&client.currentScreen==null&&builder.temporarySupports().isEmpty(),"Sealed build damaged player or left a menu/support");BuilderPacketChecks.verify();
+            });
+            require(world.getServer().computeOnServer(server->{var level=server.getOverworld();for(int i=0;i<room.size();i++)if(!room.state(i).isAir()&&!level.getBlockState(origin.add(room.local(i))).isOf(Blocks.STONE))return false;for(int x=-5;x<=8;x++)for(int y=0;y<=10;y++)for(int z=-5;z<=5;z++)if(level.getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Sealed build left its access opening or temporary blocks behind");
+        }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
     }
     private static void stalledInteractions(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         var target=start.add(0,0,2);var redirected=new java.util.concurrent.atomic.AtomicBoolean();var gate=new java.util.concurrent.atomic.AtomicBoolean(true);
