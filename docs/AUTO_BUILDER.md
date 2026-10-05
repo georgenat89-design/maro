@@ -63,6 +63,8 @@ Placement views favour advancing the scaffold toward its target, with small acce
 
 Access construction retains its chosen view until the route is finished or that view fails. Walking to reclaim capacity retains the exact obsolete support being reclaimed. Its new access steps stay protected from recycling during that route. Placement-view ray searches keep their cursor across ticks, share a two-millisecond planning allowance, and retain at most 24 searches; walking-view candidates are also checked in bounded groups. Native placement and route clearance are rechecked before acting.
 
+With **Auto Unstuck**, a valid higher view can use a bounded access column with intermediate stairs and ordinary jump placements. It starts with an actually attachable base and advances toward its selected view, up to six blocks above the starting pose. It stops adding access blocks as soon as the intended schematic block can be placed from the current pose. The same support pool, clear headroom, safe footing and server confirmations apply.
+
 Walking turns toward raised steps before jumping. Close placement approaches brake with short movement inputs and wait for a grounded, settled pose. Reaching a placement view renews its target commitment. Support recycling also works from upper pieces downward; removing a route support clears stale failed-view records so the changed route can be checked again.
 
 Recycling preserves the short attachment column serving the active target. A stranded finished ledge can use a reachable owned post up to two blocks lower, followed by safe incremental descent through that post. Completed schematic blocks remain intact.
