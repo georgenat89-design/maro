@@ -270,6 +270,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
 
             checkInventoryHud(context, singleplayer);
             checkFullbright(context, singleplayer);
+            checkPotatoGraphics(context);
             checkAutoMine(context, singleplayer);
             AutoMineRouteChecks.run(context, singleplayer);
             checkCrafterDisabler(context, singleplayer);
@@ -367,6 +368,40 @@ public class MaroClientGameTest implements FabricClientGameTest {
     }
 
     /** Fullbright: sealed in a dark stone room at midnight, the screen must get much brighter, and the option must not change. */
+    /** Potato Graphics lowers the video settings while on and puts every one back when off. */
+    private static void checkPotatoGraphics(ClientGameTestContext context) {
+        context.runOnClient(client -> {
+            client.options.getViewDistance().setValue(12);
+            client.options.getAo().setValue(true);
+            client.options.getCloudRenderMode().setValue(net.minecraft.client.option.CloudRenderMode.FANCY);
+            client.options.getParticles().setValue(net.minecraft.particle.ParticlesMode.ALL);
+            client.options.getEntityShadows().setValue(true);
+        });
+        settle(context);
+        java.util.function.Function<net.minecraft.client.MinecraftClient, String> snapshot = client -> client.options.getViewDistance().getValue()
+                + "|" + client.options.getAo().getValue() + "|" + client.options.getCloudRenderMode().getValue()
+                + "|" + client.options.getParticles().getValue() + "|" + client.options.getEntityShadows().getValue()
+                + "|" + client.options.getMipmapLevels().getValue() + "|" + client.options.getMaxFps().getValue()
+                + "|" + client.options.getBiomeBlendRadius().getValue() + "|" + client.options.getEnableVsync().getValue();
+        String before = context.computeOnClient(snapshot::apply);
+        var potato = ModuleManager.get(dev.maro.module.impl.visuals.PotatoGraphics.class);
+        context.runOnClient(client -> potato.setEnabled(true));
+        settle(context);
+        String lowered = context.computeOnClient(snapshot::apply);
+        context.takeScreenshot("maro-potato-graphics-on");
+        boolean ok = context.computeOnClient(client -> client.options.getViewDistance().getValue() <= 6
+                && !client.options.getAo().getValue()
+                && client.options.getCloudRenderMode().getValue() == net.minecraft.client.option.CloudRenderMode.OFF
+                && client.options.getParticles().getValue() == net.minecraft.particle.ParticlesMode.MINIMAL
+                && !client.options.getEntityShadows().getValue());
+        context.runOnClient(client -> potato.setEnabled(false));
+        settle(context);
+        String after = context.computeOnClient(snapshot::apply);
+        System.out.println("POTATO before=" + before + " on=" + lowered + " after=" + after);
+        if (!ok) throw new AssertionError("Potato Graphics did not lower the settings: " + before + " -> " + lowered);
+        if (!before.equals(after)) throw new AssertionError("Potato Graphics did not restore the settings: " + before + " -> " + after);
+    }
+
     private static void checkFullbright(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
         singleplayer.getServer().runCommand("time set midnight");
         singleplayer.getServer().runCommand("execute as @a at @s run fill ~-5 ~-1 ~-5 ~5 ~5 ~5 minecraft:stone hollow");

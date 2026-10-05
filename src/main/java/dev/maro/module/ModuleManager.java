@@ -28,6 +28,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.StretchRes());
         register(new dev.maro.module.impl.visuals.InventoryHud());
         register(new dev.maro.module.impl.visuals.Fullbright());
+        register(new dev.maro.module.impl.visuals.PotatoGraphics());
         register(new dev.maro.module.impl.visuals.NoRender());
         register(new dev.maro.module.impl.visuals.ItemInspect());
         register(new dev.maro.module.impl.visuals.ViewModel());
@@ -36,6 +37,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.SkinAccessories());
         register(new dev.maro.module.impl.visuals.Pet());
         register(new dev.maro.module.impl.visuals.BaseESP());
+        register(new dev.maro.module.impl.visuals.PlayerESP());
         register(new dev.maro.module.impl.visuals.StaffNotifier());
         register(new dev.maro.anubis.module.impl.misc.AntiVanishModule());
         dev.maro.nathan.NameeProtectAddon.init();

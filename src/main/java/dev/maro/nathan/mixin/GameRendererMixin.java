@@ -8,6 +8,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import dev.maro.nathan.modules.Bloom;
+import dev.maro.render.esp.PlayerEspRenderer;
 import dev.maro.nathan.modules.ColorCorrect;
 import dev.maro.nathan.modules.MotionBlur;
 import net.minecraft.client.MinecraftClient;
@@ -63,6 +64,9 @@ public abstract class GameRendererMixin {
         // out of the lens - so the grade must see the bloom, not the other way
         // round. Either order works; this one is the one that matches how the
         // two controls read when they are both turned up.
+        //
+        // Player ESP goes on before either, so its fill and glow bloom and grade with the world.
+        PlayerEspRenderer.composite();
         Bloom.applyTo(MinecraftClient.getInstance().getFramebuffer(), pool);
         ColorCorrect.applyTo(MinecraftClient.getInstance().getFramebuffer(), pool);
     }
