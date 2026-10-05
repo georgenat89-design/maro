@@ -913,6 +913,9 @@ public final class AutoBuilder extends Module {
         var candidates=new ArrayList<BlockPos>();
         for(int dx=-3;dx<=3;dx++)for(int dz=-3;dz<=3;dz++)for(int dy=-5;dy<=2;dy++){
             var stand=target.add(dx,dy,dz);var floor=stand.down();
+            // An attachable floor alone is not an accessible floor. Keep it within
+            // the walker's safe drop or the owned-post stair helper's climb range.
+            if(stand.getY()<mc.player.getY()-2||stand.getY()>mc.player.getY()+2)continue;
             if(tried.containsKey(stand)||routeSupportExclusions.getOrDefault(floor,0)>ticks||plannedSolid(floor)||!mc.world.isChunkLoaded(floor)||!walker.hasStandingClearance(stand))continue;
             if(!mc.world.getBlockState(floor).isReplaceable()||!mc.world.getFluidState(floor).isEmpty())continue;
             if(mc.player.getEyePos().squaredDistanceTo(Vec3d.ofCenter(floor))>effectiveReach()*effectiveReach())continue;
