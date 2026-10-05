@@ -71,6 +71,8 @@ final class AutoBuilderChecks {
             fixture(context,singleplayer,builder,start);
             stalledInteractions(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
+            startupChestScan(context,singleplayer,builder,start);
+            fixture(context,singleplayer,builder,start);
             if(Boolean.getBoolean("maro.gametest.builderNavigationOnly")){cancellation(context,builder,context.computeOnClient(client->builder.schematic()));return;}
             if(Boolean.getBoolean("maro.gametest.builderAuctionOnly")){BuilderAuctionChecks.run(context,singleplayer,builder);return;}
             BlockPos origin=start.add(-1,0,2);
@@ -431,6 +433,46 @@ final class AutoBuilderChecks {
         await(context,builder,700);
         require(world.getServer().computeOnServer(server->{var level=server.getOverworld();if(!level.getBlockState(origin.east(4)).isOf(Blocks.STONE)||!level.getBlockState(origin.up(3)).isOf(Blocks.STONE)||!level.getBlockState(origin.east(2).up(3)).isOf(Blocks.STONE))return false;for(int x=-1;x<=5;x++)for(int y=0;y<=3;y++)for(int z=-1;z<=1;z++)if(level.getBlockState(origin.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Layer tail blocks were not built or temporary support columns were left behind");
         context.runOnClient(client->require(builder.temporarySupports().isEmpty(),"Layer-tail scaffold tracking did not finish cleanup"));
+    }
+    private static void startupChestScan(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        var first=start.east(3);var second=start.west(3);var empty=start.north(3);var target=start.south(2);
+        for(var chest:List.of(first,second,empty)){
+            command(world,"setblock",chest,"chest[facing=north,type=left]");command(world,"setblock",chest.east(),"chest[facing=north,type=right]");
+        }
+        world.getServer().runCommand("item replace block "+coords(first)+" container.0 with stone 2");
+        world.getServer().runCommand("item replace block "+coords(second)+" container.0 with glass 2");
+        world.getServer().runCommand("item replace block "+coords(second)+" container.1 with iron_pickaxe 1");
+        world.getServer().runCommand("item replace block "+coords(first)+" container.1 with netherite_shovel 1");context.waitTicks(6);
+        try{
+            context.runOnClient(client->{
+                set(builder,"Prepare Whole Build",true);set(builder,"Auto Buy Tools",true);set(builder,"Auto Buy When Missing",true);builder.auctionBudget(1000);
+                builder.install(new Schematic("delayed-chest-preparation.nbt","test",2,2,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState(),Blocks.GLASS.getDefaultState(),Blocks.GLASS.getDefaultState()}));builder.setOrigin(target);
+                for(var chest:List.of(first,second,empty)){client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();}
+                BuilderChestDelay.begin(20);BuilderPacketChecks.begin();builder.startBuild();
+            });
+            for(int i=0;i<1400;i++){
+                context.runOnClient(client->{
+                    if(BuilderChestDelay.received<3)require(!builder.buying()&&!builder.building(),"Preparation proceeded before all selected chest inventories arrived");
+                    BuilderChestDelay.step();
+                });
+                if(context.computeOnClient(client->!builder.building()&&!builder.buying()&&!builder.depositing()))break;
+                context.waitTick();
+            }
+            context.runOnClient(client->{
+                require(builder.status().equals("Build complete")&&builder.sessionSpend()==0,"Stored supplies were not used without AH buying: "+builder.status());
+                require(BuilderChestDelay.received>=3,"Preparation skipped an empty or stocked selected chest");
+                require(builder.inventoryCount(Items.IRON_PICKAXE)==1&&builder.inventoryCount(Items.NETHERITE_SHOVEL)==1,"Build tools were left in supply chests");
+                BuilderPacketChecks.verify();
+            });
+            verify(world,target,2,2,1,y->y==0?Blocks.STONE:Blocks.GLASS);
+        }finally{context.runOnClient(client->{BuilderChestDelay.end();BuilderPacketChecks.recording=false;});}
+        // A chest with no inventory receipt must stop preparation rather than be counted empty.
+        fixture(context,world,builder,start);command(world,"setblock",first,"chest[facing=north,type=left]");command(world,"setblock",first.east(),"chest[facing=north,type=right]");context.waitTicks(6);
+        try{
+            context.runOnClient(client->{set(builder,"Prepare Whole Build",true);builder.auctionBudget(1000);builder.install(new Schematic("missing-chest-receipt.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(first),Direction.WEST,first,false);builder.markContainer();BuilderChestDelay.begin(1000);builder.startBuild();});
+            for(int i=0;i<350&&context.computeOnClient(client->builder.depositing());i++){context.runOnClient(client->{require(!builder.buying(),"Missing chest receipt started AH buying");BuilderChestDelay.step();});context.waitTick();}
+            context.runOnClient(client->require(!builder.buying()&&!builder.depositing()&&builder.status().contains("contents did not arrive"),"Missing chest inventory did not pause preparation: "+builder.status()));
+        }finally{context.runOnClient(client->BuilderChestDelay.end());}
     }
     private static void fixture(ClientGameTestContext context,TestSingleplayerContext singleplayer,AutoBuilder builder,BlockPos start){
         context.runOnClient(client->{builder.setEnabled(false);client.setScreen(null);set(builder,"Save Build Progress",false);set(builder,"Build Mode","Automatic");set(builder,"Mine Out Schematic",false);set(builder,"Auto Eat",false);set(builder,"Prepare Whole Build",false);set(builder,"Buy Steak",true);set(builder,"Auto Buy Tools",false);set(builder,"Stop On Staff Nearby",false);set(builder,"Auto Buy When Missing",false);set(builder,"Support Dirt Reserve",0);set(builder,"Temporary Supports",false);set(builder,"Rotation","0");set(builder,"Mirror","None");button(builder,"Clear Restock Marks").press();});

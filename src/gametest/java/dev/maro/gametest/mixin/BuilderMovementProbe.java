@@ -10,7 +10,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ClientPlayerEntity.class)
 public abstract class BuilderMovementProbe {
     @Inject(method="sendMovementPackets",at=@At("HEAD"))
-    private void maroTest$normalMovementStart(CallbackInfo info){BuilderPacketChecks.vanillaMovement=true;}
+    private void maroTest$normalMovementStart(CallbackInfo info){BuilderPacketChecks.movementStart();}
     @Inject(method="sendMovementPackets",at=@At("RETURN"))
     private void maroTest$normalMovementEnd(CallbackInfo info){BuilderPacketChecks.vanillaMovement=false;}
 }

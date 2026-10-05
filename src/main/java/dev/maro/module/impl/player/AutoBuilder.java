@@ -215,6 +215,9 @@ public final class AutoBuilder extends Module {
     private int sneakReadyAt;
     private long staffStopAt;
     private ScreenHandler ownedHandler;
+    private ScreenHandler receivedChestInventory;
+    private Runnable queuedLookAction;
+    private float queuedLookYaw,queuedLookPitch;
     private ScreenHandler unexpectedBuildHandler;
     private int lastBuildInteraction=-1000,unexpectedMenuAt;
     private BlockPos chestStand;
@@ -277,7 +280,7 @@ public final class AutoBuilder extends Module {
         button("Materials","Estimate Cost","Read current auction listings without buying","Estimate",()->startBuying(true));
         button("Materials","Cancel Buying","Stop the shopping session","Cancel",()->finishBuying("Buying cancelled"));
         button("Materials","Deposit All","Move inventory and hotbar items into your selected double chests","Deposit",this::depositAll);
-        ClientTickEvents.START_CLIENT_TICK.register(client->{digging=false;if(isEnabled())tickWork();});
+        ClientTickEvents.START_CLIENT_TICK.register(client->{digging=false;queuedLookAction=null;if(isEnabled())tickWork();});
         ClientPlayConnectionEvents.DISCONNECT.register((handler,client)->{
             checkpoint();pause("Build saved — reconnect and press Resume");world=null;
         });
@@ -482,6 +485,7 @@ public final class AutoBuilder extends Module {
     }
     @Override protected void onDisable(){pause("Disabled");staffStopAt=0;captureStates=null;if(mc.player!=null&&originalSlot>=0)select(originalSlot);originalSlot=-1;}
     public void pause(String reason){
+        queuedLookAction=null;
         yawVelocity=pitchVelocity=0;
         placementAttemptTarget=null;failedPlacementUntil.clear();unexpectedBuildHandler=null;resetChestJourney();
         stopEating();navigatingCell=-1;foodRestock=foodShopping=supportRestock=supportShopping=false;
@@ -537,6 +541,11 @@ public final class AutoBuilder extends Module {
                 if(navigatingCell>=0)retryAt.put(navigatingCell,ticks+10);navigatingCell=-1;standGoal=null;walker.stop();status="Replanning blocked build position";
             }else status=walker.status;
             return;
+        }
+        if(autoTools.get()&&!mc.player.getAbilities().creativeMode&&(!hasTool(false)||!hasTool(true))){
+            needed=!hasTool(false)?Items.DIAMOND_PICKAXE:Items.DIAMOND_SHOVEL;
+            if(restock.get()&&beginRestock()){status="Checking selected chests for build tools";return;}
+            if(autoBuy.get()&&maxSpend.get()>0){startBuying(false);if(buying)resumeAfterMarket=true;return;}
         }
         findWork();
     }
@@ -861,16 +870,19 @@ public final class AutoBuilder extends Module {
             deferPlacement(job,"Placement ray changed - trying another position");return;
         }
         if(job.item==Items.WATER_BUCKET||job.item==Items.LAVA_BUCKET){
-            releaseSneak();beginPlacementReceipt(job);if(!mc.interactionManager.interactItem(mc.player,Hand.MAIN_HAND).isAccepted())pendingPlacement=null;delay=Math.max(10,actionDelay());placement=null;status="Placing schematic fluid source";return;
+            releaseSneak();withPublishedLook(()->{beginPlacementReceipt(job);if(!mc.interactionManager.interactItem(mc.player,Hand.MAIN_HAND).isAccepted())pendingPlacement=null;delay=Math.max(10,actionDelay());placement=null;status="Placing schematic fluid source";});return;
         }
         var context=((BlockItem)job.item).getPlacementContext(new ItemPlacementContext(mc.player,Hand.MAIN_HAND,mc.player.getMainHandStack(),aimed));
         if(context==null||!context.getBlockPos().equals(job.target)||!compatible(((BlockItemAccessor)(Object)job.item).maro$placementState(context),job.state)){deferPlacement(job,"Placement state changed - trying another position");return;}
-        if(!buildLookReady())return;
-        beginPlacementReceipt(job);lastBuildInteraction=ticks;
-        if(mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,aimed).isAccepted()){
-            mc.player.swingHand(Hand.MAIN_HAND);delay=actionDelay();status=job.temporary?"Placing temporary support":"Placing "+job.item.getName().getString();
-        }else{pendingPlacement=null;unconfirmedPlacements.remove(job.target);deferPlacement(job,"Placement refused - trying another position");}
-        placement=null;releaseSneak();
+        withPublishedLook(()->{
+            var actual=(BlockHitResult)mc.player.raycast(effectiveReach(),1,false);
+            if(actual.getType()!=HitResult.Type.BLOCK||!actual.getBlockPos().equals(aimed.getBlockPos())||actual.getSide()!=aimed.getSide())return;
+            beginPlacementReceipt(job);lastBuildInteraction=ticks;
+            if(mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,actual).isAccepted()){
+                mc.player.swingHand(Hand.MAIN_HAND);delay=actionDelay();status=job.temporary?"Placing temporary support":"Placing "+job.item.getName().getString();
+            }else{pendingPlacement=null;unconfirmedPlacements.remove(job.target);deferPlacement(job,"Placement refused - trying another position");}
+            placement=null;releaseSneak();
+        });
     }
     private void deferPlacement(Place job,String reason){
         placement=null;placementAttemptTarget=null;releaseSneak();yawVelocity=pitchVelocity=0;
@@ -915,7 +927,13 @@ public final class AutoBuilder extends Module {
         if(hit.getType()!=HitResult.Type.BLOCK||!hit.getBlockPos().equals(mining)){status="Mining target is obstructed";mining=null;return;}
         int best=mc.player.getInventory().getSelectedSlot();float speed=0;
         for(int i=0;i<36;i++){var stack=mc.player.getInventory().getStack(i);float candidate=stack.getMiningSpeedMultiplier(state);if(candidate>speed){best=i;speed=candidate;}}
-        if(!selectInventorySlot(best)||!buildLookReady())return;digging=true;mc.interactionManager.updateBlockBreakingProgress(mining,hit.getSide());mc.player.swingHand(Hand.MAIN_HAND);lastAction=ticks;status="Clearing mismatching block";
+        if(!selectInventorySlot(best))return;
+        digging=true;var target=mining;
+        withPublishedLook(()->{
+            var actual=(BlockHitResult)mc.player.raycast(effectiveReach(),1,false);
+            if(actual.getType()!=HitResult.Type.BLOCK||!actual.getBlockPos().equals(target)){digging=false;return;}
+            mc.interactionManager.updateBlockBreakingProgress(target,actual.getSide());mc.player.swingHand(Hand.MAIN_HAND);lastAction=ticks;status="Clearing mismatching block";
+        });
     }
     private void tuneNote(BlockPos pos,int wanted){
         if(!pos.equals(tuningSession)){tuningSession=pos;tuningTarget=null;tuningClicks=0;}
@@ -930,10 +948,11 @@ public final class AutoBuilder extends Module {
         var hit=visibleHit(pos);if(hit==null){status="Move closer to tune the note block";return;}
         releaseSneak();if(mc.player.isSneaking()){status="Release sneak to tune note block";return;}
         if(!aim(hit.getPos())){status="Aiming to tune note block";return;}
-        if(!buildLookReady())return;lastBuildInteraction=ticks;
-        if(mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,hit).isAccepted()){
-            tuningObserved=note;tuningExpected=(note+1)%25;tuningTarget=pos;tuningDeadline=ticks+80;tuningClicks++;mc.player.swingHand(Hand.MAIN_HAND);lastAction=ticks;status="Tuning note "+wanted;
-        }
+        withPublishedLook(()->{lastBuildInteraction=ticks;
+            if(mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,hit).isAccepted()){
+                tuningObserved=note;tuningExpected=(note+1)%25;tuningTarget=pos;tuningDeadline=ticks+80;tuningClicks++;mc.player.swingHand(Hand.MAIN_HAND);lastAction=ticks;status="Tuning note "+wanted;
+            }
+        });
     }
     private void tuneConfiguration(BlockPos pos,int wanted){
         if(!pos.equals(tuningSession)){tuningSession=pos;tuningTarget=null;tuningClicks=0;}
@@ -947,8 +966,9 @@ public final class AutoBuilder extends Module {
         if(tuningClicks>=4){pause("Block configuration changed unexpectedly — paused");return;}
         var hit=visibleHit(pos);if(hit==null){if(autoMove.get())repositionTarget(pos,triedStands.computeIfAbsent(schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get()),i->new HashMap<>()));status="Moving to configure block";return;}
         releaseSneak();if(mc.player.isSneaking()||!aim(hit.getPos()))return;
-        if(!buildLookReady())return;lastBuildInteraction=ticks;
-        if(mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,hit).isAccepted()){tuningObserved=value;tuningTarget=pos;tuningDeadline=ticks+80;tuningClicks++;lastAction=ticks;mc.player.swingHand(Hand.MAIN_HAND);status="Configuring block";}
+        withPublishedLook(()->{lastBuildInteraction=ticks;
+            if(mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,hit).isAccepted()){tuningObserved=value;tuningTarget=pos;tuningDeadline=ticks+80;tuningClicks++;lastAction=ticks;mc.player.swingHand(Hand.MAIN_HAND);status="Configuring block";}
+        });
     }
     private BlockHitResult visibleHit(BlockPos pos){
         return visibleHit(pos,mc.player.getEyePos());
@@ -986,13 +1006,22 @@ public final class AutoBuilder extends Module {
         }return false;
     }
     private boolean buildLookReady(){
-        // Publish through vanilla so position/look selection and last-sent bookkeeping agree.
-        // A raw LookAndOnGround leaves those fields stale and the next player tick repeats it.
+        // Wait for the next ordinary player tick. Publishing movement here creates a second
+        // movement update in the same tick, even when vanilla's bookkeeping is updated.
         var sent=(ClientPlayerLookAccessor)mc.player;
-        if(mc.player.getYaw()!=sent.maro$lastSentYaw()||mc.player.getPitch()!=sent.maro$lastSentPitch())sent.maro$publishMovement();
         boolean ready=Math.abs(MathHelper.wrapDegrees(mc.player.getYaw()-sent.maro$lastSentYaw()))<=.01f
             &&Math.abs(mc.player.getPitch()-sent.maro$lastSentPitch())<=.01f;
         if(!ready)status="Waiting for normal look update";return ready;
+    }
+    private void withPublishedLook(Runnable action){
+        if(buildLookReady()){action.run();return;}
+        queuedLookAction=action;queuedLookYaw=mc.player.getYaw();queuedLookPitch=mc.player.getPitch();
+    }
+    public void afterNormalMovement(){
+        var action=queuedLookAction;queuedLookAction=null;
+        if(action==null||!isEnabled()||!inGame()||world!=mc.world||mc.currentScreen!=null)return;
+        if(Math.abs(MathHelper.wrapDegrees(mc.player.getYaw()-queuedLookYaw))>.01f||Math.abs(mc.player.getPitch()-queuedLookPitch)>.01f||!buildLookReady())return;
+        action.run();
     }
     private boolean recoverUnexpectedBuildMenu(){
         if(mc.currentScreen instanceof AbstractSignEditScreen sign&&ticks-lastBuildInteraction<=160){
@@ -1025,8 +1054,25 @@ public final class AutoBuilder extends Module {
         mc.interactionManager.clickSlot(handler.syncId,destination.id,0,SlotActionType.PICKUP,mc.player);return true;
     }
     private void resetChestJourney(){
+        receivedChestInventory=null;
         chestStand=null;chestTriedStands.clear();chestProgressPosition=null;chestProgressAt=chestSessionStarted=chestInventoryProgressAt=ticks;
         chestInventoryFingerprint=Long.MIN_VALUE;cursorReturns=0;chestJourneyFailed=false;
+    }
+    public void chestInventoryReceived(int syncId){
+        if(!inGame()||!mc.isOnThread())return;
+        var handler=mc.player.currentScreenHandler;
+        if((depositing&&depositOpenWait>0||restockTarget!=null&&restockWait>0)
+            &&handler.syncId==syncId&&handler instanceof GenericContainerScreenHandler chest&&chest.getRows()==6)
+            receivedChestInventory=handler;
+    }
+    private boolean chestInventoryReady(){
+        if(receivedChestInventory==ownedHandler)return true;
+        walker.release();status="Waiting for confirmed supply chest contents";
+        if(ticks-chestInventoryProgressAt>100){
+            if(depositing)finishDeposit("Chest contents did not arrive — preparation paused before buying");
+            else pause("Chest contents did not arrive — resume after checking the chest");
+        }
+        return false;
     }
     private boolean chestInventoryStalled(){
         // ItemStack identity is not stable across packets. Compare contents instead.
@@ -1037,6 +1083,21 @@ public final class AutoBuilder extends Module {
     }
     private BlockHitResult chestHit(BlockPos chest,Vec3d eye){
         var hit=visibleHit(chest,eye);return hit!=null?hit:visibleHit(chest.offset(ChestBlock.getFacing(mc.world.getBlockState(chest))),eye);
+    }
+    private boolean openSupplyChest(BlockPos chest){
+        if(chest==null||!doubleChest(chest)||mc.player.isSneaking()||mc.player.isUsingItem())return false;
+        var partner=chest.offset(ChestBlock.getFacing(mc.world.getBlockState(chest)));
+        if(ChestBlock.isChestBlocked(mc.world,chest)||ChestBlock.isChestBlocked(mc.world,partner)){
+            pause("Selected double chest is blocked — clear the space above both halves");notify(status);return false;
+        }
+        // Use the current, in-range ray instead of the earlier approach hit after movement.
+        var actual=(BlockHitResult)mc.player.raycast(effectiveReach(),1,false);
+        if(actual.getType()!=HitResult.Type.BLOCK||!actual.getBlockPos().equals(chest)&&!actual.getBlockPos().equals(partner)){
+            status="Re-aiming at selected double chest";return false;
+        }
+        lastBuildInteraction=ticks;
+        mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,actual);
+        mc.player.swingHand(Hand.MAIN_HAND);return true;
     }
     private BlockHitResult approachChest(BlockPos chest){
         if(chestProgressPosition==null||mc.player.getEntityPos().squaredDistanceTo(chestProgressPosition)>.04){chestProgressPosition=mc.player.getEntityPos();chestProgressAt=ticks;}
@@ -1095,6 +1156,7 @@ public final class AutoBuilder extends Module {
         if(ownedHandler==null&&ticks-chestSessionStarted>1200){finishRestock("Chest access timed out - continuing supply search");return;}
         if(ownedHandler!=null){
             if(!(mc.currentScreen instanceof HandledScreen<?> screen)||screen.getScreenHandler()!=ownedHandler||mc.player.currentScreenHandler!=ownedHandler){finishRestock("Chest closed - continuing supply search");return;}
+            if(!chestInventoryReady())return;
             boolean stalled=chestInventoryStalled();
             if(inventoryWait>0){inventoryWait--;return;}
             if(stalled){
@@ -1112,6 +1174,12 @@ public final class AutoBuilder extends Module {
             cursorReturns=0;
             Map<Item,Integer> required=new HashMap<>(requiredMaterials());if(support.get())required.merge(Items.DIRT,restockDirt.getInt(),Integer::sum);required.keySet().removeAll(ignoredMaterials);addRequiredTools(required);if(foodRestock){required.clear();required.put(Items.COOKED_BEEF,steakReserve.getInt());}
             if(supportRestock){required.clear();required.put(Items.DIRT,supportReserve());}
+            if(autoTools.get()&&!foodRestock&&!supportRestock)for(boolean shovel:new boolean[]{false,true}){
+                var tag=shovel?ItemTags.SHOVELS:ItemTags.PICKAXES;
+                if(hasTool(shovel))continue;
+                var stored=ownedHandler.slots.stream().filter(slot->slot.inventory!=mc.player.getInventory()&&slot.getStack().isIn(tag)).findFirst().orElse(null);
+                if(stored!=null){required.remove(shovel?Items.DIAMOND_SHOVEL:Items.DIAMOND_PICKAXE);required.put(stored.getStack().getItem(),1);}
+            }
             for(var slot:ownedHandler.slots){
                 var stack=slot.getStack();if(stack.isEmpty()||slot.inventory==mc.player.getInventory()||restockTriedSlots.contains(slot.id))continue;
                 if(inventoryCount(stack.getItem())<required.getOrDefault(stack.getItem(),0)&&canReceive(stack.getItem())){
@@ -1145,7 +1213,7 @@ public final class AutoBuilder extends Module {
         var hit=approachChest(restockTarget);if(hit==null){if(chestJourneyFailed)finishRestock("No route to this chest - checking other supplies");return;}
         if(!aim(hit.getPos()))return;
         releaseSneak();if(mc.player.isSneaking())return;
-        if(!buildLookReady())return;lastBuildInteraction=ticks;mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,hit);restockWait=1;
+        withPublishedLook(()->{if(openSupplyChest(restockTarget))restockWait=1;});
     }
     private void partialRestockTick(){
         var cursor=ownedHandler.getCursorStack();if(cursor.isEmpty()){
@@ -1177,7 +1245,7 @@ public final class AutoBuilder extends Module {
         var normalized=new LinkedHashSet<BlockPos>();for(var pos:containers){if(mc.world.isChunkLoaded(pos)&&doubleChest(pos)){var partner=pos.offset(ChestBlock.getFacing(mc.world.getBlockState(pos)));normalized.add(pos.compareTo(partner)<0?pos:partner);}else normalized.add(pos);}containers.clear();containers.addAll(normalized);
         return containers.stream().filter(pos->mc.world.isChunkLoaded(pos)&&pos.getSquaredDistance(mc.player.getBlockPos())<=walkDistance.get()*walkDistance.get()&&doubleChest(pos)).sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).toList();}
     private void recordChestStock(){
-        if(ownedHandler==null||depositTarget==null)return;
+        if(ownedHandler==null||receivedChestInventory!=ownedHandler||depositTarget==null)return;
         var contents=new HashMap<Item,Integer>();for(var slot:ownedHandler.slots)if(slot.inventory!=mc.player.getInventory()&&!slot.getStack().isEmpty())contents.merge(slot.getStack().getItem(),slot.getStack().getCount(),Integer::sum);
         chestStocks.put(depositTarget,contents);preparedStock.clear();chestStocks.forEach((chest,items)->{if(containers.contains(chest))items.forEach((item,count)->preparedStock.merge(item,count,Integer::sum));});
         emptyChestItems.remove(depositTarget);if(doubleChest(depositTarget))emptyChestItems.remove(depositTarget.offset(ChestBlock.getFacing(mc.world.getBlockState(depositTarget))));
@@ -1188,6 +1256,7 @@ public final class AutoBuilder extends Module {
         depositTarget=depositQueue.removeFirst();depositOpenWait=inventoryWait=0;depositSlot=-1;depositDeadline=ticks+1200;resetChestJourney();walker.stop();status="Continuing storage in selected chest "+depositTarget.toShortString();return true;
     }
     private boolean chestHasRoom(ItemStack stack){return ownedHandler.slots.stream().anyMatch(slot->slot.inventory!=mc.player.getInventory()&&slot.canInsert(stack)&&(slot.getStack().isEmpty()||ItemStack.areItemsAndComponentsEqual(slot.getStack(),stack)&&slot.getStack().getCount()<slot.getMaxItemCount(stack)));}
+    private boolean keepBuildTool(ItemStack stack){return autoTools.get()&&(preparationStage>0||resumeShoppingAfterDeposit)&&(stack.isIn(ItemTags.PICKAXES)||stack.isIn(ItemTags.SHOVELS));}
     private boolean doubleChest(BlockPos pos){
         var state=mc.world.getBlockState(pos);if(!(state.getBlock() instanceof ChestBlock)||state.get(ChestBlock.CHEST_TYPE)==net.minecraft.block.enums.ChestType.SINGLE)return false;
         var partner=pos.offset(ChestBlock.getFacing(state));if(!mc.world.isChunkLoaded(partner))return false;var other=mc.world.getBlockState(partner);
@@ -1199,6 +1268,9 @@ public final class AutoBuilder extends Module {
     private void finishDeposit(String reason,boolean success){
         int prep=preparationStage;
         if(ownedHandler!=null)recordChestStock();depositQueue.clear();
+        if(success&&prep==1&&!chestStocks.keySet().containsAll(containers)){
+            success=false;reason="Not all selected chests were scanned — preparation paused before buying";
+        }
         if(ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler)mc.player.closeHandledScreen();
         ownedHandler=null;depositing=false;depositTarget=null;depositSlot=-1;walker.stop();status=reason;notify(reason);
         boolean resume=success&&resumeShoppingAfterDeposit;
@@ -1214,6 +1286,7 @@ public final class AutoBuilder extends Module {
         if(ticks>=depositDeadline){finishDeposit("Deposit stopped — no clear path or inventory update");return;}
         if(ownedHandler!=null){
             if(!(mc.currentScreen instanceof HandledScreen<?> menu)||menu.getScreenHandler()!=ownedHandler||mc.player.currentScreenHandler!=ownedHandler){finishDeposit("Deposit cancelled — chest closed");return;}
+            if(!chestInventoryReady())return;
             boolean stalled=chestInventoryStalled();
             if(inventoryWait>0){inventoryWait--;return;}
             if(!ownedHandler.getCursorStack().isEmpty()){
@@ -1229,10 +1302,12 @@ public final class AutoBuilder extends Module {
             }
             for(var slot:ownedHandler.slots){
                 if(slot.inventory!=mc.player.getInventory()||slot.getStack().isEmpty()||!chestHasRoom(slot.getStack()))continue;
+                if(keepBuildTool(slot.getStack()))continue;
                 depositSlot=slot.id;depositCount=slot.getStack().getCount();
                 mc.interactionManager.clickSlot(ownedHandler.syncId,slot.id,0,SlotActionType.QUICK_MOVE,mc.player);inventoryWait=actionDelay();depositAckDeadline=ticks+80;status="Moving items into double chest";return;
             }
-            boolean remaining=ownedHandler.slots.stream().anyMatch(slot->slot.inventory==mc.player.getInventory()&&!slot.getStack().isEmpty());
+            boolean remaining=ownedHandler.slots.stream().anyMatch(slot->slot.inventory==mc.player.getInventory()&&!slot.getStack().isEmpty()
+                &&!keepBuildTool(slot.getStack()));
             if((remaining||preparationStage==1)&&nextDepositChest())return;
             finishDeposit(remaining?"Selected chests are full — add another chest; remaining items kept":"Inventory stored across selected chests",!remaining);return;
         }
@@ -1247,7 +1322,7 @@ public final class AutoBuilder extends Module {
         var hit=approachChest(depositTarget);if(hit==null){if(chestJourneyFailed){if(!nextDepositChest())finishDeposit("No route to selected storage - remaining items kept");}return;}
         if(!aim(hit.getPos())){status="Aiming at double chest";return;}
         releaseSneak();if(mc.player.isSneaking())return;
-        if(!buildLookReady())return;lastBuildInteraction=ticks;mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,hit);depositOpenWait=1;
+        withPublishedLook(()->{if(openSupplyChest(depositTarget))depositOpenWait=1;});
     }
     private void creativeMaterials(){
         if(!inGame()||schematic==null||!mc.player.getAbilities().creativeMode){notify("Get Materials requires creative mode");return;}
