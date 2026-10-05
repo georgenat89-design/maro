@@ -69,7 +69,7 @@ final class AutoBuilderChecks {
             fixture(context,singleplayer,builder,start);
             rejectedPlacement(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
-            if(Boolean.getBoolean("maro.gametest.builderNavigationOnly"))return;
+            if(Boolean.getBoolean("maro.gametest.builderNavigationOnly")){cancellation(context,builder,context.computeOnClient(client->builder.schematic()));return;}
             if(Boolean.getBoolean("maro.gametest.builderAuctionOnly")){BuilderAuctionChecks.run(context,singleplayer,builder);return;}
             BlockPos origin=start.add(-1,0,2);
             context.runOnClient(client->{
@@ -239,23 +239,27 @@ final class AutoBuilderChecks {
             });context.waitTicks(5);context.takeScreenshot("maro-builder-control-panel");
             context.runOnClient(client->{client.setScreen(new ClickGuiScreen());((ClickGuiScreen)client.currentScreen).openModuleOptions(builder);});context.waitTicks(5);context.takeScreenshot("maro-builder-simplified-options");
 
-            context.runOnClient(client->{
-                button(builder,"Cancel Schematic").press();
-                require(builder.schematic()==null&&!builder.loading()&&!builder.building()&&!builder.buying()&&!builder.previewVisible()&&!builder.isEnabled(),"Cancel did not unload and stop the schematic");
-                require(builder.remainingMaterials().isEmpty()&&builder.visibleCells().isEmpty()&&builder.saveExtra().get("file").getAsString().isEmpty(),"Cancel retained schematic state");
-                require(!client.options.forwardKey.isPressed()&&!client.options.useKey.isPressed()&&!AutoBuilder.holdingBreak(),"Cancel retained builder input");
-            });
-            // Cancel a pending asynchronous load in the same client turn; its completion must be ignored.
-            var cancelFile=builder.folder().resolve("maro-cancel-fixture.nbt");
-            try{NbtIo.writeCompressed(SchematicIO.encodeStructure(loaded),cancelFile);}catch(java.io.IOException e){throw new AssertionError(e);}
-            context.runOnClient(client->{builder.load(cancelFile);require(builder.loading(),"Load fixture did not start");builder.cancelSchematic();});
-            context.waitTicks(30);
-            context.runOnClient(client->require(builder.schematic()==null&&!builder.loading()&&!builder.previewVisible(),"Cancelled load restored its schematic"));
-            try{java.nio.file.Files.deleteIfExists(cancelFile);}catch(java.io.IOException e){throw new AssertionError(e);}
+            cancellation(context,builder,loaded);
         }finally{
             context.runOnClient(client->{builder.setEnabled(false);client.options.useKey.setPressed(false);client.options.forwardKey.setPressed(false);client.options.jumpKey.setPressed(false);client.setScreen(null);});
             singleplayer.getServer().runCommand("gamemode creative @a");
         }
+    }
+    private static void cancellation(ClientGameTestContext context,AutoBuilder builder,Schematic snapshot){
+        context.runOnClient(client->{
+            button(builder,"Cancel Schematic").press();
+            require(builder.schematic()==null&&!builder.loading()&&!builder.building()&&!builder.buying()&&!builder.previewVisible()&&!builder.isEnabled(),"Cancel did not unload and stop the schematic");
+            require(builder.remainingMaterials().isEmpty()&&builder.visibleCells().isEmpty()&&builder.saveExtra().get("file").getAsString().isEmpty(),"Cancel retained schematic state");
+            require(!client.options.forwardKey.isPressed()&&!client.options.useKey.isPressed()&&!AutoBuilder.holdingBreak(),"Cancel retained builder input");
+        });
+        // Cancel in the same client turn. A warm IO executor may already have completed;
+        // either way, cancellation must unload the file and prevent later resurrection.
+        var cancelFile=builder.folder().resolve("maro-cancel-fixture.nbt");
+        try{NbtIo.writeCompressed(SchematicIO.encodeStructure(snapshot),cancelFile);}catch(java.io.IOException e){throw new AssertionError(e);}
+        context.runOnClient(client->{builder.load(cancelFile);require(builder.loading()||builder.schematic()!=null,"Load fixture neither started nor completed");builder.cancelSchematic();});
+        context.waitTicks(30);
+        context.runOnClient(client->require(builder.schematic()==null&&!builder.loading()&&!builder.previewVisible(),"Cancelled load restored its schematic"));
+        try{java.nio.file.Files.deleteIfExists(cancelFile);}catch(java.io.IOException e){throw new AssertionError(e);}
     }
     private static void savedPlacement(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         var origin=start.add(0,0,2);var chest=start.east(3);
