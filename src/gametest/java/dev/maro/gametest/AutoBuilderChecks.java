@@ -234,7 +234,7 @@ final class AutoBuilderChecks {
             context.runOnClient(client->{
                 builder.pause("Screenshot");client.setScreen(new ClickGuiScreen());((ClickGuiScreen)client.currentScreen).openModuleSettings(builder);
                 require(client.currentScreen instanceof BuilderControlScreen,"Builder settings did not open the simple control panel");
-                require(builder.getSettings().size()<60,"Unnecessary settings still clutter the builder");
+                require(builder.getSettingSections().stream().filter(section->!section.getTitle().equals("Saved Builds")).mapToInt(section->section.getSettings().size()).sum()<60,"Unnecessary settings still clutter the builder outside the new saved-build controls");
                 require(builder.buildMode().equals("Automatic"),"Automatic build mode is unavailable");
             });context.waitTicks(5);context.takeScreenshot("maro-builder-control-panel");
             context.runOnClient(client->{client.setScreen(new ClickGuiScreen());((ClickGuiScreen)client.currentScreen).openModuleOptions(builder);});context.waitTicks(5);context.takeScreenshot("maro-builder-simplified-options");
