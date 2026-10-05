@@ -948,7 +948,7 @@ public final class AutoBuilder extends Module {
             mc.player.setYaw(mc.player.getYaw()+MathHelper.clamp(yaw,-speed,speed));mc.player.setPitch(MathHelper.clamp(mc.player.getPitch()+MathHelper.clamp(pitch,-speed,speed),-90,90));
         }
         if(Math.abs(MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()))<.1&&Math.abs(goal[1]-mc.player.getPitch())<.1){
-            mc.player.setYaw(goal[0]);mc.player.setPitch(goal[1]);yawVelocity=pitchVelocity=0;return true;
+            mc.player.setYaw(mc.player.getYaw()+MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()));mc.player.setPitch(goal[1]);yawVelocity=pitchVelocity=0;return true;
         }return false;
     }
     private void syncBuildLook(){mc.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(mc.player.getYaw(),mc.player.getPitch(),mc.player.isOnGround(),mc.player.horizontalCollision));}
