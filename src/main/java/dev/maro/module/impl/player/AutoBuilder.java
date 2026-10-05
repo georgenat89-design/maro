@@ -976,11 +976,11 @@ public final class AutoBuilder extends Module {
             supportPickup=null;walker.stop();
         }
         if(ticks>=supportRecycleAt&&!supports.isEmpty()){
-            supportRecycleAt=ticks+60;
             if(recycleSupport()){
-                if(routeMining!=null){supportPickup=routeMining;supportPickupUntil=ticks+200;}
+                if(routeMining!=null){supportRecycleAt=ticks+60;supportPickup=routeMining;supportPickupUntil=ticks+200;}
                 return;
             }
+            supportRecycleAt=ticks+60;
         }
         if(restockTarget!=null){triedContainers.add(restockTarget);restockTarget=null;walker.stop();}
         if(restock.get()&&beginRestock()){supportRestock=true;status="Restocking temporary blocks";return;}
