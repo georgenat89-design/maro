@@ -28,6 +28,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.StretchRes());
         register(new dev.maro.module.impl.visuals.InventoryHud());
         register(new dev.maro.module.impl.visuals.Fullbright());
+        register(new dev.maro.module.impl.visuals.PotatoGraphics());
         register(new dev.maro.module.impl.visuals.NoRender());
         register(new dev.maro.module.impl.visuals.ItemInspect());
         register(new dev.maro.module.impl.visuals.ViewModel());
