@@ -491,6 +491,17 @@ final class AutoBuilderChecks {
         await(context,builder,1000);verify(world,lowerTarget,1,1,1,y->Blocks.STONE);
         require(world.getServer().computeOnServer(server->descentPieces.stream().allMatch(piece->server.getOverworld().getBlockState(piece).isAir())&&server.getOverworld().getBlockState(island).isOf(Blocks.STONE)),"Scaffold descent changed an unrelated block or left dirt");
         context.runOnClient(client->require(client.player.getHealth()==20&&builder.temporarySupports().isEmpty(),"Scaffold descent caused damage or lost cleanup ownership"));
+        fixture(context,world,builder,start);world.getServer().runCommand("give @a stone 1");world.getServer().runCommand("give @a diamond_shovel 1");
+        var highLedge=start.up(6);var lowerPost=new HashSet<BlockPos>();
+        command(world,"setblock",highLedge,"stone");for(int height=0;height<5;height++){var piece=start.east().up(height);lowerPost.add(piece);command(world,"setblock",piece,"dirt");}
+        world.getServer().runCommand("gamemode creative @a");world.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+(start.getY()+7)+" "+(start.getZ()+.5));context.waitTicks(12);world.getServer().runCommand("gamemode survival @a");context.waitTicks(6);
+        context.runOnClient(client->{
+            set(builder,"Temporary Supports",true);builder.install(new Schematic("lower-post-descent.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(lowerTarget);
+            @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.addAll(lowerPost);builder.startBuild();
+        });
+        await(context,builder,1000);verify(world,lowerTarget,1,1,1,y->Blocks.STONE);
+        require(world.getServer().computeOnServer(server->lowerPost.stream().allMatch(piece->server.getOverworld().getBlockState(piece).isAir())&&server.getOverworld().getBlockState(highLedge).isOf(Blocks.STONE)),"Lower-post descent changed the finished ledge or left supports");
+        context.runOnClient(client->require(client.player.getHealth()==20&&builder.temporarySupports().isEmpty(),"Lower-post descent caused damage or lost cleanup ownership"));
         fixture(context,world,builder,start);
         world.getServer().runCommand("fill "+coords(start.add(1,-1,0))+" "+coords(start.add(5,-1,6))+" lava");
         world.getServer().runCommand("fill "+coords(start.add(-5,-1,0))+" "+coords(start.add(-1,-1,6))+" lava");

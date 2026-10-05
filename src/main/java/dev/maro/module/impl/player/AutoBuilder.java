@@ -1153,7 +1153,9 @@ public final class AutoBuilder extends Module {
         var lower=views.stream().filter(pos->walker.standingPoint(pos).y<mc.player.getY()-.5)
             .min(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).orElse(null);
         if(lower==null)return false;
-        var candidates=supports.stream().filter(pos->pos.getY()>=mc.player.getY()-1.1&&pos.getY()<mc.player.getY()+.1)
+        // An isolated finished ledge may first require a safe two-block drop
+        // onto a reachable owned post, then normal post-by-post descent.
+        var candidates=supports.stream().filter(pos->pos.getY()>=mc.player.getY()-3.1&&pos.getY()<mc.player.getY()+.1)
             .filter(pos->mc.world.getBlockState(pos).isOf(Blocks.DIRT)&&!plannedSolid(pos)&&walker.canDescendThrough(pos)&&safeToRecycle(pos))
             .sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).limit(12).toList();
         for(var pos:candidates){
@@ -1183,11 +1185,23 @@ public final class AutoBuilder extends Module {
         return plannedSolid(neighbour)&&mc.world.getBlockState(neighbour).isReplaceable();
     }
     /** Free an obsolete attachment base when the bounded scaffold pool is full. */
+    private boolean servesActiveScaffold(BlockPos pos){
+        if(navigatingCell<0||states[navigatingCell]==CORRECT)return false;
+        var target=position(navigatingCell);var side=attachmentSide(desired(navigatingCell));
+        // Preserve the short column being assembled for this target. Otherwise
+        // a full pool reclaims its new upper piece and immediately rebuilds it.
+        for(var direction:Direction.values()){
+            if(side!=null&&direction!=side)continue;
+            var top=target.offset(direction);
+            if(pos.getX()==top.getX()&&pos.getZ()==top.getZ()&&pos.getY()<=top.getY()&&pos.getY()>=top.getY()-2)return true;
+        }
+        return false;
+    }
     private boolean recycleSupport(){
         var floorGuard=mc.player.getBoundingBox().offset(0,-1,0);
         // Reclaim upper pieces first. Removing a column's base leaves floating
         // obstacles and can erase the only walking access to its upper pieces.
-        var candidate=supports.stream().filter(pos->mc.world.isChunkLoaded(pos)&&mc.world.getBlockState(pos).isOf(Blocks.DIRT)&&!plannedSolid(pos))
+        var candidate=supports.stream().filter(pos->mc.world.isChunkLoaded(pos)&&mc.world.getBlockState(pos).isOf(Blocks.DIRT)&&!plannedSolid(pos)&&!servesActiveScaffold(pos))
             .filter(pos->!new Box(pos).intersects(floorGuard)&&visibleHit(pos)!=null)
             .filter(this::safeToRecycle)
             .min(Comparator.<BlockPos>comparingInt(BlockPos::getY).reversed().thenComparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).orElse(null);
@@ -1195,7 +1209,7 @@ public final class AutoBuilder extends Module {
             // A full pool must not strand the builder above supports hidden by
             // the finished floor. Walk to a verified mining view before trying
             // to free capacity; never mine an unseen or unrelated block.
-            var options=supports.stream().filter(pos->mc.world.isChunkLoaded(pos)&&mc.world.getBlockState(pos).isOf(Blocks.DIRT)&&!plannedSolid(pos))
+            var options=supports.stream().filter(pos->mc.world.isChunkLoaded(pos)&&mc.world.getBlockState(pos).isOf(Blocks.DIRT)&&!plannedSolid(pos)&&!servesActiveScaffold(pos))
                 .sorted(Comparator.<BlockPos>comparingInt(BlockPos::getY).reversed().thenComparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).toList();
             long deadline=System.nanoTime()+8_000_000;int checked=0;
             int below=(int)Math.floor(effectiveReach()+mc.player.getStandingEyeHeight()-.5),above=(int)Math.floor(effectiveReach()-mc.player.getStandingEyeHeight()+.5);
