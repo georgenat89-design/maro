@@ -12,6 +12,11 @@ import com.llamalad7.mixinextras.sugar.Share;
 import com.llamalad7.mixinextras.sugar.ref.LocalRef;
 @Mixin(ClientWorld.class)
 public abstract class BlockEventsMixin {
+    // Sequence acknowledgements reconcile predictions even when no separate block packet arrives.
+    @Inject(method="processPendingUpdate",at=@At("RETURN"))
+    private void maro$afterPredictionAck(BlockPos pos,BlockState state,net.minecraft.util.math.Vec3d playerPos,CallbackInfo info){
+        dev.maro.module.impl.player.AutoBuilder.serverBlockUpdate(pos,state);
+    }
     // Server updates call World.setBlockState directly, bypassing the ClientWorld override.
     @Inject(method="handleBlockUpdate",at=@At("HEAD"))
     private void maro$beforeServerBlock(BlockPos pos,BlockState next,int flags,CallbackInfo info,

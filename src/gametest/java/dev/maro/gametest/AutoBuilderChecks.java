@@ -69,6 +69,8 @@ final class AutoBuilderChecks {
             fixture(context,singleplayer,builder,start);
             rejectedPlacement(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
+            stalledInteractions(context,singleplayer,builder,start);
+            fixture(context,singleplayer,builder,start);
             if(Boolean.getBoolean("maro.gametest.builderNavigationOnly")){cancellation(context,builder,context.computeOnClient(client->builder.schematic()));return;}
             if(Boolean.getBoolean("maro.gametest.builderAuctionOnly")){BuilderAuctionChecks.run(context,singleplayer,builder);return;}
             BlockPos origin=start.add(-1,0,2);
@@ -299,6 +301,115 @@ final class AutoBuilderChecks {
             await(context,builder,350);require(rejected.get(),"Server rejection fixture did not intercept the placement");verify(world,target,1,1,1,y->Blocks.STONE);
         }finally{gate.set(false);}
     }
+    private static void stalledInteractions(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        var target=start.add(0,0,2);var redirected=new java.util.concurrent.atomic.AtomicBoolean();var gate=new java.util.concurrent.atomic.AtomicBoolean(true);
+        // A server/plugin opens an unexpected inventory instead of accepting our placement.
+        // The old builder waited behind this screen until the user pressed Escape.
+        net.fabricmc.fabric.api.event.player.UseBlockCallback.EVENT.register((player,level,hand,hit)->{
+            if(!level.isClient()&&gate.get()&&hit.getBlockPos().equals(target.down())&&player.getStackInHand(hand).isOf(Items.STONE)&&redirected.compareAndSet(false,true)){
+                var serverPlayer=(net.minecraft.server.network.ServerPlayerEntity)player;
+                serverPlayer.openHandledScreen(new net.minecraft.screen.SimpleNamedScreenHandlerFactory((id,inventory,p)->net.minecraft.screen.GenericContainerScreenHandler.createGeneric9x3(id,inventory),Text.literal("Unexpected chest")));
+                serverPlayer.playerScreenHandler.syncState();return net.minecraft.util.ActionResult.FAIL;
+            }return net.minecraft.util.ActionResult.PASS;
+        });
+        try{
+            world.getServer().runCommand("give @a stone 1");context.waitTicks(6);
+            context.runOnClient(client->{builder.install(new Schematic("unexpected-chest.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);builder.startBuild();});
+            await(context,builder,450);verify(world,target,1,1,1,y->Blocks.STONE);
+            require(redirected.get(),"Unexpected chest fixture did not redirect the placement");
+            context.runOnClient(client->require(client.currentScreen==null&&client.player.currentScreenHandler==client.player.playerScreenHandler,"Builder left its unexpected chest open"));
+        }finally{gate.set(false);}
+
+        fixture(context,world,builder,start);world.getServer().runCommand("give @a stone 1");context.waitTicks(6);
+        // Reconcile an acknowledgement-only rollback: no handleBlockUpdate callback is emitted.
+        context.runOnClient(client->{
+            builder.install(new Schematic("ack-only-rollback.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);builder.startBuild();
+            try{
+                var plan=AutoBuilder.class.getDeclaredMethod("placement",BlockPos.class,BlockState.class,Item.class,int.class,boolean.class);plan.setAccessible(true);
+                var job=plan.invoke(builder,target,Blocks.STONE.getDefaultState(),Items.STONE,0,false);require(job!=null,"Ack fixture has no placement plan");
+                var receipt=AutoBuilder.class.getDeclaredMethod("beginPlacementReceipt",job.getClass());receipt.setAccessible(true);receipt.invoke(builder,job);
+                client.world.setBlockState(target,Blocks.STONE.getDefaultState());
+                client.world.processPendingUpdate(target,Blocks.AIR.getDefaultState(),client.player.getEntityPos());
+                require(field(builder,"pendingServerState")==Blocks.AIR.getDefaultState(),"Sequence acknowledgement was not received by builder");
+                require(((Map<?,?>)field(builder,"unconfirmedPlacements")).isEmpty(),"Rejected prediction remained marked uncertain");
+            }catch(ReflectiveOperationException error){throw new AssertionError(error);}
+        });
+        await(context,builder,350);verify(world,target,1,1,1,y->Blocks.STONE);
+
+        fixture(context,world,builder,start);
+        var chest=start.east(3);command(world,"setblock",chest,"chest[facing=north,type=left]");command(world,"setblock",chest.east(),"chest[facing=north,type=right]");
+        world.getServer().runCommand("item replace block "+coords(chest)+" container.0 with stone 64");context.waitTicks(6);
+        context.runOnClient(client->{builder.install(new Schematic("held-restock-item.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();builder.startBuild();});
+        for(int i=0;i<250&&context.computeOnClient(client->field(builder,"ownedHandler")==null);i++)context.waitTick();
+        context.runOnClient(client->require(field(builder,"ownedHandler")!=null,"Restock fixture did not open its chest"));
+        world.getServer().runOnServer(server->{var player=server.getPlayerManager().getPlayerList().getFirst();player.currentScreenHandler.setCursorStack(new ItemStack(Items.STONE,4));player.currentScreenHandler.syncState();});
+        await(context,builder,450);verify(world,target,1,1,1,y->Blocks.STONE);
+        context.runOnClient(client->require(client.currentScreen==null&&client.player.currentScreenHandler.getCursorStack().isEmpty(),"Held restock item left the chest latched open"));
+        require(world.getServer().computeOnServer(server->{var level=server.getOverworld();var player=server.getPlayerManager().getPlayerList().getFirst();int count=0;for(var half:List.of(chest,chest.east())){var inventory=(net.minecraft.block.entity.ChestBlockEntity)level.getBlockEntity(half);for(int i=0;i<inventory.size();i++)if(inventory.getStack(i).isOf(Items.STONE))count+=inventory.getStack(i).getCount();}for(int i=0;i<36;i++)if(player.getInventory().getStack(i).isOf(Items.STONE))count+=player.getInventory().getStack(i).getCount();return count==67;}),"Cursor recovery lost or duplicated stone");
+
+        fixture(context,world,builder,start);command(world,"setblock",chest,"chest[facing=north,type=left]");command(world,"setblock",chest.east(),"chest[facing=north,type=right]");context.waitTicks(6);
+        var denied=new java.util.concurrent.atomic.AtomicBoolean();var denyGate=new java.util.concurrent.atomic.AtomicBoolean(true);var chestInventory=new net.minecraft.inventory.SimpleInventory(54);chestInventory.setStack(0,new ItemStack(Items.STONE,64));
+        var resync=new java.util.concurrent.atomic.AtomicReference<net.minecraft.server.network.ServerPlayerEntity>();
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(server->{var player=resync.getAndSet(null);if(player!=null)player.currentScreenHandler.syncState();});
+        net.fabricmc.fabric.api.event.player.UseBlockCallback.EVENT.register((player,level,hand,hit)->{
+            if(!level.isClient()&&denyGate.get()&&(hit.getBlockPos().equals(chest)||hit.getBlockPos().equals(chest.east()))){
+                ((net.minecraft.server.network.ServerPlayerEntity)player).openHandledScreen(new net.minecraft.screen.SimpleNamedScreenHandlerFactory((id,inventory,p)->new net.minecraft.screen.GenericContainerScreenHandler(net.minecraft.screen.ScreenHandlerType.GENERIC_9X6,id,inventory,chestInventory,6){
+                    @Override public void onSlotClick(int slot,int button,net.minecraft.screen.slot.SlotActionType type,net.minecraft.entity.player.PlayerEntity clicking){
+                        if(slot==0&&type==net.minecraft.screen.slot.SlotActionType.PICKUP&&denied.compareAndSet(false,true)){resync.set((net.minecraft.server.network.ServerPlayerEntity)clicking);return;}
+                        super.onSlotClick(slot,button,type,clicking);
+                    }
+                },Text.literal("Large Chest")));return net.minecraft.util.ActionResult.SUCCESS;
+            }return net.minecraft.util.ActionResult.PASS;
+        });
+        try{
+            context.runOnClient(client->{builder.install(new Schematic("denied-chest-pickup.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();builder.startBuild();});
+            await(context,builder,500);verify(world,target,1,1,1,y->Blocks.STONE);require(denied.get()&&chestInventory.getStack(0).getCount()==63,"Rejected chest pickup did not retry the exact quantity");
+        }finally{denyGate.set(false);}
+
+        fixture(context,world,builder,start);world.getServer().runCommand("give @a waxed_oxidized_copper_trapdoor 1");world.getServer().runCommand("give @a ender_chest 1");world.getServer().runCommand("give @a waxed_oxidized_copper_bulb 1");context.waitTicks(6);
+        var trapdoor=Blocks.WAXED_OXIDIZED_COPPER_TRAPDOOR.getDefaultState().with(Properties.HORIZONTAL_FACING,Direction.WEST);
+        var ender=Blocks.ENDER_CHEST.getDefaultState().with(Properties.HORIZONTAL_FACING,Direction.EAST);
+        context.runOnClient(client->{builder.install(new Schematic("directional-aim.nbt","test",3,1,1,BlockPos.ORIGIN,new BlockState[]{trapdoor,ender,Blocks.WAXED_OXIDIZED_COPPER_BULB.getDefaultState()}));builder.setOrigin(target);client.player.setYaw(138);builder.startBuild();});
+        await(context,builder,600);
+        require(world.getServer().computeOnServer(server->AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(target),trapdoor)&&AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(target.east()),ender)),"Server received a stale orientation for directional blocks");
+
+        fixture(context,world,builder,start);command(world,"setblock",target,"dirt");world.getServer().runCommand("give @a stone 1");world.getServer().runCommand("give @a diamond_shovel 1");context.waitTicks(6);
+        context.runOnClient(client->{
+            set(builder,"Mine Out Schematic",true);builder.install(new Schematic("scaffold-layer-dependency.nbt","test",1,2,1,BlockPos.ORIGIN,new BlockState[]{Blocks.AIR.getDefaultState(),Blocks.STONE.getDefaultState()}));builder.setOrigin(target);
+            @SuppressWarnings("unchecked") var supports=(Set<BlockPos>)field(builder,"supports");supports.add(target);builder.startBuild();
+        });
+        await(context,builder,450);
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(target).isAir()&&server.getOverworld().getBlockState(target.up()).isOf(Blocks.STONE)),"Own scaffold air cell blocked the upper layer or was not cleaned");
+
+        fixture(context,world,builder,start);var obstruction=start.south().up();var routeTarget=start.south(4);
+        command(world,"setblock",obstruction,"dirt");world.getServer().runCommand("give @a stone 1");world.getServer().runCommand("give @a diamond_shovel 1");context.waitTicks(6);
+        context.runOnClient(client->{
+            builder.install(new Schematic("stuck-existing-route.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(routeTarget);
+            @SuppressWarnings("unchecked") var supports=(Set<BlockPos>)field(builder,"supports");supports.add(obstruction);builder.startBuild();
+            var walker=(BuilderWalk)field(builder,"walker");walker.approach(routeTarget,1.5);walker.requestRecovery();
+            try{var stalled=BuilderWalk.class.getDeclaredField("movementStalled");stalled.setAccessible(true);stalled.setBoolean(walker,true);}catch(ReflectiveOperationException error){throw new AssertionError(error);}
+            require(!walker.routeUnavailable(),"Route collision fixture must have a path");
+        });
+        await(context,builder,500);
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(obstruction).isAir()&&server.getOverworld().getBlockState(routeTarget).isOf(Blocks.STONE)),"Stuck route did not clear the builder's obstructing overhead dirt");
+
+        fixture(context,world,builder,start);world.getServer().runCommand("give @a oak_sign 1");world.getServer().runCommand("give @a stone 1");context.waitTicks(6);
+        var sign=Blocks.OAK_SIGN.getDefaultState().with(Properties.ROTATION,8);
+        context.runOnClient(client->{builder.install(new Schematic("sign-editor-resume.nbt","test",2,1,1,BlockPos.ORIGIN,new BlockState[]{sign,Blocks.STONE.getDefaultState()}));builder.setOrigin(target);builder.startBuild();});
+        await(context,builder,450);
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(target).isOf(Blocks.OAK_SIGN)&&server.getOverworld().getBlockState(target.east()).isOf(Blocks.STONE)),"Sign editor prevented placing the next block");
+        context.runOnClient(client->require(client.currentScreen==null,"Builder left the sign editor open"));
+
+        fixture(context,world,builder,start);world.getServer().runCommand("give @a stone 1");world.getServer().runCommand("give @a glass 1");world.getServer().runCommand("give @a oak_planks 1");context.waitTicks(6);
+        var area=new BlockState[26];Arrays.fill(area,Blocks.STRUCTURE_VOID.getDefaultState());area[0]=Blocks.STONE.getDefaultState();area[13]=Blocks.GLASS.getDefaultState();area[12]=Blocks.OAK_PLANKS.getDefaultState();
+        context.runOnClient(client->{set(builder,"Material Supply","Nearby Sections");builder.install(new Schematic("nearby-sections.nbt","test",13,2,1,BlockPos.ORIGIN,area));builder.setOrigin(target);builder.startBuild();});
+        for(int i=0;i<300&&!context.computeOnClient(client->builder.state(13)==AutoBuilder.CORRECT);i++)context.waitTick();
+        context.runOnClient(client->{require(builder.state(13)==AutoBuilder.CORRECT,"Nearby section did not finish its upper block");require(builder.state(12)!=AutoBuilder.CORRECT,"Nearby mode walked across the whole bottom layer first");require(builder.remainingMaterials().getOrDefault(Items.OAK_PLANKS,0)<=1,"Section supply exceeded its missing material quantity");});
+        await(context,builder,500);
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(target).isOf(Blocks.STONE)&&server.getOverworld().getBlockState(target.up()).isOf(Blocks.GLASS)&&server.getOverworld().getBlockState(target.east(12)).isOf(Blocks.OAK_PLANKS)),"Nearby sections did not complete all areas");
+        context.runOnClient(client->set(builder,"Material Supply","Layer by Layer"));
+    }
+    private static Object field(AutoBuilder builder,String name){try{var field=AutoBuilder.class.getDeclaredField(name);field.setAccessible(true);return field.get(builder);}catch(ReflectiveOperationException error){throw new AssertionError(error);}}
     private static void layerTail(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         // Only diagonal standing cells are safe. A wall blocks the initial placement ray,
         // and the old cardinal-only search leaves this final layer block idle indefinitely.
