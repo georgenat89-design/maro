@@ -69,12 +69,13 @@ public final class Schematic {
         if(state.isAir()||state.isOf(Blocks.STRUCTURE_VOID)||companion(state))return Items.AIR;
         if(state.isOf(Blocks.WATER))return state.get(net.minecraft.block.FluidBlock.LEVEL)==0?Items.WATER_BUCKET:Items.AIR;
         if(state.isOf(Blocks.LAVA))return state.get(net.minecraft.block.FluidBlock.LEVEL)==0?Items.LAVA_BUCKET:Items.AIR;
+        if(state.getBlock() instanceof net.minecraft.block.FlowerPotBlock pot&&pot.getContent()!=Blocks.AIR)return pot.getContent().asItem();
         return state.getBlock().asItem();
     }
     public static int units(BlockState state){return state.contains(Properties.SLAB_TYPE)&&state.get(Properties.SLAB_TYPE)==net.minecraft.block.enums.SlabType.DOUBLE?2:1;}
     public Map<Item,Integer> materials(){
         Map<Item,Integer> result=new HashMap<>();
-        for(var state:states){var item=material(state);if(item!=Items.AIR)result.merge(item,units(state),Integer::sum);}
+        for(var state:states){var item=material(state);if(item!=Items.AIR)result.merge(item,units(state),Integer::sum);if(state.getBlock() instanceof net.minecraft.block.FlowerPotBlock pot&&pot.getContent()!=Blocks.AIR)result.merge(Items.FLOWER_POT,1,Integer::sum);}
         return result;
     }
 }

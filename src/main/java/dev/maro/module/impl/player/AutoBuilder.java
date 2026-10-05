@@ -157,6 +157,7 @@ public final class AutoBuilder extends Module {
     private String dimension="",selected="",status="Choose a schematic";
     private byte[] states=new byte[0];
     private byte[] unitsLeft=new byte[0];
+    private final Map<Integer,Integer> potUnitsLeft=new HashMap<>();
     private int scanCursor,correct,solid,completedScans,ticks,delay,originalSlot=-1,ioGeneration,passTasks,lastPassTasks,lastAction;
     private boolean loading,building,preview=true,ownsSneak;
     private final Map<Item,Integer> remaining=new HashMap<>();
@@ -200,8 +201,11 @@ public final class AutoBuilder extends Module {
     private BlockPos placementAttemptTarget;
     private int placementAttemptStarted;
     private final Map<BlockPos,Integer> failedPlacementUntil=new HashMap<>();
+    private final Map<BlockPos,Integer> routeSupportExclusions=new HashMap<>();
     private Place pendingPlacement;
     private final Map<BlockPos,Place> unconfirmedPlacements=new HashMap<>();
+    private record LatePlacement(Place job,int expires){}
+    private final Map<BlockPos,LatePlacement> latePlacements=new HashMap<>();
     private BlockState pendingBefore,pendingServerState;
     private int placementDeadline;
     private BlockPos routeMining;
@@ -218,6 +222,8 @@ public final class AutoBuilder extends Module {
     private ScreenHandler receivedChestInventory;
     private Runnable queuedLookAction;
     private float queuedLookYaw,queuedLookPitch;
+    private Vec3d aimPoint,queuedAimPoint;
+    private int lookWaitStarted=-1;
     private ScreenHandler unexpectedBuildHandler;
     private int lastBuildInteraction=-1000,unexpectedMenuAt;
     private BlockPos chestStand;
@@ -315,9 +321,10 @@ public final class AutoBuilder extends Module {
     public static boolean holdingBreak(){return digging;}
     public static void serverBlockUpdate(BlockPos pos,BlockState state){
         var builder=ModuleManager.get(AutoBuilder.class);
-        if(builder==null)return;
+        if(builder==null||builder.world!=mc.world)return;
         if(builder.pendingPlacement!=null&&builder.pendingPlacement.target.equals(pos))builder.pendingServerState=state;
         var job=builder.unconfirmedPlacements.get(pos);
+        var late=builder.latePlacements.remove(pos);if(job==null&&late!=null)job=late.job;
         if(job!=null){
             if(state.getBlock()==job.state.getBlock()){
                 builder.unconfirmedPlacements.remove(pos);
@@ -343,7 +350,7 @@ public final class AutoBuilder extends Module {
             }));
     }
     private static String rootMessage(Throwable error){while(error.getCause()!=null)error=error.getCause();return error.getMessage()==null?error.getClass().getSimpleName():error.getMessage();}
-    public void install(Schematic data){if(!restoringPlacement){checkpoint();activeBuildSlot=-1;placementName="";}pause("Schematic loaded");schematic=data;unconfirmedPlacements.clear();supports.clear();escapeSupports.clear();cleanupStands.clear();recoveryAttempts=0;replan();}
+    public void install(Schematic data){if(!restoringPlacement){checkpoint();activeBuildSlot=-1;placementName="";}pause("Schematic loaded");schematic=data;unconfirmedPlacements.clear();latePlacements.clear();supports.clear();escapeSupports.clear();cleanupStands.clear();recoveryAttempts=0;replan();}
     public Schematic schematic(){return schematic;}
     public String status(){return status;}
     public boolean loading(){return loading;}
@@ -367,7 +374,7 @@ public final class AutoBuilder extends Module {
     public Set<BlockPos> restockContainers(){return Collections.unmodifiableSet(containers);}
     public Set<BlockPos> temporarySupports(){return Set.copyOf(supports);}
     public boolean materialIgnored(Item item){return ignoredMaterials.contains(item);}
-    private boolean materialIgnored(BlockState state){var item=Schematic.material(state);return materialIgnored(item==Items.AIR?state.getBlock().asItem():item);}
+    private boolean materialIgnored(BlockState state){var item=Schematic.material(state);return materialIgnored(item==Items.AIR?state.getBlock().asItem():item)||potted(state)&&materialIgnored(Items.FLOWER_POT);}
     public void toggleMaterialIgnored(Item item){
         if(schematic==null||!schematic.materials().containsKey(item))return;
         boolean resume=building;if(!ignoredMaterials.remove(item))ignoredMaterials.add(item);replan();building=resume;
@@ -388,6 +395,7 @@ public final class AutoBuilder extends Module {
         var result=new HashMap<Item,Integer>();
         for(int i:sectionCells)if(states[i]!=CORRECT&&states[i]!=IGNORED&&layerAllows(i)&&!materialIgnored(desired(i))){
             var item=Schematic.material(desired(i));if(item!=Items.AIR)result.merge(item,(int)unitsLeft[i],Integer::sum);
+            if(potted(desired(i))&&potUnitsLeft.getOrDefault(i,1)>0)result.merge(Items.FLOWER_POT,1,Integer::sum);
         }
         return result;
     }
@@ -430,9 +438,14 @@ public final class AutoBuilder extends Module {
         preparationReady=false;chestStocks.clear();preparedStock.clear();emptyChestItems.clear();buildBudgetActive=false;buildBudgetSpent=0;
         if(schematic==null)return;pause("Placement changed");transformedStates.clear();triedStands.clear();states=new byte[schematic.size()];unitsLeft=new byte[schematic.size()];scanCursor=correct=completedScans=passTasks=0;lastPassTasks=schematic.size();solid=schematic.solidCount();
         for(int i=0;i<schematic.size();i++)if(materialIgnored(schematic.state(i))&&!schematic.state(i).isAir()&&!schematic.state(i).isOf(Blocks.STRUCTURE_VOID))solid--;
-        remaining.clear();remaining.putAll(schematic.materials());remaining.keySet().removeAll(ignoredMaterials);remainingByLayer.clear();activeLayer=-1;scanLayer=Integer.MAX_VALUE;
-        for(int i=0;i<schematic.size();i++){var item=Schematic.material(schematic.state(i));if(item!=Items.AIR&&!materialIgnored(item))remainingByLayer.computeIfAbsent(taskLayer(i),y->new HashMap<>()).merge(item,Schematic.units(schematic.state(i)),Integer::sum);}
-        visible=workCells=sectionCells=List.of();visibleScan.clear();workScan.clear();retryAt.clear();triedContainers.clear();
+        remaining.clear();remaining.putAll(schematic.materials());remaining.keySet().removeAll(ignoredMaterials);remainingByLayer.clear();potUnitsLeft.clear();activeLayer=-1;scanLayer=Integer.MAX_VALUE;
+        for(int i=0;i<schematic.size();i++){var item=Schematic.material(schematic.state(i));if(item!=Items.AIR&&!materialIgnored(schematic.state(i)))remainingByLayer.computeIfAbsent(taskLayer(i),y->new HashMap<>()).merge(item,Schematic.units(schematic.state(i)),Integer::sum);}
+        for(int i=0;i<schematic.size();i++)if(potted(desired(i))&&!materialIgnored(desired(i)))remainingByLayer.computeIfAbsent(taskLayer(i),y->new HashMap<>()).merge(Items.FLOWER_POT,1,Integer::sum);
+        for(int i=0;i<schematic.size();i++)if(potted(desired(i))&&materialIgnored(desired(i))){
+            if(!materialIgnored(Items.FLOWER_POT))remaining.computeIfPresent(Items.FLOWER_POT,(item,count)->Math.max(0,count-1));
+            var flower=Schematic.material(desired(i));if(!materialIgnored(flower))remaining.computeIfPresent(flower,(item,count)->Math.max(0,count-1));
+        }
+        visible=workCells=sectionCells=List.of();visibleScan.clear();workScan.clear();retryAt.clear();triedContainers.clear();routeSupportExclusions.clear();
     }
     private void applyPreset(String name){
         if(ghostFill==null)return;
@@ -469,7 +482,7 @@ public final class AutoBuilder extends Module {
     public void cancelSchematic(){
         checkpoint();activeBuildSlot=-1;CompletableFuture.runAsync(()->{try{savedBuilds.activate(-1);}catch(IOException error){Maro.LOGGER.warn("Could not clear active build slot",error);}},IO);
         ++ioGeneration;loading=false;pause("Schematic cancelled");setEnabled(false);preparationReady=false;chestStocks.clear();preparedStock.clear();emptyChestItems.clear();buildBudgetActive=false;buildBudgetSpent=0;
-        schematic=null;unconfirmedPlacements.clear();selected="";preview=false;captureStates=null;capture=null;
+        schematic=null;unconfirmedPlacements.clear();latePlacements.clear();selected="";preview=false;captureStates=null;capture=null;
         states=unitsLeft=new byte[0];scanCursor=correct=solid=completedScans=passTasks=lastPassTasks=0;
         remaining.clear();remainingByLayer.clear();activeLayer=-1;scanLayer=Integer.MAX_VALUE;ignoredMaterials.clear();supports.clear();cleanupStands.clear();triedStands.clear();retryAt.clear();transformedStates.clear();
         visible=workCells=sectionCells=List.of();visibleScan.clear();workScan.clear();needed=null;delay=inventoryWait=0;staffStopAt=0;
@@ -485,7 +498,10 @@ public final class AutoBuilder extends Module {
     }
     @Override protected void onDisable(){pause("Disabled");staffStopAt=0;captureStates=null;if(mc.player!=null&&originalSlot>=0)select(originalSlot);originalSlot=-1;}
     public void pause(String reason){
+        if(pendingPlacement!=null&&inGame()&&world==mc.world&&(pendingServerState==null||!compatible(pendingServerState,pendingPlacement.state)))
+            reconcilePrediction(pendingPlacement,pendingServerState);
         queuedLookAction=null;
+        lookWaitStarted=-1;queuedAimPoint=aimPoint=null;
         yawVelocity=pitchVelocity=0;
         placementAttemptTarget=null;failedPlacementUntil.clear();unexpectedBuildHandler=null;resetChestJourney();
         stopEating();navigatingCell=-1;foodRestock=foodShopping=supportRestock=supportShopping=false;
@@ -511,7 +527,9 @@ public final class AutoBuilder extends Module {
     }
     private void tickWork(){
         ticks++;if(delay>0)delay--;
+        latePlacements.values().removeIf(receipt->receipt.expires<=ticks);
         failedPlacementUntil.values().removeIf(until->until<=ticks);
+        routeSupportExclusions.values().removeIf(until->until<=ticks);
         walker.turning(smoothTurning.get(),turnSpeed.getFloat());
         if(!inGame()||world!=mc.world){pause("World changed — set the origin again");world=null;return;}
         if(!mc.player.isAlive()||mc.player.isSpectator()){pause("Player is not able to build");return;}
@@ -538,7 +556,8 @@ public final class AutoBuilder extends Module {
             if(standProgressPos==null||mc.player.getEntityPos().squaredDistanceTo(standProgressPos)>.04){standProgressPos=mc.player.getEntityPos();standProgressAt=ticks;}
             if(walker.standAt(standGoal)){standGoal=null;walker.stop();}
             else if(ticks-standProgressAt>50||ticks-standStarted>240||walker.routeUnavailable()){
-                if(navigatingCell>=0)retryAt.put(navigatingCell,ticks+10);navigatingCell=-1;standGoal=null;walker.stop();status="Replanning blocked build position";
+                if(navigatingCell>=0){retryAt.put(navigatingCell,ticks+10);triedStands.computeIfAbsent(navigatingCell,i->new HashMap<>()).put(standGoal,ticks+600);}
+                navigatingCell=-1;standGoal=null;walker.stop();status="Replanning blocked build position";
             }else status=walker.status;
             return;
         }
@@ -587,6 +606,7 @@ public final class AutoBuilder extends Module {
         if(!walker.routeUnavailable()&&!walker.movementStalled())return false;
         var obstruction=walker.blockingSupport(supports);
         if(obstruction==null||visibleHit(obstruction)==null)return false;
+        routeSupportExclusions.put(obstruction,ticks+600);
         routeMining=obstruction;mining=obstruction;walker.release();status="Clearing temporary block from route";mineTick();return true;
     }
     private boolean recoveryTick(){
@@ -666,6 +686,12 @@ public final class AutoBuilder extends Module {
     private void updateState(int index){
         byte next=classify(index),old=states[index];
         var expected=desired(index);if(!expected.isAir()&&!expected.isOf(Blocks.STRUCTURE_VOID)){
+            if(potted(expected)&&mc.world.isChunkLoaded(position(index))&&!materialIgnored(expected)){
+                int before=potUnitsLeft.getOrDefault(index,1),after=mc.world.getBlockState(position(index)).getBlock() instanceof FlowerPotBlock?0:1;
+                potUnitsLeft.put(index,after);int change=before-after;
+                remaining.compute(Items.FLOWER_POT,(item,count)->Math.max(0,(count==null?0:count)-change));
+                remainingByLayer.computeIfAbsent(taskLayer(index),y->new HashMap<>()).compute(Items.FLOWER_POT,(item,count)->Math.max(0,(count==null?0:count)-change));
+            }
             int change=(next==CORRECT?1:0)-(old==CORRECT?1:0);correct+=change;
             var item=Schematic.material(expected);int oldUnits=old==UNKNOWN?Schematic.units(expected):unitsLeft[index],newUnits=next==CORRECT||next==IGNORED?0:Schematic.units(expected);
             if(newUnits==2&&mc.world.isChunkLoaded(position(index))){var actual=mc.world.getBlockState(position(index));if(actual.getBlock()==expected.getBlock()&&actual.contains(net.minecraft.state.property.Properties.SLAB_TYPE)&&actual.get(net.minecraft.state.property.Properties.SLAB_TYPE)!=net.minecraft.block.enums.SlabType.DOUBLE)newUnits=1;}
@@ -681,7 +707,9 @@ public final class AutoBuilder extends Module {
         if(completedScans==0){status="Checking schematic: "+(100L*scanCursor/Math.max(1,states.length))+"%";return;}
         if((lastPassTasks==0||correct==solid&&!supports.isEmpty())&&(!supports.isEmpty()||ticks-lastAction>=20)){
             if(cleanup.get()&&!supports.isEmpty()){
-                var pos=supports.stream().min(Comparator.<BlockPos>comparingInt(p->-p.getY()).thenComparingDouble(p->p.getSquaredDistance(mc.player.getBlockPos()))).orElseThrow();
+                // Clear upper pieces first, then work back toward the player. Removing
+                // the nearest low stair first can strand the player on a raised floor.
+                var pos=supports.stream().min(Comparator.<BlockPos>comparingInt(p->-p.getY()).thenComparingDouble(p->-p.getSquaredDistance(mc.player.getBlockPos()))).orElseThrow();
                 if(!mc.world.isChunkLoaded(pos)){status="Cleanup paused — support chunk is unloaded";return;}
                 if(!mc.world.getBlockState(pos).isOf(Blocks.DIRT)){supports.remove(pos);cleanupStands.remove(pos);return;}
                 int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());
@@ -718,18 +746,24 @@ public final class AutoBuilder extends Module {
                 if(!actual.getFluidState().isEmpty()||protectContainers.get()&&actual.hasBlockEntity()||actual.getHardness(mc.world,target)<0){retryAt.put(i,ticks+200);continue;}
                 mining=target;mineTick();return;
             }
-            if(!actual.isReplaceable()&&!actual.isAir()&&!(actual.getBlock()==desired.getBlock()&&desired.contains(net.minecraft.state.property.Properties.SLAB_TYPE)&&desired.get(net.minecraft.state.property.Properties.SLAB_TYPE)==net.minecraft.block.enums.SlabType.DOUBLE)){
+            if(!actual.isReplaceable()&&!actual.isAir()&&!(potted(desired)&&actual.isOf(Blocks.FLOWER_POT))&&!(actual.getBlock()==desired.getBlock()&&desired.contains(net.minecraft.state.property.Properties.SLAB_TYPE)&&desired.get(net.minecraft.state.property.Properties.SLAB_TYPE)==net.minecraft.block.enums.SlabType.DOUBLE)){
                 if(!mineOut.get()&&!replaceWrong.get()&&!(states[i]==WRONG_STATE&&repairStates.get()))continue;
                 if(protectContainers.get()&&actual.hasBlockEntity()||actual.getHardness(mc.world,target)<0)continue;
                 mining=target;mineTick();return;
             }
             if(desired.isAir())continue;
-            var item=Schematic.material(desired);if(item==Items.AIR){retryAt.put(i,ticks+200);continue;}
+            var item=potted(desired)&&!actual.isOf(Blocks.FLOWER_POT)?Items.FLOWER_POT:Schematic.material(desired);if(item==Items.AIR){retryAt.put(i,ticks+200);continue;}
             if(inventoryCount(item)==0){if(needed==null)needed=item;continue;}
             var plan=placement(target,desired,item,i,false);
             if(plan!=null){placement=plan;placeTick();return;}
+            // Finish a column with a usable attachment before switching targets. Leaving
+            // it halfway through can obstruct its own final face with another column.
+            if(hasAttachment(target,desired)){
+                if(autoMove.get()&&(reposition(i)||walker.needsRecovery()&&recoveryAttempts<3))return;
+                blocked.add(i);continue;
+            }
             var scaffold=supportPlacement(target,mc.player.getEyePos(),mc.player.getBoundingBox());
-            if(scaffold!=null){if(inventoryCount(Items.DIRT)==0){ensureSupportDirt();return;}placement=scaffold;placeTick();return;}
+            if(scaffold!=null){if(inventoryCount(Items.DIRT)==0){ensureSupportDirt();return;}navigatingCell=i;navigationStarted=ticks;placement=scaffold;placeTick();return;}
             blocked.add(i);
         }
         if(needed!=null){if(restock.get()&&beginRestock())return;if(autoBuy.get()&&maxSpend.get()>0){startBuying(false);return;}status="Missing "+needed.getName().getString()+" — check Materials";walker.release();return;}
@@ -744,38 +778,82 @@ public final class AutoBuilder extends Module {
         var target=position(index);var tried=triedStands.computeIfAbsent(index,i->new HashMap<>());
         if(repositionTarget(target,tried)){navigatingCell=index;navigationStarted=ticks;return true;}retryAt.put(index,ticks+10);walker.requestRecovery();return false;
     }
+    private boolean hasAttachment(BlockPos target,BlockState wanted){
+        if(potted(wanted))return hasAttachment(target,Blocks.FLOWER_POT.getDefaultState());
+        var item=Schematic.material(wanted);if(!(item instanceof BlockItem blockItem))return false;
+        float yaw=mc.player.getYaw(),pitch=mc.player.getPitch();
+        try{
+            for(var side:Direction.values()){
+                var neighbor=target.offset(side.getOpposite());var state=mc.world.getBlockState(neighbor);
+                if(state.isAir()||state.isReplaceable()||!state.getFluidState().isEmpty())continue;
+                // Bottom and top trapdoors/slabs need different hit heights. Door
+                // hinges also need positions on both sides of the face centre.
+                for(double[] sample:new double[][]{{.25,.25},{.75,.75},{.5,.5}}){
+                    var point=Vec3d.ofCenter(neighbor).add(Vec3d.of(side.getVector()).multiply(.5));
+                    if(side.getAxis()==Direction.Axis.Y)point=new Vec3d(neighbor.getX()+sample[0],point.y,neighbor.getZ()+sample[1]);
+                    else point=new Vec3d(side.getAxis()==Direction.Axis.Z?neighbor.getX()+sample[1]:point.x,neighbor.getY()+sample[0],side.getAxis()==Direction.Axis.X?neighbor.getZ()+sample[1]:point.z);
+                    var hit=new BlockHitResult(point,side,neighbor,false);
+                    for(float facing:new float[]{0,90,180,-90})for(float tilt:new float[]{0,80,-80}){
+                        mc.player.setYaw(facing);mc.player.setPitch(tilt);
+                        var context=blockItem.getPlacementContext(new ItemPlacementContext(mc.player,Hand.MAIN_HAND,new ItemStack(item),hit));
+                        if(context==null||!context.getBlockPos().equals(target))continue;
+                        // Test the attachment without the player's current collision.
+                        // An occupied target still needs a valid view to step aside to.
+                        var predicted=wanted.getBlock().getPlacementState(context);
+                        if(compatible(predicted,wanted)&&predicted.canPlaceAt(mc.world,target))return true;
+                    }
+                }
+            }
+            return false;
+        }finally{mc.player.setYaw(yaw);mc.player.setPitch(pitch);}
+    }
     private boolean repositionTarget(BlockPos target,Map<BlockPos,Integer> tried){
         tried.values().removeIf(until->until<=ticks);
-        List<BlockPos> options=new ArrayList<>();
-        for(int dx=-3;dx<=3;dx++)for(int dz=-3;dz<=3;dz++)for(int dy=-2;dy<=2;dy++){
+        List<BlockPos> options=new ArrayList<>();Set<BlockPos> directStands=new HashSet<>();
+        int cell=schematic.indexAt(target.subtract(anchor()),turns(),mirror.get());
+        var wanted=cell<0?null:desired(cell);
+        boolean supportFallback=wanted!=null&&!hasAttachment(target,wanted);
+        int below=(int)Math.floor(effectiveReach()+mc.player.getStandingEyeHeight()-.5),above=(int)Math.floor(effectiveReach()-mc.player.getStandingEyeHeight()+.5);
+        // The eye can reach a block from ground more than two blocks below it.
+        // Omitting those views traps the last cells along an elevated build's edge.
+        for(int dx=-3;dx<=3;dx++)for(int dz=-3;dz<=3;dz++)for(int dy=-below;dy<=above;dy++){
             var stand=target.add(dx,dy,dz);
             if(tried.containsKey(stand)||!walker.canStand(stand)||mc.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(stand))<.04)continue;
-            Vec3d eye=Vec3d.ofBottomCenter(stand).add(0,mc.player.getStandingEyeHeight(),0);
+            Vec3d eye=walker.standingPoint(stand).add(0,mc.player.getStandingEyeHeight(),0);
             if(eye.squaredDistanceTo(Vec3d.ofCenter(target))>effectiveReach()*effectiveReach())continue;
-            if(!canActFrom(eye,target))continue;
+            var body=mc.player.getBoundingBox().offset(eye.subtract(mc.player.getEyePos()));
+            boolean direct=!mc.world.getBlockState(target).isReplaceable()?visibleHit(target,eye)!=null
+                :wanted!=null&&placement(target,wanted,Schematic.material(wanted),cell,false,eye,body)!=null;
+            // Wider height search is for a real placement view. Low views that can
+            // only start another support column must not compete with climbing the
+            // column already being built.
+            if(!direct&&(dy< -2||dy>2||!supportFallback||supportPlacement(target,eye,body)==null))continue;
+            if(direct)directStands.add(stand);
             options.add(stand);
         }
-        options.sort(Comparator.comparingDouble(p->p.getSquaredDistance(mc.player.getBlockPos())));standGoal=null;
+        options.sort(Comparator.<BlockPos>comparingInt(p->directStands.contains(p)?0:1).thenComparingDouble(p->p.getSquaredDistance(mc.player.getBlockPos())));standGoal=null;
         long routeDeadline=System.nanoTime()+6_000_000;
         for(var option:options){tried.put(option,ticks+40);if(walker.canReachStand(option)){standGoal=option;break;}if(System.nanoTime()>=routeDeadline)break;}
+        if(standGoal==null&&support.get()&&supports.size()<tempDirt.getInt())for(var option:options)if(directStands.contains(option)&&accessStep(option))return true;
         if(standGoal==null)return false;
         standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();status="Moving around an obstructed block";return true;
-    }
-    private boolean canActFrom(Vec3d eye,BlockPos target){
-        if(!mc.world.getBlockState(target).isReplaceable())return visibleHit(target,eye)!=null;
-        int cell=schematic.indexAt(target.subtract(anchor()),turns(),mirror.get());if(cell<0)return false;
-        var wanted=desired(cell);var body=mc.player.getBoundingBox().offset(eye.subtract(mc.player.getEyePos()));
-        return placement(target,wanted,Schematic.material(wanted),cell,false,eye,body)!=null||supportPlacement(target,eye,body)!=null;
     }
     /** Build the lowest attachable piece of a short support column before its upper pieces. */
     private Place supportPlacement(BlockPos target,Vec3d eye,Box body){
         if(!support.get()||supports.size()>=tempDirt.getInt())return null;
+        int targetCell=schematic.indexAt(target.subtract(anchor()),turns(),mirror.get());
+        var wanted=targetCell<0?null:desired(targetCell);
+        Direction attachment=wanted!=null&&wanted.getBlock() instanceof HopperBlock?wanted.get(HopperBlock.FACING)
+            :wanted!=null&&wanted.getBlock() instanceof ShulkerBoxBlock?wanted.get(ShulkerBoxBlock.FACING).getOpposite():null;
         var sides=Direction.values();
         for(int depth=0;depth<3;depth++)for(var side:sides){
+            // A face on another side cannot produce this block's requested orientation.
+            // If the required neighbour is part of the schematic, place it instead.
+            if(attachment!=null&&side!=attachment)continue;
             var top=target.offset(side);boolean allowed=true;
             for(int down=0;down<=depth;down++){
                 var pos=top.down(down);int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());
-                if(cell>=0&&!desired(cell).isAir()&&!desired(cell).isOf(Blocks.STRUCTURE_VOID)||!mc.world.isChunkLoaded(pos)||!mc.world.getBlockState(pos).isReplaceable()||!mc.world.getBlockState(pos).getFluidState().isEmpty()){allowed=false;break;}
+                if(routeSupportExclusions.getOrDefault(pos,0)>ticks||cell>=0&&!desired(cell).isAir()&&!desired(cell).isOf(Blocks.STRUCTURE_VOID)||!mc.world.isChunkLoaded(pos)||!mc.world.getBlockState(pos).isReplaceable()||!mc.world.getBlockState(pos).getFluidState().isEmpty()){allowed=false;break;}
             }
             if(!allowed)continue;
             var plan=placement(top.down(depth),Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true,eye,body);
@@ -792,26 +870,37 @@ public final class AutoBuilder extends Module {
         walker.release();status="Out of temporary blocks — add dirt or enable AH buying with a budget";
     }
     private Place placement(BlockPos target,BlockState wanted,Item item,int index,boolean temporary){return placement(target,wanted,item,index,temporary,mc.player.getEyePos(),mc.player.getBoundingBox());}
+    private static boolean potted(BlockState state){return state.getBlock() instanceof FlowerPotBlock pot&&pot.getContent()!=Blocks.AIR;}
     private Place placement(BlockPos target,BlockState wanted,Item item,int index,boolean temporary,Vec3d eye,Box body){
         if(failedPlacementUntil.getOrDefault(target,0)>ticks&&eye.squaredDistanceTo(mc.player.getEyePos())<.0001)return null;
+        if(potted(wanted)){
+            if(mc.world.getBlockState(target).isOf(Blocks.FLOWER_POT)){var hit=visibleHit(target,eye);return hit==null?null:new Place(target,wanted,hit,Schematic.material(wanted),index,false);}
+            return placement(target,Blocks.FLOWER_POT.getDefaultState(),Items.FLOWER_POT,index,temporary,eye,body);
+        }
         if(item==Items.WATER_BUCKET||item==Items.LAVA_BUCKET){
             for(var side:Direction.values()){
                 var neighbor=target.offset(side.getOpposite());var hit=visibleHit(neighbor,eye);if(hit!=null&&hit.getSide()==side&&mc.world.getBlockState(target).isReplaceable())return new Place(target,wanted,hit,item,index,false);
             }return null;
         }
-        if(!(item instanceof BlockItem blockItem)||new Box(target).intersects(body)&&!wanted.getCollisionShape(mc.world,target).isEmpty())return null;
+        if(!(item instanceof BlockItem blockItem))return null;
         ItemStack stack=new ItemStack(item);double range=effectiveReach();float oldYaw=mc.player.getYaw(),oldPitch=mc.player.getPitch();
         try{
             for(int direct=0;direct<2;direct++)for(var side:Direction.values()){
                 BlockPos neighbor=direct==1?target:target.offset(side.getOpposite());var supportState=mc.world.getBlockState(neighbor);
                 if(direct==1&&supportState.getBlock()!=wanted.getBlock())continue;
                 if(supportState.isAir()||supportState.isReplaceable()||!supportState.getFluidState().isEmpty())continue;
-                for(double[] sample:side.getAxis()==Direction.Axis.Y?new double[][]{{.5,.5},{.1,.5},{.9,.5},{.5,.1},{.5,.9},{.1,.1},{.1,.9},{.9,.1},{.9,.9}}:new double[][]{{.5,.5},{.25,.5},{.75,.5}}){
+                // Prefer points away from the centre boundary used by door hinges and
+                // slab halves, and sample both height and width on vertical faces.
+                boolean boundarySensitive=wanted.getBlock() instanceof DoorBlock||wanted.getBlock() instanceof TrapdoorBlock||wanted.getBlock() instanceof SlabBlock;
+                double[][] samples=side.getAxis()==Direction.Axis.Y
+                    ?(boundarySensitive?new double[][]{{.25,.25},{.75,.75},{.25,.75},{.75,.25},{.5,.5}}:new double[][]{{.5,.5},{.1,.5},{.9,.5},{.5,.1},{.5,.9},{.1,.1},{.1,.9},{.9,.1},{.9,.9}})
+                    :(boundarySensitive?new double[][]{{.75,.25},{.75,.75},{.25,.25},{.25,.75},{.5,.5},{.25,.5},{.75,.5}}:new double[][]{{.5,.5},{.25,.5},{.75,.5}});
+                for(double[] sample:samples){
                     double height=sample[0];
                     Vec3d point=Vec3d.ofCenter(neighbor).add(side.getOffsetX()*.5,side.getOffsetY()*.5,side.getOffsetZ()*.5);
                     if(side.getAxis()==Direction.Axis.Y)point=new Vec3d(neighbor.getX()+sample[0],point.y,neighbor.getZ()+sample[1]);
-                    if(side.getAxis()!=Direction.Axis.Y)point=new Vec3d(point.x,neighbor.getY()+height,point.z);
-                    if(direct==1&&side==Direction.UP&&!supportState.getOutlineShape(mc.world,neighbor).isEmpty())point=new Vec3d(point.x,neighbor.getY()+supportState.getOutlineShape(mc.world,neighbor).getMax(Direction.Axis.Y),point.z);
+                    if(side.getAxis()!=Direction.Axis.Y)point=new Vec3d(side.getAxis()==Direction.Axis.Z?neighbor.getX()+sample[1]:point.x,neighbor.getY()+height,side.getAxis()==Direction.Axis.X?neighbor.getZ()+sample[1]:point.z);
+                    if(side==Direction.UP&&!supportState.getOutlineShape(mc.world,neighbor).isEmpty())point=new Vec3d(point.x,neighbor.getY()+supportState.getOutlineShape(mc.world,neighbor).getMax(Direction.Axis.Y),point.z);
                     if(eye.squaredDistanceTo(point)>range*range)continue;
                     boolean shapedSupport=direct==0&&clickable(supportState.getBlock());
                     Vec3d rayEnd=shapedSupport?point.add(point.subtract(eye).normalize().multiply(1.1)):point.add(Vec3d.of(side.getVector()).multiply(-.002));
@@ -821,8 +910,13 @@ public final class AutoBuilder extends Module {
                     float[] angles=angles(eye,point);mc.player.setYaw(angles[0]);mc.player.setPitch(angles[1]);
                     var hit=new BlockHitResult(point,side,neighbor,false);var context=new ItemPlacementContext(mc.player,Hand.MAIN_HAND,stack,hit);
                     context=blockItem.getPlacementContext(context);if(context==null)continue;
-                    BlockState predicted=((BlockItemAccessor)(Object)blockItem).maro$placementState(context);
-                    if(predicted==null||!context.getBlockPos().equals(target)||!compatible(predicted,wanted))continue;
+                    // Hypothetical standing positions use the supplied body box. The
+                    // item-level check instead sees the player's current body and rejects
+                    // every alternate view when the player needs to step out of the target.
+                    BlockState predicted=eye.squaredDistanceTo(mc.player.getEyePos())>.0001?wanted.getBlock().getPlacementState(context)
+                        :((BlockItemAccessor)(Object)blockItem).maro$placementState(context);
+                    if(predicted==null||!context.getBlockPos().equals(target)||!compatible(predicted,wanted)||!predicted.canPlaceAt(mc.world,target))continue;
+                    if(predicted.getCollisionShape(mc.world,target).getBoundingBoxes().stream().anyMatch(box->box.offset(target).intersects(body)))continue;
                     return new Place(target,wanted,hit,item,index,temporary);
                 }
             }
@@ -860,7 +954,9 @@ public final class AutoBuilder extends Module {
         if(job.index>=0){updateState(job.index);if(states[job.index]==CORRECT){placement=null;return;}}
         if(inventoryCount(job.item)==0){placement=null;return;}
         if(!selectMaterial(job.item)){status=delay>0?"Moving material to hotbar":"Material unavailable";placement=null;return;}
-        if(clickable(mc.world.getBlockState(job.hit.getBlockPos()).getBlock())&&!mc.player.isSneaking()){
+        boolean planting=potted(job.state)&&mc.world.getBlockState(job.target).isOf(Blocks.FLOWER_POT);
+        if(planting){releaseSneak();if(mc.player.isSneaking())return;}
+        if(!planting&&clickable(mc.world.getBlockState(job.hit.getBlockPos()).getBlock())&&!mc.player.isSneaking()){
             if(!ownsSneak)sneakReadyAt=ticks+3;ownsSneak=true;mc.options.sneakKey.setPressed(true);status="Sneaking to place";return;
         }
         if(ownsSneak&&ticks<sneakReadyAt){status="Waiting for crouch before placement";return;}
@@ -870,13 +966,17 @@ public final class AutoBuilder extends Module {
             deferPlacement(job,"Placement ray changed - trying another position");return;
         }
         if(job.item==Items.WATER_BUCKET||job.item==Items.LAVA_BUCKET){
-            releaseSneak();withPublishedLook(()->{beginPlacementReceipt(job);if(!mc.interactionManager.interactItem(mc.player,Hand.MAIN_HAND).isAccepted())pendingPlacement=null;delay=Math.max(10,actionDelay());placement=null;status="Placing schematic fluid source";});return;
+            releaseSneak();withPublishedLook(()->{beginPlacementReceipt(job);if(!mc.interactionManager.interactItem(mc.player,Hand.MAIN_HAND).isAccepted()){pendingPlacement=null;unconfirmedPlacements.remove(job.target);}delay=Math.max(10,actionDelay());placement=null;status="Placing schematic fluid source";});return;
         }
         var context=((BlockItem)job.item).getPlacementContext(new ItemPlacementContext(mc.player,Hand.MAIN_HAND,mc.player.getMainHandStack(),aimed));
-        if(context==null||!context.getBlockPos().equals(job.target)||!compatible(((BlockItemAccessor)(Object)job.item).maro$placementState(context),job.state)){deferPlacement(job,"Placement state changed - trying another position");return;}
+        if(!planting&&(context==null||!context.getBlockPos().equals(job.target)||!compatible(((BlockItemAccessor)(Object)job.item).maro$placementState(context),job.state))){deferPlacement(job,"Placement state changed - trying another position");return;}
         withPublishedLook(()->{
             var actual=(BlockHitResult)mc.player.raycast(effectiveReach(),1,false);
             if(actual.getType()!=HitResult.Type.BLOCK||!actual.getBlockPos().equals(aimed.getBlockPos())||actual.getSide()!=aimed.getSide())return;
+            var freshContext=((BlockItem)job.item).getPlacementContext(new ItemPlacementContext(mc.player,Hand.MAIN_HAND,mc.player.getMainHandStack(),actual));
+            if(!planting&&(freshContext==null||!freshContext.getBlockPos().equals(job.target)||!compatible(((BlockItemAccessor)(Object)job.item).maro$placementState(freshContext),job.state))){
+                deferPlacement(job,"Placement changed after movement — replanning");return;
+            }
             beginPlacementReceipt(job);lastBuildInteraction=ticks;
             if(mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,actual).isAccepted()){
                 mc.player.swingHand(Hand.MAIN_HAND);delay=actionDelay();status=job.temporary?"Placing temporary support":"Placing "+job.item.getName().getString();
@@ -887,21 +987,61 @@ public final class AutoBuilder extends Module {
     private void deferPlacement(Place job,String reason){
         placement=null;placementAttemptTarget=null;releaseSneak();yawVelocity=pitchVelocity=0;
         failedPlacementUntil.put(job.target,ticks+20);
-        if(job.index>=0){retryAt.put(job.index,ticks+20);if(autoMove.get())reposition(job.index);}
+        if(job.index>=0){
+            retryAt.put(job.index,ticks+20);triedStands.computeIfAbsent(job.index,i->new HashMap<>()).put(mc.player.getBlockPos().toImmutable(),ticks+600);
+            if(autoMove.get())reposition(job.index);
+        }
         status=reason;
     }
     private void beginPlacementReceipt(Place job){unconfirmedPlacements.put(job.target,job);pendingPlacement=job;pendingBefore=mc.world.getBlockState(job.target);pendingServerState=null;placementDeadline=ticks+80;}
+    private void reconcilePrediction(Place job,BlockState authoritative){
+        unconfirmedPlacements.remove(job.target);
+        if(authoritative==null)latePlacements.put(job.target,new LatePlacement(job,ticks+500));
+        var rollback=authoritative!=null?authoritative:pendingBefore;
+        var predicted=mc.world.getBlockState(job.target);
+        if(rollback!=null&&predicted.getBlock()==job.state.getBlock()&&!predicted.equals(rollback))
+            mc.world.setBlockState(job.target,rollback,Block.NOTIFY_ALL);
+    }
+    /** Connect an existing raised build surface with normal one-block stair steps. */
+    private boolean accessStep(BlockPos stand){
+        int rise=stand.getY()-mc.player.getBlockPos().getY();if(rise<2||rise>3)return false;
+        var floor=stand.down();int cell=schematic.indexAt(floor.subtract(anchor()),turns(),mirror.get());
+        // A narrow dirt post is an attachment, not a raised floor to walk onto.
+        // Giving every such post a stair consumes the support reserve needlessly.
+        if(cell<0||states[cell]!=CORRECT||desired(cell).isAir()||desired(cell).isOf(Blocks.STRUCTURE_VOID))return false;
+        var directions=new ArrayList<>(List.of(Direction.NORTH,Direction.SOUTH,Direction.EAST,Direction.WEST));
+        directions.sort(Comparator.comparingDouble(side->stand.offset(side,rise-1).getSquaredDistance(mc.player.getBlockPos())));
+        for(var side:directions)for(int distance=rise-1;distance>=1;distance--){
+            var top=stand.offset(side,distance).down(distance+1);
+            // Keep the walking clearance outside future solid cells, so the next layer
+            // cannot immediately bury the access stair beneath the player's head.
+            if(plannedSolid(top.up())||plannedSolid(top.up(2)))continue;
+            for(int depth=2;depth>=0;depth--){
+                var pos=top.down(depth);
+                if(routeSupportExclusions.getOrDefault(pos,0)>ticks||plannedSolid(pos)||!mc.world.isChunkLoaded(pos)||!mc.world.getBlockState(pos).isReplaceable()||!mc.world.getFluidState(pos).isEmpty())continue;
+                var job=placement(pos,Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true);
+                if(job==null)continue;
+                if(inventoryCount(Items.DIRT)==0){ensureSupportDirt();return true;}
+                placement=job;placeTick();return true;
+            }
+        }
+        return false;
+    }
+    private boolean plannedSolid(BlockPos pos){int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());return cell>=0&&!desired(cell).isAir()&&!desired(cell).isOf(Blocks.STRUCTURE_VOID);}
     private void placementReceiptTick(){
         walker.release();
         if(pendingServerState==null&&ticks<placementDeadline){status="Waiting for server placement";return;}
         var job=pendingPlacement;var actual=pendingServerState;pendingPlacement=null;pendingServerState=null;
         if(actual!=null&&compatible(actual,job.state)&&!actual.equals(pendingBefore)){
             placementAttemptTarget=null;failedPlacementUntil.remove(job.target);
-            lastAction=ticks;triedContainers.clear();triedStands.clear();retryAt.clear();navigatingCell=-1;
+            lastAction=ticks;triedContainers.clear();triedStands.clear();retryAt.clear();if(!job.temporary)navigatingCell=-1;else navigationStarted=ticks;
             if(job.temporary){supports.add(job.target);if(recoveryPhase==2&&job.target.equals(recoveryBase)){escapeSupports.add(job.target);mc.options.jumpKey.setPressed(false);recoveryJump=false;recoveryPhase=3;}}
             else recoveryAttempts=0;
             if(job.index>=0)updateState(job.index);status="Placement confirmed";
         }else{
+            // A refused prediction must not remain as collision geometry or as a face for
+            // the next placement. Only reconcile this builder's own predicted block.
+            reconcilePrediction(job,actual);
             placementAttemptTarget=null;failedPlacementUntil.put(job.target,ticks+20);
             if(job.index>=0){retryAt.put(job.index,ticks+10);if(autoMove.get())reposition(job.index);}
             if(job.temporary&&recoveryPhase!=0){endRecovery();recoveryCooldown=ticks+20;}
@@ -988,6 +1128,7 @@ public final class AutoBuilder extends Module {
     private float[] angles(Vec3d point){return angles(mc.player.getEyePos(),point);}
     private float[] angles(Vec3d eye,Vec3d point){var delta=point.subtract(eye);return new float[]{(float)(Math.toDegrees(Math.atan2(delta.z,delta.x))-90),(float)-Math.toDegrees(Math.atan2(delta.y,Math.sqrt(delta.x*delta.x+delta.z*delta.z)))};}
     private boolean aim(Vec3d point){
+        aimPoint=point;
         float[] goal=angles(point);float yaw=MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()),pitch=goal[1]-mc.player.getPitch();
         float speed=turnSpeed.getFloat();
         if(smoothTurning.get()){
@@ -1014,13 +1155,30 @@ public final class AutoBuilder extends Module {
         if(!ready)status="Waiting for normal look update";return ready;
     }
     private void withPublishedLook(Runnable action){
-        if(buildLookReady()){action.run();return;}
+        // Position as well as rotation must be published first. Even an unchanged view
+        // can otherwise interact from the previous server position while walking stops.
         queuedLookAction=action;queuedLookYaw=mc.player.getYaw();queuedLookPitch=mc.player.getPitch();
+        queuedAimPoint=aimPoint;
+        if(lookWaitStarted<0)lookWaitStarted=ticks;
+    }
+    public void beforeNormalMovement(){
+        if(queuedLookAction==null||queuedAimPoint==null||!isEnabled()||!inGame()||mc.currentScreen!=null)return;
+        // Physics runs after START_CLIENT_TICK. Recompute the final, tiny aim correction
+        // from the new eye position before vanilla publishes it, rather than repeatedly
+        // aiming from the earlier position while the player is settling at a chest.
+        var goal=angles(queuedAimPoint);
+        if(Math.abs(MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()))>2||Math.abs(goal[1]-mc.player.getPitch())>2)return;
+        mc.player.setYaw(mc.player.getYaw()+MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()));mc.player.setPitch(goal[1]);
+        queuedLookYaw=mc.player.getYaw();queuedLookPitch=mc.player.getPitch();
     }
     public void afterNormalMovement(){
         var action=queuedLookAction;queuedLookAction=null;
         if(action==null||!isEnabled()||!inGame()||world!=mc.world||mc.currentScreen!=null)return;
-        if(Math.abs(MathHelper.wrapDegrees(mc.player.getYaw()-queuedLookYaw))>.01f||Math.abs(mc.player.getPitch()-queuedLookPitch)>.01f||!buildLookReady())return;
+        if(Math.abs(MathHelper.wrapDegrees(mc.player.getYaw()-queuedLookYaw))>.01f||Math.abs(mc.player.getPitch()-queuedLookPitch)>.01f||!buildLookReady()){
+            if(ticks-lookWaitStarted>60)pause("View sync blocked — disable competing rotation modules and resume");
+            return;
+        }
+        lookWaitStarted=-1;
         action.run();
     }
     private boolean recoverUnexpectedBuildMenu(){
@@ -1112,9 +1270,10 @@ public final class AutoBuilder extends Module {
         }
         chestTriedStands.values().removeIf(until->until<=ticks);
         var options=new ArrayList<BlockPos>();
-        for(int dx=-3;dx<=3;dx++)for(int dz=-3;dz<=3;dz++)for(int dy=-2;dy<=2;dy++){
+        int below=(int)Math.floor(effectiveReach()+mc.player.getStandingEyeHeight()-.5),above=(int)Math.floor(effectiveReach()-mc.player.getStandingEyeHeight()+.5);
+        for(int dx=-3;dx<=3;dx++)for(int dz=-3;dz<=3;dz++)for(int dy=-below;dy<=above;dy++){
             var stand=chest.add(dx,dy,dz);if(chestTriedStands.containsKey(stand)||!walker.canStand(stand)||mc.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(stand))<.04)continue;
-            if(chestHit(chest,Vec3d.ofBottomCenter(stand).add(0,mc.player.getStandingEyeHeight(),0))!=null)options.add(stand);
+            if(chestHit(chest,walker.standingPoint(stand).add(0,mc.player.getStandingEyeHeight(),0))!=null)options.add(stand);
         }
         options.sort(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos())));
         long deadline=System.nanoTime()+6_000_000;
