@@ -772,6 +772,16 @@ final class AutoBuilderChecks {
             arrived=false;for(int tick=0;tick<200&&!arrived;tick++){arrived=context.computeOnClient(client->walker.standAt(goal));context.waitTick();}
             require(arrived,"Walker did not settle at its current-cell placement view");context.waitTicks(10);
             context.runOnClient(client->require(client.player.getEntityPos().squaredDistanceTo(walker.standingPoint(goal))<.28*.28&&client.player.getVelocity().horizontalLengthSquared()<.0004&&client.player.getHealth()==20,"Placement view did not remain settled after native movement"));
+            // Reproduce arriving near the view with walking momentum and facing
+            // away. Precision movement must brake rather than orbit the point.
+            var flat=start.south(3);
+            for(int facing=0;facing<4;facing++){
+                world.getServer().runCommand("tp @a "+(flat.getX()+.9)+" "+flat.getY()+" "+(flat.getZ()+.1)+" "+(facing*90)+" 0");context.waitTicks(6);
+                context.runOnClient(client->{walker.stop();client.player.setVelocity(.11,0,-.1);});
+                arrived=false;for(int tick=0;tick<160&&!arrived;tick++){arrived=context.computeOnClient(client->walker.standAt(flat));context.waitTick();}
+                require(arrived,"Placement approach orbited instead of settling from facing "+facing);context.waitTicks(8);
+                context.runOnClient(client->require(client.player.getEntityPos().squaredDistanceTo(walker.standingPoint(flat))<.28*.28&&client.player.getVelocity().horizontalLengthSquared()<.0004,"Placement braking did not hold its settled native position"));
+            }
         }finally{context.runOnClient(client->walker.stop());}
     }
     private static void layerTail(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){

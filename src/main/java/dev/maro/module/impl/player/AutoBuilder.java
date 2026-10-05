@@ -565,7 +565,7 @@ public final class AutoBuilder extends Module {
         if(mining!=null){mineTick();return;}
         if(standGoal!=null){
             if(standProgressPos==null||mc.player.getEntityPos().subtract(standProgressPos).horizontalLengthSquared()>.04||mc.player.isOnGround()&&Math.abs(mc.player.getY()-standProgressPos.y)>.2){standProgressPos=mc.player.getEntityPos();standProgressAt=ticks;}
-            if(walker.standAt(standGoal)){standGoal=null;walker.stop();}
+            if(walker.standAt(standGoal)){standGoal=null;navigationStarted=ticks;walker.stop();}
             else if(ticks-standProgressAt>50||ticks-standStarted>240||walker.routeUnavailable()){
                 if(navigatingCell>=0){retryAt.put(navigatingCell,ticks+10);triedStands.computeIfAbsent(navigatingCell,i->new HashMap<>()).put(standGoal,ticks+600);}
                 navigatingCell=-1;standGoal=null;walker.stop();status="Replanning blocked build position";
@@ -612,7 +612,7 @@ public final class AutoBuilder extends Module {
     private boolean clearRouteSupportTick(){
         if(buying||restockTarget!=null)return false;
         if(routeMining!=null){
-            if(!mc.world.getBlockState(routeMining).isOf(Blocks.DIRT)){supports.remove(routeMining);escapeSupports.remove(routeMining);cleanupStands.remove(routeMining);routeMining=null;mining=null;digging=false;mc.interactionManager.cancelBlockBreaking();walker.stop();recoveryAttempts=Math.min(recoveryAttempts,2);delay=actionDelay();return true;}
+            if(!mc.world.getBlockState(routeMining).isOf(Blocks.DIRT)){supports.remove(routeMining);escapeSupports.remove(routeMining);cleanupStands.clear();triedStands.clear();routeMining=null;mining=null;digging=false;mc.interactionManager.cancelBlockBreaking();walker.stop();recoveryAttempts=Math.min(recoveryAttempts,2);delay=actionDelay();return true;}
             mining=routeMining;mineTick();if(mining==null)routeMining=null;return true;
         }
         if(!walker.routeUnavailable()&&!walker.movementStalled())return false;
@@ -1185,16 +1185,18 @@ public final class AutoBuilder extends Module {
     /** Free an obsolete attachment base when the bounded scaffold pool is full. */
     private boolean recycleSupport(){
         var floorGuard=mc.player.getBoundingBox().offset(0,-1,0);
+        // Reclaim upper pieces first. Removing a column's base leaves floating
+        // obstacles and can erase the only walking access to its upper pieces.
         var candidate=supports.stream().filter(pos->mc.world.isChunkLoaded(pos)&&mc.world.getBlockState(pos).isOf(Blocks.DIRT)&&!plannedSolid(pos))
             .filter(pos->!new Box(pos).intersects(floorGuard)&&visibleHit(pos)!=null)
             .filter(this::safeToRecycle)
-            .min(Comparator.<BlockPos>comparingInt(BlockPos::getY).thenComparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).orElse(null);
+            .min(Comparator.<BlockPos>comparingInt(BlockPos::getY).reversed().thenComparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).orElse(null);
         if(candidate==null){
             // A full pool must not strand the builder above supports hidden by
             // the finished floor. Walk to a verified mining view before trying
             // to free capacity; never mine an unseen or unrelated block.
             var options=supports.stream().filter(pos->mc.world.isChunkLoaded(pos)&&mc.world.getBlockState(pos).isOf(Blocks.DIRT)&&!plannedSolid(pos))
-                .sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).toList();
+                .sorted(Comparator.<BlockPos>comparingInt(BlockPos::getY).reversed().thenComparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).toList();
             long deadline=System.nanoTime()+8_000_000;int checked=0;
             int below=(int)Math.floor(effectiveReach()+mc.player.getStandingEyeHeight()-.5),above=(int)Math.floor(effectiveReach()-mc.player.getStandingEyeHeight()+.5);
             for(var pos:options){

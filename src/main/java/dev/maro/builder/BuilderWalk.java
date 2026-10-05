@@ -105,7 +105,12 @@ public final class BuilderWalk {
         float walkingPitch=point.y>mc.player.getY()+.4?-12:12;
         mc.player.setPitch(mc.player.getPitch()+MathHelper.clamp((walkingPitch-mc.player.getPitch())*.2f,-6,6));
         float headingError=Math.abs(MathHelper.wrapDegrees(yaw-mc.player.getYaw()));
-        if(headingError<24){forward=true;mc.options.forwardKey.setPressed(true);}
+        // At the final viewpoint, let each short movement settle before the
+        // next input. Full walking speed otherwise overshoots a small target
+        // and spends repeated turns chasing it around the standing cell.
+        boolean close=exact&&node.equals(target)&&dx*dx+dz*dz<.75*.75&&Math.abs(point.y-mc.player.getY())<.2;
+        boolean move=headingError<(close?8:24)&&(!close||mc.player.getVelocity().horizontalLengthSquared()<.0004);
+        if(move){forward=true;mc.options.forwardKey.setPressed(true);}
         else if(forward){mc.options.forwardKey.setPressed(false);forward=false;}
         // Turn toward a raised waypoint before starting the jump. An early
         // jump while turning spends its height without reaching the ledge.
