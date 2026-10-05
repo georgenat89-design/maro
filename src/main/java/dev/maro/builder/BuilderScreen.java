@@ -67,11 +67,11 @@ public final class BuilderScreen extends Screen {
         Render2D.shadow(ctx,left,top,panelWidth,panelHeight,12,12,0x60000000);Render2D.roundRect(ctx,left,top,panelWidth,panelHeight,12,0xFF171F2D);
         SmoothHudText.draw(ctx,title.getString(),left+18,top+16,0xFFEAF0FF,true,1.4f);
         if(materials){
-            String supply=builder.layerSupply()&&builder.supplyLayer()>=0?" · layer "+(builder.supplyLayer()+1)+" supply":"";
+            String supply=builder.sectionSupply()?" · nearby section supply":builder.layerSupply()&&builder.supplyLayer()>=0?" · layer "+(builder.supplyLayer()+1)+" supply":"";
             SmoothHudText.draw(ctx,SmoothHudText.trim(ctx,builder.schematic()==null?"No schematic loaded":builder.schematic().name+supply,panelWidth-36,false,.9f),left+18,top+40,0xFFACBED8,false,.9f);
             SmoothHudText.draw(ctx,"MATERIAL",left+18,top+61,0xFF8D9FB7,true,.7f);
             int column=left+panelWidth-294;
-            if(!compact)for(String label:new String[]{"TOTAL",builder.layerSupply()?"LAYER":"LEFT","OWNED","MISSING"}){
+            if(!compact)for(String label:new String[]{"TOTAL",builder.sectionSupply()?"BATCH":builder.layerSupply()?"LAYER":"LEFT","OWNED","MISSING"}){
                 SmoothHudText.draw(ctx,label,column,top+61,0xFF8D9FB7,true,.7f);column+=52;
             }
             var remaining=builder.remainingMaterials();int y=top+79;
@@ -82,7 +82,7 @@ public final class BuilderScreen extends Screen {
                 SmoothHudText.draw(ctx,SmoothHudText.trim(ctx,entry.getKey().getName().getString(),panelWidth-(compact?140:350),false,.9f),left+40,y,builder.materialIgnored(entry.getKey())?0xFF8091A8:0xFFE8F0FF,false,.9f);
                 int x=left+panelWidth-294;int[] counts={entry.getValue(),need,owned,missing};
                 if(compact){
-                    x=left+18;String[] labels={"Total ",builder.layerSupply()?"Layer ":"Left ","Own ","Need "};int spacing=(panelWidth-36)/4;
+                    x=left+18;String[] labels={"Total ",builder.sectionSupply()?"Batch ":builder.layerSupply()?"Layer ":"Left ","Own ","Need "};int spacing=(panelWidth-36)/4;
                     for(int c=0;c<counts.length;c++){SmoothHudText.draw(ctx,SmoothHudText.trim(ctx,labels[c]+counts[c],spacing-3,false,.7f),x,y+19,c==3&&missing>0?0xFFFFC38B:0xFFB6D1E7,false,.7f);x+=spacing;}
                 }else for(int c=0;c<counts.length;c++){SmoothHudText.draw(ctx,String.valueOf(counts[c]),x,y,c==3&&missing>0?0xFFFFC38B:0xFFB6D1E7,false,.85f);x+=52;}
                 y+=compact?44:30;

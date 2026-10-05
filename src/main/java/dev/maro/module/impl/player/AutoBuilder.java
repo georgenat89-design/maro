@@ -59,8 +59,8 @@ public final class AutoBuilder extends Module {
     private String placementName="";
     private boolean restoringPlacement;
     private final ModeSetting mode=mode("Start","Build Mode","Automatic starts immediately; Semi Auto builds while right mouse is held","Automatic","Semi Auto","Automatic");
-    private final ModeSetting supplyMode=mode("Materials","Material Supply","Finish the lowest unfinished layer and fetch its materials in inventory-sized batches","Layer by Layer","Layer by Layer","Whole Schematic").onChange(v->replan());
-    private final BooleanSetting prebuyWhole=bool("Materials","Prepare Whole Build","Buy missing supplies for the whole build, store them in a double chest, then supply each layer",true);
+    private final ModeSetting supplyMode=mode("Materials","Material Supply","Nearby Sections finishes compact areas with inventory-sized material batches","Nearby Sections","Nearby Sections","Layer by Layer","Whole Schematic").onChange(v->replan());
+    private final BooleanSetting prebuyWhole=bool("Materials","Prepare Whole Build","Buy missing supplies for the whole build, store them in selected chests, then fetch each work batch",true);
     private final BooleanSetting autoMove=bool("Build","Auto Move","Walk safe ground routes toward out-of-reach blocks",true);
     private final BooleanSetting unstuck=bool("Build","Auto Unstuck","Jump onto a temporary dirt step when a walking route is stuck, then remove it",true);
     private final BooleanSetting autoEat=bool("Food","Auto Eat","Pause movement and building to eat steak when hungry",true);
@@ -95,7 +95,7 @@ public final class AutoBuilder extends Module {
     public final NumberSetting containerAlpha=fixedNumber("Restock Outline Alpha","Opacity of marked chest outlines",.85,.05,1,.05);
     public final NumberSetting labelScale=fixedNumber("Restock Label Scale","Size of chest information in the progress panel",.8,.5,1.5,.05);
     private final KeybindSetting buyBind=fixedBind("Auto Buy Key","Start a material buying session",-1);
-    private final BooleanSetting autoBuy=bool("Materials","Auto Buy When Missing","Use inventory first, then your selected chests, then buy the current layer's missing materials",true);
+    private final BooleanSetting autoBuy=bool("Materials","Auto Buy When Missing","Use inventory first, then your selected chests, then buy the current work batch's missing materials",true);
     private final BooleanSetting autoTools=bool("Materials","Auto Buy Tools","Supply a pickaxe and shovel for incorrect blocks and temporary-support cleanup",true);
     private final BooleanSetting preferStacks=fixedBool("Prefer Stacks","Prefer full stacks when their unit price is within tolerance",false);
     private final NumberSetting tolerance=fixedNumber("Stack Price Tolerance %","Maximum premium for a preferred stack",15,0,100,1);
@@ -190,6 +190,8 @@ public final class AutoBuilder extends Module {
     private boolean recoveryJump;
     private List<Integer> visible=List.of();
     private List<Integer> workCells=List.of();
+    private List<Integer> sectionCells=List.of();
+    private int sectionProgressAt,sectionCorrect;
     private final PriorityQueue<Visible> visibleScan=new PriorityQueue<>(Comparator.comparingDouble(Visible::distance).reversed());
     private final PriorityQueue<Visible> workScan=new PriorityQueue<>(Comparator.comparingDouble(Visible::distance).reversed());
     private record Visible(int index,double distance){}
@@ -376,8 +378,38 @@ public final class AutoBuilder extends Module {
     }
     public int supplyLayer(){if(activeLayer>=0)return activeLayer;for(var entry:remainingByLayer.entrySet())if(entry.getValue().values().stream().anyMatch(count->count>0))return entry.getKey();return -1;}
     public boolean layerSupply(){return supplyMode.is("Layer by Layer");}
+    public boolean sectionSupply(){return supplyMode.is("Nearby Sections");}
     private int taskLayer(int index){return schematic.local(index).getY()+(desired(index).getBlock() instanceof FluidBlock?schematic.height:0);}
-    private Map<Item,Integer> requiredMaterials(){return layerSupply()?remainingByLayer.getOrDefault(supplyLayer(),Map.of()):remaining;}
+    private Map<Item,Integer> requiredMaterials(){
+        if(!sectionSupply())return layerSupply()?remainingByLayer.getOrDefault(supplyLayer(),Map.of()):remaining;
+        var result=new HashMap<Item,Integer>();
+        for(int i:sectionCells)if(states[i]!=CORRECT&&states[i]!=IGNORED&&layerAllows(i)&&!materialIgnored(desired(i))){
+            var item=Schematic.material(desired(i));if(item!=Items.AIR)result.merge(item,(int)unitsLeft[i],Integer::sum);
+        }
+        return result;
+    }
+    private void refreshSection(){
+        if(!sectionSupply())return;
+        sectionCells=sectionCells.stream().filter(i->states[i]!=CORRECT&&states[i]!=IGNORED&&layerAllows(i)).toList();
+        if(correct!=sectionCorrect||!building||restockTarget!=null||buying||mc.currentScreen!=null){sectionCorrect=correct;sectionProgressAt=ticks;}
+        if(!sectionCells.isEmpty()&&ticks-sectionProgressAt>240&&placement==null&&pendingPlacement==null&&mining==null){
+            for(int i:sectionCells)retryAt.put(i,ticks+200);sectionCells=List.of();walker.stop();navigatingCell=-1;
+        }
+        if(!sectionCells.isEmpty())return;
+        var available=workCells.stream().filter(i->states[i]!=CORRECT&&states[i]!=IGNORED&&retryAt.getOrDefault(i,0)<=ticks).toList();
+        if(available.isEmpty())return;
+        var first=schematic.local(available.getFirst());
+        var materials=new HashMap<Item,Integer>();var batch=new ArrayList<Integer>();int slots=0;
+        for(int i:available){
+            var p=schematic.local(i);
+            if(p.getX()/8!=first.getX()/8||p.getY()/4!=first.getY()/4||p.getZ()/8!=first.getZ()/8)continue;
+            var item=Schematic.material(desired(i));int before=materials.getOrDefault(item,0),after=before+unitsLeft[i];
+            int extra=item==Items.AIR?0:(after+item.getMaxCount()-1)/item.getMaxCount()-(before+item.getMaxCount()-1)/item.getMaxCount();
+            if(slots+extra>24||batch.size()>=128)continue;
+            slots+=extra;materials.put(item,after);batch.add(i);
+        }
+        sectionCells=List.copyOf(batch);sectionProgressAt=ticks;sectionCorrect=correct;
+    }
     private boolean hasTool(boolean shovel){for(int i=0;i<36;i++)if(mc.player.getInventory().getStack(i).isIn(shovel?ItemTags.SHOVELS:ItemTags.PICKAXES))return true;return false;}
     private void addRequiredTools(Map<Item,Integer> needs){if(autoTools.get()){if(!hasTool(false))needs.put(Items.DIAMOND_PICKAXE,1);if(!hasTool(true))needs.put(Items.DIAMOND_SHOVEL,1);}if(foodNeeded())needs.put(Items.COOKED_BEEF,steakReserve.getInt());}
     private boolean foodNeeded(){return autoEat.get()&&mc.player!=null&&!mc.player.getAbilities().creativeMode&&mc.player.getHungerManager().getFoodLevel()<=hungerLimit.getInt();}
@@ -397,7 +429,7 @@ public final class AutoBuilder extends Module {
         for(int i=0;i<schematic.size();i++)if(materialIgnored(schematic.state(i))&&!schematic.state(i).isAir()&&!schematic.state(i).isOf(Blocks.STRUCTURE_VOID))solid--;
         remaining.clear();remaining.putAll(schematic.materials());remaining.keySet().removeAll(ignoredMaterials);remainingByLayer.clear();activeLayer=-1;scanLayer=Integer.MAX_VALUE;
         for(int i=0;i<schematic.size();i++){var item=Schematic.material(schematic.state(i));if(item!=Items.AIR&&!materialIgnored(item))remainingByLayer.computeIfAbsent(taskLayer(i),y->new HashMap<>()).merge(item,Schematic.units(schematic.state(i)),Integer::sum);}
-        visible=workCells=List.of();visibleScan.clear();workScan.clear();retryAt.clear();triedContainers.clear();
+        visible=workCells=sectionCells=List.of();visibleScan.clear();workScan.clear();retryAt.clear();triedContainers.clear();
     }
     private void applyPreset(String name){
         if(ghostFill==null)return;
@@ -437,7 +469,7 @@ public final class AutoBuilder extends Module {
         schematic=null;unconfirmedPlacements.clear();selected="";preview=false;captureStates=null;capture=null;
         states=unitsLeft=new byte[0];scanCursor=correct=solid=completedScans=passTasks=lastPassTasks=0;
         remaining.clear();remainingByLayer.clear();activeLayer=-1;scanLayer=Integer.MAX_VALUE;ignoredMaterials.clear();supports.clear();cleanupStands.clear();triedStands.clear();retryAt.clear();transformedStates.clear();
-        visible=workCells=List.of();visibleScan.clear();workScan.clear();needed=null;delay=inventoryWait=0;staffStopAt=0;
+        visible=workCells=sectionCells=List.of();visibleScan.clear();workScan.clear();needed=null;delay=inventoryWait=0;staffStopAt=0;
         status="Schematic cancelled — choose another to start";
     }
     @Override protected void onEnable(){
@@ -595,7 +627,7 @@ public final class AutoBuilder extends Module {
             boolean cleanupOnly=expected.isAir()&&supports.contains(position(i));
             if(!cleanupOnly&&layerAllows(i)&&schematic.included(i)&&(!expected.isAir()||mineOut.get())&&states[i]!=CORRECT&&states[i]!=IGNORED){
                 passTasks++;int y=taskLayer(i);if(y<scanLayer){scanLayer=y;if(layerSupply())workScan.clear();}
-                if(!layerSupply()||y==scanLayer){var candidate=new Visible(i,distance+y*.3);if(workScan.size()<256)workScan.add(candidate);else if(candidate.distance<workScan.peek().distance){workScan.poll();workScan.add(candidate);}}
+                if(!layerSupply()||y==scanLayer){var candidate=new Visible(i,distance+y*.3+(sectionSupply()&&retryAt.getOrDefault(i,0)>ticks?1e7:0)+(sectionSupply()&&expected.getBlock() instanceof FluidBlock?1e8:0));if(workScan.size()<256)workScan.add(candidate);else if(candidate.distance<workScan.peek().distance){workScan.poll();workScan.add(candidate);}}
             }
             if(!expected.isAir()&&!expected.isOf(Blocks.STRUCTURE_VOID)&&distance<=previewRange.get()*previewRange.get()&&layerAllows(i)){
                 var cell=new Visible(i,distance);int limit=renderLimit.getInt();
@@ -605,6 +637,7 @@ public final class AutoBuilder extends Module {
                 scanCursor=0;completedScans++;lastPassTasks=passTasks;passTasks=0;activeLayer=scanLayer==Integer.MAX_VALUE?-1:scanLayer;scanLayer=Integer.MAX_VALUE;
                 visible=visibleScan.stream().sorted(Comparator.comparingDouble(Visible::distance).reversed()).map(Visible::index).toList();visibleScan.clear();
                 workCells=workScan.stream().sorted(Comparator.comparingDouble(Visible::distance)).map(Visible::index).toList();workScan.clear();
+                refreshSection();
             }
         }while(++count<8192&&System.nanoTime()<deadline&&scanCursor!=0);
     }
@@ -658,9 +691,9 @@ public final class AutoBuilder extends Module {
         List<Integer> candidates=new ArrayList<>();
         // A local neighborhood is cheap even for multi-million-cell schematics; global nearest cells
         // from the scan are appended for walking. A candidate's actual world state is rechecked below.
-        for(int i:workCells)if(layerAllows(i)&&(!layerSupply()||taskLayer(i)==supplyLayer())&&states[i]!=CORRECT&&states[i]!=IGNORED&&retryAt.getOrDefault(i,0)<=ticks)candidates.add(i);
+        for(int i:sectionSupply()?sectionCells:workCells)if(layerAllows(i)&&(!layerSupply()||taskLayer(i)==supplyLayer())&&states[i]!=CORRECT&&states[i]!=IGNORED&&retryAt.getOrDefault(i,0)<=ticks)candidates.add(i);
         if(navigatingCell>=0&&(states[navigatingCell]==CORRECT||!candidates.contains(navigatingCell)||ticks-navigationStarted>240)){navigatingCell=-1;walker.stop();}
-        candidates.sort(Comparator.<Integer>comparingInt(i->i==navigatingCell?0:1).thenComparingDouble(i->schematic.local(i).getY()*100+position(i).getSquaredDistance(mc.player.getBlockPos())));
+        candidates.sort(Comparator.<Integer>comparingInt(i->i==navigatingCell?0:1).thenComparingDouble(i->taskLayer(i)*(sectionSupply()?8:100)+position(i).getSquaredDistance(mc.player.getBlockPos())));
         needed=null;Integer distant=null;List<Integer> blocked=new ArrayList<>();
         long deadline=System.nanoTime()+2_000_000;int checked=0;
         for(int i:candidates){
@@ -1080,7 +1113,7 @@ public final class AutoBuilder extends Module {
                             .filter(target->target.getStack().isEmpty()||ItemStack.areItemsAndComponentsEqual(target.getStack(),stack)&&target.getStack().getCount()<target.getStack().getMaxCount()).findFirst().orElse(null);
                         if(destination==null)continue;int room=destination.getStack().isEmpty()?stack.getMaxCount():destination.getStack().getMaxCount()-destination.getStack().getCount();
                         partialSource=slot.id;partialDestination=destination.id;partialRemaining=Math.min(needed,room);partialItem=stack.getItem();
-                        mc.interactionManager.clickSlot(ownedHandler.syncId,slot.id,0,SlotActionType.PICKUP,mc.player);inventoryWait=6;status="Taking exact layer material quantity";return;
+                        mc.interactionManager.clickSlot(ownedHandler.syncId,slot.id,0,SlotActionType.PICKUP,mc.player);inventoryWait=6;status="Taking exact batch material quantity";return;
                     }
                     mc.interactionManager.clickSlot(ownedHandler.syncId,slot.id,0,SlotActionType.QUICK_MOVE,mc.player);restockTriedSlots.add(slot.id);inventoryWait=8;return;
                 }
@@ -1165,7 +1198,7 @@ public final class AutoBuilder extends Module {
         resumeShoppingAfterDeposit=false;depositedShopping.clear();
         if(!success){preparationStage=0;return;}
         if(prep==1){preparationStage=2;startBuying(false);}
-        else if(prep==3){preparationStage=0;preparationReady=true;triedContainers.clear();emptyChestItems.clear();startBuild();status="Whole-build supplies stored — building by layer";}
+        else if(prep==3){preparationStage=0;preparationReady=true;triedContainers.clear();emptyChestItems.clear();startBuild();status="Whole-build supplies stored — building nearby sections";}
         else if(prep==4){preparationStage=0;status=preparationStopReason;notify(status);}
     }
     private void depositTick(){
@@ -1390,8 +1423,8 @@ public final class AutoBuilder extends Module {
         return false;
     }
     private void handleFullInventory(){
-        if(preparationStage==0&&layerSupply()&&buyingItem!=Items.COOKED_BEEF&&buyingItem!=Items.DIAMOND_PICKAXE&&buyingItem!=Items.DIAMOND_SHOVEL&&requiredMaterials().entrySet().stream().anyMatch(entry->entry.getValue()>0&&inventoryCount(entry.getKey())>0)){
-            boolean resume=resumeAfterMarket;finishBuying("Layer supply batch ready — continue building before buying more");if(resume){building=true;delay=6;status="Building the current layer with this supply batch";}return;
+        if(preparationStage==0&&(layerSupply()||sectionSupply())&&buyingItem!=Items.COOKED_BEEF&&buyingItem!=Items.DIAMOND_PICKAXE&&buyingItem!=Items.DIAMOND_SHOVEL&&requiredMaterials().entrySet().stream().anyMatch(entry->entry.getValue()>0&&inventoryCount(entry.getKey())>0)){
+            boolean resume=resumeAfterMarket;finishBuying("Supply batch ready — continue building before buying more");if(resume){building=true;delay=6;status="Building with this supply batch";}return;
         }
         if(!depositWhen.is("Manual")){var outstanding=new LinkedHashMap<>(shopping);depositAll();if(depositing){depositedShopping.putAll(outstanding);resumeShoppingAfterDeposit=true;}return;}
         finishBuying("Inventory full — use Deposit All to make space");
@@ -1442,7 +1475,7 @@ public final class AutoBuilder extends Module {
     private CompletableFuture<Void> writePlacement(int slot){
         var data=saveExtra();data.addProperty("schematic-name",schematic.name);data.addProperty("schematic-format",schematic.format);data.addProperty("name",placementName.isBlank()?schematic.name:placementName);data.addProperty("saved-at",System.currentTimeMillis());
         data.addProperty("correct",correct);data.addProperty("total",solid);data.addProperty("rotation",rotation.get());data.addProperty("mirror",mirror.get());data.addProperty("use-offset",useOffset.get());
-        data.addProperty("layer-mode",layerMode.get());data.addProperty("layer",layer.getInt());data.addProperty("build-budget-active",buildBudgetActive);data.addProperty("build-budget-spent",buildBudgetSpent);data.addProperty("auction-budget",maxSpend.get());
+        data.addProperty("material-supply",supplyMode.get());data.addProperty("layer-mode",layerMode.get());data.addProperty("layer",layer.getInt());data.addProperty("build-budget-active",buildBudgetActive);data.addProperty("build-budget-spent",buildBudgetSpent);data.addProperty("auction-budget",maxSpend.get());
         var temporary=new JsonArray();for(var pos:supports)temporary.add(posJson(pos));data.add("temporary-supports",temporary);
         var escape=new JsonArray();for(var pos:escapeSupports)escape.add(posJson(pos));data.add("escape-supports",escape);
         savedBuildInfo.put(slot,data.deepCopy());var snapshot=schematic;
@@ -1458,6 +1491,7 @@ public final class AutoBuilder extends Module {
                 var data=saved.placement();install(saved.schematic());ignoredMaterials.clear();restorePlacementFields(data);
                 rotation.set(data.get("rotation").getAsString());mirror.set(data.get("mirror").getAsString());useOffset.set(data.get("use-offset").getAsBoolean());
                 layerMode.set(data.get("layer-mode").getAsString());layer.set(data.get("layer").getAsDouble());
+                if(data.has("material-supply"))supplyMode.set(data.get("material-supply").getAsString());
                 supports.clear();escapeSupports.clear();if(data.has("temporary-supports"))for(var pos:data.getAsJsonArray("temporary-supports"))supports.add(jsonPos(pos));
                 if(data.has("escape-supports"))for(var pos:data.getAsJsonArray("escape-supports"))escapeSupports.add(jsonPos(pos));
                 replan();if(data.has("auction-budget"))maxSpend.set(data.get("auction-budget").getAsDouble());buildBudgetActive=data.get("build-budget-active").getAsBoolean();buildBudgetSpent=data.get("build-budget-spent").getAsDouble();spent=buildBudgetSpent;

@@ -386,7 +386,7 @@ final class AutoBuilderChecks {
         context.runOnClient(client->{
             builder.install(new Schematic("stuck-existing-route.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(routeTarget);
             @SuppressWarnings("unchecked") var supports=(Set<BlockPos>)field(builder,"supports");supports.add(obstruction);builder.startBuild();
-            var walker=(BuilderWalk)field(builder,"walker");walker.approach(routeTarget,.5);walker.requestRecovery();
+            var walker=(BuilderWalk)field(builder,"walker");walker.approach(routeTarget,1.5);walker.requestRecovery();
             try{var stalled=BuilderWalk.class.getDeclaredField("movementStalled");stalled.setAccessible(true);stalled.setBoolean(walker,true);}catch(ReflectiveOperationException error){throw new AssertionError(error);}
             require(!walker.routeUnavailable(),"Route collision fixture must have a path");
         });
@@ -399,6 +399,15 @@ final class AutoBuilderChecks {
         await(context,builder,450);
         require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(target).isOf(Blocks.OAK_SIGN)&&server.getOverworld().getBlockState(target.east()).isOf(Blocks.STONE)),"Sign editor prevented placing the next block");
         context.runOnClient(client->require(client.currentScreen==null,"Builder left the sign editor open"));
+
+        fixture(context,world,builder,start);world.getServer().runCommand("give @a stone 1");world.getServer().runCommand("give @a glass 1");world.getServer().runCommand("give @a oak_planks 1");context.waitTicks(6);
+        var area=new BlockState[26];Arrays.fill(area,Blocks.STRUCTURE_VOID.getDefaultState());area[0]=Blocks.STONE.getDefaultState();area[13]=Blocks.GLASS.getDefaultState();area[12]=Blocks.OAK_PLANKS.getDefaultState();
+        context.runOnClient(client->{set(builder,"Material Supply","Nearby Sections");builder.install(new Schematic("nearby-sections.nbt","test",13,2,1,BlockPos.ORIGIN,area));builder.setOrigin(target);builder.startBuild();});
+        for(int i=0;i<300&&!context.computeOnClient(client->builder.state(13)==AutoBuilder.CORRECT);i++)context.waitTick();
+        context.runOnClient(client->{require(builder.state(13)==AutoBuilder.CORRECT,"Nearby section did not finish its upper block");require(builder.state(12)!=AutoBuilder.CORRECT,"Nearby mode walked across the whole bottom layer first");require(builder.remainingMaterials().getOrDefault(Items.OAK_PLANKS,0)<=1,"Section supply exceeded its missing material quantity");});
+        await(context,builder,500);
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(target).isOf(Blocks.STONE)&&server.getOverworld().getBlockState(target.up()).isOf(Blocks.GLASS)&&server.getOverworld().getBlockState(target.east(12)).isOf(Blocks.OAK_PLANKS)),"Nearby sections did not complete all areas");
+        context.runOnClient(client->set(builder,"Material Supply","Layer by Layer"));
     }
     private static Object field(AutoBuilder builder,String name){try{var field=AutoBuilder.class.getDeclaredField(name);field.setAccessible(true);return field.get(builder);}catch(ReflectiveOperationException error){throw new AssertionError(error);}}
     private static void layerTail(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
