@@ -147,7 +147,7 @@ public final class BuilderWalk {
                 var adjacent=n.pos.add(dx,0,dz);BlockPos step=null;
                 for(int dy:sameColumn?new int[]{-1,-2}:new int[]{0,1,-1,-2}){var p=adjacent.up(dy);if(walkable(p)){step=p;break;}}
                 if(step==null||closed.contains(step)||step.getManhattanDistance(start)>64)continue;
-                double rise=standingPoint(step).y-standingPoint(n.pos).y;
+                double rise=standingPoint(step).y-(n.parent==null?mc.player.getY():standingPoint(n.pos).y);
                 if(rise>1.2||rise< -2)continue;
                 if(diagonal&&step.getY()!=n.pos.getY())continue;
                 if(step.getY()>n.pos.getY()&&!clear(n.pos.up(2)))continue;

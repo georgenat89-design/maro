@@ -763,7 +763,9 @@ final class AutoBuilderChecks {
         var origin=start.add(0,0,2);var cells=new BlockState[5*4];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());
         cells[4]=Blocks.STONE.getDefaultState();cells[15]=cells[17]=Blocks.STONE.getDefaultState();
         context.runOnClient(client->{set(builder,"Temporary Supports",true);builder.install(new Schematic("floating-layer-tail.nbt","test",5,4,1,BlockPos.ORIGIN,cells));builder.setOrigin(origin);builder.startBuild();});
-        await(context,builder,700);
+        // Include native travel/pickup when the finite dirt reserve is recycled,
+        // then verify all server blocks and complete cleanup below.
+        await(context,builder,1100);
         require(world.getServer().computeOnServer(server->{var level=server.getOverworld();if(!level.getBlockState(origin.east(4)).isOf(Blocks.STONE)||!level.getBlockState(origin.up(3)).isOf(Blocks.STONE)||!level.getBlockState(origin.east(2).up(3)).isOf(Blocks.STONE))return false;for(int x=-1;x<=5;x++)for(int y=0;y<=3;y++)for(int z=-1;z<=1;z++)if(level.getBlockState(origin.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Layer tail blocks were not built or temporary support columns were left behind");
         context.runOnClient(client->require(builder.temporarySupports().isEmpty(),"Layer-tail scaffold tracking did not finish cleanup"));
     }

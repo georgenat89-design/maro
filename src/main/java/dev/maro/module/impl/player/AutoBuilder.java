@@ -205,6 +205,8 @@ public final class AutoBuilder extends Module {
     private final Map<BlockPos,Integer> routeSupportExclusions=new HashMap<>();
     private final Map<BlockPos,List<BlockPos>> supportChainStarts=new HashMap<>();
     private BlockPos bridgeTarget;
+    private BlockPos supportPickup;
+    private int supportPickupUntil,supportRecycleAt;
     private Place pendingPlacement;
     private final Map<BlockPos,Place> unconfirmedPlacements=new HashMap<>();
     private record LatePlacement(Place job,int expires){}
@@ -509,6 +511,7 @@ public final class AutoBuilder extends Module {
         queuedLookAction=null;
         lookWaitStarted=-1;queuedAimPoint=aimPoint=null;
         bridgeTarget=null;
+        supportPickup=null;supportPickupUntil=supportRecycleAt=0;
         yawVelocity=pitchVelocity=0;
         placementAttemptTarget=null;failedPlacementUntil.clear();unexpectedBuildHandler=null;resetChestJourney();
         stopEating();navigatingCell=-1;foodRestock=foodShopping=supportRestock=supportShopping=false;
@@ -731,9 +734,11 @@ public final class AutoBuilder extends Module {
         if(completedScans==0){status="Checking schematic: "+(100L*scanCursor/Math.max(1,states.length))+"%";return;}
         if((lastPassTasks==0||correct==solid&&!supports.isEmpty())&&(!supports.isEmpty()||ticks-lastAction>=20)){
             if(cleanup.get()&&!supports.isEmpty()){
-                // Clear upper pieces first, then work back toward the player. Removing
-                // the nearest low stair first can strand the player on a raised floor.
-                var pos=supports.stream().min(Comparator.<BlockPos>comparingInt(p->-p.getY()).thenComparingDouble(p->-p.getSquaredDistance(mc.player.getBlockPos()))).orElseThrow();
+                // Keep low access stairs until upper pieces are gone. Within one
+                // height, clear nearby pieces to avoid criss-crossing the build.
+                var pos=supports.stream().min(Comparator.<BlockPos>comparingInt(p->-p.getY())
+                    .thenComparingInt(p->new Box(p).intersects(mc.player.getBoundingBox().offset(0,-1,0))?1:0)
+                    .thenComparingDouble(p->p.getSquaredDistance(mc.player.getBlockPos()))).orElseThrow();
                 if(!mc.world.isChunkLoaded(pos)){status="Cleanup paused — support chunk is unloaded";return;}
                 if(!mc.world.getBlockState(pos).isOf(Blocks.DIRT)){supports.remove(pos);cleanupStands.remove(pos);return;}
                 int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());
@@ -839,7 +844,7 @@ public final class AutoBuilder extends Module {
     }
     private boolean repositionTarget(BlockPos target,Map<BlockPos,Integer> tried,boolean bridge){
         tried.values().removeIf(until->until<=ticks);
-        List<BlockPos> options=new ArrayList<>();Set<BlockPos> directStands=new HashSet<>();
+        List<BlockPos> options=new ArrayList<>();Set<BlockPos> directStands=new HashSet<>();Map<BlockPos,Integer> scaffoldDistance=new HashMap<>();
         int cell=schematic.indexAt(target.subtract(anchor()),turns(),mirror.get());
         var wanted=cell<0?null:desired(cell);
         boolean supportFallback=wanted!=null&&!hasAttachment(target,wanted);
@@ -858,14 +863,24 @@ public final class AutoBuilder extends Module {
                 :wanted!=null&&placement(target,wanted,Schematic.material(wanted),cell,false,eye,body)!=null;
             // A connected bridge can start well below the final floating block.
             // Its first piece, rather than the final target, must be in reach.
-            if(!direct&&(!supportFallback||!extendedScaffold&&(dy< -2||dy>2)||supportPlacement(target,eye,body,bridge)==null))continue;
+            if(!direct){
+                var scaffold=supportFallback?supportPlacement(target,eye,body,bridge):null;
+                if(scaffold==null)continue;
+                scaffoldDistance.put(stand,scaffold.target.getManhattanDistance(target));
+            }
             if(direct)directStands.add(stand);
             options.add(stand);
         }
-        options.sort(Comparator.<BlockPos>comparingInt(p->directStands.contains(p)?0:1).thenComparingDouble(p->p.getSquaredDistance(mc.player.getBlockPos())));standGoal=null;
+        options.sort(Comparator.<BlockPos>comparingInt(p->directStands.contains(p)?0:1)
+            .thenComparingInt(p->scaffoldDistance.getOrDefault(p,0)).thenComparingDouble(p->p.getSquaredDistance(mc.player.getBlockPos())));standGoal=null;
         long routeDeadline=System.nanoTime()+6_000_000;
-        for(var option:options){tried.put(option,ticks+40);if(walker.canReachStand(option)){standGoal=option;break;}if(System.nanoTime()>=routeDeadline)break;}
-        if(standGoal==null&&support.get()&&supports.size()<tempDirt.getInt())for(var option:options)if(directStands.contains(option)&&accessStep(option))return true;
+        for(var option:options){
+            tried.put(option,ticks+40);if(walker.canReachStand(option)){standGoal=option;break;}
+            if(support.get()&&supports.size()<tempDirt.getInt()&&(directStands.contains(option)||supportFallback&&supports.contains(option.down()))&&accessStep(option))return true;
+            if(System.nanoTime()>=routeDeadline)break;
+        }
+        if(standGoal==null&&support.get()&&supports.size()<tempDirt.getInt())for(var option:options)
+            if((directStands.contains(option)||supportFallback&&supports.contains(option.down()))&&accessStep(option))return true;
         if(standGoal==null&&support.get()&&supports.size()>=tempDirt.getInt()&&(!directStands.isEmpty()||supportFallback)&&recycleSupport())return true;
         if(standGoal==null){
             // An anchored short column can still have no usable view. Only after
@@ -951,6 +966,22 @@ public final class AutoBuilder extends Module {
     private int supportReserve(){return Math.max(8,restockDirt.getInt());}
     private void ensureSupportDirt(){
         needed=Items.DIRT;
+        if(supportPickup!=null){
+            var drops=mc.world.getEntitiesByClass(net.minecraft.entity.ItemEntity.class,new Box(supportPickup).expand(3,8,3),entity->entity.getStack().isOf(Items.DIRT));
+            var drop=drops.stream().min(Comparator.comparingDouble(entity->entity.squaredDistanceTo(mc.player))).orElse(null);
+            if(ticks<supportPickupUntil&&(drop!=null||ticks<supportPickupUntil-180)){
+                if(drop!=null)walker.standAt(drop.getBlockPos());
+                if(drop==null||!walker.routeUnavailable()){status="Collecting recycled temporary blocks";return;}
+            }
+            supportPickup=null;walker.stop();
+        }
+        if(ticks>=supportRecycleAt&&!supports.isEmpty()){
+            supportRecycleAt=ticks+60;
+            if(recycleSupport()){
+                if(routeMining!=null){supportPickup=routeMining;supportPickupUntil=ticks+200;}
+                return;
+            }
+        }
         if(restockTarget!=null){triedContainers.add(restockTarget);restockTarget=null;walker.stop();}
         if(restock.get()&&beginRestock()){supportRestock=true;status="Restocking temporary blocks";return;}
         if(autoBuy.get()&&maxSpend.get()>0){boolean resume=building;startBuying(false);if(buying){supportShopping=true;resumeAfterMarket=resume;status="Buying temporary blocks";}return;}
@@ -1091,14 +1122,16 @@ public final class AutoBuilder extends Module {
     }
     /** Connect an existing raised build surface with normal one-block stair steps. */
     private boolean accessStep(BlockPos stand){
-        int rise=stand.getY()-mc.player.getBlockPos().getY();if(rise<2||rise>3)return false;
+        int rise=stand.getY()-mc.player.getBlockPos().getY();if(rise<1||rise>3)return false;
         var floor=stand.down();int cell=schematic.indexAt(floor.subtract(anchor()),turns(),mirror.get());
         // A narrow dirt post is an attachment, not a raised floor to walk onto.
         // Giving every such post a stair consumes the support reserve needlessly.
-        if(cell<0||states[cell]!=CORRECT||desired(cell).isAir()||desired(cell).isOf(Blocks.STRUCTURE_VOID))return false;
+        boolean ownedStep=rise<=2&&supports.contains(floor)&&mc.world.getBlockState(floor).isOf(Blocks.DIRT);
+        if(rise==1&&!ownedStep)return false;
+        if(!ownedStep&&(cell<0||states[cell]!=CORRECT||desired(cell).isAir()||desired(cell).isOf(Blocks.STRUCTURE_VOID)))return false;
         var directions=new ArrayList<>(List.of(Direction.NORTH,Direction.SOUTH,Direction.EAST,Direction.WEST));
         directions.sort(Comparator.comparingDouble(side->stand.offset(side,rise-1).getSquaredDistance(mc.player.getBlockPos())));
-        for(var side:directions)for(int distance=rise-1;distance>=1;distance--){
+        for(var side:directions)for(int distance=Math.max(1,rise-1);distance>=1;distance--){
             var top=stand.offset(side,distance).down(distance+1);
             // Keep the walking clearance outside future solid cells, so the next layer
             // cannot immediately bury the access stair beneath the player's head.
