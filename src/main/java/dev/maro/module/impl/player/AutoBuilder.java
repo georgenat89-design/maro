@@ -567,7 +567,11 @@ public final class AutoBuilder extends Module {
         if(mining!=null){mineTick();return;}
         if(standGoal!=null){
             if(standProgressPos==null||mc.player.getEntityPos().subtract(standProgressPos).horizontalLengthSquared()>.04||mc.player.isOnGround()&&Math.abs(mc.player.getY()-standProgressPos.y)>.2){standProgressPos=mc.player.getEntityPos();standProgressAt=ticks;}
-            if(walker.standAt(standGoal)){standGoal=null;accessStand=null;accessSupports.clear();navigationStarted=ticks;walker.stop();}
+            if(walker.standAt(standGoal)){
+                if(standGoal.equals(accessStand)){accessStand=null;accessSupports.clear();}
+                else accessSupports.removeIf(pos->pos.getY()<mc.player.getY());
+                standGoal=null;navigationStarted=ticks;walker.stop();
+            }
             else if(ticks-standProgressAt>50||ticks-standStarted>240||walker.routeUnavailable()){
                 if(navigatingCell>=0){retryAt.put(navigatingCell,ticks+10);triedStands.computeIfAbsent(navigatingCell,i->new HashMap<>()).put(standGoal,ticks+600);}
                 navigatingCell=-1;standGoal=null;accessStand=null;accessSupports.clear();walker.stop();status="Replanning blocked build position";
@@ -1124,6 +1128,11 @@ public final class AutoBuilder extends Module {
     }
     /** Connect an existing raised build surface with normal one-block stair steps. */
     private boolean accessStep(BlockPos stand){
+        if(stand.equals(accessStand)){
+            var next=accessSupports.stream().map(BlockPos::up).filter(pos->walker.standingPoint(pos).y>mc.player.getY()+.5&&pos.getY()<=stand.getY())
+                .filter(walker::canStand).filter(walker::canReachStand).min(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).orElse(null);
+            if(next!=null){standGoal=next;standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();status="Climbing completed access step";return true;}
+        }
         int rise=stand.getY()-mc.player.getBlockPos().getY();if(rise<1||rise>3)return false;
         var floor=stand.down();int cell=schematic.indexAt(floor.subtract(anchor()),turns(),mirror.get());
         // A narrow dirt post is an attachment, not a raised floor to walk onto.
@@ -1190,8 +1199,6 @@ public final class AutoBuilder extends Module {
     /** Free an obsolete attachment base when the bounded scaffold pool is full. */
     private boolean servesActiveScaffold(BlockPos pos){
         if(accessSupports.contains(pos))return true;
-        var destination=recoveryDestination();
-        if(escapeSupports.contains(pos)&&destination!=null&&destination.getY()>mc.player.getY()&&pos.getSquaredDistance(mc.player.getBlockPos())<16)return true;
         if(navigatingCell<0||states[navigatingCell]==CORRECT)return false;
         var target=position(navigatingCell);var side=attachmentSide(desired(navigatingCell));
         // Preserve the short column being assembled for this target. Otherwise

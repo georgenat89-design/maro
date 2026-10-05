@@ -59,7 +59,7 @@ Walking turns toward raised steps before jumping. Close placement approaches bra
 
 Recycling preserves the short attachment column serving the active target. A stranded finished ledge can use a reachable owned post up to two blocks lower, followed by safe incremental descent through that post. Completed schematic blocks remain intact.
 
-Access stair construction commits to its selected standing view and preserves its new pieces until arrival, a completed target, pause or route failure. Nearby escape steps are retained while the destination is higher, preventing a full pool from undoing an active climb.
+Access stair construction commits to its selected standing view and climbs onto each completed intermediate step before constructing higher pieces. New pieces are protected during construction; older pieces can be reclaimed after that climb while the player's current footing remains protected.
 
 **Auto Unstuck** can escape a stuck ground route by jumping and placing a temporary dirt step beneath the player, then replanning the route. It requires dirt, solid safe footing and clear headroom. Recovery steps remain available for return routes and are removed by completion cleanup. Crouching is sent ahead of placements against interactive supports such as hoppers/chests. Note blocks are tuned one interaction at a time, waiting for the note update and stopping at the target; instrument/power changes do not trigger endless retuning.
 
