@@ -69,7 +69,7 @@ final class BuilderAuctionChecks {
             rateScenario.set(scenario);purchases.set(0);singleplayer.getServer().runCommand("clear @a");context.waitTicks(5);
             context.runOnClient(client->{builder.install(new Schematic("rates-fixture.nbt","test",2,1,1,BlockPos.ORIGIN,new net.minecraft.block.BlockState[]{Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState()}));builder.preview();button(builder,"Buy Materials").press();});
             waitDone(context,builder);
-            require(purchases.get()==1&&purchasedPage.get()==(scenario==1?2:1),"Buyer did not select the cheapest auction page");
+            require(purchases.get()==1&&purchasedPage.get()==(scenario==1?2:1),"Buyer did not select the cheapest auction page: scenario="+scenario+" purchases="+purchases.get()+" page="+purchasedPage.get()+" status="+context.computeOnClient(client->builder.status()));
             context.runOnClient(client->require(builder.sessionSpend()==20&&builder.inventoryCount(Items.STONE)==2,"Buyer did not buy at the best available unit rate: "+builder.status()));
         }
         rateScenario.set(0);
@@ -254,6 +254,10 @@ final class BuilderAuctionChecks {
         Menu(int syncId,PlayerInventory player,SimpleInventory inventory,boolean confirm,Item item,int page){super(ScreenHandlerType.GENERIC_9X3,syncId,player,inventory,3);this.confirm=confirm;this.item=item;this.inventory=inventory;this.page=page;}
         @Override public void onSlotClick(int slot,int button,SlotActionType action,PlayerEntity entity){
             var player=(ServerPlayerEntity)entity;
+            // Plugin AH controls cancel vanilla inventory pickup. Resync after vanilla's
+            // click bookkeeping, which can otherwise copy the old predicted cursor into
+            // a newly opened page's tracked state under lag.
+            after(player,1,()->player.currentScreenHandler.syncState());
             if(!confirm&&slot==26&&rateScenario.get()!=0&&page==1){open(player,false,item,2);return;}
             if(!confirm&&(slot==0||slot==1&&soldScenario.get()!=0)&&!clicked){
                 clicked=true;
