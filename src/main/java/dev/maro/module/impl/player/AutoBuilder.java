@@ -193,6 +193,7 @@ public final class AutoBuilder extends Module {
     private record Place(BlockPos target,BlockState state,BlockHitResult hit,Item item,int index,boolean temporary){}
     private Place placement;
     private Place pendingPlacement;
+    private final Map<BlockPos,Place> unconfirmedPlacements=new HashMap<>();
     private BlockState pendingBefore,pendingServerState;
     private int placementDeadline;
     private BlockPos routeMining;
@@ -264,17 +265,16 @@ public final class AutoBuilder extends Module {
         ClientPlayConnectionEvents.DISCONNECT.register((handler,client)->{
             checkpoint();pause("Build saved — reconnect and press Resume");world=null;
         });
-        CompletableFuture.supplyAsync(()->{
-            var result=new HashMap<Integer,JsonObject>();
-            for(int slot=0;slot<=10;slot++)try{var info=savedBuilds.info(slot);if(info!=null)result.put(slot,info);}catch(IOException error){Maro.LOGGER.warn("Could not read build slot {}",slot,error);}
-            return result;
-        },IO).thenAccept(infos->mc.execute(()->{
-            savedBuildInfo.putAll(infos);
-            if(saveBuilds.get()&&!infos.isEmpty()){
-                int latest=infos.entrySet().stream().max(Comparator.comparingLong(e->e.getValue().get("saved-at").getAsLong())).orElseThrow().getKey();
-                buildSlot.set(latest==0?"Last Session":String.valueOf(latest));loadPlacement();
-            }
-        }));
+        CompletableFuture.runAsync(()->{
+            var infos=new HashMap<Integer,JsonObject>();
+            for(int slot=0;slot<=10;slot++)try{var info=savedBuilds.info(slot);if(info!=null)infos.put(slot,info);}catch(IOException error){Maro.LOGGER.warn("Could not read build slot {}",slot,error);}
+            Integer active=null;try{active=savedBuilds.activeSlot();}catch(IOException error){Maro.LOGGER.warn("Could not read active build slot",error);}
+            int selectedSlot=active==null?infos.entrySet().stream().max(Comparator.comparingLong(e->e.getValue().get("saved-at").getAsLong())).map(Map.Entry::getKey).orElse(-1):active;
+            mc.execute(()->{
+                savedBuildInfo.putAll(infos);
+                if(saveBuilds.get()&&infos.containsKey(selectedSlot)){buildSlot.set(selectedSlot==0?"Last Session":String.valueOf(selectedSlot));loadPlacement();}
+            });
+        },IO);
         ClientReceiveMessageEvents.GAME.register((message,overlay)->{if(buying&&pendingOffer!=null&&(marketStage==2||marketStage==3)&&AuctionMarket.unavailable(message.getString()))soldNotice=true;});
     }
     // Rendering/protocol defaults are internal; they no longer clutter the saved settings UI.
@@ -296,7 +296,15 @@ public final class AutoBuilder extends Module {
     public static boolean holdingBreak(){return digging;}
     public static void serverBlockUpdate(BlockPos pos,BlockState state){
         var builder=ModuleManager.get(AutoBuilder.class);
-        if(builder!=null&&builder.pendingPlacement!=null&&builder.pendingPlacement.target.equals(pos))builder.pendingServerState=state;
+        if(builder==null)return;
+        if(builder.pendingPlacement!=null&&builder.pendingPlacement.target.equals(pos))builder.pendingServerState=state;
+        var job=builder.unconfirmedPlacements.get(pos);
+        if(job!=null){
+            if(state.getBlock()==job.state.getBlock()){
+                builder.unconfirmedPlacements.remove(pos);
+                if(job.temporary)builder.supports.add(pos.toImmutable());
+            }else if(mc.world!=null&&mc.world.getBlockState(pos).equals(state))builder.unconfirmedPlacements.remove(pos);
+        }
     }
     public static boolean consumesUse(){var module=ModuleManager.get(AutoBuilder.class);return module!=null&&module.isEnabled()&&module.building&&module.mode.is("Semi Auto")&&mc.currentScreen==null;}
     public Path folder(){
@@ -316,7 +324,7 @@ public final class AutoBuilder extends Module {
             }));
     }
     private static String rootMessage(Throwable error){while(error.getCause()!=null)error=error.getCause();return error.getMessage()==null?error.getClass().getSimpleName():error.getMessage();}
-    public void install(Schematic data){if(!restoringPlacement){checkpoint();activeBuildSlot=-1;placementName="";}pause("Schematic loaded");schematic=data;supports.clear();escapeSupports.clear();cleanupStands.clear();recoveryAttempts=0;replan();}
+    public void install(Schematic data){if(!restoringPlacement){checkpoint();activeBuildSlot=-1;placementName="";}pause("Schematic loaded");schematic=data;unconfirmedPlacements.clear();supports.clear();escapeSupports.clear();cleanupStands.clear();recoveryAttempts=0;replan();}
     public Schematic schematic(){return schematic;}
     public String status(){return status;}
     public boolean loading(){return loading;}
@@ -396,7 +404,7 @@ public final class AutoBuilder extends Module {
         if(mc.player.currentScreenHandler!=mc.player.playerScreenHandler){notify("Close the current container before preparing supplies");return;}
         pause("Preparing supplies for the whole build");setEnabled(true);building=false;preview=true;
         if(supplyChests().isEmpty()){status="Look at your double chests and press R before starting";notify(status);return;}
-        chestStocks.clear();preparedStock.clear();preparationReady=false;buildBudgetActive=true;buildBudgetSpent=spent=0;preparationStage=1;depositAll();
+        chestStocks.clear();preparedStock.clear();preparationReady=false;if(!buildBudgetActive)buildBudgetSpent=0;buildBudgetActive=true;spent=buildBudgetSpent;preparationStage=1;depositAll();
     }
     private Map<Item,Integer> wholeBuildNeeds(){
         var needs=new HashMap<>(remaining);needs.keySet().removeAll(ignoredMaterials);if(support.get())needs.merge(Items.DIRT,buyDirt.getInt(),Integer::sum);addRequiredTools(needs);
@@ -410,9 +418,9 @@ public final class AutoBuilder extends Module {
         startBuild();
     }
     public void cancelSchematic(){
-        checkpoint();activeBuildSlot=-1;
+        checkpoint();activeBuildSlot=-1;CompletableFuture.runAsync(()->{try{savedBuilds.activate(-1);}catch(IOException error){Maro.LOGGER.warn("Could not clear active build slot",error);}},IO);
         ++ioGeneration;loading=false;pause("Schematic cancelled");setEnabled(false);preparationReady=false;chestStocks.clear();preparedStock.clear();emptyChestItems.clear();buildBudgetActive=false;buildBudgetSpent=0;
-        schematic=null;selected="";preview=false;captureStates=null;capture=null;
+        schematic=null;unconfirmedPlacements.clear();selected="";preview=false;captureStates=null;capture=null;
         states=unitsLeft=new byte[0];scanCursor=correct=solid=completedScans=passTasks=lastPassTasks=0;
         remaining.clear();remainingByLayer.clear();activeLayer=-1;scanLayer=Integer.MAX_VALUE;ignoredMaterials.clear();supports.clear();cleanupStands.clear();triedStands.clear();retryAt.clear();transformedStates.clear();
         visible=workCells=List.of();visibleScan.clear();workScan.clear();needed=null;delay=inventoryWait=0;staffStopAt=0;
@@ -584,6 +592,11 @@ public final class AutoBuilder extends Module {
         var wanted=desired(i);if(wanted.isOf(Blocks.STRUCTURE_VOID)||materialIgnored(wanted))return IGNORED;
         var pos=position(i);if(!mc.world.isChunkLoaded(pos))return UNKNOWN;
         if(pendingPlacement!=null&&pendingPlacement.target.equals(pos)&&pendingServerState==null)return MISSING;
+        var uncertain=unconfirmedPlacements.get(pos);
+        if(uncertain!=null){
+            if(mc.world.getBlockState(pos).getBlock()==uncertain.state.getBlock())return MISSING;
+            if(pendingPlacement==null||!pendingPlacement.target.equals(pos))unconfirmedPlacements.remove(pos);
+        }
         var actual=mc.world.getBlockState(pos);
         if(wanted.isOf(Blocks.NOTE_BLOCK)&&actual.isOf(Blocks.NOTE_BLOCK)&&wanted.get(NoteBlock.NOTE).equals(actual.get(NoteBlock.NOTE)))return CORRECT;
         return matchesBuildState(actual,wanted)||wanted.isAir()&&actual.isAir()?CORRECT:actual.isAir()||actual.isReplaceable()?MISSING:actual.getBlock()==wanted.getBlock()?WRONG_STATE:WRONG_BLOCK;
@@ -802,7 +815,7 @@ public final class AutoBuilder extends Module {
         }else{pendingPlacement=null;if(job.index>=0)retryAt.put(job.index,ticks+20);}
         placement=null;releaseSneak();
     }
-    private void beginPlacementReceipt(Place job){pendingPlacement=job;pendingBefore=mc.world.getBlockState(job.target);pendingServerState=null;placementDeadline=ticks+80;}
+    private void beginPlacementReceipt(Place job){unconfirmedPlacements.put(job.target,job);pendingPlacement=job;pendingBefore=mc.world.getBlockState(job.target);pendingServerState=null;placementDeadline=ticks+80;}
     private void placementReceiptTick(){
         walker.release();
         if(pendingServerState==null&&ticks<placementDeadline){status="Waiting for server placement";return;}
@@ -1283,7 +1296,6 @@ public final class AutoBuilder extends Module {
         if(activeBuildSlot<0){
             int slot=selectedBuildSlot();
             if(slot>0&&savedBuildInfo.containsKey(slot))slot=java.util.stream.IntStream.rangeClosed(1,10).filter(i->!savedBuildInfo.containsKey(i)).findFirst().orElse(0);
-            if(slot<0){status="Build slots full — choose a slot and press Save Placement";return;}
             activeBuildSlot=slot;buildSlot.set(slot==0?"Last Session":String.valueOf(slot));
         }
         writePlacement(activeBuildSlot).whenComplete((unused,error)->{if(error!=null)mc.execute(()->notify("Build checkpoint failed: "+rootMessage(error)));});
@@ -1291,7 +1303,7 @@ public final class AutoBuilder extends Module {
     private CompletableFuture<Void> writePlacement(int slot){
         var data=saveExtra();data.addProperty("schematic-name",schematic.name);data.addProperty("schematic-format",schematic.format);data.addProperty("name",placementName.isBlank()?schematic.name:placementName);data.addProperty("saved-at",System.currentTimeMillis());
         data.addProperty("correct",correct);data.addProperty("total",solid);data.addProperty("rotation",rotation.get());data.addProperty("mirror",mirror.get());data.addProperty("use-offset",useOffset.get());
-        data.addProperty("layer-mode",layerMode.get());data.addProperty("layer",layer.getInt());data.addProperty("build-budget-active",buildBudgetActive);data.addProperty("build-budget-spent",buildBudgetSpent);
+        data.addProperty("layer-mode",layerMode.get());data.addProperty("layer",layer.getInt());data.addProperty("build-budget-active",buildBudgetActive);data.addProperty("build-budget-spent",buildBudgetSpent);data.addProperty("auction-budget",maxSpend.get());
         var temporary=new JsonArray();for(var pos:supports)temporary.add(posJson(pos));data.add("temporary-supports",temporary);
         var escape=new JsonArray();for(var pos:escapeSupports)escape.add(posJson(pos));data.add("escape-supports",escape);
         savedBuildInfo.put(slot,data.deepCopy());var snapshot=schematic;
@@ -1309,7 +1321,7 @@ public final class AutoBuilder extends Module {
                 layerMode.set(data.get("layer-mode").getAsString());layer.set(data.get("layer").getAsDouble());
                 supports.clear();escapeSupports.clear();if(data.has("temporary-supports"))for(var pos:data.getAsJsonArray("temporary-supports"))supports.add(jsonPos(pos));
                 if(data.has("escape-supports"))for(var pos:data.getAsJsonArray("escape-supports"))escapeSupports.add(jsonPos(pos));
-                replan();buildBudgetActive=data.get("build-budget-active").getAsBoolean();buildBudgetSpent=data.get("build-budget-spent").getAsDouble();spent=buildBudgetSpent;
+                replan();if(data.has("auction-budget"))maxSpend.set(data.get("auction-budget").getAsDouble());buildBudgetActive=data.get("build-budget-active").getAsBoolean();buildBudgetSpent=data.get("build-budget-spent").getAsDouble();spent=buildBudgetSpent;
                 activeBuildSlot=slot;buildSlot.set(slot==0?"Last Session":String.valueOf(slot));placementName=data.get("name").getAsString();
                 world=inGame()&&worldScope.equals(scope())&&dimension.equals(mc.world.getRegistryKey().getValue().toString())?mc.world:null;
                 preview=true;building=false;status=world==null?"Placement loaded — join its saved world to resume":"Placement loaded — press Start / Resume";

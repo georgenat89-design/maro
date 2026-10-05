@@ -266,8 +266,13 @@ final class AutoBuilderChecks {
             client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();set(builder,"Build Slot","10");return builder.savePlacement("Survival stash");
         });
         for(int i=0;i<200&&!saved.isDone();i++)context.waitTick();saved.join();
-        context.runOnClient(client->{builder.cancelSchematic();builder.setOrigin(start.east(10));builder.loadPlacement();});
+        var other=context.computeOnClient(client->{
+            builder.cancelSchematic();builder.install(new Schematic("second-build.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.GLASS.getDefaultState()}));builder.setOrigin(start.east(10));set(builder,"Build Slot","9");return builder.savePlacement("Glass tower");
+        });
+        for(int i=0;i<200&&!other.isDone();i++)context.waitTick();other.join();
+        context.runOnClient(client->{set(builder,"Build Slot","10");builder.loadPlacement();});
         for(int i=0;i<200&&context.computeOnClient(client->builder.loading());i++)context.waitTick();
+        context.runOnClient(client->client.setScreen(new BuilderPlacementsScreen(null,builder)));context.waitTicks(3);context.takeScreenshot("maro-saved-builds");context.runOnClient(client->client.setScreen(null));
         context.runOnClient(client->{
             require(builder.schematic()!=null&&builder.origin().equals(origin)&&builder.schematic().offset.equals(new BlockPos(-2,0,3)),"Saved origin, file offset or snapshot was lost");
             require(builder.restockContainers().contains(chest)&&builder.placementName().equals("Survival stash")&&!builder.building(),"Saved chest/name or paused resume was lost");
