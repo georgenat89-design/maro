@@ -44,6 +44,13 @@ final class AutoBuilderChecks {
                 require(source!=null,"Missing supplied schematic fixture");java.nio.file.Files.copy(source,stashFile,java.nio.file.StandardCopyOption.REPLACE_EXISTING);var stash=SchematicIO.read(stashFile);require(stash.width==18&&stash.height==8&&stash.length==13&&stash.solidCount()==710,"Supplied stash schematic dimensions or signed-region import changed");
                 require(stash.materials().containsKey(Items.WATER_BUCKET)&&stash.materials().containsKey(Items.LAVA_BUCKET),"Fluid sources missing from stash supply list");
             }finally{java.nio.file.Files.deleteIfExists(stashFile);}
+            var farmFile=java.nio.file.Files.createTempFile("maro-farm-fixture", ".litematic");
+            try(var source=AutoBuilderChecks.class.getResourceAsStream("/fixtures/sellaxe-bone-meal-farm.litematic")){
+                require(source!=null,"Missing supplied large farm fixture");java.nio.file.Files.copy(source,farmFile,java.nio.file.StandardCopyOption.REPLACE_EXISTING);var farm=SchematicIO.read(farmFile);
+                require(farm.width==55&&farm.height==39&&farm.length==65&&farm.solidCount()==49_751,"Large farm import dimensions or block count changed");
+                require(farm.materials().get(Items.OBSERVER)==3910&&farm.materials().get(Items.HOPPER)==2602&&farm.materials().get(Items.NOTE_BLOCK)==1591,"Large farm redstone material counts changed");
+                require(farm.materials().get(Items.LAVA_BUCKET)==880&&farm.materials().get(Items.WATER_BUCKET)==230,"Large farm source-bucket quantities changed");
+            }finally{java.nio.file.Files.deleteIfExists(farmFile);}
             long[] packed=new long[3];for(int i=0;i<25;i++){long bit=(long)i*5;int word=(int)(bit/64),shift=(int)(bit%64);long value=i%17;packed[word]|=value<<shift;if(shift+5>64)packed[word+1]|=value>>>(64-shift);}
             for(int i=0;i<25;i++)require(SchematicIO.packedIndex(packed,i,5)==i%17,"Packed state straddling long boundary failed");
             require(AuctionMarket.price("Price: $1.25m","$")==1_250_000&&Double.isNaN(AuctionMarket.price("Seller: 123","$")),"Auction price parsing failed");
@@ -54,6 +61,14 @@ final class AutoBuilderChecks {
             require(AuctionMarket.choose(List.of(stack),64,0,20,600,false,0)==null,"Spend cap ignored");
             try{var bad=old.copy();bad.putByteArray("Blocks",new byte[]{1});SchematicIO.decode("bad.schematic",bad);throw new AssertionError("Truncated arrays accepted");}catch(java.io.IOException expected){}
             try{Schematic.volume(2048,2048,2048);throw new AssertionError("Volume limit ignored");}catch(IllegalArgumentException expected){}
+            var eta=new BuilderEta();eta.tick(0,true);
+            for(int second=1;second<=10;second++){eta.tick(second*1000L,true);eta.completed();}
+            require(eta.seconds(90)==90&&eta.label(90,0).equals("ETA ~ 1m 30s"),"ETA did not use measured completed work");
+            eta.tick(10_000,false);eta.tick(1_000_000,false);eta.tick(1_000_000,true);eta.tick(1_001_000,true);eta.completed();
+            require(eta.seconds(90)==90,"Paused time inflated the build ETA");
+            eta.tick(1_035_000,true);require(eta.label(90,0).equals("ETA · waiting"),"Stalled build displayed a stale ETA");
+            require(eta.label(0,3).equals("ETA · cleanup")&&eta.label(0,0).equals("ETA · done"),"ETA reported completion before temporary cleanup");
+            eta.reset();eta.tick(0,true);eta.completed();require(eta.seconds(90)<0,"ETA invented a rate before warming up");
         }catch(java.io.IOException e){throw new AssertionError(e);}
     }
     private static NbtCompound vector(int x,int y,int z){var n=new NbtCompound();n.putInt("x",x);n.putInt("y",y);n.putInt("z",z);return n;}
@@ -452,6 +467,15 @@ final class AutoBuilderChecks {
         await(context,builder,900);verify(world,lowerTarget,1,1,1,y->Blocks.STONE);
         require(world.getServer().computeOnServer(server->post.stream().allMatch(piece->server.getOverworld().getBlockState(piece).isAir())),"Stranded post descent left temporary dirt behind");
         context.runOnClient(client->require(client.player.getHealth()==20&&builder.temporarySupports().isEmpty(),"Owned post descent caused damage or lost cleanup ownership"));
+        fixture(context,world,builder,start);world.getServer().runCommand("give @a stone 1");world.getServer().runCommand("give @a diamond_shovel 1");command(world,"setblock",start,"dirt");
+        world.getServer().runCommand("gamemode creative @a");world.getServer().runCommand("tp @a "+(start.getX()+1.03)+" "+(start.getY()+1)+" "+(start.getZ()+.5));context.waitTicks(12);world.getServer().runCommand("gamemode survival @a");context.waitTicks(6);
+        context.runOnClient(client->{
+            set(builder,"Temporary Supports",true);builder.install(new Schematic("post-edge-descent.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(lowerTarget);
+            @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.add(start);builder.startBuild();
+        });
+        await(context,builder,700);verify(world,lowerTarget,1,1,1,y->Blocks.STONE);
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(start).isAir()),"Post-edge descent did not clean its support");
+        context.runOnClient(client->require(client.player.getHealth()==20&&builder.temporarySupports().isEmpty(),"Post-edge descent caused damage or lost cleanup ownership"));
         fixture(context,world,builder,start);
         world.getServer().runCommand("fill "+coords(start.add(1,-1,0))+" "+coords(start.add(5,-1,6))+" lava");
         world.getServer().runCommand("fill "+coords(start.add(-5,-1,0))+" "+coords(start.add(-1,-1,6))+" lava");
@@ -668,7 +692,7 @@ final class AutoBuilderChecks {
         var cells=new BlockState[width*height*length];Arrays.fill(cells,Blocks.STONE.getDefaultState());
         var large=new Schematic("large-supply.nbt","test",width,height,length,BlockPos.ORIGIN,cells);
         require(large.solidCount()==250_000&&large.materials().get(Items.STONE)==250_000,"Large schematic material count overflowed");
-        context.runOnClient(client->{set(builder,"Material Supply","Nearby Sections");builder.install(large);builder.setOrigin(start.add(-50,8,-50));});
+        context.runOnClient(client->{set(builder,"Material Supply","Nearby Sections");builder.install(large);builder.setOrigin(start.add(-50,8,-50));builder.preview();});
         for(int tick=0;tick<500&&context.computeOnClient(client->(int)field(builder,"completedScans")==0);tick++)context.waitTick();
         context.runOnClient(client->{
             require((int)field(builder,"completedScans")>0,"Large schematic scan did not finish incrementally");
@@ -680,6 +704,22 @@ final class AutoBuilderChecks {
             for(int turn=0;turn<4;turn++)for(String mirror:new String[]{"None","X","Z"})for(int index:new int[]{0,99,12_345,249_999})require(large.indexAt(large.transformed(index,turn,mirror),turn,mirror)==index,"Large placement transform lost a cell");
             set(builder,"Material Supply","Layer by Layer");
         });
+        try{
+            var path=java.nio.file.Files.createTempFile("maro-farm-scan", ".litematic");
+            try(var source=AutoBuilderChecks.class.getResourceAsStream("/fixtures/sellaxe-bone-meal-farm.litematic")){
+                java.nio.file.Files.copy(source,path,java.nio.file.StandardCopyOption.REPLACE_EXISTING);var farm=SchematicIO.read(path);
+                context.runOnClient(client->{set(builder,"Material Supply","Nearby Sections");builder.install(farm);builder.setOrigin(start.add(-27,8,-32));builder.preview();});
+                for(int tick=0;tick<500&&context.computeOnClient(client->(int)field(builder,"completedScans")==0);tick++)context.waitTick();
+                context.runOnClient(client->{
+                    require((int)field(builder,"completedScans")>0,"Supplied large farm scan did not finish");
+                    var batch=builder.remainingMaterials();int blocks=batch.values().stream().mapToInt(Integer::intValue).sum();
+                    require(blocks>0&&blocks<=128,"Farm requested unbounded work materials");
+                    require(batch.entrySet().stream().mapToInt(entry->(entry.getValue()+entry.getKey().getMaxCount()-1)/entry.getKey().getMaxCount()).sum()<=24,"Farm requested more material stacks than fit its work inventory");
+                    require(!batch.containsKey(Items.OBSERVER)&&!batch.containsKey(Items.LAVA_BUCKET)&&!batch.containsKey(Items.WATER_BUCKET),"Farm activated observer/fluid work before assembly");
+                    set(builder,"Material Supply","Layer by Layer");
+                });
+            }finally{java.nio.file.Files.deleteIfExists(path);}
+        }catch(java.io.IOException failure){throw new AssertionError(failure);}
     }
     private static void longRestockRoute(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         var chest=start.east(80);var target=start.south(2);
@@ -688,7 +728,7 @@ final class AutoBuilderChecks {
         command(world,"setblock",chest,"chest[facing=west,type=right]");command(world,"setblock",chest.south(),"chest[facing=west,type=left]");
         world.getServer().runCommand("item replace block "+coords(chest)+" container.0 with stone 64");context.waitTicks(10);
         context.runOnClient(client->{
-            set(builder,"Restock Walk Distance",256);builder.install(new Schematic("long-restock-route.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);
+            require(((dev.maro.setting.NumberSetting)field(builder,"walkDistance")).getInt()==256,"Selected-storage range did not increase for large builds");builder.install(new Schematic("long-restock-route.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);
             client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();builder.startBuild();
         });
         await(context,builder,2400);verify(world,target,1,1,1,y->Blocks.STONE);

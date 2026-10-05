@@ -71,7 +71,7 @@ public final class AutoBuilder extends Module {
     private final BooleanSetting replaceWrong=bool("Build","Replace Wrong Blocks","Mine mismatching block types before placing the requested block",false);
     private final BooleanSetting repairStates=fixedBool("Repair Wrong States","Break and replace mismatching states when their placement can be reproduced",false);
     private final BooleanSetting protectContainers=fixedBool("Protect Containers","Never mine block entities such as chests, signs or machines",true);
-    private final NumberSetting spacing=number("Build","Action Delay","Ticks between placements and inventory operations",3,0,20,1);
+    private final NumberSetting spacing=number("Build","Action Delay","Ticks between placements and inventory operations; server confirmation is still required",2,0,20,1);
     private final NumberSetting timingVariation=number("Build","Timing Variation","Extra random ticks added to action delay",1,0,6,1);
     private final BooleanSetting smoothTurning=bool("Build","Head Smoothing","Ease visible turns into and out of the target angle",true);
     private float yawVelocity,pitchVelocity;
@@ -158,7 +158,8 @@ public final class AutoBuilder extends Module {
     private byte[] states=new byte[0];
     private byte[] unitsLeft=new byte[0];
     private final Map<Integer,Integer> potUnitsLeft=new HashMap<>();
-    private int scanCursor,correct,solid,completedScans,ticks,delay,originalSlot=-1,ioGeneration,passTasks,lastPassTasks,lastAction;
+    private int scanCursor,correct,solid,ignoredSolid,completedScans,ticks,delay,originalSlot=-1,ioGeneration,passTasks,lastPassTasks,lastAction;
+    private final BuilderEta buildEta=new BuilderEta();
     private boolean loading,building,preview=true,ownsSneak;
     private final Map<Item,Integer> remaining=new HashMap<>();
     private final TreeMap<Integer,Map<Item,Integer>> remainingByLayer=new TreeMap<>();
@@ -437,6 +438,7 @@ public final class AutoBuilder extends Module {
         origin=pos.toImmutable();world=mc.world;dimension=nextDimension;replan();
     }
     private void replan(){
+        buildEta.reset();ignoredSolid=0;
         preparationReady=false;chestStocks.clear();preparedStock.clear();emptyChestItems.clear();buildBudgetActive=false;buildBudgetSpent=0;
         if(schematic==null)return;pause("Placement changed");transformedStates.clear();triedStands.clear();states=new byte[schematic.size()];unitsLeft=new byte[schematic.size()];scanCursor=correct=completedScans=passTasks=0;lastPassTasks=schematic.size();solid=schematic.solidCount();
         for(int i=0;i<schematic.size();i++)if(materialIgnored(schematic.state(i))&&!schematic.state(i).isAir()&&!schematic.state(i).isOf(Blocks.STRUCTURE_VOID))solid--;
@@ -462,7 +464,7 @@ public final class AutoBuilder extends Module {
         var miner=ModuleManager.get(AutoMine.class);if(miner!=null&&miner.isEnabled())miner.setEnabled(false);
         checkpoint();
         if(prebuyWhole.get()&&!preparationReady&&!mc.player.getAbilities().creativeMode){startPreparation();return;}
-        setEnabled(true);building=true;preview=true;staffStopAt=0;checkpoint();triedContainers.clear();retryAt.clear();status=mode.is("Semi Auto")?"Hold right mouse to build":"Building";mc.setScreen(null);
+        buildEta.reset();setEnabled(true);building=true;preview=true;staffStopAt=0;checkpoint();triedContainers.clear();retryAt.clear();status=mode.is("Semi Auto")?"Hold right mouse to build":"Building";mc.setScreen(null);
     }
     private void startPreparation(){
         if(mc.player.currentScreenHandler!=mc.player.playerScreenHandler){notify("Close the current container before preparing supplies");return;}
@@ -500,6 +502,7 @@ public final class AutoBuilder extends Module {
     }
     @Override protected void onDisable(){pause("Disabled");staffStopAt=0;captureStates=null;if(mc.player!=null&&originalSlot>=0)select(originalSlot);originalSlot=-1;}
     public void pause(String reason){
+        buildEta.tick(System.nanoTime()/1_000_000,false);
         if(pendingPlacement!=null&&inGame()&&world==mc.world&&(pendingServerState==null||!compatible(pendingServerState,pendingPlacement.state)))
             reconcilePrediction(pendingPlacement,pendingServerState);
         queuedLookAction=null;
@@ -535,6 +538,7 @@ public final class AutoBuilder extends Module {
         walker.turning(smoothTurning.get(),turnSpeed.getFloat());
         if(!inGame()||world!=mc.world){pause("World changed — set the origin again");world=null;return;}
         if(!mc.player.isAlive()||mc.player.isSpectator()){pause("Player is not able to build");return;}
+        buildEta.tick(System.nanoTime()/1_000_000,building&&(!mode.is("Semi Auto")||mc.options.useKey.isPressed()));
         scan();captureTick();
         if(staffStopAt>0){if(logoff.get()&&System.currentTimeMillis()-staffStopAt>=logoffDelay.get()*1000){mc.world.disconnect(Text.literal(logoffMessage.get()));setEnabled(false);}return;}
         if((building||buying||pasting||depositing)&&unsafe()){walker.release();return;}
@@ -709,6 +713,8 @@ public final class AutoBuilder extends Module {
                 remainingByLayer.computeIfAbsent(taskLayer(index),y->new HashMap<>()).compute(Items.FLOWER_POT,(item,count)->Math.max(0,(count==null?0:count)-change));
             }
             int change=(next==CORRECT?1:0)-(old==CORRECT?1:0);correct+=change;
+            if(change>0&&old!=UNKNOWN&&building)buildEta.completed();
+            ignoredSolid+=(next==IGNORED?1:0)-(old==IGNORED?1:0);
             var item=Schematic.material(expected);int oldUnits=old==UNKNOWN?Schematic.units(expected):unitsLeft[index],newUnits=next==CORRECT||next==IGNORED?0:Schematic.units(expected);
             if(newUnits==2&&mc.world.isChunkLoaded(position(index))){var actual=mc.world.getBlockState(position(index));if(actual.getBlock()==expected.getBlock()&&actual.contains(net.minecraft.state.property.Properties.SLAB_TYPE)&&actual.get(net.minecraft.state.property.Properties.SLAB_TYPE)!=net.minecraft.block.enums.SlabType.DOUBLE)newUnits=1;}
             unitsLeft[index]=(byte)newUnits;int delta=oldUnits-newUnits;
@@ -1286,7 +1292,7 @@ public final class AutoBuilder extends Module {
         }else{
             mc.player.setYaw(mc.player.getYaw()+MathHelper.clamp(yaw,-speed,speed));mc.player.setPitch(MathHelper.clamp(mc.player.getPitch()+MathHelper.clamp(pitch,-speed,speed),-90,90));
         }
-        if(Math.abs(MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()))<.1&&Math.abs(goal[1]-mc.player.getPitch())<.1){
+        if(Math.abs(MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()))<.75&&Math.abs(goal[1]-mc.player.getPitch())<.75){
             mc.player.setYaw(mc.player.getYaw()+MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()));mc.player.setPitch(goal[1]);yawVelocity=pitchVelocity=0;return true;
         }return false;
     }
@@ -1833,11 +1839,19 @@ public final class AutoBuilder extends Module {
         Render2D.shadow(ctx,x,y,w,58,9,8,0x50000000);Render2D.roundRect(ctx,x,y,w,58,9,0xE818202C);
         Render2D.roundRect(ctx,x+10,y+12,3,16,1.5f,building?0xFF7EF0C1:0xFF87B6FF);
         SmoothHudText.draw(ctx,"AUTO BUILDER",x+22,y+10,0xFFADBBD0,true,.75f);
+        SmoothHudText.draw(ctx,SmoothHudText.trim(ctx,etaText(),116,false,.65f),x+152,y+11,0xFF9BDDCB,false,.65f);
         SmoothHudText.draw(ctx,SmoothHudText.trim(ctx,status,w-32,true,.95f),x+12,y+25,0xFFF1F5FF,true,.95f);
-        String details=schematic==null?"Choose a schematic in Player → Auto Builder":correct+" / "+solid+" blocks  ·  "+containers.size()+" restock marks";
+        int required=Math.max(0,solid-ignoredSolid);
+        String details=schematic==null?"Choose a schematic in Player → Auto Builder":correct+" / "+required+" blocks  ·  "+containers.size()+" restock marks";
         SmoothHudText.draw(ctx,details,x+12,y+41,0xFFB6C5D9,false,.75f);
-        Render2D.roundRect(ctx,x+12,y+53,w-24,2,1,0xFF334255);if(solid>0)Render2D.roundRect(ctx,x+12,y+53,(w-24)*correct/solid,2,1,0xFF7EF0C1);
+        Render2D.roundRect(ctx,x+12,y+53,w-24,2,1,0xFF334255);if(required>0)Render2D.roundRect(ctx,x+12,y+53,(w-24)*Math.min(correct,required)/required,2,1,0xFF7EF0C1);
         if(showLabels.get()&&restockTarget!=null)SmoothHudText.draw(ctx,"Restock "+restockTarget.toShortString(),x+12,y+64,0xFF9DCBFF,false,labelScale.getFloat());
+    }
+    public String etaText(){
+        if(schematic==null||loading)return "ETA · load schematic";
+        if(preparationStage>0)return "ETA · preparing";
+        if(!building)return status.equals("Build complete")?"ETA · done":"ETA · paused";
+        return buildEta.label(Math.max(0,solid-correct-ignoredSolid),cleanup.get()?supports.size():0);
     }
     public int selectedBuildSlot(){return buildSlot.is("Last Session")?0:Integer.parseInt(buildSlot.get());}
     public void cycleBuildSlot(int direction){buildSlot.cycle(direction);}

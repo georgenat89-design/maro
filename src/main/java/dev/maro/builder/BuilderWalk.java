@@ -129,10 +129,14 @@ public final class BuilderWalk {
                 LinkedList<BlockPos> result=new LinkedList<>();for(Node p=n;p.parent!=null;p=p.parent)result.addFirst(p.pos);return result;
             }
             for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++){
-                if(dx==0&&dz==0)continue;boolean diagonal=dx!=0&&dz!=0;
+                boolean sameColumn=dx==0&&dz==0;
+                // A player can straddle a post with their centre over air. In
+                // that case moving toward this column's centre safely drops
+                // onto the floor below; cardinal-only neighbours miss it.
+                if(sameColumn&&(!n.pos.equals(start)||walkable(n.pos)))continue;boolean diagonal=dx!=0&&dz!=0;
                 if(diagonal&&(!walkable(n.pos.add(dx,0,0))||!walkable(n.pos.add(0,0,dz))))continue;
                 var adjacent=n.pos.add(dx,0,dz);BlockPos step=null;
-                for(int dy:new int[]{0,1,-1,-2}){var p=adjacent.up(dy);if(walkable(p)){step=p;break;}}
+                for(int dy:sameColumn?new int[]{-1,-2}:new int[]{0,1,-1,-2}){var p=adjacent.up(dy);if(walkable(p)){step=p;break;}}
                 if(step==null||closed.contains(step)||step.getManhattanDistance(start)>64)continue;
                 double rise=standingPoint(step).y-standingPoint(n.pos).y;
                 if(rise>1.2||rise< -2)continue;

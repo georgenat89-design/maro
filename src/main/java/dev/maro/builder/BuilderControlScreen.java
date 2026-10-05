@@ -57,6 +57,7 @@ public final class BuilderControlScreen extends Screen {
         var schematic=builder.schematic();String name=builder.loading()?"Loading schematic…":schematic==null?"Choose a schematic to start":schematic.name+"  ·  "+schematic.width+" × "+schematic.height+" × "+schematic.length;
         SmoothHudText.draw(ctx,SmoothHudText.trim(ctx,name,panelWidth-36,false,.85f),left+18,top+31,0xFFBDD0E8,false,.85f);
         SmoothHudText.draw(ctx,"Origin: "+(builder.origin()==null?"automatic":builder.origin().toShortString()),left+18,top+43,0xFF93ABC9,false,.65f);
+        SmoothHudText.draw(ctx,SmoothHudText.trim(ctx,builder.etaText(),panelWidth-220,false,.65f),left+202,top+43,0xFF9BDDCB,false,.65f);
         SmoothHudText.draw(ctx,SmoothHudText.trim(ctx,"Chests: "+(builder.restockContainers().isEmpty()?"press R to add":builder.restockContainers().size()+" selected"),panelWidth-220,false,.65f),left+202,top+54,0xFF93ABC9,false,.65f);
         SmoothHudText.draw(ctx,"Budget",left+18,top+76,0xFFBDCEE5,false,.7f);
         String status=builder.auctionBudget()<=0&&!builder.buying()?"AH buying: enter a budget above 0":builder.status();
