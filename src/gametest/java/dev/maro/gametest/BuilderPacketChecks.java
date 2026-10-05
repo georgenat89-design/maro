@@ -10,8 +10,14 @@ import net.minecraft.util.math.MathHelper;
 /** Observe actual outbound packets while a selected-chest restock and build run. */
 public final class BuilderPacketChecks {
     public static boolean recording,vanillaMovement;
-    private static int extraMovement,interactions,lastSequence,invalidSequence,unpublishedLook;
-    public static void begin(){recording=true;extraMovement=interactions=lastSequence=invalidSequence=unpublishedLook=0;}
+    private static int extraMovement,interactions,lastSequence,invalidSequence,unpublishedLook,repeatedMovement,lastMovementAge;
+    public static void begin(){recording=true;extraMovement=interactions=lastSequence=invalidSequence=unpublishedLook=repeatedMovement=0;lastMovementAge=-1;}
+    public static void movementStart(){
+        vanillaMovement=true;if(!recording)return;
+        int age=MinecraftClient.getInstance().player.age;
+        if(age==lastMovementAge)repeatedMovement++;
+        lastMovementAge=age;
+    }
     public static void outbound(Packet<?> packet){
         if(!recording)return;
         if(packet instanceof PlayerMoveC2SPacket&&!vanillaMovement)extraMovement++;
@@ -24,7 +30,7 @@ public final class BuilderPacketChecks {
     }
     public static void verify(){
         recording=false;
-        if(interactions<2||extraMovement!=0||invalidSequence!=0||unpublishedLook!=0)
-            throw new AssertionError("Builder packet order: interactions="+interactions+" extraMovement="+extraMovement+" invalidSequence="+invalidSequence+" unpublishedLook="+unpublishedLook);
+        if(interactions<2||extraMovement!=0||invalidSequence!=0||unpublishedLook!=0||repeatedMovement!=0)
+            throw new AssertionError("Builder packet order: interactions="+interactions+" extraMovement="+extraMovement+" invalidSequence="+invalidSequence+" unpublishedLook="+unpublishedLook+" repeatedMovement="+repeatedMovement);
     }
 }
