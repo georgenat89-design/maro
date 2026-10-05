@@ -17,12 +17,13 @@ public final class BuilderWalk {
     private boolean exact;
     private int failedRoutes;
     private boolean recoveryRequested;
+    private boolean movementStalled;
     private boolean smooth=true;
     private float yawVelocity,turnLimit=45;
     public void turning(boolean smooth,float speed){this.smooth=smooth;turnLimit=speed;}
     public String status="";
     public void stop(){
-        release();path=List.of();goal=null;cursor=retry=stuck=failedRoutes=0;last=null;recoveryRequested=false;yawVelocity=0;
+        release();path=List.of();goal=null;cursor=retry=stuck=failedRoutes=0;last=null;recoveryRequested=movementStalled=false;yawVelocity=0;
     }
     public void release(){
         if(forward)mc.options.forwardKey.setPressed(false);
@@ -36,6 +37,7 @@ public final class BuilderWalk {
     public boolean canStand(BlockPos pos){return walkable(pos);}
     public boolean canReachStand(BlockPos pos){return walkable(pos)&&(mc.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(pos))<=.42*.42||!find(mc.player.getBlockPos(),pos,.42,true).isEmpty());}
     public boolean needsRecovery(){return recoveryRequested;}
+    public boolean movementStalled(){return movementStalled;}
     public boolean routeUnavailable(){return goal!=null&&path.isEmpty()&&failedRoutes>0;}
     public BlockPos blockingSupport(Set<BlockPos> supports){
         if(goal==null||mc.player==null)return null;
@@ -87,8 +89,8 @@ public final class BuilderWalk {
         if(node.getY()>mc.player.getY()+.4&&mc.player.isOnGround()){jump=true;mc.options.jumpKey.setPressed(true);}
         else if(jump){mc.options.jumpKey.setPressed(false);jump=false;}
         Vec3d now=mc.player.getEntityPos();
-        if(last==null||now.squaredDistanceTo(last)>.04){last=now;stuck=0;}else if(forward)stuck++;
-        if(stuck>30){recoveryRequested=true;path=List.of();release();stuck=0;retry=20;}
+        if(last==null||now.squaredDistanceTo(last)>.04){last=now;stuck=0;movementStalled=false;}else if(forward)stuck++;
+        if(stuck>30){recoveryRequested=movementStalled=true;path=List.of();release();stuck=0;retry=20;}
         status="Walking to build position";return false;
     }
     private boolean straightTo(BlockPos node){

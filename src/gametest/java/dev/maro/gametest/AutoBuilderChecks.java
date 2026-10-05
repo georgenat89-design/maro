@@ -387,6 +387,7 @@ final class AutoBuilderChecks {
             builder.install(new Schematic("stuck-existing-route.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(routeTarget);
             @SuppressWarnings("unchecked") var supports=(Set<BlockPos>)field(builder,"supports");supports.add(obstruction);builder.startBuild();
             var walker=(BuilderWalk)field(builder,"walker");walker.approach(routeTarget,.5);walker.requestRecovery();
+            try{var stalled=BuilderWalk.class.getDeclaredField("movementStalled");stalled.setAccessible(true);stalled.setBoolean(walker,true);}catch(ReflectiveOperationException error){throw new AssertionError(error);}
             require(!walker.routeUnavailable(),"Route collision fixture must have a path");
         });
         await(context,builder,500);
