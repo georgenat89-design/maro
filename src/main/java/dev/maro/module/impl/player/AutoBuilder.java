@@ -564,7 +564,7 @@ public final class AutoBuilder extends Module {
         if(placement!=null){placeTick();return;}
         if(mining!=null){mineTick();return;}
         if(standGoal!=null){
-            if(standProgressPos==null||mc.player.getEntityPos().squaredDistanceTo(standProgressPos)>.04){standProgressPos=mc.player.getEntityPos();standProgressAt=ticks;}
+            if(standProgressPos==null||mc.player.getEntityPos().subtract(standProgressPos).horizontalLengthSquared()>.04||mc.player.isOnGround()&&Math.abs(mc.player.getY()-standProgressPos.y)>.2){standProgressPos=mc.player.getEntityPos();standProgressAt=ticks;}
             if(walker.standAt(standGoal)){standGoal=null;walker.stop();}
             else if(ticks-standProgressAt>50||ticks-standStarted>240||walker.routeUnavailable()){
                 if(navigatingCell>=0){retryAt.put(navigatingCell,ticks+10);triedStands.computeIfAbsent(navigatingCell,i->new HashMap<>()).put(standGoal,ticks+600);}

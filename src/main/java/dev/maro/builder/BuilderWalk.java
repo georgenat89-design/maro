@@ -106,7 +106,7 @@ public final class BuilderWalk {
         if(point.y>mc.player.getY()+.4&&mc.player.isOnGround()){jump=true;mc.options.jumpKey.setPressed(true);}
         else if(jump){mc.options.jumpKey.setPressed(false);jump=false;}
         Vec3d now=mc.player.getEntityPos();
-        if(last==null||now.squaredDistanceTo(last)>.04){last=now;stuck=0;movementStalled=false;}else if(forward)stuck++;
+        if(last==null||now.subtract(last).horizontalLengthSquared()>.04||mc.player.isOnGround()&&Math.abs(now.y-last.y)>.2){last=now;stuck=0;movementStalled=false;}else if(forward)stuck++;
         if(stuck>30){recoveryRequested=movementStalled=true;path=List.of();release();stuck=0;retry=20;}
         status="Walking to build position";return false;
     }
