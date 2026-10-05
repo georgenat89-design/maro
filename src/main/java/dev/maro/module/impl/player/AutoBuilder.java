@@ -902,9 +902,36 @@ public final class AutoBuilder extends Module {
             // trying those views, allow a connected bridge from another side.
             if(supportFallback&&!bridge&&repositionTarget(target,tried,true)){bridgeTarget=target;return true;}
             if(prepareSupportDescent(options))return true;
+            if(wanted!=null&&temporaryView(target,wanted,cell,tried))return true;
             return false;
         }
         standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();status="Moving around an obstructed block";return true;
+    }
+    /** Add a real, acknowledged floor when an otherwise usable placement view has none. */
+    private boolean temporaryView(BlockPos target,BlockState wanted,int cell,Map<BlockPos,Integer> tried){
+        if(!support.get()||wanted.isAir()||Schematic.material(wanted)==Items.AIR)return false;
+        var candidates=new ArrayList<BlockPos>();
+        for(int dx=-3;dx<=3;dx++)for(int dz=-3;dz<=3;dz++)for(int dy=-5;dy<=2;dy++){
+            var stand=target.add(dx,dy,dz);var floor=stand.down();
+            if(tried.containsKey(stand)||routeSupportExclusions.getOrDefault(floor,0)>ticks||plannedSolid(floor)||!mc.world.isChunkLoaded(floor)||!walker.hasStandingClearance(stand))continue;
+            if(!mc.world.getBlockState(floor).isReplaceable()||!mc.world.getFluidState(floor).isEmpty())continue;
+            if(mc.player.getEyePos().squaredDistanceTo(Vec3d.ofCenter(floor))>effectiveReach()*effectiveReach())continue;
+            candidates.add(stand);
+        }
+        candidates.sort(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos())));
+        for(var stand:candidates){
+            var feet=Vec3d.ofBottomCenter(stand);var eye=feet.add(0,mc.player.getStandingEyeHeight(),0);
+            if(eye.squaredDistanceTo(Vec3d.ofCenter(target))>effectiveReach()*effectiveReach())continue;
+            var body=mc.player.getBoundingBox().offset(feet.subtract(mc.player.getEntityPos()));
+            if(!mc.world.isSpaceEmpty(body))continue;
+            var job=placement(stand.down(),Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true);
+            if(job==null||placement(target,wanted,Schematic.material(wanted),cell,false,eye,body)==null)continue;
+            if(supports.size()>=tempDirt.getInt())return recycleSupport();
+            if(inventoryCount(Items.DIRT)==0){ensureSupportDirt();return true;}
+            if(!stand.equals(accessStand)){accessStand=stand;accessSupports.clear();}
+            accessSupports.add(stand.down());placement=job;placeTick();return true;
+        }
+        return false;
     }
     /** Build the lowest attachable piece of a short support column before its upper pieces. */
     private Place supportPlacement(BlockPos target,Vec3d eye,Box body){

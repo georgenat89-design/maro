@@ -35,6 +35,7 @@ public final class BuilderWalk {
     }
     public boolean standAt(BlockPos target){return approach(target,.22,true);}
     public boolean canStand(BlockPos pos){return walkable(pos);}
+    public boolean hasStandingClearance(BlockPos pos){return clear(pos)&&clear(pos.up());}
     public Vec3d standingPoint(BlockPos pos){return Vec3d.ofBottomCenter(pos).add(0,footingHeight(pos.down())-1,0);}
     public boolean canReachStand(BlockPos pos){return walkable(pos)&&(walkingCell().equals(pos)||mc.player.getEntityPos().squaredDistanceTo(standingPoint(pos))<=.22*.22||!find(walkingCell(),pos,.22,true).isEmpty());}
     private BlockPos walkingCell(){return BlockPos.ofFloored(mc.player.getEntityPos().add(0,.4,0));}
