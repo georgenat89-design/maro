@@ -986,14 +986,13 @@ public final class AutoBuilder extends Module {
         }return false;
     }
     private boolean buildLookReady(){
-        // Work runs before vanilla's player tick. A changed aim must reach the server through
-        // that tick's normal movement packet before the following tick may interact.
+        // Publish through vanilla so position/look selection and last-sent bookkeeping agree.
+        // A raw LookAndOnGround leaves those fields stale and the next player tick repeats it.
         var sent=(ClientPlayerLookAccessor)mc.player;
-        if(Math.abs(MathHelper.wrapDegrees(mc.player.getYaw()-sent.maro$lastSentYaw()))>.01f
-            ||Math.abs(mc.player.getPitch()-sent.maro$lastSentPitch())>.01f){
-            status="Waiting for normal look update";return false;
-        }
-        return true;
+        if(mc.player.getYaw()!=sent.maro$lastSentYaw()||mc.player.getPitch()!=sent.maro$lastSentPitch())sent.maro$publishMovement();
+        boolean ready=Math.abs(MathHelper.wrapDegrees(mc.player.getYaw()-sent.maro$lastSentYaw()))<=.01f
+            &&Math.abs(mc.player.getPitch()-sent.maro$lastSentPitch())<=.01f;
+        if(!ready)status="Waiting for normal look update";return ready;
     }
     private boolean recoverUnexpectedBuildMenu(){
         if(mc.currentScreen instanceof AbstractSignEditScreen sign&&ticks-lastBuildInteraction<=160){
