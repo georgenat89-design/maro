@@ -65,7 +65,7 @@ jobs:
 
       # Only builds that passed the in-game test become releases.
       - name: Publish release
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
