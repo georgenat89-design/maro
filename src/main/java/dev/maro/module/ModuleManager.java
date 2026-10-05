@@ -36,6 +36,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.SkinAccessories());
         register(new dev.maro.module.impl.visuals.Pet());
         register(new dev.maro.module.impl.visuals.BaseESP());
+        register(new dev.maro.module.impl.visuals.PlayerESP());
         register(new dev.maro.module.impl.visuals.StaffNotifier());
         register(new dev.maro.anubis.module.impl.misc.AntiVanishModule());
         dev.maro.nathan.NameeProtectAddon.init();

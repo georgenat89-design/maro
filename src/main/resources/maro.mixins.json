@@ -34,7 +34,11 @@
     "PacketEventsMixin",
     "StaffPacketsMixin",
     "StaffConnectionMixin",
-    "BlockEventsMixin"
+    "BlockEventsMixin",
+    "EntityRenderStateMixin",
+    "EntityRenderManagerMixin",
+    "OrderedRenderCommandQueueImplAccessor",
+    "PlayerEspWorldRendererMixin"
   ],
   "injectors": {
     "defaultRequire": 1
