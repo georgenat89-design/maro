@@ -380,6 +380,17 @@ final class AutoBuilderChecks {
         });
         await(context,builder,450);
         require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(target).isAir()&&server.getOverworld().getBlockState(target.up()).isOf(Blocks.STONE)),"Own scaffold air cell blocked the upper layer or was not cleaned");
+
+        fixture(context,world,builder,start);var obstruction=start.south().up();var routeTarget=start.south(4);
+        command(world,"setblock",obstruction,"dirt");world.getServer().runCommand("give @a stone 1");world.getServer().runCommand("give @a diamond_shovel 1");context.waitTicks(6);
+        context.runOnClient(client->{
+            builder.install(new Schematic("stuck-existing-route.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(routeTarget);
+            @SuppressWarnings("unchecked") var supports=(Set<BlockPos>)field(builder,"supports");supports.add(obstruction);builder.startBuild();
+            var walker=(BuilderWalk)field(builder,"walker");walker.approach(routeTarget,.5);walker.requestRecovery();
+            require(!walker.routeUnavailable(),"Route collision fixture must have a path");
+        });
+        await(context,builder,500);
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(obstruction).isAir()&&server.getOverworld().getBlockState(routeTarget).isOf(Blocks.STONE)),"Stuck route did not clear the builder's obstructing overhead dirt");
     }
     private static Object field(AutoBuilder builder,String name){try{var field=AutoBuilder.class.getDeclaredField(name);field.setAccessible(true);return field.get(builder);}catch(ReflectiveOperationException error){throw new AssertionError(error);}}
     private static void layerTail(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){

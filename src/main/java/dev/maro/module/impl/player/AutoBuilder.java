@@ -542,7 +542,7 @@ public final class AutoBuilder extends Module {
             if(!mc.world.getBlockState(routeMining).isOf(Blocks.DIRT)){supports.remove(routeMining);escapeSupports.remove(routeMining);cleanupStands.remove(routeMining);routeMining=null;mining=null;digging=false;mc.interactionManager.cancelBlockBreaking();walker.stop();delay=actionDelay();return true;}
             mining=routeMining;mineTick();if(mining==null)routeMining=null;return true;
         }
-        if(!walker.routeUnavailable())return false;
+        if(!walker.routeUnavailable()&&!walker.needsRecovery())return false;
         var obstruction=walker.blockingSupport(supports);
         if(obstruction==null||visibleHit(obstruction)==null)return false;
         routeMining=obstruction;mining=obstruction;walker.release();status="Clearing temporary block from route";mineTick();return true;
