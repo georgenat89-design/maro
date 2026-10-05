@@ -453,7 +453,8 @@ final class AutoBuilderChecks {
         await(context,builder,350);verify(world,slab,1,1,1,y->Blocks.STONE_SLAB);
     }
     private static void observerAssembly(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
-        for(String supply:List.of("Layer by Layer","Nearby Sections")){
+        String previous=context.computeOnClient(client->((dev.maro.setting.EnumSetting)field(builder,"supplyMode")).get());
+        try{for(String supply:List.of("Layer by Layer","Nearby Sections")){
             fixture(context,world,builder,start);var origin=start.south(3);
             world.getServer().runCommand("fill "+coords(origin)+" "+coords(origin.add(6,0,3))+" stone");
             for(var floor:List.of(origin.add(3,1,0),origin.add(4,1,0),origin.add(5,1,0),origin.add(3,1,1)))command(world,"setblock",floor,"stone");
@@ -474,7 +475,7 @@ final class AutoBuilderChecks {
             context.runOnClient(client->{set(builder,"Material Supply",supply);builder.install(new Schematic("observer-machine.nbt","test",7,3,4,BlockPos.ORIGIN,cells));builder.setOrigin(origin);builder.startBuild();});
             await(context,builder,1000);context.waitTicks(20);
             require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(box).isOf(Blocks.YELLOW_SHULKER_BOX)&&server.getOverworld().getBlockState(observer).isOf(Blocks.OBSERVER)&&server.getOverworld().getBlockState(note).get(Properties.NOTE)==12),"Observer activated the unfinished machine and destroyed its shulker box");
-        }
+        }}finally{context.runOnClient(client->set(builder,"Material Supply",previous));}
     }
     private static void distantChest(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos original){
         var start=new BlockPos(-26210,61,-150577);var chest=start.east(3);var target=start.south(2);
