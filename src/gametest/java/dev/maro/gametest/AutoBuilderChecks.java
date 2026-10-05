@@ -64,6 +64,7 @@ final class AutoBuilderChecks {
             var eta=new BuilderEta();eta.tick(0,true);
             for(int second=1;second<=10;second++){eta.tick(second*1000L,true);eta.completed();}
             require(eta.seconds(90)==90&&eta.label(90,0).equals("ETA ~ 1m 30s"),"ETA did not use measured completed work");
+            eta.progress(-2);require(eta.seconds(92)==115,"ETA retained progress that was invalidated");eta.progress(2);
             eta.tick(10_000,false);eta.tick(1_000_000,false);eta.tick(1_000_000,true);eta.tick(1_001_000,true);eta.completed();
             require(eta.seconds(90)==90,"Paused time inflated the build ETA");
             eta.tick(1_035_000,true);require(eta.label(90,0).equals("ETA · waiting"),"Stalled build displayed a stale ETA");
@@ -476,6 +477,17 @@ final class AutoBuilderChecks {
         await(context,builder,700);verify(world,lowerTarget,1,1,1,y->Blocks.STONE);
         require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(start).isAir()),"Post-edge descent did not clean its support");
         context.runOnClient(client->require(client.player.getHealth()==20&&builder.temporarySupports().isEmpty(),"Post-edge descent caused damage or lost cleanup ownership"));
+        fixture(context,world,builder,start);world.getServer().runCommand("give @a stone 1");world.getServer().runCommand("give @a diamond_shovel 1");
+        var island=start.up(3);var descentPieces=Set.of(island.east(),island.east().down(2));
+        command(world,"setblock",island,"stone");for(var piece:descentPieces)command(world,"setblock",piece,"dirt");
+        world.getServer().runCommand("gamemode creative @a");world.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+(start.getY()+4)+" "+(start.getZ()+.5));context.waitTicks(12);world.getServer().runCommand("gamemode survival @a");context.waitTicks(6);
+        context.runOnClient(client->{
+            set(builder,"Temporary Supports",true);builder.install(new Schematic("isolated-scaffold-descent.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(lowerTarget);
+            @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.addAll(descentPieces);builder.startBuild();
+        });
+        await(context,builder,1000);verify(world,lowerTarget,1,1,1,y->Blocks.STONE);
+        require(world.getServer().computeOnServer(server->descentPieces.stream().allMatch(piece->server.getOverworld().getBlockState(piece).isAir())&&server.getOverworld().getBlockState(island).isOf(Blocks.STONE)),"Scaffold descent changed an unrelated block or left dirt");
+        context.runOnClient(client->require(client.player.getHealth()==20&&builder.temporarySupports().isEmpty(),"Scaffold descent caused damage or lost cleanup ownership"));
         fixture(context,world,builder,start);
         world.getServer().runCommand("fill "+coords(start.add(1,-1,0))+" "+coords(start.add(5,-1,6))+" lava");
         world.getServer().runCommand("fill "+coords(start.add(-5,-1,0))+" "+coords(start.add(-1,-1,6))+" lava");

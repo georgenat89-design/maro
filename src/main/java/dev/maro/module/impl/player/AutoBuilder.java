@@ -204,6 +204,7 @@ public final class AutoBuilder extends Module {
     private final Map<BlockPos,Integer> failedPlacementUntil=new HashMap<>();
     private final Map<BlockPos,Integer> routeSupportExclusions=new HashMap<>();
     private final Map<BlockPos,List<BlockPos>> supportChainStarts=new HashMap<>();
+    private BlockPos bridgeTarget;
     private Place pendingPlacement;
     private final Map<BlockPos,Place> unconfirmedPlacements=new HashMap<>();
     private record LatePlacement(Place job,int expires){}
@@ -507,6 +508,7 @@ public final class AutoBuilder extends Module {
             reconcilePrediction(pendingPlacement,pendingServerState);
         queuedLookAction=null;
         lookWaitStarted=-1;queuedAimPoint=aimPoint=null;
+        bridgeTarget=null;
         yawVelocity=pitchVelocity=0;
         placementAttemptTarget=null;failedPlacementUntil.clear();unexpectedBuildHandler=null;resetChestJourney();
         stopEating();navigatingCell=-1;foodRestock=foodShopping=supportRestock=supportShopping=false;
@@ -713,7 +715,7 @@ public final class AutoBuilder extends Module {
                 remainingByLayer.computeIfAbsent(taskLayer(index),y->new HashMap<>()).compute(Items.FLOWER_POT,(item,count)->Math.max(0,(count==null?0:count)-change));
             }
             int change=(next==CORRECT?1:0)-(old==CORRECT?1:0);correct+=change;
-            if(change>0&&old!=UNKNOWN&&building)buildEta.completed();
+            if(change!=0&&old!=UNKNOWN&&next!=UNKNOWN&&building)buildEta.progress(change);
             ignoredSolid+=(next==IGNORED?1:0)-(old==IGNORED?1:0);
             var item=Schematic.material(expected);int oldUnits=old==UNKNOWN?Schematic.units(expected):unitsLeft[index],newUnits=next==CORRECT||next==IGNORED?0:Schematic.units(expected);
             if(newUnits==2&&mc.world.isChunkLoaded(position(index))){var actual=mc.world.getBlockState(position(index));if(actual.getBlock()==expected.getBlock()&&actual.contains(net.minecraft.state.property.Properties.SLAB_TYPE)&&actual.get(net.minecraft.state.property.Properties.SLAB_TYPE)!=net.minecraft.block.enums.SlabType.DOUBLE)newUnits=1;}
@@ -833,12 +835,15 @@ public final class AutoBuilder extends Module {
         }finally{mc.player.setYaw(yaw);mc.player.setPitch(pitch);}
     }
     private boolean repositionTarget(BlockPos target,Map<BlockPos,Integer> tried){
+        return repositionTarget(target,tried,target.equals(bridgeTarget));
+    }
+    private boolean repositionTarget(BlockPos target,Map<BlockPos,Integer> tried,boolean bridge){
         tried.values().removeIf(until->until<=ticks);
         List<BlockPos> options=new ArrayList<>();Set<BlockPos> directStands=new HashSet<>();
         int cell=schematic.indexAt(target.subtract(anchor()),turns(),mirror.get());
         var wanted=cell<0?null:desired(cell);
         boolean supportFallback=wanted!=null&&!hasAttachment(target,wanted);
-        boolean extendedScaffold=supportFallback&&!straightSupportBase(target,attachmentSide(wanted));
+        boolean extendedScaffold=supportFallback&&(bridge||!straightSupportBase(target,attachmentSide(wanted)));
         int below=(int)Math.floor(effectiveReach()+mc.player.getStandingEyeHeight()-.5),above=(int)Math.floor(effectiveReach()-mc.player.getStandingEyeHeight()+.5);
         if(extendedScaffold)below=Math.max(below,8);
         // The eye can reach a block from ground more than two blocks below it.
@@ -853,7 +858,7 @@ public final class AutoBuilder extends Module {
                 :wanted!=null&&placement(target,wanted,Schematic.material(wanted),cell,false,eye,body)!=null;
             // A connected bridge can start well below the final floating block.
             // Its first piece, rather than the final target, must be in reach.
-            if(!direct&&(!supportFallback||!extendedScaffold&&(dy< -2||dy>2)||supportPlacement(target,eye,body)==null))continue;
+            if(!direct&&(!supportFallback||!extendedScaffold&&(dy< -2||dy>2)||supportPlacement(target,eye,body,bridge)==null))continue;
             if(direct)directStands.add(stand);
             options.add(stand);
         }
@@ -862,11 +867,20 @@ public final class AutoBuilder extends Module {
         for(var option:options){tried.put(option,ticks+40);if(walker.canReachStand(option)){standGoal=option;break;}if(System.nanoTime()>=routeDeadline)break;}
         if(standGoal==null&&support.get()&&supports.size()<tempDirt.getInt())for(var option:options)if(directStands.contains(option)&&accessStep(option))return true;
         if(standGoal==null&&support.get()&&supports.size()>=tempDirt.getInt()&&(!directStands.isEmpty()||supportFallback)&&recycleSupport())return true;
-        if(standGoal==null)return false;
+        if(standGoal==null){
+            // An anchored short column can still have no usable view. Only after
+            // trying those views, allow a connected bridge from another side.
+            if(supportFallback&&!bridge&&repositionTarget(target,tried,true)){bridgeTarget=target;return true;}
+            if(prepareSupportDescent(options))return true;
+            return false;
+        }
         standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();status="Moving around an obstructed block";return true;
     }
     /** Build the lowest attachable piece of a short support column before its upper pieces. */
     private Place supportPlacement(BlockPos target,Vec3d eye,Box body){
+        return supportPlacement(target,eye,body,target.equals(bridgeTarget));
+    }
+    private Place supportPlacement(BlockPos target,Vec3d eye,Box body,boolean bridge){
         if(!support.get()||supports.size()>=tempDirt.getInt())return null;
         int targetCell=schematic.indexAt(target.subtract(anchor()),turns(),mirror.get());
         var wanted=targetCell<0?null:desired(targetCell);
@@ -887,7 +901,7 @@ public final class AutoBuilder extends Module {
         }
         // A floating outer edge may need a short lateral bridge before a column
         // can start. Search backwards from its attachment to existing blocks.
-        if(straightSupportBase(target,attachment))return null;
+        if(!bridge&&straightSupportBase(target,attachment))return null;
         var roots=supportChainStarts.computeIfAbsent(target,key->scaffoldChainRoots(key,attachment));int attempts=0;
         for(var root:roots){
             if(eye.squaredDistanceTo(Vec3d.ofCenter(root))>Math.pow(effectiveReach()+.75,2))continue;
@@ -1102,9 +1116,25 @@ public final class AutoBuilder extends Module {
     }
     private boolean plannedSolid(BlockPos pos){int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());return cell>=0&&!desired(cell).isAir()&&!desired(cell).isOf(Blocks.STRUCTURE_VOID);}
     private BlockPos recoveryDestination(){return standGoal!=null?standGoal:restockTarget!=null?restockTarget:depositTarget!=null?depositTarget:navigatingCell>=0?position(navigatingCell):walker.destination();}
+    private boolean prepareSupportDescent(List<BlockPos> views){
+        var lower=views.stream().filter(pos->walker.standingPoint(pos).y<mc.player.getY()-.5)
+            .min(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).orElse(null);
+        if(lower==null)return false;
+        var candidates=supports.stream().filter(pos->pos.getY()>=mc.player.getY()-1.1&&pos.getY()<mc.player.getY()+.1)
+            .filter(pos->mc.world.getBlockState(pos).isOf(Blocks.DIRT)&&!plannedSolid(pos)&&walker.canDescendThrough(pos)&&safeToRecycle(pos))
+            .sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).limit(12).toList();
+        for(var pos:candidates){
+            if(pos.equals(mc.player.getBlockPos().down())&&mc.player.isOnGround()&&mc.player.getVelocity().horizontalLengthSquared()<.0001){
+                standGoal=lower;routeMining=mining=pos;walker.stop();status="Descending temporary scaffold";mineTick();return true;
+            }
+            if(!walker.canReachStand(pos.up()))continue;
+            standGoal=pos.up();standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();status="Moving to a scaffold descent";return true;
+        }
+        return false;
+    }
     private boolean descendingOwnedSupport(BlockPos pos){
         var destination=recoveryDestination();
-        return destination!=null&&destination.getY()<mc.player.getY()&&(walker.routeUnavailable()||walker.movementStalled())
+        return destination!=null&&destination.getY()<mc.player.getY()&&(pos.equals(routeMining)||walker.routeUnavailable()||walker.movementStalled())
             &&pos.equals(mc.player.getBlockPos().down())&&supports.contains(pos)&&!plannedSolid(pos)&&mc.world.getBlockState(pos).isOf(Blocks.DIRT)
             &&mc.player.isOnGround()&&mc.player.getVelocity().horizontalLengthSquared()<.0001
             &&walker.canDescendThrough(pos)&&safeToRecycle(pos);

@@ -40,7 +40,16 @@ public final class BuilderWalk {
     private BlockPos walkingCell(){return BlockPos.ofFloored(mc.player.getEntityPos().add(0,.4,0));}
     public boolean needsRecovery(){return recoveryRequested;}
     public BlockPos destination(){return goal;}
-    public boolean canDescendThrough(BlockPos pos){return clear(pos.up())&&clear(pos.up(2))&&safe(pos.down())&&footingHeight(pos.down())>=.625;}
+    public boolean canDescendThrough(BlockPos pos){
+        if(!clear(pos.up())||!clear(pos.up(2)))return false;
+        for(int drop=1;drop<=2;drop++){
+            var floor=pos.down(drop);
+            if(!safe(floor))return false;
+            if(footingHeight(floor)>=.625)return true;
+            if(!clear(floor))return false;
+        }
+        return false;
+    }
     public boolean movementStalled(){return movementStalled;}
     public boolean routeUnavailable(){return goal!=null&&path.isEmpty()&&failedRoutes>0;}
     public BlockPos blockingSupport(Set<BlockPos> supports){

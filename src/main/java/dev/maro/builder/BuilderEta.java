@@ -14,7 +14,8 @@ public final class BuilderEta {
         lastClock=clockMillis;active=running;
         sample();
     }
-    public void completed(){completed++;lastProgress=activeMillis;sample();}
+    public void completed(){progress(1);}
+    public void progress(int change){completed+=change;if(change>0)lastProgress=activeMillis;sample();}
     private void sample(){
         if(!samples.isEmpty()&&samples.getLast().activeMillis==activeMillis)samples.removeLast();
         if(samples.isEmpty()||activeMillis-samples.getLast().activeMillis>=1000)samples.addLast(new Sample(activeMillis,completed));
