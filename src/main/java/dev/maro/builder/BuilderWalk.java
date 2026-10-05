@@ -101,9 +101,12 @@ public final class BuilderWalk {
         // the walking corridor gradually instead of carrying that pitch along the route.
         float walkingPitch=point.y>mc.player.getY()+.4?-12:12;
         mc.player.setPitch(mc.player.getPitch()+MathHelper.clamp((walkingPitch-mc.player.getPitch())*.2f,-6,6));
-        if(Math.abs(MathHelper.wrapDegrees(yaw-mc.player.getYaw()))<24){forward=true;mc.options.forwardKey.setPressed(true);}
+        float headingError=Math.abs(MathHelper.wrapDegrees(yaw-mc.player.getYaw()));
+        if(headingError<24){forward=true;mc.options.forwardKey.setPressed(true);}
         else if(forward){mc.options.forwardKey.setPressed(false);forward=false;}
-        if(point.y>mc.player.getY()+.4&&mc.player.isOnGround()){jump=true;mc.options.jumpKey.setPressed(true);}
+        // Turn toward a raised waypoint before starting the jump. An early
+        // jump while turning spends its height without reaching the ledge.
+        if(forward&&headingError<12&&dx*dx+dz*dz<1.3*1.3&&point.y>mc.player.getY()+.4&&mc.player.isOnGround()){jump=true;mc.options.jumpKey.setPressed(true);}
         else if(jump){mc.options.jumpKey.setPressed(false);jump=false;}
         Vec3d now=mc.player.getEntityPos();
         if(last==null||now.subtract(last).horizontalLengthSquared()>.04||mc.player.isOnGround()&&Math.abs(now.y-last.y)>.2){last=now;stuck=0;movementStalled=false;}else if(forward)stuck++;

@@ -80,6 +80,9 @@ final class AutoBuilderChecks {
         try{
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")){stashBuild(context,singleplayer,builder,start);return;}
             fixture(context,singleplayer,builder,start);
+            raisedTurn(context,singleplayer,start);
+            fixture(context,singleplayer,builder,start);
+            if(Boolean.getBoolean("maro.gametest.builderTurnOnly"))return;
             layerTail(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             savedPlacement(context,singleplayer,builder,start);
@@ -745,6 +748,25 @@ final class AutoBuilderChecks {
         });
         await(context,builder,2400);verify(world,target,1,1,1,y->Blocks.STONE);
         context.runOnClient(client->require(client.currentScreen==null,"Long restock journey left its chest open"));
+    }
+    private static void raisedTurn(ClientGameTestContext context,TestSingleplayerContext world,BlockPos start){
+        command(world,"setblock",start.east(),"stone");
+        world.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+start.getY()+" "+(start.getZ()+.5)+" 90 0");context.waitTicks(10);
+        var walker=context.computeOnClient(client->new BuilderWalk());var goal=start.east().up();walker.turning(true,45);boolean arrived=false;
+        try{
+            for(int tick=0;tick<200&&!arrived;tick++){
+                arrived=context.computeOnClient(client->{
+                    boolean done=walker.standAt(goal);
+                    if(!done&&client.player.getVelocity().y>.15){
+                        var point=walker.standingPoint(goal);float yaw=(float)(Math.toDegrees(Math.atan2(point.z-client.player.getZ(),point.x-client.player.getX()))-90);
+                        require(Math.abs(MathHelper.wrapDegrees(yaw-client.player.getYaw()))<24,"Walker jumped before turning toward its raised destination");
+                    }
+                    return done;
+                });context.waitTick();
+            }
+            require(arrived,"Turn-before-jump route did not reach its raised standing position");
+            context.waitTicks(10);context.runOnClient(client->require(client.player.getY()>=start.getY()+.99&&client.player.getHealth()==20,"Turn-before-jump failed its native landing"));
+        }finally{context.runOnClient(client->walker.stop());}
     }
     private static void layerTail(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         // Only diagonal standing cells are safe. A wall blocks the initial placement ray,
