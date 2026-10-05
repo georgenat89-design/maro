@@ -57,6 +57,18 @@ alert cooldown reduces repeat notifications when a base is rediscovered.
 Only loaded chunks between Y −64 and −1 are scanned. Workers analyze copied chunk
 sections; old results are discarded when disabling or changing worlds.
 
+**Player ESP** (Visuals) shows players through walls as silhouettes of their actual model
+(armor, held items and cape included) instead of boxes. **Fill Style** offers **Solid**,
+**Player** (the per-player color), **Gradient**, **Rainbow**, **Galaxy** (drifting nebula with
+twinkling stars), **Aurora**, **Plasma**, **Lava** and **Hologram**, with **Color**/**Second
+Color**, **Fill Opacity**, **Edge Fade**, **Stars**, **Pattern Scale** and **Animation Speed**.
+The **Outline** is measured from the silhouette's edge, so it stays smooth and constant-width
+rather than tracing pixel steps; set its width, opacity and color (**Custom**, **Player**,
+**Rainbow** or **Fill**). **Glow** adds a soft falloff in the outline color. Targets: yourself in
+third person, friends (optionally in their own **Friend Tint**), spectators, a range limit, and
+**Health Colors** (green to red) for the player color. Width and glow are given at 1080p and scale
+with resolution. The effect is drawn before Bloom and Color Correct, so it blooms with the world.
+
 **Pet** (Visuals) adds a cosmetic companion: Wolf, Cat, Fox, Bunny, Bee, Allay,
 Parrot, Axolotl, Slime, Turtle, Panda, or Pig. Choose **Follow**, **Sidekick**, or
 **Orbit**, adjust size, distance, speed, and hover height, and enable baby models,
