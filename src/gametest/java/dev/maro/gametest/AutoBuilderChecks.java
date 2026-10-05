@@ -62,7 +62,7 @@ final class AutoBuilderChecks {
         AutoBuilder builder=ModuleManager.get(AutoBuilder.class);
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
-            if(Boolean.getBoolean("maro.gametest.builderStashOnly")){stashBuild(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")){stashBuild(context,singleplayer,builder,start);return;}
             fixture(context,singleplayer,builder,start);
             layerTail(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
@@ -80,6 +80,10 @@ final class AutoBuilderChecks {
             fixture(context,singleplayer,builder,start);
             if(Boolean.getBoolean("maro.gametest.builderNavigationOnly")){cancellation(context,builder,context.computeOnClient(client->builder.schematic()));return;}
             if(Boolean.getBoolean("maro.gametest.builderAuctionOnly")){BuilderAuctionChecks.run(context,singleplayer,builder);return;}
+            largeSupply(context,singleplayer,builder,start);
+            fixture(context,singleplayer,builder,start);
+            longRestockRoute(context,singleplayer,builder,start);
+            fixture(context,singleplayer,builder,start);
             BlockPos origin=start.add(-1,0,2);
             context.runOnClient(client->{
                 BlockState[] cells={Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState(),Blocks.GLASS.getDefaultState(),Blocks.GLASS.getDefaultState(),Blocks.GLASS.getDefaultState(),Blocks.GLASS.getDefaultState()};
@@ -328,11 +332,33 @@ final class AutoBuilderChecks {
             inventory.setStack(slot++,new ItemStack(Items.DIRT,64));inventory.setStack(slot++,new ItemStack(Items.DIRT,64));inventory.setStack(slot++,new ItemStack(Items.DIRT,64));inventory.setStack(slot++,new ItemStack(Items.DIRT,64));
             inventory.setStack(slot++,new ItemStack(Items.DIAMOND_PICKAXE));inventory.setStack(slot++,new ItemStack(Items.DIAMOND_SHOVEL));inventory.setStack(slot,new ItemStack(Items.COOKED_BEEF,64));inventory.markDirty();
         });context.waitTicks(6);
+        Set<BlockPos> priorSupports=new HashSet<>();
+        boolean upper=Boolean.getBoolean("maro.gametest.builderStashUpperOnly");
+        if(upper){
+            try(var source=AutoBuilderChecks.class.getResourceAsStream("/fixtures/stash-upper-supports.txt")){
+                for(var line:new String(source.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8).lines().toList()){
+                    var parts=line.trim().split("\\s+");priorSupports.add(new BlockPos(Integer.parseInt(parts[0]),Integer.parseInt(parts[1]),Integer.parseInt(parts[2])));
+                }
+            }catch(java.io.IOException error){throw new AssertionError(error);}
+            world.getServer().runOnServer(server->{
+                var level=server.getOverworld();
+                for(int cell=0;cell<stash.size();cell++){var expected=stash.state(cell);if(stash.local(cell).getY()<=3&&!expected.isAir()&&!(expected.getBlock() instanceof net.minecraft.block.FluidBlock)&&!(expected.getBlock() instanceof net.minecraft.block.ObserverBlock))level.setBlockState(origin.add(stash.local(cell)),expected,net.minecraft.block.Block.NOTIFY_ALL);}
+                for(var support:priorSupports)level.setBlockState(support,Blocks.DIRT.getDefaultState(),net.minecraft.block.Block.NOTIFY_ALL);
+            });
+            world.getServer().runCommand("gamemode creative @a");world.getServer().runCommand("tp @a -26209.7 65 -150576.2");context.waitTicks(20);world.getServer().runCommand("gamemode survival @a");context.waitTicks(10);
+            // The captured stall was after preparation and the layer-4 chest trip.
+            // Restore that batch rather than starting a new preparation journey.
+            var held=new HashMap<Item,Integer>();
+            for(int cell=0;cell<stash.size();cell++)if(stash.local(cell).getY()==4){var expected=stash.state(cell);var item=Schematic.material(expected);if(item!=Items.AIR)held.merge(item,Schematic.units(expected),Integer::sum);if(expected.getBlock() instanceof net.minecraft.block.FlowerPotBlock)held.merge(Items.FLOWER_POT,1,Integer::sum);}
+            held.put(Items.DIRT,64);held.put(Items.DIAMOND_PICKAXE,1);held.put(Items.DIAMOND_SHOVEL,1);held.put(Items.COOKED_BEEF,16);
+            held.forEach((item,count)->world.getServer().runCommand("give @a "+net.minecraft.registry.Registries.ITEM.getId(item)+" "+count));context.waitTicks(6);
+        }
         try{
             context.runOnClient(client->{
                 set(builder,"Temporary Supports",true);set(builder,"Clean Temporary Supports",true);set(builder,"Support Dirt Reserve",64);set(builder,"Auto Buy Tools",true);
-                set(builder,"Material Supply","Layer by Layer");set(builder,"Prepare Whole Build",true);set(builder,"Stockpile In Chests",true);set(builder,"Auto Eat",true);builder.auctionBudget(1000);
-                builder.install(stash);builder.setOrigin(origin);client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();BuilderPacketChecks.begin();builder.startBuild();
+                set(builder,"Material Supply","Layer by Layer");set(builder,"Prepare Whole Build",!upper);set(builder,"Stockpile In Chests",true);set(builder,"Auto Eat",true);builder.auctionBudget(1000);
+                builder.install(stash);builder.setOrigin(origin);((Set<BlockPos>)field(builder,"supports")).addAll(priorSupports);client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();BuilderPacketChecks.begin();builder.startBuild();
+                if(upper)try{var attempts=AutoBuilder.class.getDeclaredField("recoveryAttempts");attempts.setAccessible(true);attempts.setInt(builder,3);}catch(ReflectiveOperationException error){throw new AssertionError(error);}
             });
             await(context,builder,36000);
             String mismatch=world.getServer().computeOnServer(server->{for(int i=0;i<stash.size();i++)if(!stash.state(i).isAir()&&!AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(origin.add(stash.local(i))),stash.state(i)))return origin.add(stash.local(i)).toShortString();return "";});
@@ -398,6 +424,24 @@ final class AutoBuilderChecks {
         await(context,builder,900);verify(world,platform.up(),3,1,1,y->Blocks.REDSTONE_WIRE);
         require(world.getServer().computeOnServer(server->{for(int x=-4;x<=6;x++)for(int y=0;y<=4;y++)for(int z=-3;z<=7;z++)if(server.getOverworld().getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Raised floor access stairs were left on the server");
         fixture(context,world,builder,start);
+        world.getServer().runCommand("give @a redstone 3");world.getServer().runCommand("give @a dirt 16");world.getServer().runCommand("give @a diamond_shovel 1");
+        for(int x=0;x<3;x++)command(world,"setblock",platform.east(x),"stone");
+        var oldSupports=Set.of(start.west(2),start.west(2).south(),start.west(2).north());
+        for(var old:oldSupports)command(world,"setblock",old,"dirt");context.waitTicks(6);
+        for(int z=-1;z<=1;z++)command(world,"setblock",start.west(3).south(z),"stone");
+        var reuseOrigin=start.add(-3,0,-1);var reuseCells=new BlockState[6*4*6];Arrays.fill(reuseCells,Blocks.STRUCTURE_VOID.getDefaultState());
+        for(int z=0;z<3;z++)reuseCells[z*6]=Blocks.STONE.getDefaultState();
+        for(int x=3;x<6;x++){reuseCells[x+5*6+2*36]=Blocks.STONE.getDefaultState();reuseCells[x+5*6+3*36]=Blocks.REDSTONE_WIRE.getDefaultState();}
+        try{
+            context.runOnClient(client->{set(builder,"Temporary Supports",true);((dev.maro.setting.NumberSetting)field(builder,"tempDirt")).set(3d);builder.install(new Schematic("bounded-support-reuse.nbt","test",6,4,6,BlockPos.ORIGIN,reuseCells));builder.setOrigin(reuseOrigin);((Set<BlockPos>)field(builder,"supports")).addAll(oldSupports);builder.startBuild();});
+            for(int tick=0;tick<1200&&context.computeOnClient(client->builder.building());tick++){
+                context.runOnClient(client->require(builder.temporarySupports().size()<=3,"Unstuck recovery exceeded the temporary support limit"));context.waitTick();
+            }
+            await(context,builder,1);verify(world,platform.up(),3,1,1,y->Blocks.REDSTONE_WIRE);
+            require(world.getServer().computeOnServer(server->{for(int z=-1;z<=1;z++)if(!server.getOverworld().getBlockState(start.west(3).south(z)).isOf(Blocks.STONE))return false;return true;}),"Support reuse changed a neighbouring schematic block");
+            require(world.getServer().computeOnServer(server->{for(int x=-4;x<=6;x++)for(int y=0;y<=4;y++)for(int z=-3;z<=7;z++)if(server.getOverworld().getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Support reuse left obsolete dirt on the server");
+        }finally{context.runOnClient(client->((dev.maro.setting.NumberSetting)field(builder,"tempDirt")).set(128d));}
+        fixture(context,world,builder,start);
         world.getServer().runCommand("fill "+coords(start.add(1,-1,0))+" "+coords(start.add(5,-1,6))+" lava");
         world.getServer().runCommand("fill "+coords(start.add(-5,-1,0))+" "+coords(start.add(-1,-1,6))+" lava");
         for(int z=1;z<=4;z++)command(world,"setblock",start.south(z),"hopper");
@@ -453,7 +497,7 @@ final class AutoBuilderChecks {
         await(context,builder,350);verify(world,slab,1,1,1,y->Blocks.STONE_SLAB);
     }
     private static void observerAssembly(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
-        String previous=context.computeOnClient(client->((dev.maro.setting.EnumSetting)field(builder,"supplyMode")).get());
+        String previous=context.computeOnClient(client->((dev.maro.setting.ModeSetting)field(builder,"supplyMode")).get());
         try{for(String supply:List.of("Layer by Layer","Nearby Sections")){
             fixture(context,world,builder,start);var origin=start.south(3);
             world.getServer().runCommand("fill "+coords(origin)+" "+coords(origin.add(6,0,3))+" stone");
@@ -606,6 +650,39 @@ final class AutoBuilderChecks {
         context.runOnClient(client->set(builder,"Material Supply","Layer by Layer"));
     }
     private static Object field(AutoBuilder builder,String name){try{var field=AutoBuilder.class.getDeclaredField(name);field.setAccessible(true);return field.get(builder);}catch(ReflectiveOperationException error){throw new AssertionError(error);}}
+    private static void largeSupply(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        // Exercise the actual incremental scanner and inventory batching on a
+        // much larger volume, without pretending this is a completed large build.
+        int width=100,height=25,length=100;
+        var cells=new BlockState[width*height*length];Arrays.fill(cells,Blocks.STONE.getDefaultState());
+        var large=new Schematic("large-supply.nbt","test",width,height,length,BlockPos.ORIGIN,cells);
+        require(large.solidCount()==250_000&&large.materials().get(Items.STONE)==250_000,"Large schematic material count overflowed");
+        context.runOnClient(client->{set(builder,"Material Supply","Nearby Sections");builder.install(large);builder.setOrigin(start.add(-50,8,-50));});
+        for(int tick=0;tick<500&&context.computeOnClient(client->(int)field(builder,"completedScans")==0);tick++)context.waitTick();
+        context.runOnClient(client->{
+            require((int)field(builder,"completedScans")>0,"Large schematic scan did not finish incrementally");
+            require(((List<?>)field(builder,"workCells")).size()<=256,"Large scan expanded its bounded work queue");
+            var batch=builder.remainingMaterials();int blocks=batch.values().stream().mapToInt(Integer::intValue).sum();
+            require(blocks>0&&blocks<=128,"Large schematic requested the whole build instead of a bounded section");
+            int stacks=batch.entrySet().stream().mapToInt(entry->(entry.getValue()+entry.getKey().getMaxCount()-1)/entry.getKey().getMaxCount()).sum();
+            require(stacks<=24,"Large section exceeded its inventory allowance");
+            for(int turn=0;turn<4;turn++)for(String mirror:new String[]{"None","X","Z"})for(int index:new int[]{0,99,12_345,249_999})require(large.indexAt(large.transformed(index,turn,mirror),turn,mirror)==index,"Large placement transform lost a cell");
+            set(builder,"Material Supply","Layer by Layer");
+        });
+    }
+    private static void longRestockRoute(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        var chest=start.east(80);var target=start.south(2);
+        world.getServer().runCommand("fill "+coords(start.add(0,-1,-2))+" "+coords(start.add(83,-1,3))+" stone");
+        world.getServer().runCommand("fill "+coords(start.add(17,0,-2))+" "+coords(start.add(83,3,3))+" air");
+        command(world,"setblock",chest,"chest[facing=west,type=right]");command(world,"setblock",chest.south(),"chest[facing=west,type=left]");
+        world.getServer().runCommand("item replace block "+coords(chest)+" container.0 with stone 64");context.waitTicks(10);
+        context.runOnClient(client->{
+            set(builder,"Restock Walk Distance",256);builder.install(new Schematic("long-restock-route.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);
+            client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();builder.startBuild();
+        });
+        await(context,builder,2400);verify(world,target,1,1,1,y->Blocks.STONE);
+        context.runOnClient(client->require(client.currentScreen==null,"Long restock journey left its chest open"));
+    }
     private static void layerTail(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         // Only diagonal standing cells are safe. A wall blocks the initial placement ray,
         // and the old cardinal-only search leaves this final layer block idle indefinitely.

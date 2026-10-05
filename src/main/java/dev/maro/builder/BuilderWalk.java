@@ -61,17 +61,16 @@ public final class BuilderWalk {
         if(mc.player==null||mc.world==null)return false;
         if(!target.equals(goal)||exact!=stand){stop();goal=target;exact=stand;}
         if((exact?mc.player.getEntityPos().squaredDistanceTo(standingPoint(target)):mc.player.getEyePos().squaredDistanceTo(Vec3d.ofCenter(target)))<=distance*distance){release();return true;}
-        if(mc.player.squaredDistanceTo(Vec3d.ofCenter(target))>64*64){release();status="Target is beyond walking range";return false;}
         if(retry>0)retry--;
         if(cursor>=path.size()){
             if(retry>0){release();return false;}
-            path=find(walkingCell(),target,distance,exact);cursor=0;retry=20;
+            path=find(walkingCell(),target,distance,exact,true);cursor=0;retry=20;
             if(path.isEmpty()){if(++failedRoutes>=2)recoveryRequested=true;release();status="No safe walking route — move closer or add stairs";return false;}
         }
         var node=path.get(cursor);var point=standingPoint(node);
         double dx=point.x-mc.player.getX(),dz=point.z-mc.player.getZ();
         while(dx*dx+dz*dz<.16&&Math.abs(point.y-mc.player.getY())<.65){
-            if(exact&&cursor==path.size()-1)break;
+            if(exact&&cursor==path.size()-1&&node.equals(target))break;
             if(++cursor>=path.size()){release();return false;}
             node=path.get(cursor);point=standingPoint(node);dx=point.x-mc.player.getX();dz=point.z-mc.player.getZ();
         }
@@ -111,12 +110,18 @@ public final class BuilderWalk {
         return true;
     }
     private List<BlockPos> find(BlockPos start,BlockPos target,double reach,boolean exactGoal){
+        return find(start,target,reach,exactGoal,false);
+    }
+    private List<BlockPos> find(BlockPos start,BlockPos target,double reach,boolean exactGoal,boolean allowSegments){
         PriorityQueue<Node> open=new PriorityQueue<>(Comparator.comparingDouble(Node::score));
         Map<BlockPos,Double> costs=new HashMap<>();Set<BlockPos> closed=new HashSet<>();
         open.add(new Node(start,0,heuristic(start,target),null));costs.put(start,0.0);
+        Node frontier=null;double initialDistance=heuristic(start,target),frontierDistance=initialDistance;
         long deadline=System.nanoTime()+3_000_000;int visited=0;
         while(!open.isEmpty()&&visited++<2048&&System.nanoTime()<deadline){
             Node n=open.poll();if(!closed.add(n.pos))continue;
+            double remaining=heuristic(n.pos,target);
+            if(remaining<frontierDistance){frontier=n;frontierDistance=remaining;}
             Vec3d eye=standingPoint(n.pos).add(0,mc.player.getStandingEyeHeight(),0);
             if(exactGoal?n.pos.equals(target):eye.squaredDistanceTo(Vec3d.ofCenter(target))<=reach*reach){
                 LinkedList<BlockPos> result=new LinkedList<>();for(Node p=n;p.parent!=null;p=p.parent)result.addFirst(p.pos);return result;
@@ -139,6 +144,12 @@ public final class BuilderWalk {
                 if(cost>=costs.getOrDefault(step,Double.POSITIVE_INFINITY))continue;
                 costs.put(step,cost);open.add(new Node(step,cost,cost+heuristic(step,target),n));
             }
+        }
+        // Keep each search bounded. Long journeys advance along a verified safe
+        // segment, then replan as new chunks arrive. Exact-view feasibility calls
+        // still require a complete route and never accept a partial segment.
+        if(allowSegments&&start.getSquaredDistance(target)>48*48&&frontier!=null&&frontierDistance<initialDistance-4){
+            LinkedList<BlockPos> result=new LinkedList<>();for(Node p=frontier;p.parent!=null;p=p.parent)result.addFirst(p.pos);return result;
         }
         return List.of();
     }
