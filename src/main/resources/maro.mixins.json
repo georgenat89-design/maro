@@ -10,6 +10,7 @@
     "BlockItemAccessor",
     "BuilderUseMixin",
     "ClientPlayerInteractionManagerAccessor",
+    "ClientPlayerLookAccessor",
     "DrawContextAccessor",
     "GameRendererMixin",
     "LightmapMixin",
