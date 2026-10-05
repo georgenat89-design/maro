@@ -71,6 +71,7 @@ final class AutoBuilderChecks {
             rejectedPlacement(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             retainedPredictions(context,singleplayer,builder,start);
+            observerAssembly(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             stalledInteractions(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
@@ -450,6 +451,30 @@ final class AutoBuilderChecks {
         world.getServer().runCommand("gamemode creative @a");world.getServer().runCommand("tp @a "+(cutter.getX()+1.1)+" "+(cutter.getY()+.5625)+" "+(cutter.getZ()+.5));context.waitTicks(20);world.getServer().runCommand("gamemode survival @a");context.waitTicks(6);
         context.runOnClient(client->{set(builder,"Auto Move",false);set(builder,"Auto Unstuck",false);builder.install(new Schematic("partial-collision-placement.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE_SLAB.getDefaultState()}));builder.setOrigin(slab);builder.startBuild();});
         await(context,builder,350);verify(world,slab,1,1,1,y->Blocks.STONE_SLAB);
+    }
+    private static void observerAssembly(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        for(String supply:List.of("Layer by Layer","Nearby Sections")){
+            fixture(context,world,builder,start);var origin=start.south(3);
+            world.getServer().runCommand("fill "+coords(origin)+" "+coords(origin.add(6,0,3))+" stone");
+            for(var floor:List.of(origin.add(3,1,0),origin.add(4,1,0),origin.add(5,1,0),origin.add(3,1,1)))command(world,"setblock",floor,"stone");
+            for(int z=0;z<3;z++)command(world,"setblock",origin.add(2,1,z),"stone");
+            command(world,"setblock",origin.add(2,1,3),"sticky_piston[facing=east]");
+            command(world,"setblock",origin.add(3,2,0),"stone");
+            for(int z=0;z<4;z++)command(world,"setblock",origin.add(2,2,z),"redstone_wire");
+            // An early observer powers this piston on each note change, destroying
+            // the box. The observer is nearer than the note at the same height.
+            var box=origin.add(3,1,3);var observer=origin.add(4,2,0);var note=origin.add(5,2,0);
+            world.getServer().runCommand("give @a yellow_shulker_box 1");world.getServer().runCommand("give @a observer 1");world.getServer().runCommand("give @a note_block 1");
+            world.getServer().runCommand("gamemode creative @a");var perch=origin.add(3,2,1);
+            world.getServer().runCommand("tp @a "+(perch.getX()+.5)+" "+perch.getY()+" "+(perch.getZ()+.5));context.waitTicks(20);world.getServer().runCommand("gamemode survival @a");context.waitTicks(6);
+            BlockState[] cells=new BlockState[7*3*4];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());
+            cells[3+3*7+1*7*4]=Blocks.YELLOW_SHULKER_BOX.getDefaultState();
+            cells[4+2*7*4]=Blocks.OBSERVER.getDefaultState().with(Properties.FACING,Direction.EAST);
+            cells[5+2*7*4]=Blocks.NOTE_BLOCK.getDefaultState().with(Properties.NOTE,12);
+            context.runOnClient(client->{set(builder,"Material Supply",supply);builder.install(new Schematic("observer-machine.nbt","test",7,3,4,BlockPos.ORIGIN,cells));builder.setOrigin(origin);builder.startBuild();});
+            await(context,builder,1000);context.waitTicks(20);
+            require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(box).isOf(Blocks.YELLOW_SHULKER_BOX)&&server.getOverworld().getBlockState(observer).isOf(Blocks.OBSERVER)&&server.getOverworld().getBlockState(note).get(Properties.NOTE)==12),"Observer activated the unfinished machine and destroyed its shulker box");
+        }
     }
     private static void distantChest(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos original){
         var start=new BlockPos(-26210,61,-150577);var chest=start.east(3);var target=start.south(2);

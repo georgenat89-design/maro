@@ -162,7 +162,7 @@ public final class AutoBuilder extends Module {
     private boolean loading,building,preview=true,ownsSneak;
     private final Map<Item,Integer> remaining=new HashMap<>();
     private final TreeMap<Integer,Map<Item,Integer>> remainingByLayer=new TreeMap<>();
-    private int activeLayer=-1,scanLayer=Integer.MAX_VALUE;
+    private int activeLayer=-1,scanLayer=Integer.MAX_VALUE,activePhase,scanPhase=Integer.MAX_VALUE;
     private final Set<BlockPos> containers=new LinkedHashSet<>(),supports=new LinkedHashSet<>();
     private final Set<Item> ignoredMaterials=new HashSet<>();
     private final Set<BlockPos> triedContainers=new HashSet<>();
@@ -389,7 +389,8 @@ public final class AutoBuilder extends Module {
     public int supplyLayer(){if(activeLayer>=0)return activeLayer;for(var entry:remainingByLayer.entrySet())if(entry.getValue().values().stream().anyMatch(count->count>0))return entry.getKey();return -1;}
     public boolean layerSupply(){return supplyMode.is("Layer by Layer");}
     public boolean sectionSupply(){return supplyMode.is("Nearby Sections");}
-    private int taskLayer(int index){return schematic.local(index).getY()+(desired(index).getBlock() instanceof FluidBlock?schematic.height:0);}
+    private int taskPhase(int index){var block=desired(index).getBlock();return block instanceof ObserverBlock?2:block instanceof FluidBlock?1:0;}
+    private int taskLayer(int index){return schematic.local(index).getY()+taskPhase(index)*schematic.height;}
     private Map<Item,Integer> requiredMaterials(){
         if(!sectionSupply())return layerSupply()?remainingByLayer.getOrDefault(supplyLayer(),Map.of()):remaining;
         var result=new HashMap<Item,Integer>();
@@ -401,7 +402,7 @@ public final class AutoBuilder extends Module {
     }
     private void refreshSection(){
         if(!sectionSupply())return;
-        sectionCells=sectionCells.stream().filter(i->states[i]!=CORRECT&&states[i]!=IGNORED&&layerAllows(i)).toList();
+        sectionCells=sectionCells.stream().filter(i->states[i]!=CORRECT&&states[i]!=IGNORED&&layerAllows(i)&&taskPhase(i)==activePhase).toList();
         if(correct!=sectionCorrect||!building||restockTarget!=null||buying||mc.currentScreen!=null){sectionCorrect=correct;sectionProgressAt=ticks;}
         if(!sectionCells.isEmpty()&&ticks-sectionProgressAt>240&&placement==null&&pendingPlacement==null&&mining==null){
             for(int i:sectionCells)retryAt.put(i,ticks+200);sectionCells=List.of();walker.stop();navigatingCell=-1;
@@ -438,7 +439,7 @@ public final class AutoBuilder extends Module {
         preparationReady=false;chestStocks.clear();preparedStock.clear();emptyChestItems.clear();buildBudgetActive=false;buildBudgetSpent=0;
         if(schematic==null)return;pause("Placement changed");transformedStates.clear();triedStands.clear();states=new byte[schematic.size()];unitsLeft=new byte[schematic.size()];scanCursor=correct=completedScans=passTasks=0;lastPassTasks=schematic.size();solid=schematic.solidCount();
         for(int i=0;i<schematic.size();i++)if(materialIgnored(schematic.state(i))&&!schematic.state(i).isAir()&&!schematic.state(i).isOf(Blocks.STRUCTURE_VOID))solid--;
-        remaining.clear();remaining.putAll(schematic.materials());remaining.keySet().removeAll(ignoredMaterials);remainingByLayer.clear();potUnitsLeft.clear();activeLayer=-1;scanLayer=Integer.MAX_VALUE;
+        remaining.clear();remaining.putAll(schematic.materials());remaining.keySet().removeAll(ignoredMaterials);remainingByLayer.clear();potUnitsLeft.clear();activeLayer=-1;scanLayer=scanPhase=Integer.MAX_VALUE;activePhase=0;
         for(int i=0;i<schematic.size();i++){var item=Schematic.material(schematic.state(i));if(item!=Items.AIR&&!materialIgnored(schematic.state(i)))remainingByLayer.computeIfAbsent(taskLayer(i),y->new HashMap<>()).merge(item,Schematic.units(schematic.state(i)),Integer::sum);}
         for(int i=0;i<schematic.size();i++)if(potted(desired(i))&&!materialIgnored(desired(i)))remainingByLayer.computeIfAbsent(taskLayer(i),y->new HashMap<>()).merge(Items.FLOWER_POT,1,Integer::sum);
         for(int i=0;i<schematic.size();i++)if(potted(desired(i))&&materialIgnored(desired(i))){
@@ -655,15 +656,22 @@ public final class AutoBuilder extends Module {
             // Otherwise that layer waits for cleanup while cleanup waits for upper layers.
             boolean cleanupOnly=expected.isAir()&&supports.contains(position(i));
             if(!cleanupOnly&&layerAllows(i)&&schematic.included(i)&&(!expected.isAir()||mineOut.get())&&states[i]!=CORRECT&&states[i]!=IGNORED){
-                passTasks++;int y=taskLayer(i);if(y<scanLayer){scanLayer=y;if(layerSupply())workScan.clear();}
-                if(!layerSupply()||y==scanLayer){var candidate=new Visible(i,distance+y*.3+(sectionSupply()&&retryAt.getOrDefault(i,0)>ticks?1e7:0)+(sectionSupply()&&expected.getBlock() instanceof FluidBlock?1e8:0));if(workScan.size()<256)workScan.add(candidate);else if(candidate.distance<workScan.peek().distance){workScan.poll();workScan.add(candidate);}}
+                passTasks++;int phase=taskPhase(i),y=taskLayer(i);
+                // An observer can pulse a partially assembled machine and destroy its
+                // already placed shulker boxes while a note block is being tuned.
+                // Assemble and configure the structure, then fluids, then observers.
+                if(phase<scanPhase){scanPhase=phase;scanLayer=Integer.MAX_VALUE;workScan.clear();}
+                if(phase==scanPhase){
+                    if(y<scanLayer){scanLayer=y;if(layerSupply())workScan.clear();}
+                    if(!layerSupply()||y==scanLayer){var candidate=new Visible(i,distance+y*.3+(sectionSupply()&&retryAt.getOrDefault(i,0)>ticks?1e7:0));if(workScan.size()<256)workScan.add(candidate);else if(candidate.distance<workScan.peek().distance){workScan.poll();workScan.add(candidate);}}
+                }
             }
             if(!expected.isAir()&&!expected.isOf(Blocks.STRUCTURE_VOID)&&distance<=previewRange.get()*previewRange.get()&&layerAllows(i)){
                 var cell=new Visible(i,distance);int limit=renderLimit.getInt();
                 if(visibleScan.size()<limit)visibleScan.add(cell);else if(distance<visibleScan.peek().distance){visibleScan.poll();visibleScan.add(cell);}
             }
             if(scanCursor==states.length){
-                scanCursor=0;completedScans++;lastPassTasks=passTasks;passTasks=0;activeLayer=scanLayer==Integer.MAX_VALUE?-1:scanLayer;scanLayer=Integer.MAX_VALUE;
+                scanCursor=0;completedScans++;lastPassTasks=passTasks;passTasks=0;activeLayer=scanLayer==Integer.MAX_VALUE?-1:scanLayer;activePhase=scanPhase;scanLayer=scanPhase=Integer.MAX_VALUE;
                 visible=visibleScan.stream().sorted(Comparator.comparingDouble(Visible::distance).reversed()).map(Visible::index).toList();visibleScan.clear();
                 workCells=workScan.stream().sorted(Comparator.comparingDouble(Visible::distance)).map(Visible::index).toList();workScan.clear();
                 refreshSection();
@@ -728,7 +736,7 @@ public final class AutoBuilder extends Module {
         List<Integer> candidates=new ArrayList<>();
         // A local neighborhood is cheap even for multi-million-cell schematics; global nearest cells
         // from the scan are appended for walking. A candidate's actual world state is rechecked below.
-        for(int i:sectionSupply()?sectionCells:workCells)if(layerAllows(i)&&(!layerSupply()||taskLayer(i)==supplyLayer())&&states[i]!=CORRECT&&states[i]!=IGNORED&&retryAt.getOrDefault(i,0)<=ticks)candidates.add(i);
+        for(int i:sectionSupply()?sectionCells:workCells)if(layerAllows(i)&&taskPhase(i)==activePhase&&(!layerSupply()||taskLayer(i)==supplyLayer())&&states[i]!=CORRECT&&states[i]!=IGNORED&&retryAt.getOrDefault(i,0)<=ticks)candidates.add(i);
         if(navigatingCell>=0&&(states[navigatingCell]==CORRECT||!candidates.contains(navigatingCell)||ticks-navigationStarted>240)){navigatingCell=-1;walker.stop();}
         candidates.sort(Comparator.<Integer>comparingInt(i->i==navigatingCell?0:1).thenComparingDouble(i->taskLayer(i)*(sectionSupply()?8:100)+position(i).getSquaredDistance(mc.player.getBlockPos())));
         needed=null;Integer distant=null;List<Integer> blocked=new ArrayList<>();
