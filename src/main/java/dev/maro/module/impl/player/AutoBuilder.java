@@ -16,6 +16,7 @@ import dev.maro.setting.*;
 import dev.maro.runtime.settings.StringSetting;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.block.*;
 import net.minecraft.client.gui.DrawContext;
@@ -48,6 +49,13 @@ public final class AutoBuilder extends Module {
     public static final byte UNKNOWN=0,CORRECT=1,MISSING=2,WRONG_BLOCK=3,WRONG_STATE=4,IGNORED=5;
     private static final ExecutorService IO=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"maro-schematic-io");t.setDaemon(true);return t;});
     private final LinkedHashMap<String,SettingSection> groups=new LinkedHashMap<>();
+    private final BooleanSetting saveBuilds=bool("Saved Builds","Save Build Progress","Save the active placement on disconnect and every ten seconds; resume after rescanning the world",true);
+    private final ModeSetting buildSlot=mode("Saved Builds","Build Slot","Choose a saved build or a slot for a new placement","Last Session","Last Session","1","2","3","4","5","6","7","8","9","10");
+    private final BuilderPlacements savedBuilds=new BuilderPlacements(FabricLoader.getInstance().getGameDir().resolve("maro/builder-placements"));
+    private final Map<Integer,JsonObject> savedBuildInfo=new HashMap<>();
+    private int activeBuildSlot=-1;
+    private String placementName="";
+    private boolean restoringPlacement;
     private final ModeSetting mode=mode("Start","Build Mode","Automatic starts immediately; Semi Auto builds while right mouse is held","Automatic","Semi Auto","Automatic");
     private final ModeSetting supplyMode=mode("Materials","Material Supply","Finish the lowest unfinished layer and fetch its materials in inventory-sized batches","Layer by Layer","Layer by Layer","Whole Schematic").onChange(v->replan());
     private final BooleanSetting prebuyWhole=bool("Materials","Prepare Whole Build","Buy missing supplies for the whole build, store them in a double chest, then supply each layer",true);
@@ -164,12 +172,13 @@ public final class AutoBuilder extends Module {
     private String preparationStopReason="";
     private final Set<Integer> restockTriedSlots=new HashSet<>();
     private final Map<Integer,Integer> retryAt=new HashMap<>();
-    private final Map<Integer,Set<BlockPos>> triedStands=new HashMap<>();
-    private final Map<BlockPos,Set<BlockPos>> cleanupStands=new HashMap<>();
+    private final Map<Integer,Map<BlockPos,Integer>> triedStands=new HashMap<>();
+    private final Map<BlockPos,Map<BlockPos,Integer>> cleanupStands=new HashMap<>();
     private BlockPos standGoal;
     private int navigatingCell=-1,navigationStarted,eatPreviousSlot=-1,eatBefore,eatDeadline;
-    private boolean eating,ownsFoodUse,foodRestock,foodShopping;
-    private int standStarted;
+    private boolean eating,ownsFoodUse,foodRestock,foodShopping,supportRestock,supportShopping;
+    private int standStarted,standProgressAt;
+    private Vec3d standProgressPos;
     private final IdentityHashMap<BlockState,BlockState> transformedStates=new IdentityHashMap<>();
     private final BuilderWalk walker=new BuilderWalk();
     private final Set<BlockPos> escapeSupports=new LinkedHashSet<>();
@@ -183,6 +192,10 @@ public final class AutoBuilder extends Module {
     private record Visible(int index,double distance){}
     private record Place(BlockPos target,BlockState state,BlockHitResult hit,Item item,int index,boolean temporary){}
     private Place placement;
+    private Place pendingPlacement;
+    private BlockState pendingBefore,pendingServerState;
+    private int placementDeadline;
+    private BlockPos routeMining;
     private BlockPos mining,restockTarget;
     private BlockPos tuningTarget,tuningSession;
     private int tuningObserved,tuningExpected,tuningDeadline,tuningClicks;
@@ -229,6 +242,9 @@ public final class AutoBuilder extends Module {
     public AutoBuilder(){
         super("Auto Builder","Load, preview and build schematics with materials, chest restocking and auction buying",Category.PLAYER);
         button("Start","Builder Panel","Open the simple schematic, position and build controls","Open Builder",()->mc.setScreen(new BuilderControlScreen(mc.currentScreen,this)));
+        button("Saved Builds","Manage Saved Builds","Choose, name, save or load a build placement","Open",()->mc.setScreen(new BuilderPlacementsScreen(mc.currentScreen,this)));
+        button("Saved Builds","Save Placement","Save this schematic and its placement in the selected slot","Save",()->savePlacement(placementName));
+        button("Saved Builds","Load Placement","Load the selected build, paused at its saved origin","Load",this::loadPlacement);
         button("Start","Choose Schematic","Choose a .schem, .schematic, .litematic or .nbt file","Choose",()->mc.setScreen(new BuilderScreen(mc.currentScreen,this,false)));
         button("Materials","Show Materials","Show total, remaining and inventory counts","Materials",()->mc.setScreen(new BuilderScreen(mc.currentScreen,this,true)));
         button("Snapshot","Creative Materials Get","Fill empty inventory slots with needed materials in creative","Get Materials",this::creativeMaterials).visible(()->mc.player!=null&&mc.player.getAbilities().creativeMode);
@@ -245,6 +261,20 @@ public final class AutoBuilder extends Module {
         button("Materials","Cancel Buying","Stop the shopping session","Cancel",()->finishBuying("Buying cancelled"));
         button("Materials","Deposit All","Move inventory and hotbar items into your selected double chests","Deposit",this::depositAll);
         ClientTickEvents.START_CLIENT_TICK.register(client->{digging=false;if(isEnabled())tickWork();});
+        ClientPlayConnectionEvents.DISCONNECT.register((handler,client)->{
+            checkpoint();pause("Build saved — reconnect and press Resume");world=null;
+        });
+        CompletableFuture.supplyAsync(()->{
+            var result=new HashMap<Integer,JsonObject>();
+            for(int slot=0;slot<=10;slot++)try{var info=savedBuilds.info(slot);if(info!=null)result.put(slot,info);}catch(IOException error){Maro.LOGGER.warn("Could not read build slot {}",slot,error);}
+            return result;
+        },IO).thenAccept(infos->mc.execute(()->{
+            savedBuildInfo.putAll(infos);
+            if(saveBuilds.get()&&!infos.isEmpty()){
+                int latest=infos.entrySet().stream().max(Comparator.comparingLong(e->e.getValue().get("saved-at").getAsLong())).orElseThrow().getKey();
+                buildSlot.set(latest==0?"Last Session":String.valueOf(latest));loadPlacement();
+            }
+        }));
         ClientReceiveMessageEvents.GAME.register((message,overlay)->{if(buying&&pendingOffer!=null&&(marketStage==2||marketStage==3)&&AuctionMarket.unavailable(message.getString()))soldNotice=true;});
     }
     // Rendering/protocol defaults are internal; they no longer clutter the saved settings UI.
@@ -264,6 +294,10 @@ public final class AutoBuilder extends Module {
         groups.forEach((name,section)->{if(!name.equals("Start"))result.add(section);});return result;
     }
     public static boolean holdingBreak(){return digging;}
+    public static void serverBlockUpdate(BlockPos pos,BlockState state){
+        var builder=ModuleManager.get(AutoBuilder.class);
+        if(builder!=null&&builder.pendingPlacement!=null&&builder.pendingPlacement.target.equals(pos))builder.pendingServerState=state;
+    }
     public static boolean consumesUse(){var module=ModuleManager.get(AutoBuilder.class);return module!=null&&module.isEnabled()&&module.building&&module.mode.is("Semi Auto")&&mc.currentScreen==null;}
     public Path folder(){
         Path path=FabricLoader.getInstance().getGameDir().resolve("schematics");
@@ -282,7 +316,7 @@ public final class AutoBuilder extends Module {
             }));
     }
     private static String rootMessage(Throwable error){while(error.getCause()!=null)error=error.getCause();return error.getMessage()==null?error.getClass().getSimpleName():error.getMessage();}
-    public void install(Schematic data){pause("Schematic loaded");schematic=data;supports.clear();escapeSupports.clear();cleanupStands.clear();recoveryAttempts=0;replan();}
+    public void install(Schematic data){if(!restoringPlacement){checkpoint();activeBuildSlot=-1;placementName="";}pause("Schematic loaded");schematic=data;supports.clear();escapeSupports.clear();cleanupStands.clear();recoveryAttempts=0;replan();}
     public Schematic schematic(){return schematic;}
     public String status(){return status;}
     public boolean loading(){return loading;}
@@ -350,11 +384,13 @@ public final class AutoBuilder extends Module {
     public void preview(){if(schematic==null){notify("Choose a schematic first");return;}if(origin==null&&inGame())setOrigin(mc.player.getBlockPos().offset(mc.player.getHorizontalFacing(),3));setEnabled(true);preview=true;pause("Previewing "+schematic.name);}
     public void startBuild(){
         if(!inGame()||schematic==null||loading){notify("Join a world and load a schematic first");return;}
-        if(world==null&&origin!=null&&dimension.equals(mc.world.getRegistryKey().getValue().toString())&&worldScope.equals(scope()))world=mc.world;
+        if(world==null&&origin!=null&&dimension.equals(mc.world.getRegistryKey().getValue().toString())&&worldScope.equals(scope())){world=mc.world;rescanSavedPlacement();}
+        if(activeBuildSlot>=0&&origin!=null&&world!=mc.world){notify("This placement belongs to another world — choose a saved build or set a new origin");return;}
         if(origin==null||world!=mc.world)setOrigin(mc.player.getBlockPos().offset(mc.player.getHorizontalFacing(),3));
         var miner=ModuleManager.get(AutoMine.class);if(miner!=null&&miner.isEnabled())miner.setEnabled(false);
+        checkpoint();
         if(prebuyWhole.get()&&!preparationReady&&!mc.player.getAbilities().creativeMode){startPreparation();return;}
-        setEnabled(true);building=true;preview=true;staffStopAt=0;triedContainers.clear();retryAt.clear();status=mode.is("Semi Auto")?"Hold right mouse to build":"Building";mc.setScreen(null);
+        setEnabled(true);building=true;preview=true;staffStopAt=0;checkpoint();triedContainers.clear();retryAt.clear();status=mode.is("Semi Auto")?"Hold right mouse to build":"Building";mc.setScreen(null);
     }
     private void startPreparation(){
         if(mc.player.currentScreenHandler!=mc.player.playerScreenHandler){notify("Close the current container before preparing supplies");return;}
@@ -374,6 +410,7 @@ public final class AutoBuilder extends Module {
         startBuild();
     }
     public void cancelSchematic(){
+        checkpoint();activeBuildSlot=-1;
         ++ioGeneration;loading=false;pause("Schematic cancelled");setEnabled(false);preparationReady=false;chestStocks.clear();preparedStock.clear();emptyChestItems.clear();buildBudgetActive=false;buildBudgetSpent=0;
         schematic=null;selected="";preview=false;captureStates=null;capture=null;
         states=unitsLeft=new byte[0];scanCursor=correct=solid=completedScans=passTasks=lastPassTasks=0;
@@ -384,18 +421,19 @@ public final class AutoBuilder extends Module {
     @Override protected void onEnable(){
         if(!inGame()){setEnabled(false);return;}
         originalSlot=mc.player.getInventory().getSelectedSlot();
-        if(world==null&&origin!=null&&dimension.equals(mc.world.getRegistryKey().getValue().toString())&&worldScope.equals(scope()))world=mc.world;
+        if(world==null&&origin!=null&&dimension.equals(mc.world.getRegistryKey().getValue().toString())&&worldScope.equals(scope())){world=mc.world;rescanSavedPlacement();}
+        if(activeBuildSlot>=0&&origin!=null&&world!=mc.world){notify("This placement belongs to another world — choose a saved build or set a new origin");return;}
         if(origin==null||world!=mc.world)setOrigin(mc.player.getBlockPos().offset(mc.player.getHorizontalFacing(),3));
         building=schematic!=null;preview=true;
     }
     @Override protected void onDisable(){pause("Disabled");staffStopAt=0;captureStates=null;if(mc.player!=null&&originalSlot>=0)select(originalSlot);originalSlot=-1;}
     public void pause(String reason){
         yawVelocity=pitchVelocity=0;
-        stopEating();navigatingCell=-1;foodRestock=foodShopping=false;
+        stopEating();navigatingCell=-1;foodRestock=foodShopping=supportRestock=supportShopping=false;
         preparationStage=0;depositQueue.clear();
         if(partialSource>=0&&ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler&&!ownedHandler.getCursorStack().isEmpty())mc.interactionManager.clickSlot(ownedHandler.syncId,partialSource,0,SlotActionType.PICKUP,mc.player);
         partialSource=-1;partialItem=null;
-        building=false;pasting=false;depositing=false;depositTarget=null;depositSlot=-1;resumeShoppingAfterDeposit=false;depositedShopping.clear();placement=null;mining=null;tuningTarget=tuningSession=null;tuningClicks=0;standGoal=null;digging=false;walker.stop();releaseSneak();endRecovery();
+        building=false;pasting=false;depositing=false;depositTarget=null;depositSlot=-1;resumeShoppingAfterDeposit=false;depositedShopping.clear();placement=pendingPlacement=null;pendingServerState=null;routeMining=null;mining=null;tuningTarget=tuningSession=null;tuningClicks=0;standGoal=null;digging=false;walker.stop();releaseSneak();endRecovery();
         if(mc.interactionManager!=null)mc.interactionManager.cancelBlockBreaking();
         if(ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler)mc.player.closeHandledScreen();
         ownedHandler=null;restockTarget=null;buying=false;pendingOffer=null;shopping.clear();status=reason;
@@ -420,6 +458,8 @@ public final class AutoBuilder extends Module {
         scan();captureTick();
         if(staffStopAt>0){if(logoff.get()&&System.currentTimeMillis()-staffStopAt>=logoffDelay.get()*1000){mc.world.disconnect(Text.literal(logoffMessage.get()));setEnabled(false);}return;}
         if((building||buying||pasting||depositing)&&unsafe()){walker.release();return;}
+        if(pendingPlacement!=null){placementReceiptTick();return;}
+        if(mc.currentScreen==null&&(building||depositing)&&clearRouteSupportTick())return;
         if(building&&!buying&&mc.currentScreen==null&&restockTarget==null&&eatTick())return;
         if(mc.currentScreen==null&&(depositing||building&&(!mode.is("Semi Auto")||mc.options.useKey.isPressed()))&&recoveryTick())return;
         if(buying){marketTick();return;}
@@ -434,8 +474,12 @@ public final class AutoBuilder extends Module {
         if(placement!=null){placeTick();return;}
         if(mining!=null){mineTick();return;}
         if(standGoal!=null){
-            if(walker.standAt(standGoal)||ticks-standStarted>200){standGoal=null;walker.stop();}
-            else status=walker.status;return;
+            if(standProgressPos==null||mc.player.getEntityPos().squaredDistanceTo(standProgressPos)>.04){standProgressPos=mc.player.getEntityPos();standProgressAt=ticks;}
+            if(walker.standAt(standGoal)){standGoal=null;walker.stop();}
+            else if(ticks-standProgressAt>50||ticks-standStarted>240||walker.routeUnavailable()){
+                if(navigatingCell>=0)retryAt.put(navigatingCell,ticks+10);navigatingCell=-1;standGoal=null;walker.stop();status="Replanning blocked build position";
+            }else status=walker.status;
+            return;
         }
         findWork();
     }
@@ -469,12 +513,23 @@ public final class AutoBuilder extends Module {
         }else pause("Unable to eat steak — paused");return true;
     }
     private void endRecovery(){if(recoveryJump)mc.options.jumpKey.setPressed(false);recoveryJump=false;recoveryPhase=0;recoveryBase=null;}
+    private boolean clearRouteSupportTick(){
+        if(routeMining!=null){
+            if(!mc.world.getBlockState(routeMining).isOf(Blocks.DIRT)){supports.remove(routeMining);escapeSupports.remove(routeMining);cleanupStands.remove(routeMining);routeMining=null;mining=null;digging=false;mc.interactionManager.cancelBlockBreaking();walker.stop();delay=actionDelay();return true;}
+            mining=routeMining;mineTick();if(mining==null)routeMining=null;return true;
+        }
+        if(!walker.routeUnavailable())return false;
+        var obstruction=walker.blockingSupport(supports);
+        if(obstruction==null||visibleHit(obstruction)==null)return false;
+        routeMining=obstruction;mining=obstruction;walker.release();status="Clearing temporary block from route";mineTick();return true;
+    }
     private boolean recoveryTick(){
         if(recoveryPhase==0){
             // Keep escape steps until completion: deleting them mid-route can destroy the return path.
-            if(!unstuck.get()||!autoMove.get()||!walker.needsRecovery()||ticks<recoveryCooldown||recoveryAttempts>=3||schematic==null||inventoryCount(Items.DIRT)==0||!mc.player.isOnGround())return false;
+            if(!unstuck.get()||!autoMove.get()||!walker.needsRecovery()||ticks<recoveryCooldown||recoveryAttempts>=3||schematic==null||!mc.player.isOnGround())return false;
             var feet=mc.player.getBlockPos();if(!walker.canPillar(feet)||!mc.world.getBlockState(feet).isReplaceable())return false;
             int cell=schematic.indexAt(feet.subtract(anchor()),turns(),mirror.get());if(cell>=0&&!desired(cell).isAir()&&!desired(cell).isOf(Blocks.STRUCTURE_VOID)&&!desired(cell).isOf(Blocks.DIRT))return false;
+            if(inventoryCount(Items.DIRT)==0){if(building){ensureSupportDirt();return true;}return false;}
             walker.stop();recoveryBase=feet;recoveryStarted=ticks;recoveryPhase=1;recoveryAttempts++;placement=null;mining=null;
         }
         if(ticks-recoveryStarted>60){endRecovery();recoveryCooldown=ticks+80;status="Unstuck step could not be placed — move or add a step";return true;}
@@ -528,6 +583,7 @@ public final class AutoBuilder extends Module {
     private byte classify(int i){
         var wanted=desired(i);if(wanted.isOf(Blocks.STRUCTURE_VOID)||materialIgnored(wanted))return IGNORED;
         var pos=position(i);if(!mc.world.isChunkLoaded(pos))return UNKNOWN;
+        if(pendingPlacement!=null&&pendingPlacement.target.equals(pos)&&pendingServerState==null)return MISSING;
         var actual=mc.world.getBlockState(pos);
         if(wanted.isOf(Blocks.NOTE_BLOCK)&&actual.isOf(Blocks.NOTE_BLOCK)&&wanted.get(NoteBlock.NOTE).equals(actual.get(NoteBlock.NOTE)))return CORRECT;
         return matchesBuildState(actual,wanted)||wanted.isAir()&&actual.isAir()?CORRECT:actual.isAir()||actual.isReplaceable()?MISSING:actual.getBlock()==wanted.getBlock()?WRONG_STATE:WRONG_BLOCK;
@@ -548,9 +604,9 @@ public final class AutoBuilder extends Module {
     private double effectiveReach(){return Math.min(reach.get(),mc.player.getBlockInteractionRange()-.1);}
     private void findWork(){
         if(completedScans==0){status="Checking schematic: "+(100L*scanCursor/Math.max(1,states.length))+"%";return;}
-        if((lastPassTasks==0||correct==solid&&!supports.isEmpty())&&ticks-lastAction>=20){
+        if((lastPassTasks==0||correct==solid&&!supports.isEmpty())&&(!supports.isEmpty()||ticks-lastAction>=20)){
             if(cleanup.get()&&!supports.isEmpty()){
-                var pos=supports.stream().min(Comparator.comparingDouble(p->p.getSquaredDistance(mc.player.getBlockPos()))).orElseThrow();
+                var pos=supports.stream().min(Comparator.<BlockPos>comparingInt(p->-p.getY()).thenComparingDouble(p->p.getSquaredDistance(mc.player.getBlockPos()))).orElseThrow();
                 if(!mc.world.isChunkLoaded(pos)){status="Cleanup paused — support chunk is unloaded";return;}
                 if(!mc.world.getBlockState(pos).isOf(Blocks.DIRT)){supports.remove(pos);cleanupStands.remove(pos);return;}
                 int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());
@@ -559,12 +615,12 @@ public final class AutoBuilder extends Module {
                     if(autoMove.get()){walker.approach(pos,effectiveReach()-.75);status="Returning to temporary supports";}else status="Move closer to clean temporary supports";return;
                 }
                 if(new Box(pos).intersects(mc.player.getBoundingBox().offset(0,-1,0))||visibleHit(pos)==null){
-                    if(autoMove.get()&&repositionTarget(pos,cleanupStands.computeIfAbsent(pos,p->new HashSet<>())))status="Moving to clean temporary support";
+                    if(autoMove.get()&&repositionTarget(pos,cleanupStands.computeIfAbsent(pos,p->new HashMap<>())))status="Moving to clean temporary support";
                     else status="Cleanup needs a clear path — move off / around the support";return;
                 }
                 mining=pos;mineTick();return;
             }
-            pause("Build complete");notify("Build complete: "+solid+" blocks");if(depositWhen.is("After Build"))depositAll();return;
+            checkpoint();pause("Build complete");notify("Build complete: "+solid+" blocks");if(depositWhen.is("After Build"))depositAll();return;
         }
         List<Integer> candidates=new ArrayList<>();
         // A local neighborhood is cheap even for multi-million-cell schematics; global nearest cells
@@ -572,7 +628,7 @@ public final class AutoBuilder extends Module {
         for(int i:workCells)if(layerAllows(i)&&(!layerSupply()||taskLayer(i)==supplyLayer())&&states[i]!=CORRECT&&states[i]!=IGNORED&&retryAt.getOrDefault(i,0)<=ticks)candidates.add(i);
         if(navigatingCell>=0&&(states[navigatingCell]==CORRECT||!candidates.contains(navigatingCell)||ticks-navigationStarted>240)){navigatingCell=-1;walker.stop();}
         candidates.sort(Comparator.<Integer>comparingInt(i->i==navigatingCell?0:1).thenComparingDouble(i->schematic.local(i).getY()*100+position(i).getSquaredDistance(mc.player.getBlockPos())));
-        needed=null;Integer distant=null,blocked=null;
+        needed=null;Integer distant=null;List<Integer> blocked=new ArrayList<>();
         long deadline=System.nanoTime()+2_000_000;int checked=0;
         for(int i:candidates){
             if(checked++>=96||System.nanoTime()>deadline)break;
@@ -597,32 +653,28 @@ public final class AutoBuilder extends Module {
             if(inventoryCount(item)==0){if(needed==null)needed=item;continue;}
             var plan=placement(target,desired,item,i,false);
             if(plan!=null){placement=plan;placeTick();return;}
-            if(support.get()&&supports.size()<tempDirt.getInt()&&inventoryCount(Items.DIRT)>0)for(var direction:Direction.values()){
-                var supportPos=target.offset(direction);int local=schematic.indexAt(supportPos.subtract(anchor()),turns(),mirror.get());
-                if(local>=0&&!desired(local).isAir()&&!desired(local).isOf(Blocks.STRUCTURE_VOID))continue;
-                if(!mc.world.getBlockState(supportPos).isReplaceable()||new Box(supportPos).intersects(mc.player.getBoundingBox()))continue;
-                var scaffold=placement(supportPos,Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true);
-                if(scaffold!=null){placement=scaffold;placeTick();return;}
-            }
-            if(blocked==null)blocked=i;
+            var scaffold=supportPlacement(target,mc.player.getEyePos(),mc.player.getBoundingBox());
+            if(scaffold!=null){if(inventoryCount(Items.DIRT)==0){ensureSupportDirt();return;}placement=scaffold;placeTick();return;}
+            blocked.add(i);
         }
         if(needed!=null){if(restock.get()&&beginRestock())return;if(autoBuy.get()&&maxSpend.get()>0){startBuying(false);return;}status="Missing "+needed.getName().getString()+" — check Materials";walker.release();return;}
-        if(blocked!=null&&autoMove.get()&&reposition(blocked))return;
+        if(autoMove.get())for(int i:blocked){if(reposition(i))return;if(System.nanoTime()>deadline+8_000_000)break;}
         if(distant!=null&&autoMove.get()){
             if(navigatingCell!=distant){navigatingCell=distant;navigationStarted=ticks;}
-            var target=position(distant);if(!walker.approach(target,effectiveReach()-.75)){status=walker.status;return;}
+            var target=position(distant);if(!walker.approach(target,effectiveReach()-.75)){if(walker.routeUnavailable()&&reposition(distant))return;status=walker.status;return;}
         }else walker.release();
         status=lastPassTasks==0?"Verifying completed build":"No placeable target — move closer, add supports, or inspect wrong states";
     }
     private boolean reposition(int index){
-        var target=position(index);Set<BlockPos> tried=triedStands.computeIfAbsent(index,i->new HashSet<>());
-        if(repositionTarget(target,tried)){navigatingCell=index;navigationStarted=ticks;return true;}retryAt.put(index,ticks+200);walker.requestRecovery();return false;
+        var target=position(index);var tried=triedStands.computeIfAbsent(index,i->new HashMap<>());
+        if(repositionTarget(target,tried)){navigatingCell=index;navigationStarted=ticks;return true;}retryAt.put(index,ticks+10);walker.requestRecovery();return false;
     }
-    private boolean repositionTarget(BlockPos target,Set<BlockPos> tried){
+    private boolean repositionTarget(BlockPos target,Map<BlockPos,Integer> tried){
+        tried.values().removeIf(until->until<=ticks);
         List<BlockPos> options=new ArrayList<>();
-        for(var side:Direction.Type.HORIZONTAL)for(int distance:new int[]{1,2,3})for(int dy:new int[]{-2,-1,0,1}){
-            var stand=target.offset(side,distance).up(dy);
-            if(tried.contains(stand)||!walker.canStand(stand)||mc.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(stand))<.5)continue;
+        for(int dx=-3;dx<=3;dx++)for(int dz=-3;dz<=3;dz++)for(int dy=-2;dy<=2;dy++){
+            var stand=target.add(dx,dy,dz);
+            if(tried.containsKey(stand)||!walker.canStand(stand)||mc.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(stand))<.04)continue;
             Vec3d eye=Vec3d.ofBottomCenter(stand).add(0,mc.player.getStandingEyeHeight(),0);
             if(eye.squaredDistanceTo(Vec3d.ofCenter(target))>effectiveReach()*effectiveReach())continue;
             if(!canActFrom(eye,target))continue;
@@ -630,15 +682,39 @@ public final class AutoBuilder extends Module {
         }
         options.sort(Comparator.comparingDouble(p->p.getSquaredDistance(mc.player.getBlockPos())));standGoal=null;
         long routeDeadline=System.nanoTime()+6_000_000;
-        for(var option:options){tried.add(option);if(walker.canReachStand(option)){standGoal=option;break;}if(System.nanoTime()>=routeDeadline)break;}
+        for(var option:options){tried.put(option,ticks+40);if(walker.canReachStand(option)){standGoal=option;break;}if(System.nanoTime()>=routeDeadline)break;}
         if(standGoal==null)return false;
-        tried.add(standGoal);standStarted=ticks;walker.stop();status="Moving around an obstructed block";return true;
+        standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();status="Moving around an obstructed block";return true;
     }
     private boolean canActFrom(Vec3d eye,BlockPos target){
         if(!mc.world.getBlockState(target).isReplaceable())return visibleHit(target,eye)!=null;
         int cell=schematic.indexAt(target.subtract(anchor()),turns(),mirror.get());if(cell<0)return false;
         var wanted=desired(cell);var body=mc.player.getBoundingBox().offset(eye.subtract(mc.player.getEyePos()));
-        return placement(target,wanted,Schematic.material(wanted),cell,false,eye,body)!=null;
+        return placement(target,wanted,Schematic.material(wanted),cell,false,eye,body)!=null||supportPlacement(target,eye,body)!=null;
+    }
+    /** Build the lowest attachable piece of a short support column before its upper pieces. */
+    private Place supportPlacement(BlockPos target,Vec3d eye,Box body){
+        if(!support.get()||supports.size()>=tempDirt.getInt())return null;
+        var sides=Direction.values();
+        for(int depth=0;depth<3;depth++)for(var side:sides){
+            var top=target.offset(side);boolean allowed=true;
+            for(int down=0;down<=depth;down++){
+                var pos=top.down(down);int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());
+                if(cell>=0&&!desired(cell).isAir()&&!desired(cell).isOf(Blocks.STRUCTURE_VOID)||!mc.world.isChunkLoaded(pos)||!mc.world.getBlockState(pos).isReplaceable()||!mc.world.getBlockState(pos).getFluidState().isEmpty()){allowed=false;break;}
+            }
+            if(!allowed)continue;
+            var plan=placement(top.down(depth),Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true,eye,body);
+            if(plan!=null)return plan;
+        }
+        return null;
+    }
+    private int supportReserve(){return Math.max(8,restockDirt.getInt());}
+    private void ensureSupportDirt(){
+        needed=Items.DIRT;
+        if(restockTarget!=null){triedContainers.add(restockTarget);restockTarget=null;walker.stop();}
+        if(restock.get()&&beginRestock()){supportRestock=true;status="Restocking temporary blocks";return;}
+        if(autoBuy.get()&&maxSpend.get()>0){boolean resume=building;startBuying(false);if(buying){supportShopping=true;resumeAfterMarket=resume;status="Buying temporary blocks";}return;}
+        walker.release();status="Out of temporary blocks — add dirt or enable AH buying with a budget";
     }
     private Place placement(BlockPos target,BlockState wanted,Item item,int index,boolean temporary){return placement(target,wanted,item,index,temporary,mc.player.getEyePos(),mc.player.getBoundingBox());}
     private Place placement(BlockPos target,BlockState wanted,Item item,int index,boolean temporary,Vec3d eye,Box body){
@@ -716,15 +792,31 @@ public final class AutoBuilder extends Module {
             if(job.index>=0)retryAt.put(job.index,ticks+20);placement=null;releaseSneak();return;
         }
         if(job.item==Items.WATER_BUCKET||job.item==Items.LAVA_BUCKET){
-            releaseSneak();mc.interactionManager.interactItem(mc.player,Hand.MAIN_HAND);delay=Math.max(10,actionDelay());lastAction=ticks;if(job.index>=0)retryAt.put(job.index,ticks+20);placement=null;triedContainers.clear();navigatingCell=-1;status="Placing schematic fluid source";return;
+            releaseSneak();beginPlacementReceipt(job);if(!mc.interactionManager.interactItem(mc.player,Hand.MAIN_HAND).isAccepted())pendingPlacement=null;delay=Math.max(10,actionDelay());placement=null;status="Placing schematic fluid source";return;
         }
         var context=((BlockItem)job.item).getPlacementContext(new ItemPlacementContext(mc.player,Hand.MAIN_HAND,mc.player.getMainHandStack(),aimed));
         if(context==null||!context.getBlockPos().equals(job.target)||!compatible(((BlockItemAccessor)(Object)job.item).maro$placementState(context),job.state)){placement=null;releaseSneak();return;}
+        beginPlacementReceipt(job);
         if(mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,aimed).isAccepted()){
-            mc.player.swingHand(Hand.MAIN_HAND);delay=actionDelay();lastAction=ticks;triedContainers.clear();triedStands.clear();navigatingCell=-1;if(!job.temporary)recoveryAttempts=0;
-            if(job.temporary)supports.add(job.target);status=job.temporary?"Placing temporary support":"Placing "+job.item.getName().getString();
-        }else if(job.index>=0)retryAt.put(job.index,ticks+40);
+            mc.player.swingHand(Hand.MAIN_HAND);delay=actionDelay();status=job.temporary?"Placing temporary support":"Placing "+job.item.getName().getString();
+        }else{pendingPlacement=null;if(job.index>=0)retryAt.put(job.index,ticks+20);}
         placement=null;releaseSneak();
+    }
+    private void beginPlacementReceipt(Place job){pendingPlacement=job;pendingBefore=mc.world.getBlockState(job.target);pendingServerState=null;placementDeadline=ticks+80;}
+    private void placementReceiptTick(){
+        walker.release();
+        if(pendingServerState==null&&ticks<placementDeadline){status="Waiting for server placement";return;}
+        var job=pendingPlacement;var actual=pendingServerState;pendingPlacement=null;pendingServerState=null;
+        if(actual!=null&&actual.getBlock()==job.state.getBlock()&&!actual.equals(pendingBefore)){
+            lastAction=ticks;triedContainers.clear();triedStands.clear();retryAt.clear();navigatingCell=-1;
+            if(job.temporary){supports.add(job.target);if(recoveryPhase==2&&job.target.equals(recoveryBase)){escapeSupports.add(job.target);mc.options.jumpKey.setPressed(false);recoveryJump=false;recoveryPhase=3;}}
+            else recoveryAttempts=0;
+            if(job.index>=0)updateState(job.index);status="Placement confirmed";
+        }else{
+            if(job.index>=0){retryAt.put(job.index,ticks+10);if(autoMove.get())reposition(job.index);}
+            if(job.temporary&&recoveryPhase!=0){endRecovery();recoveryCooldown=ticks+20;}
+            status=actual==null?"Placement response delayed — rechecking":"Placement rejected — replanning";
+        }
     }
     private void mineTick(){
         walker.release();if(mining==null)return;
@@ -774,7 +866,7 @@ public final class AutoBuilder extends Module {
             status="Waiting for block configuration update";return;
         }
         if(tuningClicks>=4){pause("Block configuration changed unexpectedly — paused");return;}
-        var hit=visibleHit(pos);if(hit==null){if(autoMove.get())repositionTarget(pos,triedStands.computeIfAbsent(schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get()),i->new HashSet<>()));status="Moving to configure block";return;}
+        var hit=visibleHit(pos);if(hit==null){if(autoMove.get())repositionTarget(pos,triedStands.computeIfAbsent(schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get()),i->new HashMap<>()));status="Moving to configure block";return;}
         releaseSneak();if(mc.player.isSneaking()||!aim(hit.getPos()))return;
         if(mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,hit).isAccepted()){tuningObserved=value;tuningTarget=pos;tuningDeadline=ticks+80;tuningClicks++;lastAction=ticks;mc.player.swingHand(Hand.MAIN_HAND);status="Configuring block";}
     }
@@ -833,7 +925,7 @@ public final class AutoBuilder extends Module {
         if(needed!=restockAttemptItem){triedContainers.clear();restockAttemptItem=needed;}
         var excluded=new HashSet<>(triedContainers);if(needed!=null)emptyChestItems.forEach((pos,items)->{if(items.contains(needed))excluded.add(pos);});
         restockTarget=supplyChests().stream().filter(chest->!excluded.contains(chest)&&!excluded.contains(chest.offset(ChestBlock.getFacing(mc.world.getBlockState(chest))))).findFirst().orElse(null);
-        if(restockTarget==null)return false;foodRestock=false;restockWait=inventoryWait=0;partialSource=-1;partialItem=null;restockTriedSlots.clear();walker.stop();status="Restocking";return true;
+        if(restockTarget==null)return false;foodRestock=supportRestock=false;restockWait=inventoryWait=0;partialSource=-1;partialItem=null;restockTriedSlots.clear();walker.stop();status="Restocking";return true;
     }
     private void restockTick(){
         if(ownedHandler!=null){
@@ -842,6 +934,7 @@ public final class AutoBuilder extends Module {
             if(partialSource>=0){partialRestockTick();return;}
             if(!ownedHandler.getCursorStack().isEmpty()){status="Restock paused — clear the cursor";return;}
             Map<Item,Integer> required=new HashMap<>(requiredMaterials());if(support.get())required.merge(Items.DIRT,restockDirt.getInt(),Integer::sum);required.keySet().removeAll(ignoredMaterials);addRequiredTools(required);if(foodRestock){required.clear();required.put(Items.COOKED_BEEF,steakReserve.getInt());}
+            if(supportRestock){required.clear();required.put(Items.DIRT,supportReserve());}
             for(var slot:ownedHandler.slots){
                 var stack=slot.getStack();if(stack.isEmpty()||slot.inventory==mc.player.getInventory()||restockTriedSlots.contains(slot.id))continue;
                 if(inventoryCount(stack.getItem())<required.getOrDefault(stack.getItem(),0)&&canReceive(stack.getItem())){
@@ -1038,7 +1131,7 @@ public final class AutoBuilder extends Module {
     }
     private void marketTick(){
         if(marketWait>0){marketWait--;return;}
-        if(marketStage==-1){if(completedScans==0){status="Scanning material requirements";return;}var needs=foodShopping?Map.of(Items.COOKED_BEEF,Math.max(0,steakReserve.getInt()-inventoryCount(Items.COOKED_BEEF))):preparationStage==2?wholeBuildNeeds():shoppingNeeds(buyDirt.getInt());needs.entrySet().stream().filter(e->e.getValue()>0).sorted(Comparator.comparing(e->Registries.ITEM.getId(e.getKey()).toString())).forEach(e->shopping.put(e.getKey(),e.getValue()));marketStage=0;}
+        if(marketStage==-1){if(completedScans==0){status="Scanning material requirements";return;}var needs=foodShopping?Map.of(Items.COOKED_BEEF,Math.max(0,steakReserve.getInt()-inventoryCount(Items.COOKED_BEEF))):supportShopping?Map.of(Items.DIRT,Math.max(0,supportReserve()-inventoryCount(Items.DIRT))):preparationStage==2?wholeBuildNeeds():shoppingNeeds(buyDirt.getInt());needs.entrySet().stream().filter(e->e.getValue()>0).sorted(Comparator.comparing(e->Registries.ITEM.getId(e.getKey()).toString())).forEach(e->shopping.put(e.getKey(),e.getValue()));marketStage=0;}
         if(buyingItem==null){
             if(!estimating&&!shopping.isEmpty()&&maxSpend.get()<=spent){finishBuying("AH budget exhausted — increase the budget for missing supplies");return;}
             if(shopping.isEmpty()){boolean preparing=preparationStage==2;boolean resume=resumeAfterMarket&&!estimating;boolean deposit=!estimating&&depositWhen.is("After Buying");finishBuying(estimating?"Estimated material cost: "+Math.round(estimate):"Buying finished — spent "+Math.round(spent));if(preparing)return;if(deposit)depositAll();else if(resume){building=true;delay=6;status="Continuing build after buying";}return;}
@@ -1175,8 +1268,65 @@ public final class AutoBuilder extends Module {
         Render2D.roundRect(ctx,x+12,y+53,w-24,2,1,0xFF334255);if(solid>0)Render2D.roundRect(ctx,x+12,y+53,(w-24)*correct/solid,2,1,0xFF7EF0C1);
         if(showLabels.get()&&restockTarget!=null)SmoothHudText.draw(ctx,"Restock "+restockTarget.toShortString(),x+12,y+64,0xFF9DCBFF,false,labelScale.getFloat());
     }
+    public int selectedBuildSlot(){return buildSlot.is("Last Session")?0:Integer.parseInt(buildSlot.get());}
+    public void cycleBuildSlot(int direction){buildSlot.cycle(direction);}
+    public JsonObject buildSlotInfo(){var info=savedBuildInfo.get(selectedBuildSlot());return info==null?null:info.deepCopy();}
+    public String placementName(){return placementName;}
+    public CompletableFuture<Void> savePlacement(String name){
+        if(schematic==null||origin==null){notify("Load and position a schematic first");return CompletableFuture.completedFuture(null);}
+        activeBuildSlot=selectedBuildSlot();placementName=name==null?"":name.strip();
+        int slot=activeBuildSlot;return writePlacement(slot).whenComplete((unused,error)->mc.execute(()->{if(error!=null)notify("Build save failed: "+rootMessage(error));else status="Placement saved in build slot "+slot;}));
+    }
+    private void rescanSavedPlacement(){boolean active=buildBudgetActive;double spentSoFar=buildBudgetSpent;replan();buildBudgetActive=active;buildBudgetSpent=spentSoFar;}
+    private void checkpoint(){
+        if(!saveBuilds.get()||schematic==null||origin==null||loading||restoringPlacement)return;
+        if(activeBuildSlot<0){
+            int slot=selectedBuildSlot();
+            if(slot>0&&savedBuildInfo.containsKey(slot))slot=java.util.stream.IntStream.rangeClosed(1,10).filter(i->!savedBuildInfo.containsKey(i)).findFirst().orElse(0);
+            if(slot<0){status="Build slots full — choose a slot and press Save Placement";return;}
+            activeBuildSlot=slot;buildSlot.set(slot==0?"Last Session":String.valueOf(slot));
+        }
+        writePlacement(activeBuildSlot).whenComplete((unused,error)->{if(error!=null)mc.execute(()->notify("Build checkpoint failed: "+rootMessage(error)));});
+    }
+    private CompletableFuture<Void> writePlacement(int slot){
+        var data=saveExtra();data.addProperty("schematic-name",schematic.name);data.addProperty("schematic-format",schematic.format);data.addProperty("name",placementName.isBlank()?schematic.name:placementName);data.addProperty("saved-at",System.currentTimeMillis());
+        data.addProperty("correct",correct);data.addProperty("total",solid);data.addProperty("rotation",rotation.get());data.addProperty("mirror",mirror.get());data.addProperty("use-offset",useOffset.get());
+        data.addProperty("layer-mode",layerMode.get());data.addProperty("layer",layer.getInt());data.addProperty("build-budget-active",buildBudgetActive);data.addProperty("build-budget-spent",buildBudgetSpent);
+        var temporary=new JsonArray();for(var pos:supports)temporary.add(posJson(pos));data.add("temporary-supports",temporary);
+        var escape=new JsonArray();for(var pos:escapeSupports)escape.add(posJson(pos));data.add("escape-supports",escape);
+        savedBuildInfo.put(slot,data.deepCopy());var snapshot=schematic;
+        return CompletableFuture.runAsync(()->{try{savedBuilds.save(slot,snapshot,data);}catch(IOException error){throw new CompletionException(error);}},IO);
+    }
+    public void loadPlacement(){
+        int slot=selectedBuildSlot();if(activeBuildSlot>=0)checkpoint();pause("Loading saved placement");loading=true;int generation=++ioGeneration;
+        CompletableFuture.supplyAsync(()->{try{return savedBuilds.load(slot);}catch(IOException error){throw new CompletionException(error);}},IO).whenComplete((saved,error)->mc.execute(()->{
+            if(generation!=ioGeneration)return;loading=false;
+            if(error!=null){status="Cannot load build slot "+slot;notify(rootMessage(error));return;}
+            restoringPlacement=true;
+            try{
+                var data=saved.placement();install(saved.schematic());ignoredMaterials.clear();restorePlacementFields(data);
+                rotation.set(data.get("rotation").getAsString());mirror.set(data.get("mirror").getAsString());useOffset.set(data.get("use-offset").getAsBoolean());
+                layerMode.set(data.get("layer-mode").getAsString());layer.set(data.get("layer").getAsDouble());
+                supports.clear();escapeSupports.clear();if(data.has("temporary-supports"))for(var pos:data.getAsJsonArray("temporary-supports"))supports.add(jsonPos(pos));
+                if(data.has("escape-supports"))for(var pos:data.getAsJsonArray("escape-supports"))escapeSupports.add(jsonPos(pos));
+                replan();buildBudgetActive=data.get("build-budget-active").getAsBoolean();buildBudgetSpent=data.get("build-budget-spent").getAsDouble();spent=buildBudgetSpent;
+                activeBuildSlot=slot;buildSlot.set(slot==0?"Last Session":String.valueOf(slot));placementName=data.get("name").getAsString();
+                world=inGame()&&worldScope.equals(scope())&&dimension.equals(mc.world.getRegistryKey().getValue().toString())?mc.world:null;
+                preview=true;building=false;status=world==null?"Placement loaded — join its saved world to resume":"Placement loaded — press Start / Resume";
+                savedBuildInfo.put(slot,data.deepCopy());
+            }catch(RuntimeException failure){status="Invalid saved placement";notify(rootMessage(failure));}
+            finally{restoringPlacement=false;}
+        }));
+    }
+    private void restorePlacementFields(JsonObject data){
+        if(data.has("ignored-materials"))for(var value:data.getAsJsonArray("ignored-materials")){var id=net.minecraft.util.Identifier.tryParse(value.getAsString());if(id!=null){var item=Registries.ITEM.get(id);if(item!=Items.AIR)ignoredMaterials.add(item);}}
+        if(data.has("world-scope"))worldScope=data.get("world-scope").getAsString();if(data.has("dimension"))dimension=data.get("dimension").getAsString();if(data.has("origin"))origin=jsonPos(data.get("origin"));
+        containers.clear();if(data.has("restock"))for(var pos:data.getAsJsonArray("restock"))containers.add(jsonPos(pos));
+        if(containers.isEmpty()&&data.has("supply-chest"))containers.add(jsonPos(data.get("supply-chest")));
+        selected=data.has("file")?data.get("file").getAsString():"";
+    }
     @Override public JsonObject saveExtra(){
-        var result=new JsonObject();result.addProperty("file",selected);result.addProperty("dimension",dimension);result.addProperty("world-scope",worldScope);
+        var result=new JsonObject();result.addProperty("file",selected);result.addProperty("dimension",dimension);result.addProperty("world-scope",worldScope);result.addProperty("active-build-slot",activeBuildSlot);
         var ignored=new JsonArray();for(var item:ignoredMaterials)ignored.add(Registries.ITEM.getId(item).toString());result.add("ignored-materials",ignored);
         if(selectedSupplyChest()!=null)result.add("supply-chest",posJson(selectedSupplyChest()));if(origin!=null)result.add("origin",posJson(origin));var marks=new JsonArray();for(var pos:containers)marks.add(posJson(pos));result.add("restock",marks);return result;
     }
@@ -1186,7 +1336,8 @@ public final class AutoBuilder extends Module {
         try{ignoredMaterials.clear();if(data.has("ignored-materials"))for(var value:data.getAsJsonArray("ignored-materials")){var id=net.minecraft.util.Identifier.tryParse(value.getAsString());if(id!=null){var item=Registries.ITEM.get(id);if(item!=Items.AIR)ignoredMaterials.add(item);}}
             if(data.has("world-scope"))worldScope=data.get("world-scope").getAsString();if(data.has("dimension"))dimension=data.get("dimension").getAsString();if(data.has("origin"))origin=jsonPos(data.get("origin"));containers.clear();if(data.has("restock"))for(var pos:data.getAsJsonArray("restock"))containers.add(jsonPos(pos));
             if(containers.isEmpty()&&data.has("supply-chest"))containers.add(jsonPos(data.get("supply-chest")));
-            if(data.has("file")){selected=data.get("file").getAsString();if(!selected.isBlank()&&Files.isRegularFile(folder().resolve(selected)))load(folder().resolve(selected));}
+            if(data.has("active-build-slot")&&data.get("active-build-slot").getAsInt()>=0){buildSlot.set(data.get("active-build-slot").getAsInt()==0?"Last Session":data.get("active-build-slot").getAsString());loadPlacement();}
+            else if(data.has("file")){selected=data.get("file").getAsString();if(!selected.isBlank()&&Files.isRegularFile(folder().resolve(selected)))load(folder().resolve(selected));}
         }catch(RuntimeException e){Maro.LOGGER.warn("Invalid Auto Builder saved placement",e);}
     }
     private String scope(){return mc.getCurrentServerEntry()!=null?"server:"+mc.getCurrentServerEntry().address:mc.getServer()!=null?"local:"+mc.getServer().getSaveProperties().getLevelName():"";}

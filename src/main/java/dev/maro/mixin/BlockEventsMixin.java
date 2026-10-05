@@ -22,6 +22,7 @@ public abstract class BlockEventsMixin {
     private void maro$afterServerBlock(BlockPos pos,BlockState next,int flags,CallbackInfo info,
                                      @Share("maro-server-old-state") LocalRef<BlockState> old){
         BlockState actual=((ClientWorld)(Object)this).getBlockState(pos);
+        dev.maro.module.impl.player.AutoBuilder.serverBlockUpdate(pos,next);
         if(old.get()!=null && !old.get().equals(actual))
             MeteorClient.EVENT_BUS.post(new BlockUpdateEvent(pos.toImmutable(),old.get(),actual));
     }
