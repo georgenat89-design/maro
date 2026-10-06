@@ -83,6 +83,8 @@ final class AutoBuilderChecks {
             fixture(context,singleplayer,builder,start);
             raisedTurn(context,singleplayer,start);
             fixture(context,singleplayer,builder,start);
+            faceReach(context,singleplayer,builder,start);
+            fixture(context,singleplayer,builder,start);
             if(Boolean.getBoolean("maro.gametest.builderTurnOnly"))return;
             layerTail(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
@@ -875,6 +877,22 @@ final class AutoBuilderChecks {
                 context.runOnClient(client->require(client.player.getEntityPos().squaredDistanceTo(walker.standingPoint(flat))<.28*.28&&client.player.getVelocity().horizontalLengthSquared()<.0004,"Placement braking did not hold its settled native position"));
             }
         }finally{context.runOnClient(client->walker.stop());}
+    }
+    private static void faceReach(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        var target=start.add(4,0,-2);
+        world.getServer().runCommand("give @a stone 2");context.waitTicks(6);
+        var before=context.computeOnClient(client->client.player.getEntityPos());
+        context.runOnClient(client->{
+            require(client.player.getEyePos().squaredDistanceTo(Vec3d.ofCenter(target))>4.4*4.4,"Reach fixture did not put the block centre out of range");
+            set(builder,"Auto Move",false);set(builder,"Temporary Supports",false);
+            var cells=new BlockState[5];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());cells[0]=cells[4]=Blocks.STONE.getDefaultState();
+            builder.install(new Schematic("reachable-face.nbt","test",1,1,5,BlockPos.ORIGIN,cells));builder.setOrigin(target);
+            BuilderPacketChecks.begin();builder.startBuild();
+        });
+        try{
+            await(context,builder,300);verify(world,target,1,1,1,y->Blocks.STONE);verify(world,target.south(4),1,1,1,y->Blocks.STONE);
+            context.runOnClient(client->{require(client.player.getEntityPos().squaredDistanceTo(before)<.01,"Reachable face caused unnecessary walking");BuilderPacketChecks.verify();});
+        }finally{context.runOnClient(client->BuilderPacketChecks.recording=false);}
     }
     private static void layerTail(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         // Only diagonal standing cells are safe. A wall blocks the initial placement ray,

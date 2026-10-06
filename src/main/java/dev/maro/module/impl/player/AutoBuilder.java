@@ -777,6 +777,13 @@ public final class AutoBuilder extends Module {
         states[index]=next;
     }
     private double effectiveReach(){return Math.min(reach.get(),mc.player.getBlockInteractionRange()-.1);}
+    /** A block's nearest face can be reachable even when its centre is not. */
+    private boolean withinReach(BlockPos pos,Vec3d eye){
+        double dx=eye.x-MathHelper.clamp(eye.x,pos.getX(),pos.getX()+1);
+        double dy=eye.y-MathHelper.clamp(eye.y,pos.getY(),pos.getY()+1);
+        double dz=eye.z-MathHelper.clamp(eye.z,pos.getZ(),pos.getZ()+1);
+        return dx*dx+dy*dy+dz*dz<=effectiveReach()*effectiveReach();
+    }
     private void findWork(){
         if(completedScans==0){status="Checking schematic: "+(100L*scanCursor/Math.max(1,states.length))+"%";return;}
         if((lastPassTasks==0||correct==solid&&!supports.isEmpty())&&(!supports.isEmpty()||ticks-lastAction>=20)){
@@ -790,7 +797,7 @@ public final class AutoBuilder extends Module {
                 if(!mc.world.getBlockState(pos).isOf(Blocks.DIRT)){supports.remove(pos);cleanupStands.remove(pos);return;}
                 int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());
                 if(cell>=0&&desired(cell).isOf(Blocks.DIRT)){supports.remove(pos);return;}
-                if(mc.player.getEyePos().squaredDistanceTo(Vec3d.ofCenter(pos))>effectiveReach()*effectiveReach()){
+                if(!withinReach(pos,mc.player.getEyePos())){
                     if(autoMove.get()){walker.approach(pos,effectiveReach()-.75);status="Returning to temporary supports";}else status="Move closer to clean temporary supports";return;
                 }
                 if(new Box(pos).intersects(mc.player.getBoundingBox().offset(0,-1,0))||visibleHit(pos)==null){
@@ -816,7 +823,7 @@ public final class AutoBuilder extends Module {
             if(waitingForBuiltNeighbour(target,desired))continue;
             if(desired.isAir()&&supports.contains(target)&&correct!=solid)continue;
             if(desired.isAir()&&!mineOut.get()||Schematic.companion(desired))continue;
-            if(mc.player.getEyePos().squaredDistanceTo(Vec3d.ofCenter(target))>effectiveReach()*effectiveReach()){if(distant==null)distant=i;continue;}
+            if(!withinReach(target,mc.player.getEyePos())){if(distant==null)distant=i;continue;}
             if(actual.isOf(Blocks.NOTE_BLOCK)&&desired.isOf(Blocks.NOTE_BLOCK)){tuneNote(target,desired.get(NoteBlock.NOTE));return;}
             if(actual.getBlock()==desired.getBlock()&&compatible(actual,desired)&&configuration(actual)!=configuration(desired)){tuneConfiguration(target,configuration(desired));return;}
             if(desired.isAir()&&mineOut.get()){
@@ -913,7 +920,7 @@ public final class AutoBuilder extends Module {
             // geometry. Keep the committed view eligible during its retry window.
             if(tried.containsKey(stand)&&!stand.equals(accessStand)||!walker.canStand(stand)||mc.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(stand))<.04)continue;
             Vec3d eye=walker.standingPoint(stand).add(0,mc.player.getStandingEyeHeight(),0);
-            if(!extendedScaffold&&eye.squaredDistanceTo(Vec3d.ofCenter(target))>effectiveReach()*effectiveReach())continue;
+            if(!extendedScaffold&&!withinReach(target,eye))continue;
             var body=mc.player.getBoundingBox().offset(eye.subtract(mc.player.getEyePos()));
             boolean direct=!mc.world.getBlockState(target).isReplaceable()?visibleHit(target,eye)!=null
                 :wanted!=null&&placement(target,wanted,Schematic.material(wanted),cell,false,eye,body)!=null;
@@ -967,7 +974,7 @@ public final class AutoBuilder extends Module {
         candidates.sort(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos())));
         for(var stand:candidates){
             var feet=Vec3d.ofBottomCenter(stand);var eye=feet.add(0,mc.player.getStandingEyeHeight(),0);
-            if(eye.squaredDistanceTo(Vec3d.ofCenter(target))>effectiveReach()*effectiveReach())continue;
+            if(!withinReach(target,eye))continue;
             var body=mc.player.getBoundingBox().offset(feet.subtract(mc.player.getEntityPos()));
             if(!mc.world.isSpaceEmpty(body))continue;
             if(placement(target,wanted,Schematic.material(wanted),cell,false,eye,body)==null)continue;
@@ -1198,7 +1205,8 @@ public final class AutoBuilder extends Module {
         }
         return true;
     }
-    private static boolean derivedProperty(BlockState state,String name){return Set.of("shape","north","south","east","west","up","down","powered","power","lit","distance","persistent","locked","enabled","triggered","extended","occupied").contains(name)||name.equals("type")&&state.getBlock() instanceof AbstractChestBlock<?>;}
+    private static final Set<String> DERIVED_PROPERTIES=Set.of("shape","north","south","east","west","up","down","powered","power","lit","distance","persistent","locked","enabled","triggered","extended","occupied");
+    private static boolean derivedProperty(BlockState state,String name){return DERIVED_PROPERTIES.contains(name)||name.equals("type")&&state.getBlock() instanceof AbstractChestBlock<?>;}
     public static boolean matchesBuildState(BlockState actual,BlockState wanted){
         if(actual.getBlock()!=wanted.getBlock())return false;
         for(var property:wanted.getProperties())if(!derivedProperty(wanted,property.getName())&&!(wanted.isOf(Blocks.NOTE_BLOCK)&&property.getName().equals("instrument"))&&!actual.get(property).equals(wanted.get(property)))return false;
@@ -1683,7 +1691,7 @@ public final class AutoBuilder extends Module {
             else{status=walker.status;return null;}
         }
         var hit=chestHit(chest,mc.player.getEyePos());if(hit!=null){walker.release();return hit;}
-        if(mc.player.getEyePos().squaredDistanceTo(Vec3d.ofCenter(chest))>effectiveReach()*effectiveReach()&&ticks-chestProgressAt<=60&&!walker.routeUnavailable()){
+        if(!withinReach(chest,mc.player.getEyePos())&&ticks-chestProgressAt<=60&&!walker.routeUnavailable()){
             walker.approach(chest,effectiveReach()-.5);status=walker.status;return null;
         }
         chestTriedStands.values().removeIf(until->until<=ticks);
