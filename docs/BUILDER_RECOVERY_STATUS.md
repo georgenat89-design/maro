@@ -5,14 +5,38 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
-Latest, 15:45: mandatory confirmed homes, independent smooth head aim, prompt
+Latest, 16:17: storage home setup now replaces home 1 automatically. Start no
+longer requires three empty slots or the player already standing at storage.
+It walks to a checked dry view of the marked chest, or uses an already verified
+storage home before replacement. Only after native arrival/settling does it send
+delhome 1, accept deletion/already-empty feedback, then send sethome and verify
+the home 1 save. Missing/rejected receipts stop without a save. Existing homes
+2/3 are kept; occupied/unreadable optional slots stop retrying and do not pause
+the schematic. Home setup also respects pause and the low-health guard.
+
+Native builder-storage-replace-2 PASSED with Meteor: actual approach from twelve
+blocks away before deletion, pause/restart with released movement, replacement
+with all three slots occupied, resumed Start, preserved homes 2/3, optional-slot
+continuation, rejected/missing deletion receipts, inaccessible storage without
+deletion, already-empty home 1, three saves in order, verified storage-home return
+before replacement, stationary warmup, native arrivals and bounded cooldown.
+Prompt repair, crouch-only mining, 3/3 vertical column cleanup with retained ledge
+and full health, independent camera/mouse and native packets also passed.
+
+The previous 6c31336 full CI passed build/general UI, homes/head/crouch, liquids
+and many cleanup fixtures, then FAILED in the five-block vertical-pillar cleanup
+case with two lower supports retained and "Cleanup needs a checked access route".
+That failure is not fixed by this storage-setup change. Full CI and full 710-block
+completion remain outstanding; PR 37 stays draft.
+
+Earlier, 15:45: mandatory confirmed homes, independent smooth head aim, prompt
 access repairs and native crouch peeking are implemented. Homes reserve 1 for
 storage, 2 for dry interior and 3 for upper access; occupied slots are preserved.
 Home route searches retain cursors under a per-tick budget and run before
 scaffold fallback. Finished base/wall mining is rejected with homes enabled;
 only registered roof openings above a liquid source are eligible.
 
-Latest, 15:58: the user's clarified vertical-column sneak action is implemented.
+Earlier, 15:58: the user's clarified vertical-column sneak action is implemented.
 Native builder-column-edge-4 PASSED in 48s: a three-block temporary column loses
 its upper blocks, then its hidden lower block is mined after actual sneak edging.
 Outbound native mining packets verify crouch, ground and full health at the

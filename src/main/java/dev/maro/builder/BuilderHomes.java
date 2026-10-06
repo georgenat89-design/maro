@@ -15,14 +15,19 @@ public final class BuilderHomes {
     private record Point(Vec3d position,String floor,String dimension) {
         BlockPos feet(){return BlockPos.ofFloored(position.add(0,.01,0));}
     }
-    private enum Stage { IDLE, CHECK, SAVE, TRAVEL }
+    private enum Stage { IDLE, APPROACH, STORAGE_TRAVEL, DELETE, CHECK, SAVE, TRAVEL }
     private final MinecraftClient mc=MinecraftClient.getInstance();
     private final BuilderWalk walker;
     private final Point[] points=new Point[3];
+    private final boolean[] occupied=new boolean[3];
     private Stage stage=Stage.IDLE;
     private Point pending;
     private int slot,started,clock,settled,retryAt,menuStable,menuHash;
     private boolean receipt;
+    private BlockPos storageChest,storageStand;
+    private List<BlockPos> storageViews=List.of();
+    private int storageCursor,storageProgressAt;
+    private Vec3d storageProgress;
     private boolean checkingRoutes;
     private BlockPos routeTarget,routeFeet;
     private List<BlockPos> routeViews=List.of();
@@ -31,16 +36,17 @@ public final class BuilderHomes {
     private String failure="";
     public BuilderHomes(BuilderWalk walker){this.walker=walker;}
     public boolean ready(){return points[0]!=null;}
+    public boolean readyFor(BlockPos chest){return chest!=null&&ready()&&chest.getSquaredDistance(points[0].feet())<=25&&safe(points[0]);}
     public boolean hasSafeReturn(){return ready()&&safe(points[0]);}
     public boolean busy(){return stage!=Stage.IDLE;}
     public void cancel(){
         if(stage==Stage.CHECK&&mc.player!=null&&mc.currentScreen instanceof HandledScreen<?> menu
             &&menu.getTitle().getString().toLowerCase(Locale.ROOT).contains("home")&&menu.getScreenHandler().getCursorStack().isEmpty())mc.player.closeHandledScreen();
-        stage=Stage.IDLE;pending=null;receipt=false;failure="";settled=0;invalidateRoutes();walker.stop();
+        stage=Stage.IDLE;pending=null;storageChest=storageStand=null;storageViews=List.of();storageProgress=null;receipt=false;failure="";settled=0;invalidateRoutes();walker.stop();
     }
     public boolean checkingRoutes(){return checkingRoutes;}
     public void invalidateRoutes(){checkingRoutes=false;routeTarget=routeFeet=null;routeViews=List.of();routeHomes=List.of();routeRetryAt=0;}
-    public void reset(){cancel();Arrays.fill(points,null);retryAt=0;}
+    public void reset(){cancel();Arrays.fill(points,null);Arrays.fill(occupied,false);retryAt=0;}
     private Point current(){return new Point(mc.player.getEntityPos(),mc.world.getBlockState(mc.player.getBlockPos().down()).toString(),mc.world.getRegistryKey().getValue().toString());}
     public boolean safeHere(){
         if(mc.player==null||mc.world==null||!mc.player.isOnGround()||mc.player.getVelocity().horizontalLengthSquared()>.0004)return false;
@@ -57,22 +63,73 @@ public final class BuilderHomes {
         for(var pos:BlockPos.iterate(BlockPos.ofFloored(body.minX,body.minY,body.minZ),BlockPos.ofFloored(body.maxX,body.maxY,body.maxZ)))if(!mc.world.getFluidState(pos).isEmpty())return false;
         return true;
     }
-    /** Only a read-only homes menu can authorize allocating the three empty slots. */
-    public boolean setup(){
-        if(busy()||!safeHere()||mc.player.currentScreenHandler!=mc.player.playerScreenHandler)return false;
-        pending=current();slot=0;begin(Stage.CHECK);mc.getNetworkHandler().sendChatCommand("home");return true;
+    /** Replace only the explicitly reserved storage slot, after reaching the marked chest. */
+    public boolean setup(BlockPos chest){
+        if(busy()||chest==null||mc.player==null||mc.world==null||mc.currentScreen!=null||mc.player.currentScreenHandler!=mc.player.playerScreenHandler)return false;
+        storageChest=chest.toImmutable();storageStand=null;storageViews=List.of();storageCursor=0;
+        storageProgress=mc.player.getEntityPos();storageProgressAt=clock;slot=0;begin(Stage.APPROACH);return true;
     }
     public boolean capture(boolean inside,boolean upper){
         if(!ready()||busy()||!inside||!safeHere()||mc.currentScreen!=null)return false;
-        int next=points[1]==null&&!upper?1:points[1]!=null&&points[2]==null&&upper?2:-1;
+        int next=points[1]==null&&!occupied[1]&&!upper?1:points[1]!=null&&points[2]==null&&!occupied[2]&&upper?2:-1;
         if(next<0)return false;slot=next;pending=current();begin(Stage.CHECK);mc.getNetworkHandler().sendChatCommand("home");return true;
     }
     private void begin(Stage next){walker.stop();stage=next;started=clock;receipt=false;failure="";settled=menuStable=menuHash=0;}
     private void save(){begin(Stage.SAVE);mc.getNetworkHandler().sendChatCommand("sethome");}
+    private boolean besideStorage(Point point){
+        if(storageChest==null||!(mc.world.getBlockState(storageChest).getBlock() instanceof net.minecraft.block.ChestBlock)||storageChest.getSquaredDistance(point.feet())>9||!safe(point))return false;
+        var hit=mc.world.raycast(new net.minecraft.world.RaycastContext(point.position.add(0,mc.player.getStandingEyeHeight(),0),Vec3d.ofCenter(storageChest),net.minecraft.world.RaycastContext.ShapeType.OUTLINE,net.minecraft.world.RaycastContext.FluidHandling.NONE,mc.player));
+        return hit.getType()==net.minecraft.util.hit.HitResult.Type.BLOCK&&hit.getBlockPos().equals(storageChest);
+    }
+    private void approachStorage(Consumer<String> status,Consumer<String> pause){
+        status.accept("Walking directly to marked storage before replacing home 1");
+        if(mc.currentScreen!=null||mc.player.currentScreenHandler!=mc.player.playerScreenHandler){cancel();pause.accept("Close the container and resume storage home setup");return;}
+        if(storageProgress.squaredDistanceTo(mc.player.getEntityPos())>.04){storageProgress=mc.player.getEntityPos();storageProgressAt=clock;}
+        if(clock-storageProgressAt>180){cancel();pause.accept("No safe route to marked storage — home 1 was kept");return;}
+        if(readyFor(storageChest)&&mc.player.getEntityPos().squaredDistanceTo(points[0].position)>64){
+            if(!settledToTravel())return;
+            pending=points[0];begin(Stage.STORAGE_TRAVEL);mc.getNetworkHandler().sendChatCommand("home 1");return;
+        }
+        if(safeHere()&&besideStorage(current())){
+            if(++settled<4)return;
+            pending=current();points[0]=null;begin(Stage.DELETE);mc.getNetworkHandler().sendChatCommand("delhome 1");return;
+        }
+        settled=0;
+        // Long journeys use the walker's checked segments before selecting a final dry view.
+        if(storageChest.getSquaredDistance(mc.player.getBlockPos())>48*48){walker.approach(storageChest,3);return;}
+        if(storageStand!=null){
+            if(walker.standAt(storageStand)){walker.release();return;}
+            if(!walker.routeUnavailable())return;
+            storageStand=null;walker.stop();
+        }
+        if(storageViews.isEmpty()){
+            var views=new ArrayList<BlockPos>();
+            for(int dx=-3;dx<=3;dx++)for(int dz=-3;dz<=3;dz++)for(int dy=-2;dy<=2;dy++){
+                var feet=storageChest.add(dx,dy,dz);if(!walker.canStand(feet)||mc.world.getBlockState(feet.down()).hasBlockEntity())continue;
+                var point=new Point(walker.standingPoint(feet),mc.world.getBlockState(feet.down()).toString(),mc.world.getRegistryKey().getValue().toString());
+                if(besideStorage(point))views.add(feet);
+            }
+            views.sort(Comparator.comparingDouble(feet->feet.getSquaredDistance(mc.player.getBlockPos())));storageViews=List.copyOf(views);
+        }
+        long deadline=System.nanoTime()+6_000_000;
+        while(storageCursor<storageViews.size()){
+            var feet=storageViews.get(storageCursor++);
+            if(walker.canReachStand(feet)){storageStand=feet;walker.stop();return;}
+            if(System.nanoTime()>=deadline)return;
+        }
+        cancel();pause.accept("No safe route to marked storage — home 1 was kept");
+    }
     public void message(String raw){
         if(!busy())return;String text=raw.toLowerCase(Locale.ROOT);
         if(!text.contains("home")&&!text.contains("teleport")&&!text.contains("command"))return;
-        if(text.contains("cancel")||text.contains("cooldown")||text.contains("combat")||text.contains("permission")||text.contains("cannot")||text.contains("can't")||text.contains("not found")||text.contains("not set")||text.contains("does not exist")||text.contains("maximum")||text.matches(".*\\bfull\\b.*")||text.contains("unknown command")||text.contains("failed")){failure=raw;return;}
+        if(text.contains("cancel")||text.contains("cooldown")||text.contains("combat")||text.contains("permission")||text.contains("cannot")||text.contains("can't")||text.contains("could not")||text.contains("unable")||text.contains("not allowed")||text.contains("not deleted")||text.contains("not removed")||text.contains("unknown command")||text.contains("failed")){failure=raw;return;}
+        boolean missing=text.contains("not found")||text.contains("not set")||text.contains("does not exist")||text.contains("no home")||text.contains("don't have")||text.contains("do not have");
+        if(stage==Stage.DELETE&&(missing||text.contains("deleted")||text.contains("removed"))){
+            var id=java.util.regex.Pattern.compile("home\\s*#?\\s*(\\d+)\\b").matcher(text);
+            if(id.find()&&!id.group(1).equals("1")){failure="Server confirmed a different home slot; resume to retry home 1";return;}
+            receipt=true;return;
+        }
+        if(missing||text.contains("maximum")||text.matches(".*\\bfull\\b.*")){failure=raw;return;}
         if(stage==Stage.SAVE&&(text.contains("set")||text.contains("created")||text.contains("saved"))){
             var id=java.util.regex.Pattern.compile("home\\s*#?\\s*(\\d+)\\b").matcher(text);
             if(id.find()&&!id.group(1).equals(Integer.toString(slot+1))){failure="Server saved a different home slot; check homes before resuming";return;}receipt=true;
@@ -80,8 +137,20 @@ public final class BuilderHomes {
     }
     public boolean tick(Consumer<String> status,Consumer<String> pause){
         clock++;if(!busy())return false;walker.release();
-        if(!failure.isEmpty()){String reason=failure;cancel();pause.accept("Home command failed: "+reason);return true;}
-        if(clock-started>300){cancel();pause.accept("Home did not confirm — check server feedback and resume");return true;}
+        if(!failure.isEmpty()){
+            if(stage==Stage.CHECK){occupied[slot]=true;cancel();status.accept("Optional home unavailable — continuing build");return true;}
+            String reason=failure;cancel();pause.accept("Home command failed: "+reason);return true;
+        }
+        if(clock-started>(stage==Stage.APPROACH?1200:300)){
+            if(stage==Stage.CHECK){occupied[slot]=true;cancel();status.accept("Optional home slot could not be checked — continuing build");return true;}
+            cancel();pause.accept("Home did not confirm — check server feedback and resume");return true;
+        }
+        if(stage==Stage.APPROACH){approachStorage(status,pause);return true;}
+        if(stage==Stage.DELETE){
+            status.accept("Confirming /delhome 1 before saving at storage");
+            if(!safe(pending)||!besideStorage(pending)||mc.player.getEntityPos().squaredDistanceTo(pending.position)>.04){cancel();pause.accept("Storage home setup moved — resume from dry footing");return true;}
+            if(receipt&&clock-started>=4)save();return true;
+        }
         if(stage==Stage.CHECK){
             status.accept("Checking reserved builder home slots");
             if(!(mc.currentScreen instanceof HandledScreen<?> screen)||!screen.getTitle().getString().toLowerCase(Locale.ROOT).contains("home")||!(screen.getScreenHandler() instanceof GenericContainerScreenHandler menu)||clock-started<8)return true;
@@ -99,10 +168,10 @@ public final class BuilderHomes {
             if(hash==menuHash)menuStable++;else{menuHash=hash;menuStable=0;}
             if(menuStable<3)return true;
             boolean numbered=Arrays.stream(slots).allMatch(value->value>=0);
-            boolean valid=numbered?true:empty==3-slot&&saved==slot;
-            if(numbered)for(int i=0;i<3;i++)if(slots[i]!=(i<slot?1:0))valid=false;
-            if(!valid){if(clock-started<30)return true;cancel();pause.accept("Builder home slots changed or could not be verified; existing homes were kept");return true;}
-            mc.player.closeHandledScreen();if(!safe(pending)||mc.player.getEntityPos().squaredDistanceTo(pending.position)>.04){cancel();pause.accept("Stand still on dry ground next to storage to set home 1");return true;}
+            boolean valid=numbered?slots[slot]==0:empty==3-slot&&saved==slot;
+            if(numbered)for(int i=0;i<slot;i++)if(slots[i]!=1)valid=false;
+            if(!valid){if(clock-started<30)return true;occupied[slot]=true;cancel();status.accept("Existing optional home kept — continuing build");return true;}
+            mc.player.closeHandledScreen();if(!safe(pending)||mc.player.getEntityPos().squaredDistanceTo(pending.position)>.04){occupied[slot]=true;cancel();status.accept("Optional home position moved — continuing build");return true;}
             save();return true;
         }
         if(stage==Stage.SAVE){
@@ -112,7 +181,10 @@ public final class BuilderHomes {
         }
         status.accept("Waiting for /home "+(slot+1)+" arrival");
         if(mc.player.getEntityPos().squaredDistanceTo(pending.position)<=.6*.6&&safeHere()&&safe(pending)){
-            if(++settled>=4){retryAt=clock+40;cancel();}
+            if(++settled>=4){
+                if(stage==Stage.STORAGE_TRAVEL){storageProgress=mc.player.getEntityPos();storageProgressAt=clock;begin(Stage.APPROACH);}
+                else{retryAt=clock+40;cancel();}
+            }
         }else settled=0;
         return true;
     }

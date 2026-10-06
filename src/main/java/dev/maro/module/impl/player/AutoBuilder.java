@@ -63,7 +63,7 @@ public final class AutoBuilder extends Module {
     private final ModeSetting supplyMode=mode("Materials","Material Supply","Nearby Sections finishes compact areas with inventory-sized material batches","Nearby Sections","Nearby Sections","Layer by Layer","Whole Schematic").onChange(v->replan());
     private final BooleanSetting prebuyWhole=bool("Materials","Prepare Whole Build","Buy missing supplies for the whole build, store them in selected chests, then fetch each work batch",true);
     private final BooleanSetting autoMove=bool("Build","Auto Move","Walk safe ground routes toward out-of-reach blocks",true);
-    private final BooleanSetting useHomes=bool("Travel","Builder Homes","Require empty homes 1–3: storage, dry build interior, then upper access; teleport before reopening finished blocks",true);
+    private final BooleanSetting useHomes=bool("Travel","Builder Homes","Replace home 1 at marked storage; use empty optional homes 2–3 for checked build access",true);
     private boolean homeSetupResume;
     private final BooleanSetting unstuck=bool("Build","Auto Unstuck","Jump onto a temporary dirt step when a walking route is stuck, then remove it",true);
     private final BooleanSetting autoEat=bool("Food","Auto Eat","Pause movement and building to eat steak when hungry",true);
@@ -378,7 +378,7 @@ public final class AutoBuilder extends Module {
         button("Start","Cancel Schematic","Stop all actions and unload the schematic; placed blocks remain","Cancel",this::cancelSchematic);
         button("Snapshot","Capture Snapshot","Save the configured area from the placement origin to a vanilla .nbt file","Capture",this::startCapture);
         button("Materials","Mark Restock Container","R adds or refreshes the double chest you are looking at; Shift + R removes it","Add",this::markContainer);
-        button("Travel","Set Storage Home","Stand on dry ground beside your marked storage; verify empty home slots and set home 1","Set Home 1",()->setupHomes(false));
+        button("Travel","Set Storage Home","Walk to marked storage, replace home 1 and confirm the save; keep existing homes 2–3","Set Home 1",()->setupHomes(false));
         button("Materials","Clear Restock Marks","Clear this world's selected supply chests","Clear",()->{pause("Supply chests cleared");preparationReady=false;containers.clear();triedContainers.clear();emptyChestItems.clear();chestStocks.clear();preparedStock.clear();});
         button("Materials","Buy Materials","Buy missing materials within your configured budget","Buy",()->startBuying(false));
         button("Materials","Estimate Cost","Read current auction listings without buying","Estimate",()->startBuying(true));
@@ -568,7 +568,7 @@ public final class AutoBuilder extends Module {
         if(activeBuildSlot>=0&&origin!=null&&world!=mc.world){notify("This placement belongs to another world — choose a saved build or set a new origin");return;}
         if(origin==null||world!=mc.world)setOrigin(mc.player.getBlockPos().offset(mc.player.getHorizontalFacing(),3));
         var miner=ModuleManager.get(AutoMine.class);if(miner!=null&&miner.isEnabled())miner.setEnabled(false);
-        if(useHomes.get()&&!mc.player.getAbilities().creativeMode&&!homes.ready()){setupHomes(true);return;}
+        if(useHomes.get()&&!mc.player.getAbilities().creativeMode&&!homes.readyFor(selectedSupplyChest())){setupHomes(true);return;}
         checkpoint();
         if(prebuyWhole.get()&&!preparationReady&&!mc.player.getAbilities().creativeMode){startPreparation();return;}
         buildEta.reset();setEnabled(true);building=true;preview=true;staffStopAt=0;checkpoint();triedContainers.clear();retryAt.clear();status=mode.is("Semi Auto")?"Hold right mouse to build":"Building";mc.setScreen(null);
@@ -655,11 +655,13 @@ public final class AutoBuilder extends Module {
     private void setupHomes(boolean resume){
         if(!inGame()||homes.busy())return;
         var chest=selectedSupplyChest();
-        if(chest==null||chest.getSquaredDistance(mc.player.getBlockPos())>25||!homes.safeHere()){
-            status="Stand on dry ground beside marked storage to set mandatory home 1";notify(status);return;
+        if(chest==null){
+            status="Mark your storage double chest with R before starting";notify(status);return;
         }
+        if(!mc.player.currentScreenHandler.getCursorStack().isEmpty()){status="Put down the held item and close the container before home setup";notify(status);return;}
+        if(mc.player.currentScreenHandler!=mc.player.playerScreenHandler)mc.player.closeHandledScreen();
         pause("Setting storage home");mc.setScreen(null);setEnabled(true);building=false;homeSetupResume=resume;
-        if(!homes.setup()){homeSetupResume=false;status="Close the container and stand still to set home 1";}
+        if(!homes.setup(chest)){homeSetupResume=false;status="Close the container to start storage home setup";}
     }
     private void tickWork(){
         ticks++;supportChainStarts.clear();viewPlanningDeadline=floorPlanningDeadline=0;if(delay>0)delay--;
@@ -677,7 +679,7 @@ public final class AutoBuilder extends Module {
         if((building||buying||pasting||depositing||homes.busy())&&unsafe()){walker.release();return;}
         if(pendingPlacement!=null){placementReceiptTick();return;}
         if(mc.currentScreen==null&&autoMove.get()&&(depositing||building&&(!mode.is("Semi Auto")||mc.options.useKey.isPressed()))&&waterDepartureTick())return;
-        if((building||buying||pasting||depositing)&&mc.player.getHealth()<minHealth.get()*2){walker.release();status="Paused — low health";return;}
+        if((building||buying||pasting||depositing||homes.busy())&&mc.player.getHealth()<minHealth.get()*2){walker.release();status="Paused — low health";return;}
         if(useHomes.get()&&homes.tick(value->status=value,this::pause))return;
         if(homeSetupResume&&homes.ready()){homeSetupResume=false;startBuild();return;}
         if(useHomes.get()&&building&&!buying&&!depositing&&restockTarget==null&&placement==null&&mining==null&&mc.currentScreen==null&&schematic!=null){

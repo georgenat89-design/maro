@@ -24,9 +24,10 @@ final class BuilderHomeChecks {
     private static final Home[] saved=new Home[3];
     private static ServerPlayerEntity waiting;
     private static Home arrival;
-    private static int arriveAt,saveCommands,travelCommands;
+    private static int arriveAt,saveCommands,travelCommands,deleteCommands;
+    private static BlockPos storage;
     private static Vec3d warmupStart;
-    private static boolean movedDuringWarmup,rejectTravel;
+    private static boolean movedDuringWarmup,rejectTravel,rejectDelete,silentDelete,commandsAwayFromStorage;
     static {ServerTickEvents.END_SERVER_TICK.register(server->{
         if(waiting==null)return;
         if(waiting.getEntityPos().squaredDistanceTo(warmupStart)>.04)movedDuringWarmup=true;
@@ -35,9 +36,10 @@ final class BuilderHomeChecks {
         player.teleport(server.getOverworld(),arrival.pos.x,arrival.pos.y,arrival.pos.z,Set.of(),arrival.yaw,arrival.pitch,true);
     });}
     static void run(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
-        System.out.println("[builder-check] Reserved home setup, warmup, native arrival, prompt repair and independent camera aim");
+        System.out.println("[builder-check] Automatic storage home replacement, warmup, native arrival, prompt repair and independent camera aim");
+        storage=start.east(2);
         world.getServer().runOnServer(server->{
-            Arrays.fill(saved,null);saveCommands=travelCommands=0;waiting=null;movedDuringWarmup=rejectTravel=false;
+            Arrays.fill(saved,null);saveCommands=travelCommands=deleteCommands=0;waiting=null;movedDuringWarmup=rejectTravel=rejectDelete=silentDelete=commandsAwayFromStorage=false;
             server.getCommandManager().getDispatcher().register(CommandManager.literal("home")
                 .executes(command->{open(command.getSource().getPlayer());return 1;})
                 .then(CommandManager.argument("id",IntegerArgumentType.integer(1,3)).executes(command->{
@@ -49,12 +51,21 @@ final class BuilderHomeChecks {
                 })));
             server.getCommandManager().getDispatcher().register(CommandManager.literal("sethome").executes(command->{
                 var player=command.getSource().getPlayer();saveCommands++;
-                for(int i=0;i<3;i++)if(saved[i]==null){saved[i]=new Home(player.getEntityPos(),player.getYaw(),player.getPitch());player.sendMessage(Text.literal("Home "+(i+1)+" set successfully"),false);return 1;}
+                for(int i=0;i<3;i++)if(saved[i]==null){if(i==0)commandsAwayFromStorage|=!player.isOnGround()||storage.getSquaredDistance(player.getBlockPos())>9;saved[i]=new Home(player.getEntityPos(),player.getYaw(),player.getPitch());player.sendMessage(Text.literal("Home "+(i+1)+" set successfully"),false);return 1;}
                 player.sendMessage(Text.literal("Home slots full"),false);return 1;
             }));
+            server.getCommandManager().getDispatcher().register(CommandManager.literal("delhome")
+                .then(CommandManager.argument("id",IntegerArgumentType.integer(1,3)).executes(command->{
+                    var player=command.getSource().getPlayer();int id=IntegerArgumentType.getInteger(command,"id")-1;deleteCommands++;
+                    require(id==0,"Builder deleted an unrelated home");commandsAwayFromStorage|=!player.isOnGround()||storage.getSquaredDistance(player.getBlockPos())>9;
+                    if(rejectDelete){player.sendMessage(Text.literal("Home 1 could not be deleted: permission denied"),false);return 1;}
+                    if(silentDelete)return 1;
+                    boolean absent=saved[id]==null;saved[id]=null;
+                    player.sendMessage(Text.literal(absent?"Home 1 not set":"Home 1 deleted successfully"),false);return 1;
+                })));
             server.getPlayerManager().getPlayerList().forEach(server.getCommandManager()::sendCommandTree);
         });
-        var chest=start.east(2);
+        var chest=storage;
         command(world,"setblock",chest,"chest[facing=west,type=right]");command(world,"setblock",chest.south(),"chest[facing=west,type=left]");
         var home2=start.east(12);var home3=home2.up(4);command(world,"setblock",home3.down(),"stone");context.waitTicks(10);
         context.runOnClient(client->{
@@ -64,18 +75,21 @@ final class BuilderHomeChecks {
             builder.startBuild();require(!builder.building()&&!homes.busy(),"Missing storage did not block mandatory home setup");
             client.crosshairTarget=new net.minecraft.util.hit.BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();
         });
-        world.getServer().runOnServer(server->saved[0]=new Home(server.getPlayerManager().getPlayerList().getFirst().getEntityPos(),0,0));
-        context.runOnClient(client->button(builder,"Set Storage Home").press());waitHome(context,builder,80);
-        context.runOnClient(client->require(!((BuilderHomes)field(builder,"homes")).ready(),"Occupied home was overwritten"));require(saveCommands==0,"Occupied homes issued sethome");
+        storageReplacement(context,world,builder,start,chest,home2,home3);
         world.getServer().runOnServer(server->Arrays.fill(saved,null));
+        teleport(world,start);context.waitTicks(12);
+        context.runOnClient(client->((BuilderHomes)field(builder,"homes")).reset());
+        int before=saveCommands;
         context.runOnClient(client->button(builder,"Set Storage Home").press());waitHome(context,builder,80);
-        context.runOnClient(client->require(((BuilderHomes)field(builder,"homes")).ready()&&!builder.building(),"Storage setup failed or unexpectedly started building: "+builder.status()));require(saveCommands==1,"Storage setup duplicated command");
+        context.runOnClient(client->require(((BuilderHomes)field(builder,"homes")).ready()&&!builder.building(),"Storage setup failed or unexpectedly started building: "+builder.status()));require(saveCommands==before+1,"Absent home 1 did not save exactly once");
         teleport(world,home2);context.waitTicks(12);
         context.runOnClient(client->require(((BuilderHomes)field(builder,"homes")).capture(true,false),"Dry interior home was refused"));waitHome(context,builder,80);
         teleport(world,home3);context.waitTicks(12);
-        context.runOnClient(client->require(((BuilderHomes)field(builder,"homes")).capture(true,true),"Dry upper home was refused"));waitHome(context,builder,80);require(saveCommands==3,"Homes were not allocated exactly once in order");
-        context.runOnClient(client->require(((BuilderHomes)field(builder,"homes")).storage(chest),"Home 1 did not replace the long storage route"));waitHome(context,builder,90);
+        context.runOnClient(client->require(((BuilderHomes)field(builder,"homes")).capture(true,true),"Dry upper home was refused"));waitHome(context,builder,80);require(saveCommands==before+3,"Homes were not allocated exactly once in order");
+        var interior=saved[1];var upper=saved[2];int previousDeletes=deleteCommands;
+        context.runOnClient(client->button(builder,"Set Storage Home").press());waitHome(context,builder,120);
         require(travelCommands==1&&!movedDuringWarmup,"Storage teleport duplicated or walked during warmup");
+        require(deleteCommands==previousDeletes+1&&saveCommands==before+4&&saved[1]==interior&&saved[2]==upper&&!commandsAwayFromStorage,"Verified storage return failed to replace only home 1 at arrival");
         context.runOnClient(client->require(client.player.getEntityPos().squaredDistanceTo(saved[0].pos)<.36,"Storage arrival was not confirmed"));
         context.waitTicks(42);
         context.runOnClient(client->require(((BuilderHomes)field(builder,"homes")).work(home2.east(),List.of(home2)),"Home 2 did not prove an onward dry route"));waitHome(context,builder,90);
@@ -91,7 +105,36 @@ final class BuilderHomeChecks {
         teleport(world,start);context.waitTicks(12);
         rotations(context,builder,start);
         context.runOnClient(client->{builder.setEnabled(false);setting(builder,"Builder Homes",false);setting(builder,"Head Spoofing",false);});
-        System.out.println("[builder-home] PASS: occupied slots kept; 3 confirmed homes; 2 native arrivals; cooldown bounded; repair before cleanup; crouch mining; smooth independent camera");
+        System.out.println("[builder-home] PASS: home 1 replaced at storage; homes 2/3 kept; Start resumed; absent/rejected/missing receipts bounded; 3 confirmed homes; 2 native arrivals; cooldown bounded; repair before cleanup; crouch mining; smooth independent camera");
+    }
+    private static void storageReplacement(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,BlockPos chest,BlockPos home2,BlockPos home3){
+        var old=new Home(Vec3d.ofBottomCenter(start.west(12)),0,0);var second=new Home(Vec3d.ofBottomCenter(home2),15,3);var third=new Home(Vec3d.ofBottomCenter(home3),30,6);
+        world.getServer().runOnServer(server->{saved[0]=old;saved[1]=second;saved[2]=third;});teleport(world,start.west(12));context.waitTicks(12);
+        context.runOnClient(client->builder.startBuild());context.waitTicks(8);
+        require(deleteCommands==0&&saveCommands==0&&saved[0]==old,"Home 1 was deleted before reaching storage");
+        context.runOnClient(client->{builder.pause("pause storage approach");require(!client.options.forwardKey.isPressed()&&!client.options.jumpKey.isPressed()&&!((BuilderHomes)field(builder,"homes")).busy(),"Paused storage approach kept movement");builder.startBuild();});
+        waitHome(context,builder,240);context.waitTick();
+        context.runOnClient(client->{require(((BuilderHomes)field(builder,"homes")).readyFor(chest)&&builder.building(),"Start did not resume after home replacement: "+builder.status());builder.pause("replacement test");});
+        require(deleteCommands==1&&saveCommands==1&&!commandsAwayFromStorage,"Replacement duplicated commands or ran away from grounded storage");
+        require(saved[0]!=old&&saved[1]==second&&saved[2]==third,"Replacing home 1 modified homes 2 or 3");
+        context.runOnClient(client->{builder.startBuild();require(((BuilderHomes)field(builder,"homes")).capture(true,false),"Optional home check did not start");});waitHome(context,builder,80);
+        context.runOnClient(client->{require(builder.building()&&client.currentScreen==null,"Occupied optional home stopped building or left a blocking menu");require(!((BuilderHomes)field(builder,"homes")).capture(true,false),"Occupied optional home was checked repeatedly");builder.pause("optional home kept");});
+        require(saveCommands==1&&saved[1]==second&&saved[2]==third,"Optional home capture overwrote an existing slot");
+        rejectDelete=true;
+        context.runOnClient(client->button(builder,"Set Storage Home").press());waitHome(context,builder,80);
+        context.runOnClient(client->require(!((BuilderHomes)field(builder,"homes")).ready()&&builder.status().contains("permission"),"Rejected deletion did not pause setup"));
+        require(saveCommands==1&&saved[1]==second&&saved[2]==third,"Rejected deletion issued sethome");rejectDelete=false;silentDelete=true;
+        context.runOnClient(client->button(builder,"Set Storage Home").press());waitHome(context,builder,340);
+        context.runOnClient(client->require(!((BuilderHomes)field(builder,"homes")).ready()&&builder.status().contains("did not confirm"),"Missing deletion receipt was assumed successful"));
+        require(saveCommands==1,"Unconfirmed deletion issued sethome");silentDelete=false;
+        // An inaccessible marked chest must leave the old slot untouched.
+        var sealed=start.east(7);command(world,"setblock",sealed,"chest");
+        for(var direction:List.of(Direction.NORTH,Direction.SOUTH,Direction.EAST,Direction.WEST,Direction.UP))command(world,"setblock",sealed.offset(direction),"stone");context.waitTicks(6);
+        int deletes=deleteCommands;
+        context.runOnClient(client->require(((BuilderHomes)field(builder,"homes")).setup(sealed),"Blocked-storage test did not begin"));waitHome(context,builder,120);
+        require(deleteCommands==deletes&&saveCommands==1,"Unreachable storage deleted or saved home 1");
+        for(var direction:List.of(Direction.NORTH,Direction.SOUTH,Direction.EAST,Direction.WEST,Direction.UP))command(world,"setblock",sealed.offset(direction),"air");command(world,"setblock",sealed,"air");
+        System.out.println("[builder-home] Storage approached before delete/save; occupied home 1 replaced; homes 2/3 retained; Start resumed; rejection/timeout/inaccessible storage bounded");
     }
     private static void promptRepair(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         var gap=start.south(2);var post=start.east(13).up(3);
