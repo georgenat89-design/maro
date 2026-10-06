@@ -81,7 +81,7 @@ final class AutoBuilderChecks {
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")||Boolean.getBoolean("maro.gametest.builderStashFinalOnly")){stashBuild(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){fixture(context,singleplayer,builder,start);exhaustedAccessCapacity(context,singleplayer,builder,start);raisedDoorEntry(context,singleplayer,builder,start);partialHeadroom(context,singleplayer,builder,start);stairPlacementPriority(context,singleplayer,builder,start);stairPlacementStaging(context,singleplayer,builder,start);blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);fixture(context,singleplayer,builder,start);offsetRecovery(context,singleplayer,builder,start);hopperCrossing(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderStagingOnly")){fixture(context,singleplayer,builder,start);sameLevelStaging(context,singleplayer,builder,start);thickWallEntry(context,singleplayer,builder,start);return;}
-            if(Boolean.getBoolean("maro.gametest.builderCleanupOnly")){ownedChestCover(context,singleplayer,builder,start);cleanupAccess(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderCleanupOnly")){ownedChestCover(context,singleplayer,builder,start);cleanupAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);airSupportFloorExit(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){compactAccessStep(context,singleplayer,builder,start);ownedChestCover(context,singleplayer,builder,start);elevatedFloorEntry(context,singleplayer,builder,start);sealedDirectionalAccess(context,singleplayer,builder,start,3);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")){sealedDirectionalAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);raisedChestReturn(context,singleplayer,builder,start);sealedChestReturn(context,singleplayer,builder,start);return;}
             fixture(context,singleplayer,builder,start);
@@ -130,6 +130,7 @@ final class AutoBuilderChecks {
             raisedChestReturn(context,singleplayer,builder,start);
             sealedChestReturn(context,singleplayer,builder,start);
             sealedBuildEscape(context,singleplayer,builder,start);
+            airSupportFloorExit(context,singleplayer,builder,start);
             sealedDirectionalAccess(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             if(Boolean.getBoolean("maro.gametest.builderNavigationOnly")){cancellation(context,builder,context.computeOnClient(client->builder.schematic()));return;}
@@ -765,6 +766,23 @@ final class AutoBuilderChecks {
             await(context,builder,2400);
             context.runOnClient(client->{require(client.player.getHealth()==20&&client.currentScreen==null&&builder.temporarySupports().isEmpty(),"Sealed build escape left damage/menu/supports");BuilderPacketChecks.verify();});
             require(world.getServer().computeOnServer(server->{var level=server.getOverworld();for(int i=0;i<room.size();i++)if(!room.state(i).isAir()&&!level.getBlockState(origin.add(room.local(i))).isOf(Blocks.STONE))return false;for(int x=-5;x<=8;x++)for(int y=0;y<=10;y++)for(int z=-5;z<=5;z++)if(level.getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Sealed build escape did not restore its floor or clear temporary dirt");
+        }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
+    }
+    /** Cleanup of a schematic-air post must still escape through its finished floor. */
+    private static void airSupportFloorExit(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Clean schematic-air roof support using a real mining view; restore checked access openings");
+        fixture(context,world,builder,start);var origin=start.add(-2,0,-2);var cells=new BlockState[175];Arrays.fill(cells,Blocks.AIR.getDefaultState());
+        for(int y=2;y<=5;y++)for(int z=0;z<5;z++)for(int x=0;x<5;x++)if(y==2||y==5||x==0||x==4||z==0||z==4)cells[x+z*5+y*25]=Blocks.STONE.getDefaultState();
+        var room=new Schematic("cleanup-air-floor-exit.nbt","test",5,7,5,BlockPos.ORIGIN,cells);
+        world.getServer().runOnServer(server->{for(int cell=0;cell<room.size();cell++)if(!room.state(cell).isAir())server.getOverworld().setBlockState(origin.add(room.local(cell)),room.state(cell),net.minecraft.block.Block.NOTIFY_ALL);});
+        var posts=Set.of(start,start.up(),start.up(6));for(var post:posts)command(world,"setblock",post,"dirt");
+        for(String item:List.of("stone 64","dirt 64","diamond_pickaxe","diamond_shovel"))world.getServer().runCommand("give @a "+item);
+        world.getServer().runCommand("gamemode creative @a");world.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+(start.getY()+3)+" "+(start.getZ()+.5));context.waitTicks(12);world.getServer().runCommand("gamemode survival @a");context.waitTicks(6);
+        try{
+            context.runOnClient(client->{set(builder,"Temporary Supports",true);set(builder,"Auto Buy When Missing",false);set(builder,"Material Supply","Nearby Sections");builder.install(room);builder.setOrigin(origin);((Set<BlockPos>)field(builder,"supports")).addAll(posts);BuilderPacketChecks.begin();builder.startBuild();});
+            await(context,builder,3600);
+            context.runOnClient(client->{require(client.player.getHealth()==20&&client.currentScreen==null&&builder.temporarySupports().isEmpty(),"Schematic-air floor escape left damage/menu/supports");BuilderPacketChecks.verify();});
+            require(world.getServer().computeOnServer(server->{for(int cell=0;cell<room.size();cell++)if(!room.state(cell).isAir()&&!server.getOverworld().getBlockState(origin.add(room.local(cell))).equals(room.state(cell)))return false;for(var pos:BlockPos.iterate(start.add(-8,0,-8),start.add(8,10,8)))if(server.getOverworld().getBlockState(pos).isOf(Blocks.DIRT))return false;return true;}),"Schematic-air cleanup left an open floor or temporary dirt");
         }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
     }
     private static void stalledInteractions(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){

@@ -278,6 +278,7 @@ public final class AutoBuilder extends Module {
     private int placementDeadline;
     private BlockPos routeMining;
     private final Map<BlockPos,Integer> floorAccessWork=new HashMap<>();
+    private boolean openingRestoration;
     private final Map<BlockPos,Integer> openingRepairDepth=new HashMap<>();
     private BlockPos mining,restockTarget;
     private BlockPos tuningTarget,tuningSession;
@@ -602,7 +603,7 @@ public final class AutoBuilder extends Module {
         hatchSearchFeet=null;hatchCandidates=List.of();hatchViews.clear();hatchSearchCursor=hatchExitCursor=0;
         descentEscapes.clear();
         recycleSearchFeet=null;recyclePosts=List.of();recycleViews.clear();recyclePostCursor=recycleViewCursor=recycleRouteCursor=recycleRetryAt=0;
-        floorAccessWork.clear();openingRepairDepth.clear();
+        floorAccessWork.clear();openingRepairDepth.clear();openingRestoration=false;
     }
     private void notify(String message){Notifications.push("Auto Builder",message,Notifications.Type.INFO,5000);if(mc.player!=null)mc.player.sendMessage(Text.literal("[Auto Builder] "+message),false);}
     public void onActionBind(int key){if(markBind.matches(key)&&(isEnabled()||schematic!=null)){markContainer();return;}if(isEnabled()&&buyBind.matches(key))startBuying(false);}
@@ -883,18 +884,22 @@ public final class AutoBuilder extends Module {
     private double effectiveReach(){return Math.min(reach.get(),mc.player.getBlockInteractionRange()-.1);}
     private boolean floorDeferred(BlockPos pos){
         var work=floorAccessWork.get(pos);if(work==null)return false;
-        if(work<0||work>=states.length||states[work]==CORRECT||states[work]==IGNORED){
+        int openings=0;
+        for(var opening:floorAccessWork.keySet()){
+            int cell=schematic.indexAt(opening.subtract(anchor()),turns(),mirror.get());
+            if(cell>=0&&!desired(cell).isAir()&&states[cell]!=IGNORED&&mc.world.isChunkLoaded(opening)
+                &&!matchesBuildState(mc.world.getBlockState(opening),desired(cell)))openings++;
+        }
+        if(openings>0&&supports.isEmpty()&&solid-correct-ignoredSolid<=openings)openingRestoration=true;
+        if(openingRestoration||work<0||work>=states.length||states[work]==CORRECT||states[work]==IGNORED){
             // The final wall must not close behind us while our access column
             // still needs cleanup. Once those posts are gone, restore normally.
-            int openings=0;
-            for(var opening:floorAccessWork.keySet()){
-                int cell=schematic.indexAt(opening.subtract(anchor()),turns(),mirror.get());
-                if(cell>=0&&!desired(cell).isAir()&&states[cell]!=IGNORED&&mc.world.isChunkLoaded(opening)
-                    &&!matchesBuildState(mc.world.getBlockState(opening),desired(cell)))openings++;
-            }
             // Keep the entry for subsequent work and cleanup. Repair the deeper
             // wall first; filling the outer face can hide the inner cells.
-            if(openings>0&&(solid-correct-ignoredSolid>openings||cleanup.get()&&!supports.isEmpty()))return true;
+            // New scaffolds for final wall repair are build work. Re-deferring
+            // every repair when its first post appears cancels the committed
+            // climb and sends cleanup straight back to mine that same post.
+            if(openings>0&&(solid-correct-ignoredSolid>openings||cleanup.get()&&!supports.isEmpty()&&!openingRestoration))return true;
             var depth=openingRepairDepth.get(pos);
             if(depth!=null)for(var other:floorAccessWork.keySet()){
                 if(openingRepairDepth.getOrDefault(other,0)<=depth)continue;
@@ -1057,7 +1062,10 @@ public final class AutoBuilder extends Module {
         tried.values().removeIf(until->until<=ticks);
         int cell=schematic.indexAt(target.subtract(anchor()),turns(),mirror.get());
         var wanted=cell<0?null:desired(cell);
-        boolean supportFallback=wanted!=null&&!hasAttachment(target,wanted);
+        // Mining and cleanup need a reachable hit on the existing block.
+        // A view of a hypothetical scaffold is useful only to place missing
+        // work; cleanup never places that scaffold after arriving there.
+        boolean supportFallback=mc.world.getBlockState(target).isReplaceable()&&wanted!=null&&!wanted.isAir()&&!hasAttachment(target,wanted);
         boolean extendedScaffold=supportFallback&&(bridge||!straightSupportBase(target,attachmentSide(wanted)));
         int below=(int)Math.floor(effectiveReach()+mc.player.getStandingEyeHeight()-.5),above=(int)Math.floor(effectiveReach()-mc.player.getStandingEyeHeight()+.5);
         if(extendedScaffold)below=Math.max(below,8);
@@ -1136,7 +1144,11 @@ public final class AutoBuilder extends Module {
                 search.recoveryStage=4;
             }
             if(search.recoveryStage==4){if(wanted!=null&&temporaryView(target,wanted,cell,tried,search))return true;search.recoveryStage=5;}
-            if(search.recoveryStage==5){if(wanted!=null&&!wanted.isAir()&&states[cell]!=CORRECT&&prepareFloorOpening(options,cell))return true;search.recoveryStage=6;}
+            if(search.recoveryStage==5){
+                boolean cleaning=target.equals(cleanupTarget)&&supports.contains(target);
+                if((cleaning||wanted!=null&&!wanted.isAir()&&states[cell]!=CORRECT)&&prepareFloorOpening(options,cell))return true;
+                search.recoveryStage=6;
+            }
             if(search.recoveryStage==6){if(prepareSupportDescent(options,true))return true;search.recoveryStage=7;search.expires=ticks+40;}
             return false;
         }
@@ -1876,6 +1888,7 @@ public final class AutoBuilder extends Module {
             var destination=destinations.get(sample%destinations.size());
             if(!walker.canReachAfterClearing(feet,destination,removed))continue;
             passageBlocks.addAll(removed);passageStand=destination;
+            if(cleanupTarget!=null)openingRestoration=false;
             for(var opening:removed)if(passageCell(opening)){
                 floorAccessWork.put(opening,work);openingRepairDepth.put(opening,Math.abs(opening.getX()-feet.getX())+Math.abs(opening.getZ()-feet.getZ()));
             }
@@ -1922,7 +1935,6 @@ public final class AutoBuilder extends Module {
             .min(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).orElse(null);
         var candidates=supports.stream().filter(pos->mc.world.getBlockState(pos).isOf(Blocks.DIRT))
             .flatMap(pos->java.util.stream.IntStream.rangeClosed(1,3).mapToObj(pos::up)).distinct()
-            .filter(pos->pos.getY()>=mc.player.getY()-2.1&&pos.getY()<mc.player.getY()+.1)
             .filter(pos->{int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());var actual=mc.world.getBlockState(pos);
                 return cell>=0&&states[cell]==CORRECT&&plannedSolid(pos)&&!actual.hasBlockEntity()&&actual.getHardness(mc.world,pos)>=0&&actual.isSideSolidFullSquare(mc.world,pos,Direction.UP);})
             .sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).toList();
@@ -1934,20 +1946,18 @@ public final class AutoBuilder extends Module {
             var cover=candidates.get(floorSearchCursor++);
             if(!walker.canDescendThrough(cover)||!safeToRecycle(cover)||!walker.canReachStand(cover.up()))continue;
             var lower=lowerView;
-            for(int drop=1;drop<=3;drop++){
-                var post=cover.down(drop);
-                if(supports.contains(post)&&mc.world.getBlockState(post).isOf(Blocks.DIRT)&&walker.canStand(post.up())){
-                    var landing=post.up();if(lower==null)lower=landing;
-                    // Finish the descent outside the floor's low ceiling before
-                    // planning upward work. Otherwise recovery can immediately
-                    // pillar back through the same hatch and trap itself again.
-                    exit:for(int distance=1;distance<=16;distance++)for(var side:Direction.Type.HORIZONTAL)for(int down=0;down<=2;down++){
-                        var exit=landing.offset(side,distance).down(down);
-                        if(plannedSolid(exit.up(2))||plannedSolid(exit.up(3))||plannedSolid(exit.up(4))||!walker.canStand(exit))continue;
-                        if(walker.canReachStandFrom(landing,exit)){lower=exit;break exit;}
-                        if(System.nanoTime()>=floorPlanningDeadline)break exit;
-                    }
-                    break;
+            if(lower==null||!descentReaches(cover,lower)){
+                // The first landing inside a floor is not standable until the
+                // hatch opens. Prove the complete owned-column descent and its
+                // dry exterior exit with the same read-only masks used by the
+                // native walker; never ask the current solid floor to admit it.
+                var geometry=descentGeometry(cover);
+                if(geometry==null||!safeToRecycle(geometry.removed))continue;
+                var search=descentEscapes.computeIfAbsent(cover,p->new EscapeSearch());
+                lower=openDescentExit(geometry,search,floorPlanningDeadline);
+                if(lower==null){
+                    if(search.cursor<192){floorSearchCursor--;walker.release();status="Checking complete floor descent exit";return true;}
+                    continue;
                 }
             }
             if(lower==null||!descentReaches(cover,lower))continue;
@@ -1958,7 +1968,8 @@ public final class AutoBuilder extends Module {
             if(pendingWork<0)for(int candidate:workCells){
                 if(states[candidate]!=CORRECT&&states[candidate]!=IGNORED&&!desired(candidate).isAir()&&!position(candidate).equals(cover)){pendingWork=candidate;break;}
             }
-            if(pendingWork>=0&&!position(pendingWork).equals(cover))floorAccessWork.put(cover,pendingWork);
+            if(pendingWork<0||!position(pendingWork).equals(cover))floorAccessWork.put(cover,pendingWork);
+            if(cleanupTarget!=null)openingRestoration=false;
             routeOpening=cover;descentPost=cover;descentView=lower;standGoal=cover.up();
             standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();status="Opening checked temporary floor access";return true;
         }

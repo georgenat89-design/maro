@@ -1,5 +1,12 @@
 # Auto Builder — Minecraft 1.21.11
 
+Temporary cleanup uses actual reachable mining views. It can reopen a checked
+floor to descend its owned dirt column, including for supports in schematic air
+or outside the placement bounds; the complete future column and dry exit must
+be proved before mining. After older supports are gone, final opening restoration
+keeps its new repair scaffold until the wall work finishes. A new cleanup opening
+returns to deferred restoration so it cannot close the exit during that cleanup.
+
 Committed stairs survive trips to reclaim temporary block capacity. When the
 next piece is out of reach, the builder searches real standing positions and
 walks to a checked placement face before resuming the same stair. This staging
