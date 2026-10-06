@@ -5,6 +5,18 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+At06:19, stash-final3 on bf76677 production removed past the old122-post loop
+and reached106owned posts, then stalled at actor(-26217.498,65,-150581.5125).
+Native drop-body proof: next lower landing(-26218,64,-150583) fits; horizontal
+approach at source height is false, vertical drop true. Closed dark-oak door
+at(-26218,65/66,-150582) blocks the approach. Walker checked rising edges but
+not falling edges; full landing-column clearance missed the intervening panel.
+Own native PID43944 verified/stopped. Working drop-edge body-corridor proof
+is UNCOMMITTED; new native descending-closed-door fixture added beside rising
+fixture. Surface-drop1 PASSED53s including native stair/partial-block
+regressions and test-only bounded feasibility retry. HEAD5e8b705 production
+bf76677 remains checkpoint. CI342run37448334038 was in progress at06:16.
+Fullupper/fresh/core gates pending; PR37draftunmerged; no final handoff.
 At06:09, final2 was stopped after all five final jobs were placed, but cleanup
 cycled between122/123owned posts around target(-26215,66,-150583). Native
 cleanup-view trace shows the same raised column recommitted repeatedly. Cause:

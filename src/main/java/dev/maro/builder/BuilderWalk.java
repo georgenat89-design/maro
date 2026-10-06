@@ -229,6 +229,13 @@ public final class BuilderWalk {
                     // panel still blocks the jump. Prove the lift and approach.
                     if(!bodyCorridor(from,raised)||!bodyCorridor(raised,standingPoint(step)))continue;
                 }
+                if(rise<-.01){
+                    var from=n.parent==null&&start.equals(walkingCell())?mc.player.getEntityPos():standingPoint(n.pos);
+                    var over=new Vec3d(standingPoint(step).x,from.y,standingPoint(step).z);
+                    // A clear lower landing does not prove the ledge approach:
+                    // doors and other partial panels can block the body above it.
+                    if(!bodyCorridor(from,over)||!bodyCorridor(over,standingPoint(step)))continue;
+                }
                 if(step.getY()>n.pos.getY()&&!clear(n.pos.up(2)))continue;
                 // Check the whole falling corridor, including the headroom at
                 // the ledge. An ordinary three-block drop is safe when actual

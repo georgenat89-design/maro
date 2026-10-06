@@ -1065,6 +1065,17 @@ final class AutoBuilderChecks {
             context.runOnClient(client->require(client.player.getHealth()==20&&client.world.isSpaceEmpty(client.player,client.player.getBoundingBox()),"Raised door approach intersected a panel or caused damage"));
             require(world.getServer().computeOnServer(server->!server.getOverworld().getBlockState(goal).get(Properties.OPEN)),"Door approach changed the intended closed state");
         }finally{context.runOnClient(client->walker.stop());}
+        System.out.println("[builder-check] Lower landing fits, but a closed-door panel must block the ledge approach");
+        fixture(context,world,builder,start);var lower=start.north();var door=start.up();
+        command(world,"setblock",start,"stone");command(world,"setblock",door,"dark_oak_door[facing=south,half=lower,hinge=right,open=false]");command(world,"setblock",door.up(),"dark_oak_door[facing=south,half=upper,hinge=right,open=false]");
+        world.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+(start.getY()+1)+" "+(start.getZ()+.5)+" 180 0");context.waitTicks(8);
+        var descending=context.computeOnClient(client->{var w=new BuilderWalk();require(w.canStand(lower)&&client.world.isSpaceEmpty(client.player,client.player.getBoundingBox()),"Closed-door descent fixture is not clear at source and landing");w.turning(true,45);return w;});
+        try{
+            boolean arrived=false;for(int tick=0;tick<300&&!arrived;tick++){arrived=context.computeOnClient(client->descending.standAt(lower));context.waitTick();}
+            require(arrived,"Native descent kept walking into the closed door instead of choosing a clear edge");
+            context.runOnClient(client->require(client.player.getHealth()==20&&client.world.isSpaceEmpty(client.player,client.player.getBoundingBox()),"Door descent intersected a panel or caused damage"));
+            require(world.getServer().computeOnServer(server->!server.getOverworld().getBlockState(door).get(Properties.OPEN)),"Door descent changed the intended closed state");
+        }finally{context.runOnClient(client->descending.stop());}
     }
     private static void partialHeadroom(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         for(String facing:List.of("north","south","east","west")){
