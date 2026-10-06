@@ -5,6 +5,19 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Latest: CI402 passed five-post column construction in43 ticks and complete native
+cleanup, then failed accessCapacity(false): Settling on retained ledge footing
+with three old dirt posts left and the body on another solid ground block.
+mineTick now abandons an unsafe/never-settled peek after24 ticks, cancels native
+mining, releases its owned crouch input and retries a safe view. Build and
+game-test compilation PASSED in7 seconds. Current native CI must verify this
+guard. It was edited only in Maro-column-cleanup; active fresh6 in primary Maro
+continues on376dfc8 without changing its loaded classes or JAR. Fresh6 began
+from0 with zero supports; home1 was established beside storage and remains
+safe with AIR feet/head. It reached174/710 and completed multiple real home2
+round trips. Checkpoint replay recovered423->452 before it was deliberately
+stopped to prioritize this full zero-block run; no checkpoint710 pass claimed.
+
 Latest, 18:05: fresh-reserved-homes-5 was stopped deliberately at 423/710 after
 the user reported it frozen. Read-only native sampling proved work cells 828
 and 1062 alternated while sharing entry-search cursors, repeatedly restarting

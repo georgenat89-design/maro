@@ -2546,7 +2546,17 @@ public final class AutoBuilder extends Module {
         if(peekTarget!=null&&supports.contains(mining)&&mining.getY()<peekFloor.getY()&&!walker.atPeekEdge(mining,peekFloor)){
             if(ticks-peekStarted<=24&&walker.peekToward(mining,peekFloor)){status="Sneaking over the edge to remove the lower column";return;}
         }
-        if(peekTarget!=null&&(!safePeekMining(mining)||mc.player.getVelocity().horizontalLengthSquared()>=.0004)){walker.release();status="Settling on retained ledge footing";return;}
+        if(peekTarget!=null&&(!safePeekMining(mining)||mc.player.getVelocity().horizontalLengthSquared()>=.0004)){
+            walker.release();
+            // Native edging can carry the body onto another solid floor.
+            // An obsolete retained-footing proof cannot become an endless wait.
+            if(ticks-peekStarted>24){
+                peekRetryAt.put(mining,ticks+40);releaseSneak();
+                mc.interactionManager.cancelBlockBreaking();digging=false;mining=null;
+                status="Rechecking a safe mining view";
+            }else status="Settling on retained ledge footing";
+            return;
+        }
         if(!aim(visibleHit.getPos())){status="Aiming to mine";return;}
         var hit=(BlockHitResult)mc.player.raycast(effectiveReach(),1,false);
         if(hit.getType()!=HitResult.Type.BLOCK||!hit.getBlockPos().equals(mining)){status="Mining target is obstructed";mining=null;return;}
