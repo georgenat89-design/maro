@@ -82,6 +82,9 @@ public final class AutoBuilder extends Module {
     private float cameraYaw,cameraPitch;
     private int cameraAimTick=-100;
     private boolean cameraLocked;
+    private BlockPos peekTarget;
+    private int peekStarted;
+    private final Map<BlockPos,Integer> peekRetryAt=new HashMap<>();
     private final NumberSetting reach=fixedNumber("Reach","Maximum vanilla interaction distance; also clamped to player reach",4.4,2,5, .1);
     private final NumberSetting turnSpeed=fixedNumber("Turn Speed","Maximum view rotation per tick",45,5,180,1);
     private final BooleanSetting support=bool("Build","Temporary Supports","Place dirt under floating targets when an adjacent face is reachable",true);
@@ -417,6 +420,7 @@ public final class AutoBuilder extends Module {
     public static void serverBlockUpdate(BlockPos pos,BlockState state){
         var builder=ModuleManager.get(AutoBuilder.class);
         if(builder==null||builder.world!=mc.world)return;
+        if(pos.equals(builder.routeMining)||pos.equals(builder.mining)||builder.unconfirmedPlacements.containsKey(pos))builder.homes.invalidateRoutes();
         if(builder.cleanupTarget!=null&&(pos.equals(builder.mining)||builder.supports.contains(pos)))builder.cleanupExitSearchFeet=null;
         if(builder.accessStairs.stream().anyMatch(piece->piece.getSquaredDistance(pos)<=25))builder.stairPlacementPlan=Set.of();
         if(state.isAir()&&builder.supports.contains(pos)&&builder.accessStand!=null)builder.accessProgressAt=builder.ticks;
@@ -606,6 +610,7 @@ public final class AutoBuilder extends Module {
     @Override protected void onDisable(){pause("Disabled");staffStopAt=0;captureStates=null;if(mc.player!=null&&originalSlot>=0)select(originalSlot);originalSlot=-1;}
     public void pause(String reason){
         homes.cancel();homeSetupResume=false;
+        peekRetryAt.clear();
         waterDeparture=false;waterWorkTarget=null;liquidTopStand=null;liquidTopBlocks.clear();
         cleanupExit=cleanupExitSearchFeet=null;cleanupExits=List.of();cleanupExitCursor=cleanupExitRetryAt=0;
         stairPlacementPlan=Set.of();stairPlacementFeet=null;stairPlacementViews=List.of();stairPlacementCursor=0;
@@ -658,6 +663,7 @@ public final class AutoBuilder extends Module {
     }
     private void tickWork(){
         ticks++;supportChainStarts.clear();viewPlanningDeadline=floorPlanningDeadline=0;if(delay>0)delay--;
+        if(peekTarget!=null&&!peekTarget.equals(mining)){releaseSneak();walker.release();}
         if(cameraLocked&&(ticks-cameraAimTick>2||walker.moving()||homes.busy()||mc.currentScreen!=null))cameraLocked=false;
         latePlacements.values().removeIf(receipt->receipt.expires<=ticks);
         failedPlacementUntil.values().removeIf(until->until<=ticks);
@@ -1042,6 +1048,7 @@ public final class AutoBuilder extends Module {
                     }else status="Move closer to clean temporary supports";return;
                 }
                 if(new Box(pos).intersects(mc.player.getBoundingBox().offset(0,-1,0))||visibleHit(pos)==null){
+                    if(!new Box(pos).intersects(mc.player.getBoundingBox().offset(0,-1,0))&&beginPeek(pos)){mining=pos;mineTick();return;}
                     if(autoMove.get()&&repositionTarget(pos,cleanupStands.computeIfAbsent(pos,p->new HashMap<>())))status="Moving to clean temporary support";
                     else status="Cleanup needs a clear path — move off / around the support";return;
                 }
@@ -1215,6 +1222,7 @@ public final class AutoBuilder extends Module {
         if(search.expires==0)search.expires=ticks+120;
         // A confirmed dry home can bypass the entire failed-route/scaffold cycle.
         if(useHomes.get()&&homes.ready()&&homes.work(target,options)){resetAfterHome();status="Returning through checked build home";return true;}
+        if(useHomes.get()&&homes.checkingRoutes()){walker.release();status="Checking confirmed home access";return true;}
         options.sort(Comparator.<BlockPos>comparingInt(p->p.equals(accessStand)?-1:directStands.contains(p)?0:1)
             .thenComparingInt(p->scaffoldDistance.getOrDefault(p,0)).thenComparingDouble(p->p.getSquaredDistance(mc.player.getBlockPos())));standGoal=null;
         long routeDeadline=System.nanoTime()+6_000_000;
@@ -2473,10 +2481,17 @@ public final class AutoBuilder extends Module {
         if(!mc.player.isOnGround()&&!mc.player.getAbilities().flying){status="Landing before clearing a block";return;}
         var state=mc.world.getBlockState(mining);
         int opened=schematic.indexAt(mining.subtract(anchor()),turns(),mirror.get());
+        if(useHomes.get()&&homes.ready()&&!supports.contains(mining)&&!state.isAir()
+            &&(opened<0||matchesBuildState(state,desired(opened)))){
+            var work=floorAccessWork.get(mining);
+            boolean upperLiquidAccess=work!=null&&work>=0&&work<states.length&&desired(work).getBlock() instanceof FluidBlock
+                &&mining.getY()>position(work).getY()&&!liquidBoundary(mining);
+            if(!upperLiquidAccess){mining=routeMining=null;digging=false;mc.interactionManager.cancelBlockBreaking();status="Keeping finished blocks — use checked home access";return;}
+        }
         if(opened>=0&&!desired(opened).isAir()&&matchesBuildState(state,desired(opened))&&!supports.contains(mining)){
             floorAccessWork.putIfAbsent(mining,navigatingCell);openingRepairDepth.putIfAbsent(mining,-mining.getY());
         }
-        if(state.isAir()){supports.remove(mining);mining=null;digging=false;mc.interactionManager.cancelBlockBreaking();delay=actionDelay();return;}
+        if(state.isAir()){supports.remove(mining);mining=null;digging=false;if(peekTarget!=null)releaseSneak();mc.interactionManager.cancelBlockBreaking();delay=actionDelay();return;}
         if(protectContainers.get()&&state.hasBlockEntity()||state.getHardness(mc.world,mining)<0||!state.getFluidState().isEmpty()){mining=null;return;}
         boolean shovel=state.isIn(BlockTags.SHOVEL_MINEABLE);
         if(autoTools.get()&&!mc.player.getAbilities().creativeMode&&!hasTool(shovel)&&!((restockTarget!=null||depositing)&&mining.equals(routeMining)&&removableRouteFloor(mining))){
@@ -2486,7 +2501,8 @@ public final class AutoBuilder extends Module {
         }
         if(new Box(mining).intersects(mc.player.getBoundingBox().offset(0,-1,0))&&!(mining.equals(routeMining)&&descendingOwnedSupport(mining))){status="Move off the block before clearing it";mining=null;return;}
         var visibleHit=visibleHit(mining);
-        if(visibleHit==null){status="Mining target is obstructed";mining=null;return;}
+        if(visibleHit==null){if(beginPeek(mining)){status="Crouching for a clearer edge view";return;}status="Mining target is obstructed";mining=null;return;}
+        if(peekTarget!=null&&ticks-peekStarted<3){status="Waiting for crouched eye position";return;}
         if(!aim(visibleHit.getPos())){status="Aiming to mine";return;}
         var hit=(BlockHitResult)mc.player.raycast(effectiveReach(),1,false);
         if(hit.getType()!=HitResult.Type.BLOCK||!hit.getBlockPos().equals(mining)){status="Mining target is obstructed";mining=null;return;}
@@ -2622,7 +2638,7 @@ public final class AutoBuilder extends Module {
         queuedLookYaw=mc.player.getYaw();queuedLookPitch=mc.player.getPitch();
     }
     public float[] builderCameraLook(){
-        return cameraLocked&&headSpoofing.get()&&isEnabled()&&inGame()&&mc.currentScreen==null&&!walker.moving()&&!homes.busy()
+        return cameraLocked&&headSpoofing.get()&&isEnabled()&&inGame()&&mc.options.getPerspective().isFirstPerson()&&mc.currentScreen==null&&!walker.moving()&&!homes.busy()
             &&ticks-cameraAimTick<=2&&!dev.maro.nathan.modules.FreeCam.active()&&!dev.maro.nathan.modules.FreeLook.active()?new float[]{cameraYaw,cameraPitch}:null;
     }
     public boolean turnBuilderCamera(double x,double y){
@@ -2775,7 +2791,14 @@ public final class AutoBuilder extends Module {
         mc.interactionManager.clickSlot(mc.player.playerScreenHandler.syncId,source,dest,SlotActionType.SWAP,mc.player);select(dest);delay=actionDelay();status="Moving mining tool to hotbar";return false;
     }
     private static boolean clickable(Block block){return block instanceof BlockWithEntity||block instanceof NoteBlock||block instanceof AbstractRedstoneGateBlock||block instanceof ComposterBlock||block instanceof CakeBlock||block instanceof FlowerPotBlock||dev.maro.runtime.utils.world.BlockUtils.isClickable(block);}
-    private void releaseSneak(){if(ownsSneak){mc.options.sneakKey.setPressed(false);ownsSneak=false;}}
+    private boolean beginPeek(BlockPos target){
+        if(!mc.player.isOnGround()||mc.player.isTouchingWater()||mc.player.isInLava()||mc.currentScreen!=null||!withinReach(target,mc.player.getEyePos())||peekRetryAt.getOrDefault(target,0)>ticks)return false;
+        var state=mc.world.getBlockState(target);if(state.hasBlockEntity()||!state.getFluidState().isEmpty()||state.getHardness(mc.world,target)<0)return false;
+        if(!target.equals(peekTarget)){if(peekTarget!=null)releaseSneak();peekTarget=target.toImmutable();peekStarted=ticks;if(!mc.options.sneakKey.isPressed())ownsSneak=true;mc.options.sneakKey.setPressed(true);walker.release();}
+        if(ticks-peekStarted>16){peekRetryAt.put(target,ticks+120);releaseSneak();walker.release();return false;}
+        if(ticks-peekStarted>=3)walker.peekToward(target);return true;
+    }
+    private void releaseSneak(){peekTarget=null;if(ownsSneak){mc.options.sneakKey.setPressed(false);ownsSneak=false;}}
     private boolean beginRestock(){
         chestAccessRetryAt.values().removeIf(until->until<=ticks);
         if(needed!=restockAttemptItem){triedContainers.clear();restockAttemptItem=needed;}

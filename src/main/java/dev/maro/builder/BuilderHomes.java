@@ -23,6 +23,11 @@ public final class BuilderHomes {
     private Point pending;
     private int slot,started,clock,settled,retryAt,menuStable,menuHash;
     private boolean receipt;
+    private boolean checkingRoutes;
+    private BlockPos routeTarget,routeFeet;
+    private List<BlockPos> routeViews=List.of();
+    private List<Integer> routeHomes=List.of();
+    private int routeHomeCursor,routeViewCursor,routeRetryAt;
     private String failure="";
     public BuilderHomes(BuilderWalk walker){this.walker=walker;}
     public boolean ready(){return points[0]!=null;}
@@ -30,8 +35,10 @@ public final class BuilderHomes {
     public void cancel(){
         if(stage==Stage.CHECK&&mc.player!=null&&mc.currentScreen instanceof HandledScreen<?> menu
             &&menu.getTitle().getString().toLowerCase(Locale.ROOT).contains("home")&&menu.getScreenHandler().getCursorStack().isEmpty())mc.player.closeHandledScreen();
-        stage=Stage.IDLE;pending=null;receipt=false;failure="";settled=0;walker.stop();
+        stage=Stage.IDLE;pending=null;receipt=false;failure="";settled=0;invalidateRoutes();walker.stop();
     }
+    public boolean checkingRoutes(){return checkingRoutes;}
+    public void invalidateRoutes(){checkingRoutes=false;routeTarget=routeFeet=null;routeViews=List.of();routeHomes=List.of();routeRetryAt=0;}
     public void reset(){cancel();Arrays.fill(points,null);retryAt=0;}
     private Point current(){return new Point(mc.player.getEntityPos(),mc.world.getBlockState(mc.player.getBlockPos().down()).toString(),mc.world.getRegistryKey().getValue().toString());}
     public boolean safeHere(){
@@ -64,8 +71,11 @@ public final class BuilderHomes {
     public void message(String raw){
         if(!busy())return;String text=raw.toLowerCase(Locale.ROOT);
         if(!text.contains("home")&&!text.contains("teleport")&&!text.contains("command"))return;
-        if(text.contains("cancel")||text.contains("cooldown")||text.contains("combat")||text.contains("permission")||text.contains("cannot")||text.contains("can't")||text.contains("not found")||text.contains("not set")||text.contains("does not exist")||text.contains("maximum")||text.contains("full")||text.contains("unknown command")||text.contains("failed")){failure=raw;return;}
-        if(stage==Stage.SAVE&&(text.contains("set")||text.contains("created")||text.contains("saved")))receipt=true;
+        if(text.contains("cancel")||text.contains("cooldown")||text.contains("combat")||text.contains("permission")||text.contains("cannot")||text.contains("can't")||text.contains("not found")||text.contains("not set")||text.contains("does not exist")||text.contains("maximum")||text.matches(".*\\bfull\\b.*")||text.contains("unknown command")||text.contains("failed")){failure=raw;return;}
+        if(stage==Stage.SAVE&&(text.contains("set")||text.contains("created")||text.contains("saved"))){
+            var id=java.util.regex.Pattern.compile("home\\s*#?\\s*(\\d+)\\b").matcher(text);
+            if(id.find()&&!id.group(1).equals(Integer.toString(slot+1))){failure="Server saved a different home slot; check homes before resuming";return;}receipt=true;
+        }
     }
     public boolean tick(Consumer<String> status,Consumer<String> pause){
         clock++;if(!busy())return false;walker.release();
@@ -107,16 +117,27 @@ public final class BuilderHomes {
     }
     /** A selected work home must prove an onward native route before teleporting. */
     public boolean work(BlockPos target,List<BlockPos> views){
-        if(!ready()||busy()||clock<retryAt||mc.currentScreen!=null)return false;
-        int best=-1;double score=Double.MAX_VALUE;
-        for(int i=1;i<points.length;i++){var point=points[i];if(point==null||!safe(point)||mc.player.getEntityPos().squaredDistanceTo(point.position)<9)continue;
-            boolean onward=false;for(var view:views)if(walker.canReachStandFrom(point.feet(),view)){onward=true;break;}
-            double distance=target.getSquaredDistance(point.feet());if(onward&&distance<score){score=distance;best=i;}
+        if(!ready()||busy()||clock<retryAt||mc.currentScreen!=null){checkingRoutes=false;return false;}
+        var feet=mc.player.getBlockPos();
+        if(!target.equals(routeTarget)||!feet.equals(routeFeet)||!views.equals(routeViews)||!checkingRoutes&&clock>=routeRetryAt){
+            routeTarget=target.toImmutable();routeFeet=feet.toImmutable();routeViews=List.copyOf(views);routeHomeCursor=routeViewCursor=0;
+            var candidates=new ArrayList<Integer>();for(int i=1;i<points.length;i++)if(points[i]!=null&&safe(points[i])&&mc.player.getEntityPos().squaredDistanceTo(points[i].position)>=9)candidates.add(i);
+            candidates.sort(Comparator.comparingDouble(i->target.getSquaredDistance(points[i].feet())));routeHomes=List.copyOf(candidates);checkingRoutes=true;
         }
-        if(best>=0&&score+16>=target.getSquaredDistance(mc.player.getBlockPos())){
-            for(var view:views)if(walker.canReachStand(view))return false;
+        if(!checkingRoutes)return false;
+        long deadline=System.nanoTime()+6_000_000;
+        while(routeHomeCursor<routeHomes.size()){
+            int index=routeHomes.get(routeHomeCursor);var point=points[index];
+            if(!safe(point)||routeViewCursor>=routeViews.size()){routeHomeCursor++;routeViewCursor=0;continue;}
+            var view=routeViews.get(routeViewCursor++);
+            if(walker.canReachStandFrom(point.feet(),view)){
+                // Avoid bouncing between homes when normal walking already serves this view.
+                if(target.getSquaredDistance(point.feet())+16>=target.getSquaredDistance(feet)&&walker.canReachStand(view)){checkingRoutes=false;routeRetryAt=clock+40;return false;}
+                return travel(index);
+            }
+            if(System.nanoTime()>=deadline)return false;
         }
-        return best>=0&&travel(best);
+        checkingRoutes=false;routeRetryAt=clock+40;return false;
     }
     public boolean storage(BlockPos chest){
         return ready()&&!busy()&&clock>=retryAt&&mc.currentScreen==null&&safe(points[0])&&chest.getSquaredDistance(points[0].feet())<=25&&mc.player.getEntityPos().squaredDistanceTo(points[0].position)>64&&travel(0);

@@ -49,7 +49,7 @@ final class BuilderHomeChecks {
                 })));
             server.getCommandManager().getDispatcher().register(CommandManager.literal("sethome").executes(command->{
                 var player=command.getSource().getPlayer();saveCommands++;
-                for(int i=0;i<3;i++)if(saved[i]==null){saved[i]=new Home(player.getEntityPos(),player.getYaw(),player.getPitch());player.sendMessage(Text.literal("Home "+(i+1)+" set"),false);return 1;}
+                for(int i=0;i<3;i++)if(saved[i]==null){saved[i]=new Home(player.getEntityPos(),player.getYaw(),player.getPitch());player.sendMessage(Text.literal("Home "+(i+1)+" set successfully"),false);return 1;}
                 player.sendMessage(Text.literal("Home slots full"),false);return 1;
             }));
             server.getPlayerManager().getPlayerList().forEach(server.getCommandManager()::sendCommandTree);
@@ -86,9 +86,10 @@ final class BuilderHomeChecks {
         context.runOnClient(client->require(builder.status().contains("cooldown"),"Server cooldown did not stop home travel"));require(travelCommands==3,"Rejected home was retried");rejectTravel=false;
         teleport(world,start);context.waitTicks(12);
         promptRepair(context,world,builder,start);
+        crouchedMining(context,world,builder,start);
         rotations(context,builder,start);
         context.runOnClient(client->{builder.setEnabled(false);setting(builder,"Builder Homes",false);setting(builder,"Head Spoofing",false);});
-        System.out.println("[builder-home] PASS: occupied slots kept; 3 confirmed homes; 2 native arrivals; cooldown bounded; repair before cleanup; smooth independent camera");
+        System.out.println("[builder-home] PASS: occupied slots kept; 3 confirmed homes; 2 native arrivals; cooldown bounded; repair before cleanup; crouch mining; smooth independent camera");
     }
     private static void promptRepair(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         var gap=start.south(2);var post=start.east(13).up(3);
@@ -101,6 +102,7 @@ final class BuilderHomeChecks {
             @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.add(post);
             builder.pause("pause repair test");require(openings.containsKey(gap),"Pause forgot the access repair");
             require(builder.saveExtra().getAsJsonArray("access-openings").size()==1,"Saved build forgot the opening");
+            var savedBuild=builder.saveExtra();openings.clear();call(builder,"restorePlacementFields",new Class<?>[]{com.google.gson.JsonObject.class},savedBuild);require(openings.containsKey(gap),"Loaded build forgot the access repair");
             BuilderPacketChecks.begin();builder.startBuild();
         });
         int repaired=-1;for(int tick=0;tick<60;tick++){if(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(gap).isOf(Blocks.STONE))){repaired=tick;break;}context.waitTick();}
@@ -125,6 +127,20 @@ final class BuilderHomeChecks {
         }
         require(settled,"Smooth rotation did not settle promptly");
         context.runOnClient(client->{require(Math.abs(MathHelper.wrapDegrees(client.gameRenderer.getCamera().getYaw()-178))<.1,"Rendered camera followed spoofed head");builder.pause("head spoof complete");require(builder.builderCameraLook()==null,"Pause retained head lock");});
+    }
+    private static void crouchedMining(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        var target=start.south(2);var beam=start.south().up();command(world,"setblock",target,"dirt");command(world,"setblock",beam,"stone");world.getServer().runCommand("give @a diamond_shovel");context.waitTicks(8);
+        context.runOnClient(client->{
+            builder.install(new Schematic("crouch-mining.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STRUCTURE_VOID.getDefaultState()}));builder.setOrigin(target);
+            require(call(builder,"visibleHit",new Class<?>[]{BlockPos.class},target)==null,"Crouch fixture already had a standing view");
+            @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.add(target);BuilderPacketChecks.begin();builder.startBuild();
+        });
+        boolean crouched=false,removed=false;
+        for(int i=0;i<100;i++){crouched|=context.computeOnClient(client->client.player.isSneaking());removed=world.getServer().computeOnServer(server->server.getOverworld().getBlockState(target).isAir());if(removed)break;context.waitTick();}
+        require(crouched&&removed,"Crouch did not expose and remove the obstructed owned block");context.waitTicks(4);
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(beam).isOf(Blocks.STONE)&&server.getOverworld().getBlockState(start.down()).isOf(Blocks.STONE)),"Crouch mining removed the obstruction or footing");
+        context.runOnClient(client->{require(client.player.getHealth()==20&&!client.options.sneakKey.isPressed()&&builder.temporarySupports().isEmpty(),"Crouch did not release cleanly");BuilderPacketChecks.verify(0);builder.pause("crouch finished");});command(world,"setblock",beam,"air");
+        System.out.println("[builder-home] Native crouch exposed the hidden block and kept obstruction/footing intact");
     }
     private static void waitHome(ClientGameTestContext context,AutoBuilder builder,int ticks){for(int i=0;i<ticks;i++){if(context.computeOnClient(client->!((BuilderHomes)field(builder,"homes")).busy()))return;context.waitTick();}throw new AssertionError("Home operation timed out: "+context.computeOnClient(client->builder.status()));}
     private static void open(ServerPlayerEntity player){

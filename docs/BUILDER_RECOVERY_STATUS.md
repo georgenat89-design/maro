@@ -5,6 +5,28 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Latest, 15:45: mandatory confirmed homes, independent smooth head aim, prompt
+access repairs and native crouch peeking are implemented. Homes reserve 1 for
+storage, 2 for dry interior and 3 for upper access; occupied slots are preserved.
+Home route searches retain cursors under a per-tick budget and run before
+scaffold fallback. Finished base/wall mining is rejected with homes enabled;
+only registered roof openings above a liquid source are eligible.
+
+Native builder-homes-crouch-2 PASSED in 43s with Meteor: three normal sethome
+receipts, native storage/interior arrivals, stationary teleport warmup, occupied
+slot protection, bounded cooldown handling, pause/save/reload repair retention,
+repair in 11 ticks before other dirt cleanup, actual crouch-only mining with
+obstruction/footing intact, camera/mouse separation and native packet ordering.
+Native builder-homes-top-fluid-1 PASSED in 3m05: all four stash sources, sealed
+water/lava basins, roof restoration and healthy/low-health flooded departure.
+That liquid run preceded the newly requested crouch feature; integrated cleanup
+is the next check. Base c391e79 was merged without conflicts.
+
+The earlier full Upper71 replay was stopped at the user's home-travel steering:
+703/710, 51 supports and seven registered openings, full health. It did not pass.
+Fresh and Upper full 710-block completion remain unverified with the new homes
+behavior. PR stays draft while full CI and long replay gates remain outstanding.
+
 At 14:56, base 4f0de6b (ESP preview and Potato Graphics changes) was integrated
 without conflicts. Native top-cleanup-1 failed in the owned supply-lid fixture
 because liquid tests had left Restock When Empty disabled in the test config.

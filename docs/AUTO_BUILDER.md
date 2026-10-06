@@ -1,6 +1,27 @@
 # Auto Builder — Minecraft 1.21.11
 
-Temporary cleanup uses actual reachable mining views. It can reopen a checked
+**Builder Homes is enabled by default.** Reserve empty homes 1–3, mark storage
+with R, and stand on dry permanent footing beside it before starting. The builder
+checks the homes menu before allocating home 1 for storage. It saves home 2 when
+it reaches a dry interior position, then home 3 at upper access. Existing occupied
+slots are preserved. Each save needs server confirmation; travel waits through
+warmup and checks actual arrival and safe footing. Work homes must prove an
+onward route. Servers without home commands can turn Builder Homes off.
+
+With homes enabled, completed base and wall blocks stay protected. Checked liquid
+access can open the roof above its source, and retaining floors/walls stay intact.
+Completed access jobs restore their openings as soon as the body clears and the
+active route releases them. Deeper repairs precede outer faces. The repair list
+survives pause and saved-placement reload.
+
+Head Spoofing keeps the first-person camera independent while normal movement
+packets publish smooth, correctly aimed head rotations before interactions.
+Mouse look still moves the camera. Walking, menus, pause, Free Look and Free Cam
+release the builder camera control. An obstructed mining view first tries native
+crouching and a small step over the current full-cube footing; unsuccessful peeks
+expire quickly instead of holding sneak or repeating every tick.
+
+With Builder Homes disabled, temporary cleanup uses actual reachable mining views. It can reopen a checked
 floor to descend its owned dirt column, including for supports in schematic air
 or outside the placement bounds; the complete future column and dry exit must
 be proved before mining. After older supports are gone, final opening restoration
@@ -36,7 +57,7 @@ restoration fills deeper wall cells before the outer face to preserve access.
 1. Right-click **Player → Auto Builder** to open the control panel. Click **Choose Schematic**. Use **Open Folder** in the library to put files in the game's `schematics` folder.
 2. Choose **Origin: Here** or **Origin: Target** and adjust X/Y/Z with the small nudge buttons. **Options → Placement** contains rotation and mirroring. **Materials** shows total, remaining, owned and missing quantities.
 3. Close the panel, look at each double chest you want to use and press **R** to add it. **Shift + R** removes the chest you are looking at. Selections are remembered for this world/dimension; adding an already selected chest refreshes cached contents. Either half of a double chest refers to the same selection. The panel shows how many chests are selected.
-4. Set an auction **Budget**, select **Mode: Automatic**, then click **Start Build**. The panel closes and building starts without holding right mouse. Semi Auto is available for holding right mouse. **Pause / Cancel Buy** releases movement/mining input.
+4. With Builder Homes enabled, reserve empty homes **1–3** and stand beside marked storage on dry permanent ground. **Set Storage Home** checks the menu and saves home 1; Start Build also performs this setup when needed. Then set an auction **Budget**, select **Mode: Automatic**, and click **Start Build**. Semi Auto is available for holding right mouse. **Pause / Cancel Buy** releases movement/mining input.
 
 Automatic is the default for new configurations. Existing configurations retain their chosen mode; change it with the panel's mode button. Show/Hide Preview controls ghosts independently of building. Protocol words and individual rendering constants are internal defaults, reducing the settings list.
 

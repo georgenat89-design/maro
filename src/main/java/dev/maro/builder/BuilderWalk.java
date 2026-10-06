@@ -42,6 +42,20 @@ public final class BuilderWalk {
         forward=jump=false;
     }
     public boolean moving(){return forward||jump;}
+    /** A short native crouch step stays wholly over the current full-cube footing. */
+    public boolean peekToward(BlockPos target){
+        if(!mc.player.isOnGround()||!mc.player.isSneaking()||mc.player.isTouchingWater()||mc.player.isInLava())return false;
+        var floor=mc.player.getBlockPos().down();var state=mc.world.getBlockState(floor);
+        if(!state.getFluidState().isEmpty()||!net.minecraft.block.Block.isShapeFullCube(state.getCollisionShape(mc.world,floor)))return false;
+        var offset=Vec3d.ofCenter(target).subtract(Vec3d.ofCenter(floor));double length=Math.hypot(offset.x,offset.z);if(length<.001)return false;
+        var goal=new Vec3d(floor.getX()+.5+offset.x/length*.18,mc.player.getY(),floor.getZ()+.5+offset.z/length*.18);
+        if(!mc.world.isSpaceEmpty(mc.player,mc.player.getBoundingBox().offset(goal.subtract(mc.player.getEntityPos()))))return false;
+        var delta=goal.subtract(mc.player.getEntityPos());if(delta.horizontalLengthSquared()<.0016){release();return true;}
+        float heading=(float)(Math.toDegrees(Math.atan2(delta.z,delta.x))-90),error=MathHelper.wrapDegrees(heading-mc.player.getYaw());
+        if(smooth){if(Math.signum(yawVelocity)!=Math.signum(error))yawVelocity=0;yawVelocity+=MathHelper.clamp(MathHelper.clamp(error*.28f,-turnLimit,turnLimit)-yawVelocity,-turnLimit*.15f,turnLimit*.15f);mc.player.setYaw(mc.player.getYaw()+Math.copySign(Math.min(Math.abs(error),Math.abs(yawVelocity)),error));}
+        else mc.player.setYaw(mc.player.getYaw()+MathHelper.clamp(error,-turnLimit,turnLimit));
+        if(Math.abs(error)<12){forward=true;mc.options.forwardKey.setPressed(true);}else release();return true;
+    }
     public boolean approach(BlockPos target,double distance){
         return approach(target,distance,false);
     }
