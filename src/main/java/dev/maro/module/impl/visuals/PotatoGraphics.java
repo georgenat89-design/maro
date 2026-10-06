@@ -13,9 +13,11 @@ import dev.maro.setting.ModeSetting;
 import dev.maro.setting.NumberSetting;
 import dev.maro.setting.Setting;
 import dev.maro.setting.SettingSection;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.option.CloudRenderMode;
 import net.minecraft.client.option.GameOptions;
 import net.minecraft.client.option.SimpleOption;
+import net.minecraft.client.texture.NativeImage;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.particle.ParticlesMode;
@@ -27,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
 
@@ -72,6 +75,12 @@ public class PotatoGraphics extends Module {
     private final BooleanSetting menuBlur = add(new BooleanSetting("No Menu Blur", "Do not blur the world behind menus", true));
     private final BooleanSetting vignette = add(new BooleanSetting("No Vignette", "No dark screen edges", true));
 
+    // the potato look
+    public static final String TEXTURES_NORMAL = "Normal", TEXTURES_FLAT = "Flat", TEXTURES_SOFT = "Soft";
+    private final ModeSetting textures = add(new ModeSetting("Textures",
+            "Flat paints every block one solid colour, Soft keeps a hint of the texture (reloads textures for a few seconds)",
+            TEXTURES_FLAT, TEXTURES_FLAT, TEXTURES_SOFT, TEXTURES_NORMAL));
+
     // beyond the video settings
     private final BooleanSetting hideFarEntities = add(new BooleanSetting("Hide Far Entities", "Do not draw mobs, items and other entities past a distance (players are always drawn)", true));
     private final NumberSetting entityCap = add(new NumberSetting("Entity Distance", "Entities further than this are not drawn", 32, 8, 128, 4)
@@ -80,6 +89,12 @@ public class PotatoGraphics extends Module {
     private final BooleanSetting notify = add(new BooleanSetting("Notify", "A notification when it turns things down and back up", true));
 
     private static PotatoGraphics instance;
+
+    /** The texture style the loaded block textures were made with, set while they load. */
+    private static volatile String loadedTextures = TEXTURES_NORMAL;
+    /** The style of the last texture reload this module asked for, so it never asks twice. */
+    private static String requestedTextures;
+    private static final AtomicInteger flattenedSprites = new AtomicInteger();
 
     /** One video option it can lower. */
     private record Knob(String key, BooleanSetting toggle, Function<GameOptions, SimpleOption<?>> option, UnaryOperator<Object> potato) {
@@ -98,6 +113,8 @@ public class PotatoGraphics extends Module {
     public PotatoGraphics() {
         super("Potato Graphics", "Turns video settings right down for more FPS, and back when off", Category.VISUALS);
         instance = this;
+        // Runs whether or not the module is on, so switching it off also brings the textures back.
+        ClientTickEvents.END_CLIENT_TICK.register(client -> syncTextures());
         knob("render-distance", limitRender, GameOptions::getViewDistance, v -> v instanceof Integer i ? Math.min(i, renderCap.getInt()) : null);
         knob("simulation-distance", limitSim, GameOptions::getSimulationDistance, v -> v instanceof Integer i ? Math.min(i, simCap.getInt()) : null);
         knob("entity-distance", entityRange, GameOptions::getEntityDistanceScaling, v -> v instanceof Double d ? Math.min(d, 0.5) : null);
@@ -127,7 +144,7 @@ public class PotatoGraphics extends Module {
 
     @Override
     public List<SettingSection> getSettingSections() {
-        return List.of(SettingSection.of("Level", level, notify),
+        return List.of(SettingSection.of("Level", level, textures, notify),
                 SettingSection.of("Distance", limitRender, renderCap, limitSim, simCap, entityRange, clouds),
                 SettingSection.of("World", particles, smoothLighting, fastLeaves, biomeBlend, shadows, transparency, weather, chunkFade),
                 SettingSection.of("Screen", mipmaps, vsync, unlockFps, menuBlur, vignette),
@@ -151,6 +168,75 @@ public class PotatoGraphics extends Module {
         transparency.set(!light);
         entityCap.set(light ? 48.0 : ultra ? 16.0 : 32.0);
         noParticles.set(ultra);
+        textures.set(light ? TEXTURES_NORMAL : TEXTURES_FLAT);
+    }
+
+    // ---- flat textures ------------------------------------------------------------------------
+
+    private static String wantedTextures() {
+        PotatoGraphics m = instance;
+        return m != null && m.isEnabled() ? m.textures.get() : TEXTURES_NORMAL;
+    }
+
+    /** Asks for one texture reload whenever the wanted style differs from what is loaded. */
+    private static void syncTextures() {
+        String wanted = wantedTextures();
+        if (wanted.equals(loadedTextures) || wanted.equals(requestedTextures) || mc.getOverlay() != null) return;
+        requestedTextures = wanted;
+        flattenedSprites.set(0);
+        mc.reloadResources();
+    }
+
+    /** Called as each block sprite loads: the style to paint it in, remembered as what is loaded. */
+    public static String textureStyleForLoad() {
+        String style = wantedTextures();
+        loadedTextures = style;
+        return style;
+    }
+
+    /** Whether the loaded textures match the setting and no reload is running. */
+    public static boolean texturesSettled() {
+        return wantedTextures().equals(loadedTextures) && mc.getOverlay() == null;
+    }
+
+    public static int flattenedSprites() {
+        return flattenedSprites.get();
+    }
+
+    /**
+     * Repaints a block texture as its average colour (Flat), or mostly so (Soft). Transparent
+     * pixels stay transparent, so leaves, glass and flowers keep their shapes.
+     */
+    public static void flatten(NativeImage image, String style) {
+        if (image.getFormat() != NativeImage.Format.RGBA) return;
+        int w = image.getWidth(), h = image.getHeight();
+        long r = 0, g = 0, b = 0, weight = 0;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int argb = image.getColorArgb(x, y);
+                int a = argb >>> 24;
+                if (a == 0) continue;
+                r += (long) (argb >> 16 & 0xFF) * a;
+                g += (long) (argb >> 8 & 0xFF) * a;
+                b += (long) (argb & 0xFF) * a;
+                weight += a;
+            }
+        }
+        if (weight == 0) return;
+        int ar = (int) (r / weight), ag = (int) (g / weight), ab = (int) (b / weight);
+        float keep = style.equals(TEXTURES_SOFT) ? 0.25f : 0f;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int argb = image.getColorArgb(x, y);
+                int a = argb >>> 24;
+                if (a == 0) continue;
+                int nr = Math.round(ar + ((argb >> 16 & 0xFF) - ar) * keep);
+                int ng = Math.round(ag + ((argb >> 8 & 0xFF) - ag) * keep);
+                int nb = Math.round(ab + ((argb & 0xFF) - ab) * keep);
+                image.setColorArgb(x, y, a << 24 | nr << 16 | ng << 8 | nb);
+            }
+        }
+        flattenedSprites.incrementAndGet();
     }
 
     // ---- boosts applied while drawing (read from render code every frame) ----------------------
@@ -195,6 +281,7 @@ public class PotatoGraphics extends Module {
         if (first && notify.get()) {
             String extra = hideFarEntities.get() ? ", entities past " + entityCap.getInt() + " blocks hidden" : "";
             if (noParticles.get()) extra += ", particles off";
+            if (!textures.is(TEXTURES_NORMAL)) extra += ", " + textures.get().toLowerCase() + " textures";
             String settings = lowered > 0 ? lowered + " video settings turned down" : "Video settings already low";
             Notifications.push("Potato Graphics", settings + extra, Notifications.Type.ENABLED);
         }

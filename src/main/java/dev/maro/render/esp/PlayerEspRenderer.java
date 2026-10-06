@@ -105,7 +105,7 @@ public final class PlayerEspRenderer {
 
     public static boolean active() {
         PlayerESP m = module();
-        return m != null && m.isEnabled() && mc.world != null && mc.player != null;
+        return m != null && (m.isEnabled() || PlayerESP.previewing()) && mc.world != null && mc.player != null;
     }
 
     // ---- frame ------------------------------------------------------------------------------
