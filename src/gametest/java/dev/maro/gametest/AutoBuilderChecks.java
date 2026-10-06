@@ -1041,17 +1041,23 @@ final class AutoBuilderChecks {
     private static void elevatedFloorEntry(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         for(int height:List.of(3,6))elevatedFloorEntry(context,world,builder,start,height);
         elevatedFloorEntry(context,world,builder,start,6,12,true);
+        elevatedFloorEntry(context,world,builder,start,6,12,false,true);
     }
     private static void elevatedFloorEntry(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,int height){
         elevatedFloorEntry(context,world,builder,start,height,4,false);
     }
     private static void elevatedFloorEntry(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,int height,int width,boolean fromEast){
-        System.out.println("[builder-check] Exterior column entry onto finished floor at height "+height+" width="+(width*2+1));
+        elevatedFloorEntry(context,world,builder,start,height,width,fromEast,false);
+    }
+    private static void elevatedFloorEntry(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,int height,int width,boolean fromEast,boolean isolatedPost){
+        System.out.println("[builder-check] Exterior column entry onto finished floor at height "+height+" width="+(width*2+1)+" isolatedPost="+isolatedPost);
         fixture(context,world,builder,start);
         world.getServer().runCommand("fill "+coords(start.add(-width,height,-4))+" "+coords(start.add(width,height,4))+" stone");
         var target=start.up(height+2);command(world,"setblock",target.south(),"stone");
         for(String item:List.of("black_shulker_box","dirt 16","diamond_pickaxe","diamond_shovel"))world.getServer().runCommand("give @a "+item);
-        world.getServer().runCommand("tp @a "+(start.getX()+.5+(fromEast?width+2:0))+" "+start.getY()+" "+(start.getZ()+.5+(fromEast?0:6)));context.waitTicks(12);
+        var strandedPosts=new HashSet<BlockPos>();
+        if(isolatedPost)for(int y=0;y<5;y++){var post=start.add(0,y,9);strandedPosts.add(post);command(world,"setblock",post,"dirt");}
+        world.getServer().runCommand("tp @a "+(start.getX()+.5+(fromEast?width+2:0))+" "+(start.getY()+(isolatedPost?5:0))+" "+(start.getZ()+.5+(fromEast?0:isolatedPost?9:6)));context.waitTicks(12);
         try{
             context.runOnClient(client->{
                 var walk=new BuilderWalk();var top=fromEast?start.add(width+1,Math.min(6,height+1),0):start.add(0,Math.min(6,height+1),5);var view=fromEast?start.up(height+1).east():start.up(height+1).north();
@@ -1059,7 +1065,22 @@ final class AutoBuilderChecks {
                 require(!walk.canStand(top)&&client.world.getBlockState(top.down()).isAir(),"Pillar feasibility changed world collision or leaked its mask");
                 set(builder,"Temporary Supports",true);((dev.maro.setting.NumberSetting)field(builder,"tempDirt")).set(16d);set(builder,"Auto Buy When Missing",false);
                 builder.install(new Schematic("exterior-entry.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.BLACK_SHULKER_BOX.getDefaultState().with(net.minecraft.block.ShulkerBoxBlock.FACING,Direction.NORTH)}));builder.setOrigin(target);BuilderPacketChecks.begin();builder.startBuild();
+                if(isolatedPost){
+                    @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.addAll(strandedPosts);
+                    require(!walk.canReachStand(start.up(height+1))&&!walk.canReachFromPillar(start.add(0,6,9),start.up(height+1)),"Isolated post unexpectedly reaches the finished floor");
+                }
             });
+            if(isolatedPost){
+                int firstDrop=-1,landed=-1;
+                for(int tick=0;tick<900;tick++){
+                    double playerY=context.computeOnClient(client->client.player.getY());
+                    if(firstDrop<0&&playerY<start.getY()+4.5)firstDrop=tick;
+                    if(playerY<=start.getY()+1.1){landed=tick;break;}
+                    if(firstDrop>=0)require(tick-firstDrop<=240,"Committed descent restarted expensive placement searches between steps");
+                    context.waitTick();
+                }
+                require(firstDrop>=0&&landed>=firstDrop&&landed-firstDrop<=240,"Isolated scaffold did not finish its checked descent promptly");
+            }
             await(context,builder,1800);
             context.runOnClient(client->{require(builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Exterior entry left supports/damage/menu");BuilderPacketChecks.verify();});
             require(world.getServer().computeOnServer(server->{var level=server.getOverworld();if(!level.getBlockState(target).equals(Blocks.BLACK_SHULKER_BOX.getDefaultState().with(net.minecraft.block.ShulkerBoxBlock.FACING,Direction.NORTH)))return false;for(int x=-width;x<=width;x++)for(int z=-4;z<=4;z++)if(!level.getBlockState(start.add(x,height,z)).isOf(Blocks.STONE))return false;for(int x=-width-4;x<=width+4;x++)for(int y=0;y<=10;y++)for(int z=-10;z<=10;z++)if(level.getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Exterior entry removed the finished floor or left temporary dirt");

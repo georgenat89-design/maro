@@ -5,6 +5,30 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Upper replay 50 stopped at 617/710 on an isolated owned column after restocking.
+Read-only native queries proved a safe five-step descent to the ground and
+multiple reachable open exits. Nearby roof columns and a single bridge did not
+prove an onward route; there was no overhead obstruction or collision-height
+error. Repeated climb/view retries starved the later staged-descent search.
+The current change retains a per-view recovery stage, expires views only after
+the fallback pass, and gives bridge/direct temporary searches their own cursors.
+A new native regression starts on an isolated five-high dirt post beside a
+25-wide finished floor. It must descend, find another entry, place the exact
+directional block, preserve the floor and remove all dirt without damage or
+packet/menu errors. Staged-entry run 1 was stopped before completion to include
+the separate temporary-view cursor fix. Run 2 passed in 4m20s, including all
+four floor cases and the 524,288-cell raised room. It was compiled before the
+latest descent-continuation change: after each acknowledged landing, prefer
+native walking, otherwise retain the checked exit and descend the next safe
+owned footing after settling. Run 3 adds a 240-tick first-drop-to-ground bound
+to the isolated-post case and passed the latest production in 4m11s: all four
+floor cases, the bounded descent, exact native direction, unchanged floors,
+zero raw/owned dirt, health 20, closed menus and packet checks; the sparse raised
+room also finished all 83 blocks and restored its walls. Upper replay 51 is next.
+Mining status also
+distinguishes scaffolding, checked passages and mismatching schematic blocks.
+Latest full upper/fresh/core gates are still required. No release or merge.
+
 Upper replay 49 passed both prior stalls and built the structure to 704/710.
 Checked exits and bucket restocking worked, but it then churned small steps
 outside the sealed interior at 703/710 (two deferred route openings). A read-only
