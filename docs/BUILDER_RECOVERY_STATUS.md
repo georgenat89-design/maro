@@ -20,8 +20,13 @@ The focused support-owner run 1 passed in 4m5s: both capacity variants, protecte
 active/unbound escape footing, ground-staging cleanup, native movement/reach and
 raised-floor entry at heights 3 and 6. The owner variant completed in 19s and
 checks actual target state, protected unfinished posts, all dirt cleanup, health
-20, closed menus and native packet checks. Saved ownership still needs the full
-core suite. Ignored
+20, closed menus and native packet checks. Full core/auction run 7 passed in
+18m16s on unchanged a2a18bd production, including saved-owner resume/cleanup,
+rejected and delayed predictions, strict three-support reuse, stored tools,
+raised/sealed storage, directional passage restoration, food, sold listings,
+cheapest pages, budgets, multiple chests and supply preparation. Upper replay 46
+now tests this production; fresh 710 and complete upper gates remain required.
+Ignored
 run/options.txt inactivityFpsLimit="minimized" was restored before launch; the
 previous test's AFK limiter slowed long runs. Do not alter
 the user's live profile. Final upper/fresh/core gates remain required.
