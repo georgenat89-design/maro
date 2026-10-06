@@ -1177,6 +1177,7 @@ public final class AutoBuilder extends Module {
         int total=entryCandidates.size();long deadline=System.nanoTime()+3_000_000;
         while(entrySearchCursor<total&&System.nanoTime()<deadline){
             var candidate=entryCandidates.get(entrySearchCursor++);var top=candidate.top;var destination=candidate.destination;
+            var tried=triedStands.get(work);if(tried!=null&&tried.getOrDefault(top,0)>ticks)continue;
             if(!walker.hasStandingClearance(top)||!mc.world.getBlockState(top.down()).isReplaceable()||plannedSolid(top.down()))continue;
             BlockPos base=null;boolean clear=true;
             for(int down=1;down<=6;down++){

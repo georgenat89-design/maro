@@ -5,6 +5,16 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Upper replay 47 stopped at 469 after cycling several targets through the same
+capacity-blocked exterior top. The entry planner did not consult the failed-view
+cooldowns recorded by the capacity fallback, so it recommitted that top instead
+of reaching later candidates or staging descent. The latest entry change respects
+the existing per-work top cooldown. Native entry run 5 passed both height-3/6
+cases in 1m25s, including exact directional server states, unchanged finished
+floors, all dirt removed, health 20, closed menus and native packet checks.
+Upper replay 48 now checks latest production. Latest full upper/fresh/core gates
+remain required; no release or live-profile modification.
+
 Upper replay 46 was stopped at 469/710 after a static committed climb. Its
 read-only diagnostic had no escape markers left, confirming lifetime release,
 but the 128-support pool was full and no safe recycling view was reachable.
