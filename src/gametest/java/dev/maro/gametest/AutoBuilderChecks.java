@@ -600,7 +600,7 @@ final class AutoBuilderChecks {
         boolean arrived=false;
         try{
             for(int tick=0;tick<400;tick++){
-                arrived=context.computeOnClient(client->walk.standAt(underCeiling));if(arrived)break;context.waitTick();
+                arrived=context.computeOnClient(client->nativeStand(walk,underCeiling));if(arrived)break;context.waitTick();
             }
             require(arrived,"Walking descent stuck against a lower cell's ceiling");
             context.runOnClient(client->require(client.player.getHealth()==20,"Low ceiling descent damaged the player"));
@@ -1039,13 +1039,18 @@ final class AutoBuilderChecks {
             try{
                 context.runOnClient(client->{require(client.player.isOnGround()&&Math.abs(client.player.getY()-high.getY())<.01,"Narrow drop fixture lacks upper footing");require(walker.canReachStand(landing),"Narrow three-block landing lacks a checked route");});
                 for(int tick=0;tick<180&&!arrived;tick++){
-                    arrived=context.computeOnClient(client->{require(client.player.getHealth()==20,"Narrow landing caused fall damage");return exact?walker.standAt(landing):walker.approach(landing.down(),client.player.getBlockInteractionRange()-.85);});context.waitTick();
+                    arrived=context.computeOnClient(client->{require(client.player.getHealth()==20,"Narrow landing caused fall damage");walker.beginLookTick(client.player.age);return exact?nativeStand(walker,landing):walker.approach(landing.down(),client.player.getBlockInteractionRange()-.85);});context.waitTick();
                 }
                 require(arrived,"Walker did not arrive over its narrow landing: "+side+" exact="+exact+" edge="+edge);
                 context.runOnClient(client->walker.release());context.waitTicks(20);
                 context.runOnClient(client->require(client.player.isOnGround()&&Math.abs(client.player.getY()-landing.getY())<.01&&client.player.getHealth()==20,"Native drop overshot its lower post: "+side+" exact="+exact));
             }finally{context.runOnClient(client->walker.stop());}
         }
+    }
+    /** Standalone walkers need the same once-per-native-tick rotation clock as the module. */
+    private static boolean nativeStand(BuilderWalk walker,BlockPos target){
+        walker.beginLookTick(net.minecraft.client.MinecraftClient.getInstance().player.age);
+        return walker.standAt(target);
     }
     private static void raisedTurn(ClientGameTestContext context,TestSingleplayerContext world,BlockPos start){
         command(world,"setblock",start.east(),"stone");
@@ -1054,7 +1059,7 @@ final class AutoBuilderChecks {
         try{
             for(int tick=0;tick<200&&!arrived;tick++){
                 arrived=context.computeOnClient(client->{
-                    boolean done=walker.standAt(goal);
+                    boolean done=nativeStand(walker,goal);
                     if(!done&&client.player.getVelocity().y>.15){
                         var point=walker.standingPoint(goal);float yaw=(float)(Math.toDegrees(Math.atan2(point.z-client.player.getZ(),point.x-client.player.getX()))-90);
                         require(Math.abs(MathHelper.wrapDegrees(yaw-client.player.getYaw()))<24,"Walker jumped before turning toward its raised destination");
@@ -1067,7 +1072,7 @@ final class AutoBuilderChecks {
             // A zero-cell route still needs a real walk to its exact viewpoint.
             world.getServer().runCommand("tp @a "+(goal.getX()+.85)+" "+goal.getY()+" "+(goal.getZ()+.15)+" 90 0");context.waitTicks(10);
             context.runOnClient(client->{walker.stop();require(walker.canReachStand(goal),"Current-cell placement view was incorrectly treated as unreachable");});
-            arrived=false;for(int tick=0;tick<200&&!arrived;tick++){arrived=context.computeOnClient(client->walker.standAt(goal));context.waitTick();}
+            arrived=false;for(int tick=0;tick<200&&!arrived;tick++){arrived=context.computeOnClient(client->nativeStand(walker,goal));context.waitTick();}
             require(arrived,"Walker did not settle at its current-cell placement view");context.waitTicks(10);
             context.runOnClient(client->require(client.player.getEntityPos().squaredDistanceTo(walker.standingPoint(goal))<.28*.28&&client.player.getVelocity().horizontalLengthSquared()<.0004&&client.player.getHealth()==20,"Placement view did not remain settled after native movement"));
             // Reproduce arriving near the view with walking momentum and facing
@@ -1076,7 +1081,7 @@ final class AutoBuilderChecks {
             for(int facing=0;facing<4;facing++){
                 world.getServer().runCommand("tp @a "+(flat.getX()+.9)+" "+flat.getY()+" "+(flat.getZ()+.1)+" "+(facing*90)+" 0");context.waitTicks(6);
                 context.runOnClient(client->{walker.stop();client.player.setVelocity(.11,0,-.1);});
-                arrived=false;for(int tick=0;tick<160&&!arrived;tick++){arrived=context.computeOnClient(client->walker.standAt(flat));context.waitTick();}
+                arrived=false;for(int tick=0;tick<160&&!arrived;tick++){arrived=context.computeOnClient(client->nativeStand(walker,flat));context.waitTick();}
                 require(arrived,"Placement approach orbited instead of settling from facing "+facing);context.waitTicks(8);
                 context.runOnClient(client->require(client.player.getEntityPos().squaredDistanceTo(walker.standingPoint(flat))<.28*.28&&client.player.getVelocity().horizontalLengthSquared()<.0004,"Placement braking did not hold its settled native position"));
             }
@@ -1153,12 +1158,12 @@ final class AutoBuilderChecks {
         await(context,builder,500);
         require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(obstruction).isAir()&&server.getOverworld().getBlockState(target).isOf(Blocks.STONE)),"Obsolete dirt removal did not resume the real build");
         context.runOnClient(client->{
-            var walker=new BuilderWalk();var destination=start.north(6);walker.standAt(destination);walker.release();
+            var walker=new BuilderWalk();var destination=start.north(6);nativeStand(walker,destination);walker.release();
             try{
                 var path=BuilderWalk.class.getDeclaredField("path");path.setAccessible(true);path.set(walker,List.of());
                 var retry=BuilderWalk.class.getDeclaredField("retry");retry.setAccessible(true);retry.setInt(walker,0);
                 var failures=BuilderWalk.class.getDeclaredField("failedRoutes");failures.setAccessible(true);failures.setInt(walker,2);
-                walker.requestRecovery();walker.standAt(destination);
+                walker.requestRecovery();nativeStand(walker,destination);
                 require(!walker.needsRecovery()&&!walker.routeUnavailable(),"Successful walking route retained a stale pillar request");
             }catch(ReflectiveOperationException error){throw new AssertionError(error);}finally{walker.stop();}
         });
@@ -1169,7 +1174,7 @@ final class AutoBuilderChecks {
         command(world,"setblock",goal.down(),"stone");command(world,"setblock",goal,"dark_oak_door[facing=south,half=lower,hinge=right,open=false]");command(world,"setblock",goal.up(),"dark_oak_door[facing=south,half=upper,hinge=right,open=false]");context.waitTicks(6);
         var walker=context.computeOnClient(client->{var w=new BuilderWalk();require(w.canStand(goal),"Closed-door centre should fit a standing body");w.turning(true,45);return w;});
         try{
-            boolean arrived=false;for(int tick=0;tick<300&&!arrived;tick++){arrived=context.computeOnClient(client->walker.standAt(goal));context.waitTick();}
+            boolean arrived=false;for(int tick=0;tick<300&&!arrived;tick++){arrived=context.computeOnClient(client->nativeStand(walker,goal));context.waitTick();}
             require(arrived,"Native movement kept jumping into the closed door instead of approaching a clear side");
             context.runOnClient(client->require(client.player.getHealth()==20&&client.world.isSpaceEmpty(client.player,client.player.getBoundingBox()),"Raised door approach intersected a panel or caused damage"));
             require(world.getServer().computeOnServer(server->!server.getOverworld().getBlockState(goal).get(Properties.OPEN)),"Door approach changed the intended closed state");
@@ -1180,7 +1185,7 @@ final class AutoBuilderChecks {
         world.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+(start.getY()+1)+" "+(start.getZ()+.5)+" 180 0");context.waitTicks(8);
         var descending=context.computeOnClient(client->{var w=new BuilderWalk();require(w.canStand(lower)&&client.world.isSpaceEmpty(client.player,client.player.getBoundingBox()),"Closed-door descent fixture is not clear at source and landing");w.turning(true,45);return w;});
         try{
-            boolean arrived=false;for(int tick=0;tick<300&&!arrived;tick++){arrived=context.computeOnClient(client->descending.standAt(lower));context.waitTick();}
+            boolean arrived=false;for(int tick=0;tick<300&&!arrived;tick++){arrived=context.computeOnClient(client->nativeStand(descending,lower));context.waitTick();}
             require(arrived,"Native descent kept walking into the closed door instead of choosing a clear edge");
             context.runOnClient(client->require(client.player.getHealth()==20&&client.world.isSpaceEmpty(client.player,client.player.getBoundingBox()),"Door descent intersected a panel or caused damage"));
             require(world.getServer().computeOnServer(server->!server.getOverworld().getBlockState(door).get(Properties.OPEN)),"Door descent changed the intended closed state");
@@ -1318,7 +1323,7 @@ final class AutoBuilderChecks {
             command(world,"setblock",panel,"warped_trapdoor[facing="+facing+",half=bottom,open=true]");context.waitTicks(6);
             var walk=context.computeOnClient(client->{var w=new BuilderWalk();var point=w.standingPoint(goal);require(client.world.isSpaceEmpty(client.player,client.player.getBoundingBox().offset(point.subtract(client.player.getEntityPos())))&&w.canStand(goal)&&w.canReachStand(goal),"Open trapdoor rejected real standing-body clearance");w.turning(true,45);return w;});
             try{
-                boolean arrived=false;for(int tick=0;tick<240&&!arrived;tick++){arrived=context.computeOnClient(client->walk.standAt(goal));context.waitTick();}
+                boolean arrived=false;for(int tick=0;tick<240&&!arrived;tick++){arrived=context.computeOnClient(client->nativeStand(walk,goal));context.waitTick();}
                 require(arrived,"Native walking did not route around the open panel for "+facing);
                 context.runOnClient(client->require(client.player.getHealth()==20&&client.world.isSpaceEmpty(client.player,client.player.getBoundingBox()),"Partial headroom walk intersected the panel or caused damage"));
             }finally{context.runOnClient(client->walk.stop());}
@@ -1333,7 +1338,7 @@ final class AutoBuilderChecks {
                     System.out.println("[builder-check] Leave the bucket source beneath an open panel without mining or adding dirt");
                     var exit=context.computeOnClient(client->{var w=new BuilderWalk();w.turning(true,45);return w;});
                     try{
-                        boolean escaped=false;for(int tick=0;tick<360&&!escaped;tick++){escaped=context.computeOnClient(client->exit.standAt(dryExit));if(tick%40==0)context.runOnClient(client->System.out.println("[water-exit] pos="+client.player.getEntityPos()+" wet="+client.player.isTouchingWater()+" goalReach="+exit.canReachStand(dryExit)+" status="+exit.status));context.waitTick();}
+                        boolean escaped=false;for(int tick=0;tick<360&&!escaped;tick++){escaped=context.computeOnClient(client->nativeStand(exit,dryExit));if(tick%40==0)context.runOnClient(client->System.out.println("[water-exit] pos="+client.player.getEntityPos()+" wet="+client.player.isTouchingWater()+" goalReach="+exit.canReachStand(dryExit)+" status="+exit.status));context.waitTick();}
                         require(escaped,"Bucket source stranded the native player beneath the open panel");
                         context.runOnClient(client->{require(client.player.getHealth()==20&&client.world.getBlockState(goal).isOf(Blocks.WATER)&&!exit.canStand(goal),"Water departure damaged the player, removed the source, or allowed re-entry");});
                     }finally{context.runOnClient(client->exit.stop());}
@@ -1558,7 +1563,7 @@ final class AutoBuilderChecks {
             boolean arrived=false;float previous=context.computeOnClient(client->client.player.getYaw());double rotation=0;
             try{
                 for(int tick=0;tick<40;tick++){
-                    arrived=context.computeOnClient(client->walk.standAt(target));float current=context.computeOnClient(client->client.player.getYaw());rotation+=Math.abs(MathHelper.wrapDegrees(current-previous));previous=current;
+                    arrived=context.computeOnClient(client->nativeStand(walk,target));float current=context.computeOnClient(client->client.player.getYaw());rotation+=Math.abs(MathHelper.wrapDegrees(current-previous));previous=current;
                     if(arrived)break;context.waitTick();
                 }
                 require(arrived&&rotation<=180,"Hopper rim arrival chased its nominal centre height: arrived="+arrived+" rotation="+rotation+" side="+side);

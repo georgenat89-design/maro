@@ -5,6 +5,14 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Latest, 17:18: fresh-reserved-homes-5 is running unchanged production 9ae4ee7,
+exec session33697, owned Java PID27936. It has progressed beyond 58/710.
+CI394 failed its standalone raisedTurn walker because the test never advanced
+the new shared rotation clock. Standalone native movement tests now explicitly
+begin that clock using player.age; production AutoBuilder already begins it
+every work tick. No production changes or active-client rebuild were made.
+The fresh 710-block pass and current full regression gates remain outstanding.
+
 Latest, 17:12: full fresh-visible-restock-4 exposed a scaffold occupying the
 confirmed home-1 feet cell. Native read-only snapshot proved safeStorage=false,
 readyFor=false, dirt at the saved feet and end stone below. That correctly
@@ -16,7 +24,7 @@ scaffold search through reservedSupplyAccess. beginRestock starts home-2 setup
 immediately, before any storage approach; home transitions also release owned
 recovery jump input. The full fresh verifier now requires actual home-2 round
 trips, eliminating a zero-trip false pass. builder-home-reserved-visible-native-1
-PASSED in 1m27 with Meteor: storage feet/head scaffold rejection, exact restock
+PASSED in 1m34 with Meteor: storage feet/head scaffold rejection, exact restock
 order/native supplies, protected saved return, rejected retry, repair14 ticks,
 crouched3/3 cleanup and actual visible/rendered turns all passed. Restart fresh
 with this protection. The earlier cddc963 test JAR lacks it and is superseded.
