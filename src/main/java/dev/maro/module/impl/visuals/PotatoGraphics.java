@@ -16,6 +16,8 @@ import dev.maro.setting.SettingSection;
 import net.minecraft.client.option.CloudRenderMode;
 import net.minecraft.client.option.GameOptions;
 import net.minecraft.client.option.SimpleOption;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.particle.ParticlesMode;
 
 import java.util.ArrayList;
@@ -69,7 +71,15 @@ public class PotatoGraphics extends Module {
     private final BooleanSetting unlockFps = add(new BooleanSetting("Unlimited FPS", "Lift the frame rate cap", true));
     private final BooleanSetting menuBlur = add(new BooleanSetting("No Menu Blur", "Do not blur the world behind menus", true));
     private final BooleanSetting vignette = add(new BooleanSetting("No Vignette", "No dark screen edges", true));
+
+    // beyond the video settings
+    private final BooleanSetting hideFarEntities = add(new BooleanSetting("Hide Far Entities", "Do not draw mobs, items and other entities past a distance (players are always drawn)", true));
+    private final NumberSetting entityCap = add(new NumberSetting("Entity Distance", "Entities further than this are not drawn", 32, 8, 128, 4)
+            .suffix(" blocks").visible(hideFarEntities::get));
+    private final BooleanSetting noParticles = add(new BooleanSetting("No Particles", "No particles at all, not just fewer", false));
     private final BooleanSetting notify = add(new BooleanSetting("Notify", "A notification when it turns things down and back up", true));
+
+    private static PotatoGraphics instance;
 
     /** One video option it can lower. */
     private record Knob(String key, BooleanSetting toggle, Function<GameOptions, SimpleOption<?>> option, UnaryOperator<Object> potato) {
@@ -87,6 +97,7 @@ public class PotatoGraphics extends Module {
 
     public PotatoGraphics() {
         super("Potato Graphics", "Turns video settings right down for more FPS, and back when off", Category.VISUALS);
+        instance = this;
         knob("render-distance", limitRender, GameOptions::getViewDistance, v -> v instanceof Integer i ? Math.min(i, renderCap.getInt()) : null);
         knob("simulation-distance", limitSim, GameOptions::getSimulationDistance, v -> v instanceof Integer i ? Math.min(i, simCap.getInt()) : null);
         knob("entity-distance", entityRange, GameOptions::getEntityDistanceScaling, v -> v instanceof Double d ? Math.min(d, 0.5) : null);
@@ -119,11 +130,13 @@ public class PotatoGraphics extends Module {
         return List.of(SettingSection.of("Level", level, notify),
                 SettingSection.of("Distance", limitRender, renderCap, limitSim, simCap, entityRange, clouds),
                 SettingSection.of("World", particles, smoothLighting, fastLeaves, biomeBlend, shadows, transparency, weather, chunkFade),
-                SettingSection.of("Screen", mipmaps, vsync, unlockFps, menuBlur, vignette));
+                SettingSection.of("Screen", mipmaps, vsync, unlockFps, menuBlur, vignette),
+                SettingSection.of("Extra", hideFarEntities, entityCap, noParticles));
     }
 
     private void applyLevel(String name) {
         boolean light = name.equals("Light");
+        boolean ultra = name.equals("Ultra Potato");
         renderCap.set(switch (name) {
             case "Light" -> 10.0;
             case "Ultra Potato" -> 3.0;
@@ -131,11 +144,28 @@ public class PotatoGraphics extends Module {
         });
         simCap.set(light ? 8.0 : 5.0);
         for (BooleanSetting b : new BooleanSetting[]{limitRender, limitSim, entityRange, clouds, particles, biomeBlend, shadows,
-                weather, chunkFade, vsync, unlockFps, menuBlur, vignette, mipmaps}) b.set(true);
+                weather, chunkFade, vsync, unlockFps, menuBlur, vignette, mipmaps, hideFarEntities}) b.set(true);
         // Light keeps the look mostly intact.
         smoothLighting.set(!light);
         fastLeaves.set(!light);
         transparency.set(!light);
+        entityCap.set(light ? 48.0 : ultra ? 16.0 : 32.0);
+        noParticles.set(ultra);
+    }
+
+    // ---- boosts applied while drawing (read from render code every frame) ----------------------
+
+    /** Whether this entity is past the distance at which Potato Graphics stops drawing entities. */
+    public static boolean hidesEntity(Entity entity) {
+        PotatoGraphics m = instance;
+        if (m == null || !m.isEnabled() || !m.hideFarEntities.get() || entity instanceof PlayerEntity || mc.player == null) return false;
+        double cap = m.entityCap.get();
+        return entity.squaredDistanceTo(mc.player) > cap * cap;
+    }
+
+    public static boolean hidesParticles() {
+        PotatoGraphics m = instance;
+        return m != null && m.isEnabled() && m.noParticles.get();
     }
 
     // ---- turning things down and back --------------------------------------------------------
@@ -162,8 +192,11 @@ public class PotatoGraphics extends Module {
         dirty = false;
         appliedSignature = signature;
         int lowered = apply();
-        if (first && lowered > 0 && notify.get()) {
-            Notifications.push("Potato Graphics", lowered + " video settings turned down", Notifications.Type.ENABLED);
+        if (first && notify.get()) {
+            String extra = hideFarEntities.get() ? ", entities past " + entityCap.getInt() + " blocks hidden" : "";
+            if (noParticles.get()) extra += ", particles off";
+            String settings = lowered > 0 ? lowered + " video settings turned down" : "Video settings already low";
+            Notifications.push("Potato Graphics", settings + extra, Notifications.Type.ENABLED);
         }
     }
 

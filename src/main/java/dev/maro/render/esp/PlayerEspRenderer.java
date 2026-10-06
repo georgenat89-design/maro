@@ -57,8 +57,13 @@ public final class PlayerEspRenderer {
         .withCull(false)
         .build();
 
-    /** Seven vec4s - see EspData in player_esp.fsh. */
-    private static final int UNIFORM_BYTES = 7 * 16;
+    /** Players whose contour and glow are sized individually; matches MAX_PLAYERS in player_esp.fsh. */
+    private static final int MAX_PLAYERS = 16;
+    /** EspData in player_esp.fsh: eight vec4s of settings, a rect per player, a scale per player. */
+    private static final int UNIFORM_BYTES = (8 + MAX_PLAYERS + MAX_PLAYERS / 4) * 16;
+    /** On-screen player height, as a share of the screen, below which contour and glow start to thin. */
+    private static final float FULL_SIZE_HEIGHT = 0.2f;
+    private static final float MIN_SIZE_SCALE = 0.3f;
 
     private static final SilhouetteBuffers.Provider PROVIDER = new SilhouetteBuffers.Provider();
 
@@ -85,6 +90,11 @@ public final class PlayerEspRenderer {
     private static float minX, minY, maxX, maxY;
     private static boolean fullscreen;
 
+    /** Each drawn player's rect in NDC (x0, y0, x1, y1) and its contour/glow size scale. */
+    private static final float[] playerRects = new float[MAX_PLAYERS * 4];
+    private static final float[] playerScales = new float[MAX_PLAYERS];
+    private static int playerCount;
+
     private PlayerEspRenderer() {
     }
 
@@ -109,8 +119,12 @@ public final class PlayerEspRenderer {
         int height = mc.getWindow().getFramebufferHeight();
         if (width <= 0 || height <= 0) return;
 
-        if (mask == null) mask = new SimpleFramebuffer("maro player esp", width, height, true);
-        else if (mask.textureWidth != width || mask.textureHeight != height) mask.resize(width, height);
+        // Silhouettes are drawn supersampled so the composite can read real edge coverage; above
+        // 1440p the screen's own pixels are fine enough and the memory is not worth it.
+        int maskScale = height <= 1440 ? 2 : 1;
+        int maskWidth = width * maskScale, maskHeight = height * maskScale;
+        if (mask == null) mask = new SimpleFramebuffer("maro player esp", maskWidth, maskHeight, true);
+        else if (mask.textureWidth != maskWidth || mask.textureHeight != maskHeight) mask.resize(maskWidth, maskHeight);
 
         RenderSystem.getDevice().createCommandEncoder().clearColorTexture(mask.getColorAttachment(), 0);
 
@@ -119,6 +133,7 @@ public final class PlayerEspRenderer {
         minX = minY = Float.POSITIVE_INFINITY;
         maxX = maxY = Float.NEGATIVE_INFINITY;
         fullscreen = false;
+        playerCount = 0;
     }
 
     /** The framebuffer silhouettes are drawn into, or null before the first frame. */
@@ -143,15 +158,16 @@ public final class PlayerEspRenderer {
      * {@code (x, y, z)}. The box is padded for swinging limbs, held items and capes.
      */
     public static void include(Entity entity, double x, double y, double z, Vec3d camera) {
-        if (fullscreen) return;
         if (!haveMatrices) {
             fullscreen = true;
             return;
         }
 
-        Box box = entity.getBoundingBox()
-            .offset(x - entity.getX(), y - entity.getY(), z - entity.getZ())
-            .expand(0.7, 0.4, 0.7);
+        Box body = entity.getBoundingBox().offset(x - entity.getX(), y - entity.getY(), z - entity.getZ());
+        Box box = body.expand(0.7, 0.4, 0.7);
+        float x0 = Float.POSITIVE_INFINITY, y0 = Float.POSITIVE_INFINITY;
+        float x1 = Float.NEGATIVE_INFINITY, y1 = Float.NEGATIVE_INFINITY;
+        boolean behind = false;
         Vector4f corner = new Vector4f();
         for (int i = 0; i < 8; i++) {
             double cx = (i & 1) == 0 ? box.minX : box.maxX;
@@ -162,16 +178,49 @@ public final class PlayerEspRenderer {
 
             // A corner at or behind the camera has no meaningful projection; cover the screen.
             if (corner.w <= 0.05f) {
-                fullscreen = true;
-                return;
+                behind = true;
+                break;
             }
 
             float nx = corner.x / corner.w, ny = corner.y / corner.w;
-            minX = Math.min(minX, nx);
-            minY = Math.min(minY, ny);
-            maxX = Math.max(maxX, nx);
-            maxY = Math.max(maxY, ny);
+            x0 = Math.min(x0, nx);
+            y0 = Math.min(y0, ny);
+            x1 = Math.max(x1, nx);
+            y1 = Math.max(y1, ny);
         }
+
+        float scale = 1f;
+        if (behind) {
+            fullscreen = true;
+            x0 = y0 = -1;
+            x1 = y1 = 1;
+        } else {
+            minX = Math.min(minX, x0);
+            minY = Math.min(minY, y0);
+            maxX = Math.max(maxX, x1);
+            maxY = Math.max(maxY, y1);
+            // NDC spans 2 per screen; the padded box is about 1.45x the body's height.
+            float share = (y1 - y0) / 2f * (float) (body.getLengthY() / box.getLengthY());
+            scale = Math.max(MIN_SIZE_SCALE, Math.min(1f, share / FULL_SIZE_HEIGHT));
+        }
+
+        if (playerCount < MAX_PLAYERS) {
+            int at = playerCount * 4;
+            playerRects[at] = x0;
+            playerRects[at + 1] = y0;
+            playerRects[at + 2] = x1;
+            playerRects[at + 3] = y1;
+            playerScales[playerCount++] = scale;
+        }
+    }
+
+    /** Whether a point in the world is in front of the camera and roughly on screen this frame. */
+    public static boolean onScreen(double x, double y, double z, Vec3d camera) {
+        if (!haveMatrices) return true;
+        Vector4f p = new Vector4f((float) (x - camera.x), (float) (y - camera.y), (float) (z - camera.z), 1f);
+        viewProjection.transform(p);
+        if (p.w <= 0.05f) return false;
+        return Math.abs(p.x / p.w) < 1.6f && Math.abs(p.y / p.w) < 1.6f;
     }
 
     public static void markDrawn() {
@@ -207,7 +256,7 @@ public final class PlayerEspRenderer {
             try {
                 pass.setPipeline(PIPELINE);
                 pass.setUniform("EspData", data);
-                pass.bindTexture("u_Mask", mask.getColorAttachmentView(), RenderSystem.getSamplerCache().get(FilterMode.NEAREST));
+                pass.bindTexture("u_Mask", mask.getColorAttachmentView(), RenderSystem.getSamplerCache().get(FilterMode.LINEAR));
                 pass.setVertexBuffer(0, vertices);
                 pass.setIndexBuffer(indices, VertexFormat.IndexType.INT);
                 pass.drawIndexed(0, 0, 6, 1);
@@ -249,10 +298,25 @@ public final class PlayerEspRenderer {
                 GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST, UNIFORM_BYTES);
         }
 
-        ByteBuffer data = MemoryUtil.memAlloc(UNIFORM_BYTES);
+        ByteBuffer data = MemoryUtil.memCalloc(UNIFORM_BYTES);
         try {
+            Framebuffer target = mc.getFramebuffer();
             float[] values = module().uniformValues();
-            for (int i = 0; i < values.length && i < UNIFORM_BYTES / Float.BYTES; i++) data.putFloat(i * Float.BYTES, values[i]);
+            values[values.length - 1] = mask.textureHeight / (float) target.textureHeight;
+            for (int i = 0; i < values.length; i++) data.putFloat(i * Float.BYTES, values[i]);
+
+            // PlayerInfo, then a pixel rect per player, then the scales packed four to a vec4.
+            int info = 7 * 16, rects = info + 16, scales = rects + MAX_PLAYERS * 16;
+            data.putFloat(info, playerCount);
+            float halfW = target.textureWidth / 2f, halfH = target.textureHeight / 2f;
+            for (int i = 0; i < playerCount; i++) {
+                int at = rects + i * 16;
+                data.putFloat(at, (playerRects[i * 4] + 1) * halfW - 4);
+                data.putFloat(at + 4, (playerRects[i * 4 + 1] + 1) * halfH - 4);
+                data.putFloat(at + 8, (playerRects[i * 4 + 2] + 1) * halfW + 4);
+                data.putFloat(at + 12, (playerRects[i * 4 + 3] + 1) * halfH + 4);
+                data.putFloat(scales + i * 4, playerScales[i]);
+            }
             RenderSystem.getDevice().createCommandEncoder().writeToBuffer(uniforms.slice(0, UNIFORM_BYTES), data);
         } finally {
             MemoryUtil.memFree(data);
