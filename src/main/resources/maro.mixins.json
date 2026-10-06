@@ -38,7 +38,8 @@
     "EntityRenderStateMixin",
     "EntityRenderManagerMixin",
     "OrderedRenderCommandQueueImplAccessor",
-    "PlayerEspWorldRendererMixin"
+    "PlayerEspWorldRendererMixin",
+    "PotatoTexturesMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -1,5 +1,6 @@
 package dev.maro.gametest;
 
+import dev.maro.gui.hud.EspPreviewScreen;
 import dev.maro.module.ModuleManager;
 import dev.maro.module.impl.visuals.PlayerESP;
 import dev.maro.setting.BooleanSetting;
@@ -66,7 +67,29 @@ final class PlayerEspChecks {
             require(on[0] > 1500 && on[0] > baseline[0] * 10, "Player ESP did not draw the silhouette: " + on[0] + " vs " + baseline[0]);
             require(Math.abs(on[1] - on[2] / 2) < on[2] * 0.12, "Player ESP silhouette is not where the player is: centre x " + on[1] + " of " + on[2]);
 
+            // The preview: with the module and Self both off, it still shows you, facing the camera.
             context.runOnClient(c -> {
+                c.options.setPerspective(Perspective.FIRST_PERSON);
+                ((BooleanSetting) setting(esp, "Self")).set(false);
+                esp.setEnabled(false);
+                c.setScreen(new EspPreviewScreen(null, esp));
+            });
+            context.waitTicks(4);
+            require(context.computeOnClient(c -> c.options.getPerspective() == Perspective.THIRD_PERSON_FRONT && PlayerESP.previewing()),
+                    "Preview did not turn the camera to face you");
+            int[] preview = magenta(context.takeScreenshot("maro-player-esp-preview"));
+            System.out.println("PLAYER ESP preview magenta=" + preview[0] + " centre=" + preview[1] + "/" + preview[3]);
+            require(preview[0] > 1500, "Preview did not draw the ESP on you: " + preview[0]);
+            context.runOnClient(c -> ((ModeSetting) setting(esp, "Fill Style")).set("Galaxy"));
+            context.waitTicks(3);
+            context.takeScreenshot("maro-player-esp-preview-galaxy");
+            context.runOnClient(c -> c.currentScreen.close());
+            context.waitTicks(3);
+            require(context.computeOnClient(c -> c.currentScreen == null && c.options.getPerspective() == Perspective.FIRST_PERSON && !PlayerESP.previewing()),
+                    "Closing the preview did not put the camera and ESP back");
+
+            context.runOnClient(c -> {
+                c.options.setPerspective(Perspective.THIRD_PERSON_BACK);
                 esp.getSettings().forEach(Setting::reset);
                 ((BooleanSetting) setting(esp, "Self")).set(true);
                 esp.setEnabled(true);

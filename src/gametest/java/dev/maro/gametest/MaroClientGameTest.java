@@ -271,7 +271,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
 
             checkInventoryHud(context, singleplayer);
             checkFullbright(context, singleplayer);
-            checkPotatoGraphics(context);
+            checkPotatoGraphics(context, singleplayer);
             checkAutoMine(context, singleplayer);
             AutoMineRouteChecks.run(context, singleplayer);
             checkCrafterDisabler(context, singleplayer);
@@ -370,7 +370,22 @@ public class MaroClientGameTest implements FabricClientGameTest {
 
     /** Fullbright: sealed in a dark stone room at midnight, the screen must get much brighter, and the option must not change. */
     /** Potato Graphics lowers the video settings while on and puts every one back when off. */
-    private static void checkPotatoGraphics(ClientGameTestContext context) {
+    private static void checkPotatoGraphics(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+        // A small daylight scene up in the air - grass, dirt, a tree and some stone - to see the flat textures on.
+        double[] home = context.computeOnClient(client -> new double[]{client.player.getX(), client.player.getY(), client.player.getZ()});
+        int sx = (int) Math.floor(home[0]), sy = (int) Math.floor(home[1]) + 40, sz = (int) Math.floor(home[2]);
+        for (String command : java.util.List.of(
+                "time set noon",
+                "fill " + (sx - 12) + " " + sy + " " + (sz - 4) + " " + (sx + 12) + " " + sy + " " + (sz + 24) + " minecraft:grass_block",
+                "fill " + (sx - 7) + " " + (sy + 1) + " " + (sz + 12) + " " + (sx + 7) + " " + (sy + 2) + " " + (sz + 16) + " minecraft:grass_block",
+                "fill " + (sx - 7) + " " + (sy + 1) + " " + (sz + 11) + " " + (sx - 2) + " " + (sy + 1) + " " + (sz + 11) + " minecraft:dirt",
+                "fill " + (sx + 3) + " " + (sy + 1) + " " + (sz + 7) + " " + (sx + 3) + " " + (sy + 4) + " " + (sz + 7) + " minecraft:oak_log",
+                "fill " + (sx + 1) + " " + (sy + 4) + " " + (sz + 5) + " " + (sx + 5) + " " + (sy + 6) + " " + (sz + 9) + " minecraft:oak_leaves[persistent=true] replace minecraft:air",
+                "fill " + (sx - 5) + " " + (sy + 1) + " " + (sz + 6) + " " + (sx - 3) + " " + (sy + 1) + " " + (sz + 7) + " minecraft:stone",
+                "setblock " + (sx - 4) + " " + (sy + 2) + " " + (sz + 6) + " minecraft:cobblestone",
+                "tp @a " + (sx + 0.5) + " " + (sy + 1) + " " + (sz + 0.5) + " 0 15")) {
+            singleplayer.getServer().runCommand(command);
+        }
         context.runOnClient(client -> {
             client.options.getViewDistance().setValue(12);
             client.options.getAo().setValue(true);
@@ -385,11 +400,16 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 + "|" + client.options.getMipmapLevels().getValue() + "|" + client.options.getMaxFps().getValue()
                 + "|" + client.options.getBiomeBlendRadius().getValue() + "|" + client.options.getEnableVsync().getValue();
         String before = context.computeOnClient(snapshot::apply);
+        context.takeScreenshot("maro-potato-scene-normal");
         var potato = ModuleManager.get(dev.maro.module.impl.visuals.PotatoGraphics.class);
         context.runOnClient(client -> potato.setEnabled(true));
+        context.waitTicks(3);
+        context.waitFor(client -> dev.maro.module.impl.visuals.PotatoGraphics.texturesSettled(), 2400);
         settle(context);
+        int flattened = context.computeOnClient(client -> dev.maro.module.impl.visuals.PotatoGraphics.flattenedSprites());
         String lowered = context.computeOnClient(snapshot::apply);
         context.takeScreenshot("maro-potato-graphics-on");
+        if (flattened < 200) throw new AssertionError("Potato Graphics did not flatten the block textures: " + flattened);
         String hiding = context.computeOnClient(client -> {
             var p = client.player;
             var near = new net.minecraft.entity.decoration.ArmorStandEntity(client.world, p.getX() + 4, p.getY(), p.getZ());
@@ -409,9 +429,13 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 && client.options.getParticles().getValue() == net.minecraft.particle.ParticlesMode.MINIMAL
                 && !client.options.getEntityShadows().getValue());
         context.runOnClient(client -> potato.setEnabled(false));
+        context.waitTicks(3);
+        context.waitFor(client -> dev.maro.module.impl.visuals.PotatoGraphics.texturesSettled(), 2400);
         settle(context);
         String after = context.computeOnClient(snapshot::apply);
-        System.out.println("POTATO before=" + before + " on=" + lowered + " after=" + after);
+        singleplayer.getServer().runCommand("tp @a " + home[0] + " " + home[1] + " " + home[2]);
+        context.waitTicks(3);
+        System.out.println("POTATO before=" + before + " on=" + lowered + " after=" + after + " flattened=" + flattened);
         if (!ok) throw new AssertionError("Potato Graphics did not lower the settings: " + before + " -> " + lowered);
         if (!before.equals(after)) throw new AssertionError("Potato Graphics did not restore the settings: " + before + " -> " + after);
     }

@@ -2,10 +2,12 @@ package dev.maro.module.impl.visuals;
 
 import dev.maro.Maro;
 import dev.maro.config.FriendManager;
+import dev.maro.gui.hud.EspPreviewScreen;
 import dev.maro.gui.notification.Notifications;
 import dev.maro.module.Category;
 import dev.maro.module.Module;
 import dev.maro.setting.BooleanSetting;
+import dev.maro.setting.ButtonSetting;
 import dev.maro.setting.ColorSetting;
 import dev.maro.setting.ModeSetting;
 import dev.maro.setting.NumberSetting;
@@ -26,6 +28,12 @@ public class PlayerESP extends Module {
     private static final String[] FILL_STYLES = {"Solid", "Player", "Gradient", "Rainbow", "Galaxy", "Aurora", "Plasma", "Lava", "Hologram"};
     /** Order matches the contour colour modes in player_esp.fsh. */
     private static final String[] LINE_COLORS = {"Custom", "Player", "Rainbow", "Fill"};
+
+    private final ButtonSetting preview = add(new ButtonSetting("Preview", "See the ESP on yourself and flip through styles live", "Open",
+            () -> mc.setScreen(new EspPreviewScreen(mc.currentScreen, this))));
+
+    /** While the preview screen is open: draw yourself, even with the module or Self off. */
+    private static boolean previewing;
 
     // ---- targets
     private final BooleanSetting self = add(new BooleanSetting("Self", "Draw yourself in third person", false));
@@ -77,6 +85,7 @@ public class PlayerESP extends Module {
             .suffix("%").visible(glow::get));
 
     private final List<SettingSection> sections = List.of(
+            SettingSection.of("Preview", preview),
             SettingSection.of("Targets", range, self, friends, friendColor, friendTint, healthColors, spectators),
             SettingSection.of("Fill", fill, fillStyle, colorA, colorB, fillOpacity, edgeFade, stars, scale, speed),
             SettingSection.of("Outline", outline, outlineColorMode, outlineColor, outlineWidth, outlineOpacity),
@@ -93,6 +102,19 @@ public class PlayerESP extends Module {
         return sections;
     }
 
+    public static boolean previewing() {
+        return previewing;
+    }
+
+    /** The main fill colour, used to tint the preview screen's controls. */
+    public int accentColor() {
+        return colorA.get();
+    }
+
+    public static void setPreviewing(boolean on) {
+        previewing = on;
+    }
+
     private boolean usesColorA() {
         return fillStyle.is("Solid") || fillStyle.is("Player") || fillStyle.is("Gradient")
                 || fillStyle.is("Galaxy") || fillStyle.is("Hologram");
@@ -103,7 +125,7 @@ public class PlayerESP extends Module {
     /** Called on the render thread for each entity rendered this frame. */
     public boolean shouldDraw(Entity entity) {
         if (!(entity instanceof PlayerEntity player) || mc.player == null) return false;
-        if (player == mc.player) return self.get() && !mc.options.getPerspective().isFirstPerson();
+        if (player == mc.player) return (self.get() || previewing) && !mc.options.getPerspective().isFirstPerson();
         if (player.isSpectator() && !spectators.get()) return false;
         if (!friends.get() && FriendManager.isFriend(player.getName().getString())) return false;
         return range.get() <= 0 || mc.player.distanceTo(player) <= range.get();
