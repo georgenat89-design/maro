@@ -5,6 +5,18 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Latest, 18:05: fresh-reserved-homes-5 was stopped deliberately at 423/710 after
+the user reported it frozen. Read-only native sampling proved work cells 828
+and 1062 alternated while sharing entry-search cursors, repeatedly restarting
+the same unfinished exterior-access search. Each ViewSearch now owns its entry
+candidate, passage-probe and retry progress. The production change compiled.
+The exact server world, inventory, chest stock, home 1 and 127 owned supports
+were captured in stash-fresh-423.json before stopping verified test PID27936.
+Exact state equality counted 416 blocks; the normal compatible-state matcher
+must confirm 423 when importing that captured scene. This is a checkpoint
+regression, not a fresh build pass. Native replay with Meteor is running in
+Maro-column-cleanup, exec87128, PID6280. Full completion remains pending.
+
 Latest, 17:40: CI398 on 39f80d1 passed the standalone rotation checks and failed
 verticalPillarPacing with only the bottom two owned posts left. The five-post
 buildup itself took43 ticks. In the isolated Maro-column-cleanup checkout,

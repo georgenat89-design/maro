@@ -71,7 +71,9 @@ final class BuilderHomeChecks {
             server.getPlayerManager().getPlayerList().forEach(server.getCommandManager()::sendCommandTree);
         });
     }
-    static void verifyCommands(){require(!movedDuringWarmup&&!commandsAwayFromStorage,"Home commands moved during warmup or saved away from storage");require(deletes[0]==1&&saves[0]==1,"Fresh build did not confirm storage home setup");require(saves[1]>0&&saved[1]==null&&deletes[1]==2*saves[1]&&travels[1]==saves[1]&&saved[2]==reservedThird,"Fresh restock did not use/clear home 2 after arrival or home 3 changed");System.out.println("[builder-home] Fresh run: storage saves="+saves[0]+" restock returns="+saves[1]+" native travels="+travelCommands+" home 3 untouched");}
+    static void restoreStorage(TestSingleplayerContext world,com.google.gson.JsonArray p){world.getServer().runOnServer(server->saved[0]=new Home(new Vec3d(p.get(0).getAsDouble(),p.get(1).getAsDouble(),p.get(2).getAsDouble()),p.get(3).getAsFloat(),p.get(4).getAsFloat()));}
+    static void verifyCommands(){verifyCommands(true);}
+    static void verifyCommands(boolean fresh){require(!movedDuringWarmup&&!commandsAwayFromStorage,"Home commands moved during warmup or saved away from storage");int expected=fresh?1:0;require(deletes[0]==expected&&saves[0]==expected,"Build did not preserve the expected storage home setup");require(saves[1]>0&&saved[1]==null&&deletes[1]==2*saves[1]&&travels[1]==saves[1]&&saved[2]==reservedThird,"Restock did not use/clear home 2 after arrival or home 3 changed");System.out.println("[builder-home] Run: storage saves="+saves[0]+" restock returns="+saves[1]+" native travels="+travelCommands+" home 3 untouched");}
     static void run(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-check] Automatic storage home replacement, warmup, native arrival, prompt repair and independent camera aim");
         installCommands(world,start.east(2));var chest=storage;

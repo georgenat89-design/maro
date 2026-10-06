@@ -410,7 +410,9 @@ final class AutoBuilderChecks {
         });context.waitTicks(6);
         Set<BlockPos> priorSupports=new HashSet<>();
         boolean homeTest=Boolean.getBoolean("maro.gametest.builderStashHomesOnly");
-        if(homeTest){BuilderHomeChecks.installCommands(world,chest);System.out.println("[builder-check] Fresh 710-block schematic on empty ground with storage homes and independent head aim enabled");}
+        var checkpoint=Boolean.getBoolean("maro.gametest.builderStashCheckpointOnly")?new BuilderCheckpointFixture():null;
+        if(homeTest){BuilderHomeChecks.installCommands(world,chest);System.out.println(checkpoint==null?"[builder-check] Fresh 710-block schematic on empty ground with storage homes and independent head aim enabled":"[builder-check] Captured 423-block server stall replay with unchanged native supplies and owned posts");}
+        if(checkpoint!=null){require(homeTest,"Checkpoint needs native home commands");checkpoint.restoreServer(world);context.waitTicks(20);}
         boolean finalTargets=Boolean.getBoolean("maro.gametest.builderStashFinalOnly");
         boolean upper=Boolean.getBoolean("maro.gametest.builderStashUpperOnly")||finalTargets;
         if(upper){
@@ -434,12 +436,13 @@ final class AutoBuilderChecks {
             held.forEach((item,count)->world.getServer().runCommand("give @a "+net.minecraft.registry.Registries.ITEM.getId(item)+" "+count));context.waitTicks(6);
         }
         try{
-            if(homeTest)require(world.getServer().computeOnServer(server->{for(int cell=0;cell<stash.size();cell++)if(!stash.state(cell).isAir()&&!server.getOverworld().getBlockState(origin.add(stash.local(cell))).isAir())return false;return true;}),"Fresh build contained prebuilt schematic blocks");
+            if(homeTest&&checkpoint==null)require(world.getServer().computeOnServer(server->{for(int cell=0;cell<stash.size();cell++)if(!stash.state(cell).isAir()&&!server.getOverworld().getBlockState(origin.add(stash.local(cell))).isAir())return false;return true;}),"Fresh build contained prebuilt schematic blocks");
+            if(checkpoint!=null)require(world.getServer().computeOnServer(server->{int count=0;for(int cell=0;cell<stash.size();cell++)if(!stash.state(cell).isAir()&&AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(origin.add(stash.local(cell))),stash.state(cell)))count++;return count;})==423,"Captured server checkpoint no longer matches the 423-block stall");
             context.runOnClient(client->{
                 set(builder,"Temporary Supports",true);set(builder,"Clean Temporary Supports",true);set(builder,"Support Dirt Reserve",64);set(builder,"Auto Buy Tools",true);
-                set(builder,"Material Supply",homeTest?"Nearby Sections":"Layer by Layer");set(builder,"Prepare Whole Build",!upper);set(builder,"Stockpile In Chests",true);set(builder,"Auto Eat",true);builder.auctionBudget(1000);
+                set(builder,"Material Supply",homeTest?"Nearby Sections":"Layer by Layer");set(builder,"Prepare Whole Build",!upper&&checkpoint==null);set(builder,"Stockpile In Chests",true);set(builder,"Auto Eat",true);builder.auctionBudget(1000);
                 if(homeTest){set(builder,"Builder Homes",true);set(builder,"Head Spoofing",true);((BuilderHomes)field(builder,"homes")).reset();}
-                builder.install(stash);builder.setOrigin(origin);((Set<BlockPos>)field(builder,"supports")).addAll(priorSupports);client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();BuilderPacketChecks.begin();if(homeTest)BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
+                builder.install(stash);builder.setOrigin(origin);((Set<BlockPos>)field(builder,"supports")).addAll(priorSupports);client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();if(checkpoint!=null)checkpoint.restoreBuilder(builder);BuilderPacketChecks.begin();if(homeTest)BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
                 if(upper)try{var attempts=AutoBuilder.class.getDeclaredField("recoveryAttempts");attempts.setAccessible(true);attempts.setInt(builder,3);}catch(ReflectiveOperationException error){throw new AssertionError(error);}
             });
             // This survival replay includes material trips, enclosed access,
@@ -452,10 +455,10 @@ final class AutoBuilderChecks {
             require(dirt.isEmpty(),"Stash left a temporary block on the server at "+dirt);
             if(homeTest){
                 require(world.getServer().computeOnServer(server->{for(var pos:BlockPos.iterate(start.add(-24,0,-24),start.add(24,12,24)))if(!server.getOverworld().getFluidState(pos).isEmpty()){int cell=stash.indexAt(pos.subtract(origin),0,"None");if(cell<0||stash.state(cell).getFluidState().isEmpty())return false;}return true;}),"Fresh schematic leaked water/lava or waterlogged a dry block");
-                BuilderHomeChecks.verifyCommands();
+                BuilderHomeChecks.verifyCommands(checkpoint==null);
             }
             context.runOnClient(client->{BuilderPacketChecks.verify();require(builder.temporarySupports().isEmpty(),"Stash left temporary supports");require(client.currentScreen==null,"Stash left its supply menu open");require(client.player.getHealth()==client.player.getMaxHealth(),"Stash survival replay lost health");});
-            if(homeTest){System.out.println("[builder-stash] PASS: fresh 710/710 native server blocks; zero temporary dirt; openings restored; liquids contained; bounded head packets; full health");context.takeScreenshot("maro-stash-fresh-homes-complete");}
+            if(homeTest){System.out.println("[builder-stash] PASS: "+(checkpoint==null?"fresh":"captured-stall replay")+" 710/710 native server blocks; zero temporary dirt; openings restored; liquids contained; bounded head packets; full health");context.takeScreenshot(checkpoint==null?"maro-stash-fresh-homes-complete":"maro-stash-captured-stall-complete");}
         }finally{
             context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});world.getServer().runCommand("gamemode creative @a");world.getServer().runCommand("tp @a "+coords(original));context.waitTicks(30);
         }
@@ -953,7 +956,7 @@ final class AutoBuilderChecks {
         require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(target).isOf(Blocks.STONE)&&server.getOverworld().getBlockState(target.up()).isOf(Blocks.GLASS)&&server.getOverworld().getBlockState(target.east(12)).isOf(Blocks.OAK_PLANKS)),"Nearby sections did not complete all areas");
         context.runOnClient(client->set(builder,"Material Supply","Layer by Layer"));
     }
-    private static Object field(AutoBuilder builder,String name){try{var field=AutoBuilder.class.getDeclaredField(name);field.setAccessible(true);return field.get(builder);}catch(ReflectiveOperationException error){throw new AssertionError(error);}}
+    static Object field(AutoBuilder builder,String name){try{var field=AutoBuilder.class.getDeclaredField(name);field.setAccessible(true);return field.get(builder);}catch(ReflectiveOperationException error){throw new AssertionError(error);}}
     private static void largeSupply(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         // Exercise the actual incremental scanner and inventory batching on a
         // much larger volume, without pretending this is a completed large build.

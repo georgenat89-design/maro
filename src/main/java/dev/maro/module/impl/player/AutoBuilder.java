@@ -266,7 +266,13 @@ public final class AutoBuilder extends Module {
     private final Map<BlockPos,Integer> routeSupportExclusions=new HashMap<>();
     private final Map<BlockPos,List<BlockPos>> supportChainStarts=new HashMap<>();
     private record ViewKey(BlockPos target,BlockPos feet,boolean bridge){}
+    private static final class EntrySearch {
+        BlockPos feet,probeBase;
+        int work=-2,hash,cursor,retryAt,doorCursor,probeCursor=-1;
+        List<EntryCandidate> candidates=List.of();
+    }
     private static final class ViewSearch {
+        final EntrySearch entry=new EntrySearch();
         int expires,cursor,routeCursor,stepCursor,temporaryCursor,ceilingCursor,columnCursor,recoveryStage;
         List<BlockPos> ceilingViews;
         List<BlockPos> temporaryViews;
@@ -1251,7 +1257,7 @@ public final class AutoBuilder extends Module {
                 // trying speculative side stairs or reclaiming capacity for them.
                 // Scaffold views are valid destinations too: they expose the
                 // next attachment even when the final block is not in reach.
-                if(prepareElevatedEntry(options,cell))return true;
+                if(prepareElevatedEntry(options,cell,search))return true;
                 long stepDeadline=System.nanoTime()+3_000_000;
                 while(search.stepCursor<options.size()&&System.nanoTime()<stepDeadline){
                     var option=options.get(search.stepCursor++);
@@ -1503,6 +1509,19 @@ public final class AutoBuilder extends Module {
         }
         if(search.columnCursor<total){walker.release();status="Checking vertical pillar access";return true;}
         return false;
+    }
+    /** Each placement view keeps its own search when nearby work targets alternate. */
+    private boolean prepareElevatedEntry(List<BlockPos> views,int work,ViewSearch search){
+        var entry=search.entry;
+        entrySearchFeet=entry.feet;entrySearchWork=entry.work;entrySearchHash=entry.hash;
+        entrySearchCursor=entry.cursor;entryRetryAt=entry.retryAt;entryDoorCursor=entry.doorCursor;
+        entryProbeCursor=entry.probeCursor;entryProbeBase=entry.probeBase;entryCandidates=entry.candidates;
+        try{return prepareElevatedEntry(views,work);}
+        finally{
+            entry.feet=entrySearchFeet;entry.work=entrySearchWork;entry.hash=entrySearchHash;
+            entry.cursor=entrySearchCursor;entry.retryAt=entryRetryAt;entry.doorCursor=entryDoorCursor;
+            entry.probeCursor=entryProbeCursor;entry.probeBase=entryProbeBase;entry.candidates=entryCandidates;
+        }
     }
     /** Reach a finished elevated floor by climbing outside it, rather than mining or pillaring underneath it. */
     private boolean prepareElevatedEntry(List<BlockPos> views,int work){
