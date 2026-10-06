@@ -109,8 +109,12 @@ public final class PlayerEspRenderer {
         int height = mc.getWindow().getFramebufferHeight();
         if (width <= 0 || height <= 0) return;
 
-        if (mask == null) mask = new SimpleFramebuffer("maro player esp", width, height, true);
-        else if (mask.textureWidth != width || mask.textureHeight != height) mask.resize(width, height);
+        // Silhouettes are drawn supersampled so the composite can read real edge coverage; above
+        // 1440p the screen's own pixels are fine enough and the memory is not worth it.
+        int maskScale = height <= 1440 ? 2 : 1;
+        int maskWidth = width * maskScale, maskHeight = height * maskScale;
+        if (mask == null) mask = new SimpleFramebuffer("maro player esp", maskWidth, maskHeight, true);
+        else if (mask.textureWidth != maskWidth || mask.textureHeight != maskHeight) mask.resize(maskWidth, maskHeight);
 
         RenderSystem.getDevice().createCommandEncoder().clearColorTexture(mask.getColorAttachment(), 0);
 
@@ -207,7 +211,7 @@ public final class PlayerEspRenderer {
             try {
                 pass.setPipeline(PIPELINE);
                 pass.setUniform("EspData", data);
-                pass.bindTexture("u_Mask", mask.getColorAttachmentView(), RenderSystem.getSamplerCache().get(FilterMode.NEAREST));
+                pass.bindTexture("u_Mask", mask.getColorAttachmentView(), RenderSystem.getSamplerCache().get(FilterMode.LINEAR));
                 pass.setVertexBuffer(0, vertices);
                 pass.setIndexBuffer(indices, VertexFormat.IndexType.INT);
                 pass.drawIndexed(0, 0, 6, 1);
@@ -252,6 +256,7 @@ public final class PlayerEspRenderer {
         ByteBuffer data = MemoryUtil.memAlloc(UNIFORM_BYTES);
         try {
             float[] values = module().uniformValues();
+            values[values.length - 1] = mask.textureHeight / (float) mc.getFramebuffer().textureHeight;
             for (int i = 0; i < values.length && i < UNIFORM_BYTES / Float.BYTES; i++) data.putFloat(i * Float.BYTES, values[i]);
             RenderSystem.getDevice().createCommandEncoder().writeToBuffer(uniforms.slice(0, UNIFORM_BYTES), data);
         } finally {

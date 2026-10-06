@@ -146,7 +146,7 @@ public class PlayerESP extends Module {
         return reach + 2;
     }
 
-    /** The EspData block of player_esp.fsh, as 28 floats in order. */
+    /** The EspData block of player_esp.fsh, as 28 floats in order; the renderer fills in the last (mask scale). */
     public float[] uniformValues() {
         int a = colorA.get(), b = colorB.get(), line = outlineColor.get();
         float seconds = (float) (((System.nanoTime() - start) / 1e9) % 3600.0);
@@ -154,7 +154,7 @@ public class PlayerESP extends Module {
                 red(a), green(a), blue(a), 1,
                 red(b), green(b), blue(b), 1,
                 red(line), green(line), blue(line), 1,
-                seconds, speed.getFloat(), scale.getFloat(), stars.getFloat() / 100f * 0.35f,
+                seconds, speed.getFloat(), scale.getFloat(), stars.getFloat() / 100f * 0.55f,
                 fillStyle.index(), fillOpacity.getFloat() / 100f, edgeFade.getFloat() / 100f, fill.get() ? 1 : 0,
                 outlineColorMode.index(), widthPx(), outlineOpacity.getFloat() / 100f, outline.get() ? 1 : 0,
                 glow.get() ? 1 : 0, glowPx(), glowStrength.getFloat() / 100f, 0

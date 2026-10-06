@@ -85,6 +85,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             CrosshairPngChecks.run(context);
             SkinAccessoriesChecks.run(context);
             PetChecks.run(context, singleplayer);
+            PlayerEspChecks.run(context, singleplayer);
             BaseEspChecks.run(context, singleplayer);
             StaffNotifierChecks.run(context);
             HudReadabilityChecks.run(context);
