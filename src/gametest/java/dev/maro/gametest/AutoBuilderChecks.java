@@ -79,7 +79,7 @@ final class AutoBuilderChecks {
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")||Boolean.getBoolean("maro.gametest.builderStashFinalOnly")){stashBuild(context,singleplayer,builder,start);return;}
-            if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){raisedDoorEntry(context,singleplayer,builder,start);partialHeadroom(context,singleplayer,builder,start);stairPlacementPriority(context,singleplayer,builder,start);stairPlacementStaging(context,singleplayer,builder,start);blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){raisedDoorEntry(context,singleplayer,builder,start);partialHeadroom(context,singleplayer,builder,start);stairPlacementPriority(context,singleplayer,builder,start);stairPlacementStaging(context,singleplayer,builder,start);blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);fixture(context,singleplayer,builder,start);offsetRecovery(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderStagingOnly")){fixture(context,singleplayer,builder,start);sameLevelStaging(context,singleplayer,builder,start);thickWallEntry(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderCleanupOnly")){ownedChestCover(context,singleplayer,builder,start);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){compactAccessStep(context,singleplayer,builder,start);ownedChestCover(context,singleplayer,builder,start);elevatedFloorEntry(context,singleplayer,builder,start);sealedDirectionalAccess(context,singleplayer,builder,start,3);cleanupAccess(context,singleplayer,builder,start);return;}
@@ -1167,6 +1167,16 @@ final class AutoBuilderChecks {
         for(int x=-1;x<=1;x++)for(int z=-1;z<=1;z++)if(x!=0||z!=0)for(int y=0;y<=1;y++)command(world,"setblock",stand.add(x,y,z),"stone");
         world.getServer().runCommand("give @a dirt 16");world.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+(start.getY()+2)+" "+(start.getZ()+.5));context.waitTicks(12);
         context.runOnClient(client->{builder.install(new Schematic("blocked-stair.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(stand);set(builder,"Temporary Supports",true);@SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.addAll(List.of(start,start.up(),stand.down()));});
+        context.runOnClient(client->{
+            try{
+                var nav=AutoBuilder.class.getDeclaredField("navigatingCell");nav.setAccessible(true);nav.setInt(builder,0);
+                var walker=(BuilderWalk)field(builder,"walker");walker.requestRecovery();
+                var recover=AutoBuilder.class.getDeclaredMethod("recoveryTick");recover.setAccessible(true);
+                require(!(boolean)recover.invoke(builder)&&(int)field(builder,"recoveryPhase")==0&&field(builder,"placement")==null,
+                    "Unproved upward target triggered a blind underfoot recovery step");
+                walker.stop();
+            }catch(ReflectiveOperationException failure){throw new AssertionError(failure);}
+        });
         boolean exhausted=false;
         for(int attempt=0;attempt<12;attempt++){
             boolean waiting=context.computeOnClient(client->{try{var plan=AutoBuilder.class.getDeclaredMethod("buildAccessStep",BlockPos.class);plan.setAccessible(true);boolean more=(boolean)plan.invoke(builder,stand);require(field(builder,"placement")==null&&field(builder,"pendingPlacement")==null&&builder.temporarySupports().size()==3,"Unproved stair created or queued an unnecessary fragment");require(!new BuilderWalk().canStand(step.up()),"Future stair query leaked collision geometry");return more;}catch(ReflectiveOperationException failure){throw new AssertionError(failure);}});

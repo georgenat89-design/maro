@@ -5,6 +5,12 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+At06:30, proven-recovery1 PASSED1m3s on latest guard: native blocked upward
+recovery leaves phase0/no queued dirt; actual offset-pit escape still confirms
+its step, places the requested block and cleans up; rising/falling closed-door
+routes, all trapdoor orientations, bucket/stair/native hopper regressions pass.
+Final4 old431ca0c was stopped unfinished697/710, not a full pass. Next replay
+must use the new guarded production. No merge/final handoff; full gates pending.
 At06:19, stash-final3 on bf76677 production removed past the old122-post loop
 and reached106owned posts, then stalled at actor(-26217.498,65,-150581.5125).
 Native drop-body proof: next lower landing(-26218,64,-150583) fits; horizontal
@@ -501,3 +507,7 @@ and native logs are saved in the task's `outputs` directory, including
 entries first; earlier assertions and test sessions may be superseded.
 
 CI338 (28dcd0d) failed before stair-placement staging began: the direct complete-route query exhausted its3ms budget on Linux. Working test-only retry requires the same complete readonly route within60frames before injecting the plan; confirmed placement, protected footing and native packet checks remain unchanged. Checkpointbf76677 pushed; stash-final3 session37225 ownPID43944 running exactproduction. Fullupper/fresh/core gates pending.
+
+At06:28 final4 on431ca0c passedold106doorstall and still progressed, but generic unstuck steps addedowned dirt awayfromcommittedcolumns. Cleanup traceB/C preserved. Working recoveryTick now requires a complete future one-step onward route unless climbing an already checked committed column. Negative blocked-stair native fixture now asserts recoveryPhase0/noqueuedplacement for the blind upward target. UNCOMMITTED and UNTESTED while final4 stillrunning old431ca0c own36152/session37420. Do not treat final4 as verification of thisguard; run latestsurface plus actualoffsetpit/recovery fullsuite and fresh/lateststash tests.
+
+At06:29 final4 old431ca0c stopped with native stateC preserved: unfinished699/710/owned support counts114->117. Generic stepsguard now gets positive actualoffset-pit native escape added to focusedSurface suite, plus negativeblind-recovery assertion. Next surface-proven-recovery1 verifies latestUNCOMMITTEDproduction before lateststash/fullgates.

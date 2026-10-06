@@ -763,6 +763,10 @@ public final class AutoBuilder extends Module {
             // Recycling capacity must not restart an endless upward pillar loop.
             var recoveryTarget=recoveryDestination();
             if(recoveryTarget==null||feet.getY()>=recoveryTarget.getY())return false;
+            // A higher target alone is not a reason to place dirt here. Outside
+            // a committed, fully checked column, the one-block lift must prove
+            // an onward walking route before consuming or reclaiming supports.
+            if(!committedClimb&&!walker.canReachFromPillar(feet.up(),recoveryTarget))return false;
             if(committedClimb&&reserveAccessCapacity())return true;
             int cell=schematic.indexAt(feet.subtract(anchor()),turns(),mirror.get());if(cell>=0&&!desired(cell).isAir()&&!desired(cell).isOf(Blocks.STRUCTURE_VOID)&&!desired(cell).isOf(Blocks.DIRT))return false;
             if(supports.size()>=tempDirt.getInt())return building&&support.get()&&recycleSupport();
