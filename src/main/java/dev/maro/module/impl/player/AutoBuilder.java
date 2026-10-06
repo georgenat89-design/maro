@@ -971,7 +971,10 @@ public final class AutoBuilder extends Module {
                 // final block. Complete that native job before routing away again.
                 if(i==navigatingCell&&!desired.isAir()&&inventoryCount(Schematic.material(desired))>0&&!hasAttachment(target,desired)){
                     var first=supportPlacement(target,mc.player.getEyePos(),mc.player.getBoundingBox());
-                    if(first!=null){if(inventoryCount(Items.DIRT)==0){ensureSupportDirt();return;}navigationStarted=ticks;commitAccess(first.target.up(),false);accessSupports.add(first.target);placement=first;placeTick();return;}
+                    if(first!=null){
+                        if(supports.size()>=tempDirt.getInt()){if(recycleSupport())return;}
+                        else{if(inventoryCount(Items.DIRT)==0){ensureSupportDirt();return;}navigationStarted=ticks;commitAccess(first.target.up(),false);accessSupports.add(first.target);placement=first;placeTick();return;}
+                    }
                 }
                 if(distant==null)distant=i;continue;
             }
@@ -998,7 +1001,10 @@ public final class AutoBuilder extends Module {
                 blocked.add(i);continue;
             }
             var scaffold=supportPlacement(target,mc.player.getEyePos(),mc.player.getBoundingBox());
-            if(scaffold!=null){if(inventoryCount(Items.DIRT)==0){ensureSupportDirt();return;}navigatingCell=i;navigationStarted=ticks;placement=scaffold;placeTick();return;}
+            if(scaffold!=null){
+                if(supports.size()>=tempDirt.getInt()){if(recycleSupport())return;}
+                else{if(inventoryCount(Items.DIRT)==0){ensureSupportDirt();return;}navigatingCell=i;navigationStarted=ticks;placement=scaffold;placeTick();return;}
+            }
             blocked.add(i);
         }
         if(needed!=null){if(restock.get()&&beginRestock())return;if(autoBuy.get()&&maxSpend.get()>0){startBuying(false);return;}status="Missing "+needed.getName().getString()+" — check Materials";walker.release();return;}
@@ -1353,7 +1359,9 @@ public final class AutoBuilder extends Module {
         return supportPlacement(target,eye,body,target.equals(bridgeTarget));
     }
     private Place supportPlacement(BlockPos target,Vec3d eye,Box body,boolean bridge){
-        if(!support.get()||supports.size()>=tempDirt.getInt())return null;
+        // Feasibility does not consume a slot. Keep these views available at
+        // full capacity, then reclaim space before committing a real placement.
+        if(!support.get())return null;
         int targetCell=schematic.indexAt(target.subtract(anchor()),turns(),mirror.get());
         var wanted=targetCell<0?null:desired(targetCell);
         Direction attachment=attachmentSide(wanted);
@@ -1528,6 +1536,11 @@ public final class AutoBuilder extends Module {
         walker.release();Place job=placement;
         // Recheck after a queued hotbar transfer or a newly marked chest.
         if(job.temporary&&reservedSupplyAccess(job.target)){placement=null;return;}
+        if(job.temporary&&supports.size()>=tempDirt.getInt()){
+            placement=null;
+            if(!recycleSupport())status="Temporary capacity needs an obsolete support";
+            return;
+        }
         if(!job.target.equals(placementAttemptTarget)){placementAttemptTarget=job.target;placementAttemptStarted=ticks;}
         if(ticks-placementAttemptStarted>80){deferPlacement(job,"Placement stalled - trying another position");return;}
         if(job.index>=0){updateState(job.index);if(states[job.index]==CORRECT){placement=null;return;}}

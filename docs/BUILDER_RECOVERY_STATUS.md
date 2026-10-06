@@ -5,6 +5,16 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+At06:50, full-capacity-surface1 PASSED1m9s: full pool retains native hypothetical
+scaffold proof, real queue guard adds no block and does not mine protected posts,
+and two remaining ground blocks still finish. Prior hopper crossing, native pit,
+rising/falling doors, blind recovery rejection, trapdoors/bucket/stairs/rims pass.
+Upper59 oncea stopped475after6mincapacity/viewloop. Native proof found24valid
+scaffold views andzero direct desired placements; earlycapacityrejection hidthem.
+Latestproduction capacity-independent feasibility plus actual queue capacity
+checks is ready to checkpoint/push and run Upper60. No fullupper/freshpass yet.
+CI348oncea stillrunning; latestcompletecore/auction afterthisfix required.
+PR37draftunmerged, base5036776, no finalartifacthandoff.
 At06:41, hopper-surface1 PASSED1m7s on latest lip-jump correction. The native
 hopper row was crossed, its build completed, full health/no extra supports;
 all rising/falling door, blind-recovery rejection, actual offset-pit escape,
@@ -523,3 +533,5 @@ At06:29 final4 old431ca0c stopped with native stateC preserved: unfinished699/71
 CI342on5e8b705 failed in retainedPredictions hopper-crossing assertion after prior focused/staging/cleanup/entry cases passed. Native build finished but route avoidedhopper; upward guard onlytestedcentreheight. Working jumpClear fallback proves approach above actualfloor lip within1.25rise then landingbodypath. Hopper nativecrossing factored unchanged into Surface/fullcore. UNCOMMITTED/UNTESTED while final5 runs d2d4226 (own37292/session27588), not thisnewjumpfix. CI344/346ongoing. Need latestsurface beforefullgates.
 
 At06:39 final5 d2d4226 stopped unfinished699/710/owned117 because hopper jump regression from CI342 still affected itsproduction. No seeded-final pass. Surface-hopper1 nexttests UNCOMMITTED lipjump plus all guard/door/pit/surfacecases. Afterfocusedpass runfullUpper directly (coversallfivefinaljobs pluscleanup of same128legacy supports) andfresh; do not repeatoptional seededdiagnostic beforefullUpper, and do notclaimitpassed. Latestcompletecore/auction stillrequired.
+
+At06:49 Upper59cea stopped475/710 after6minstatic. Readonly standingviews directvalid0; scaffoldviews bypassingonlycapacity via independentplacementqueries produced24validactualstanding/scaffoldnative jobs. Cause supportPlacement earlyfullpoolreturn hides feasibility, producingemptyrepositionoptions and loops. Working geometryquerycapacityindependent; actualfindWork rejects/recyles beforequeue and placeTick guards all temporaryqueues atcapacity. Existing exhaustednative fixture now asserts fullpoolscaffold proof survives, nojobqueued/reclamationofprotectedposts, and stillplacesothernativegroundwork; includedSurface. UNCOMMITTED. Surface-full-capacity1 next beforeUpper60, fresh/latestcore stillpending.
