@@ -23,7 +23,7 @@ public final class EspPreviewScreen extends Screen {
     private final PlayerESP module;
     private Perspective previousPerspective;
     private boolean restored;
-    private int barX, barY, barW, barH;
+    private int leftX, rightX, panelY, panelW, panelH;
 
     public EspPreviewScreen(Screen parent, PlayerESP module) {
         super(Text.literal("Player ESP Preview"));
@@ -50,26 +50,27 @@ public final class EspPreviewScreen extends Screen {
         PlayerESP.setPreviewing(true);
         restored = false;
 
-        barW = Math.min(560, width - 20);
-        barH = 58;
-        barX = (width - barW) / 2;
-        barY = height - barH - 10;
-        int gap = 4, row1 = barY + 8, row2 = barY + 32, rowH = 20;
+        // Two panels at the sides, so the middle of the screen - where you stand - stays clear.
+        int gap = 4, rowH = 20, pad = 8;
+        panelW = Math.max(110, Math.min(170, (width - 150) / 2));
+        panelH = pad * 2 + rowH * 3 + gap * 2;
+        panelY = (height - panelH) / 2;
+        leftX = 10;
+        rightX = width - 10 - panelW;
+        int inner = panelW - pad * 2, rows = panelY + pad;
 
-        int arrow = 22, styleW = barW / 2 - 16 - arrow * 2 - gap * 2;
-        int left = barX + 8;
-        button(() -> "◀", b -> mode("Fill Style").cycle(-1), left, row1, arrow, rowH);
-        button(() -> "Fill: " + mode("Fill Style").get(), b -> mode("Fill Style").cycle(1), left + arrow + gap, row1, styleW, rowH);
-        button(() -> "▶", b -> mode("Fill Style").cycle(1), left + arrow + gap * 2 + styleW, row1, arrow, rowH);
+        int arrow = 18, styleW = inner - arrow * 2 - gap * 2;
+        int lx = leftX + pad;
+        button(() -> "◀", b -> mode("Fill Style").cycle(-1), lx, rows, arrow, rowH);
+        button(() -> mode("Fill Style").get(), b -> mode("Fill Style").cycle(1), lx + arrow + gap, rows, styleW, rowH);
+        button(() -> "▶", b -> mode("Fill Style").cycle(1), lx + arrow + gap * 2 + styleW, rows, arrow, rowH);
+        button(() -> "Fill " + onOff("Fill"), b -> flip("Fill"), lx, rows + rowH + gap, inner, rowH);
+        button(() -> "Glow " + onOff("Glow"), b -> flip("Glow"), lx, rows + (rowH + gap) * 2, inner, rowH);
 
-        int right = barX + barW / 2 + 4, rightW = barW / 2 - 12;
-        button(() -> "Outline color: " + mode("Outline Color").get(), b -> mode("Outline Color").cycle(1), right, row1, rightW, rowH);
-
-        int third = (barW - 16 - gap * 3) / 4;
-        button(() -> "Fill " + onOff("Fill"), b -> flip("Fill"), left, row2, third, rowH);
-        button(() -> "Outline " + onOff("Outline"), b -> flip("Outline"), left + (third + gap), row2, third, rowH);
-        button(() -> "Glow " + onOff("Glow"), b -> flip("Glow"), left + (third + gap) * 2, row2, third, rowH);
-        button(() -> "Done", b -> close(), left + (third + gap) * 3, row2, third, rowH);
+        int rx = rightX + pad;
+        button(() -> "Outline " + onOff("Outline"), b -> flip("Outline"), rx, rows, inner, rowH);
+        button(() -> "Outline: " + mode("Outline Color").get(), b -> mode("Outline Color").cycle(1), rx, rows + rowH + gap, inner, rowH);
+        button(() -> "Done", b -> close(), rx, rows + (rowH + gap) * 2, inner, rowH);
     }
 
     private String onOff(String name) {
@@ -92,7 +93,8 @@ public final class EspPreviewScreen extends Screen {
         Fonts.drawCentered(ctx, "PLAYER ESP PREVIEW", width / 2f, 21, 0xFFE4DCFF, true, .8f);
         Fonts.drawCentered(ctx, "This is how players look through walls", width / 2f, 34, 0xFF8691AA, false, .62f);
         if (client.player == null) Fonts.drawCentered(ctx, "Join a world to preview", width / 2f, height / 2f, 0xFFBBC2D5, false, .8f);
-        Render2D.roundRect(ctx, barX, barY, barW, barH, 10, 0xD0191D2B);
+        Render2D.roundRect(ctx, leftX, panelY, panelW, panelH, 10, 0xD0191D2B);
+        Render2D.roundRect(ctx, rightX, panelY, panelW, panelH, 10, 0xD0191D2B);
         super.render(ctx, mx, my, delta);
     }
 
