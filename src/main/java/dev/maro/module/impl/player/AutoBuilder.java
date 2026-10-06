@@ -192,6 +192,9 @@ public final class AutoBuilder extends Module {
     private int passageSearchWork=-2,passageSearchCursor,passageRetryAt;
     private boolean descentLanding;
     private BlockPos descentPost,descentView;
+    private BlockPos descentSearchFeet,descentSearchDestination;
+    private List<BlockPos> descentSearchPosts=List.of(),descentSearchViews=List.of();
+    private int descentSearchCursor,descentRetryAt;
     private final Set<BlockPos> accessSupports=new HashSet<>();
     private int navigatingCell=-1,navigationStarted,eatPreviousSlot=-1,eatBefore,eatDeadline;
     private boolean eating,ownsFoodUse,foodRestock,foodShopping,supportRestock,supportShopping;
@@ -553,6 +556,7 @@ public final class AutoBuilder extends Module {
         ownedHandler=null;restockTarget=null;routeOpening=null;restockBatch=Map.of();chestAccessRetryAt.clear();buying=false;pendingOffer=null;shopping.clear();status=reason;
         floorSearchFeet=null;floorSearchCursor=0;
         passageBlocks.clear();passageStand=passageSearchFeet=null;passageSearchWork=-2;passageSearchCursor=passageRetryAt=0;
+        descentSearchFeet=descentSearchDestination=null;descentSearchPosts=descentSearchViews=List.of();descentSearchCursor=descentRetryAt=0;
         floorAccessWork.clear();
     }
     private void notify(String message){Notifications.push("Auto Builder",message,Notifications.Type.INFO,5000);if(mc.player!=null)mc.player.sendMessage(Text.literal("[Auto Builder] "+message),false);}
@@ -1380,19 +1384,24 @@ public final class AutoBuilder extends Module {
     private boolean plannedSolid(BlockPos pos){int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());return cell>=0&&!desired(cell).isAir()&&!desired(cell).isOf(Blocks.STRUCTURE_VOID);}
     private BlockPos recoveryDestination(){return standGoal!=null?standGoal:restockTarget!=null?restockTarget:depositTarget!=null?depositTarget:accessStand!=null?accessStand:navigatingCell>=0?position(navigatingCell):walker.destination();}
     private boolean prepareSupportDescent(List<BlockPos> views){
-        var lowerViews=views.stream().filter(pos->walker.standingPoint(pos).y<mc.player.getY()-.5)
-            .sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).limit(8).toList();
-        if(lowerViews.isEmpty())return false;
+        if(views.isEmpty())return false;
+        var feet=mc.player.getBlockPos();var destination=restockTarget!=null?restockTarget:navigatingCell>=0?position(navigatingCell):views.getFirst();
+        if(!feet.equals(descentSearchFeet)||!destination.equals(descentSearchDestination)){
+            descentSearchFeet=feet.toImmutable();descentSearchDestination=destination;descentSearchCursor=descentRetryAt=0;
+            descentSearchViews=views.stream().filter(pos->walker.standingPoint(pos).y<mc.player.getY()-.5)
+                .sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(feet))).limit(8).toList();
+            descentSearchPosts=supports.stream().filter(pos->pos.getY()>=mc.player.getY()-3.1&&pos.getY()<mc.player.getY()+.1)
+                .filter(pos->mc.world.getBlockState(pos).isOf(Blocks.DIRT)&&!plannedSolid(pos)&&walker.canDescendThrough(pos)&&safeToRecycle(pos))
+                .sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(feet))).limit(128).toList();
+        }
+        if(descentSearchViews.isEmpty()||descentSearchPosts.isEmpty()||ticks<descentRetryAt)return false;
         // An isolated finished ledge may first require a safe two-block drop
         // onto a reachable owned post, then normal post-by-post descent.
-        var candidates=supports.stream().filter(pos->pos.getY()>=mc.player.getY()-3.1&&pos.getY()<mc.player.getY()+.1)
-            .filter(pos->mc.world.getBlockState(pos).isOf(Blocks.DIRT)&&!plannedSolid(pos)&&walker.canDescendThrough(pos)&&safeToRecycle(pos))
-            .sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).limit(12).toList();
         long deadline=System.nanoTime()+3_000_000;
-        for(var pos:candidates){
-            BlockPos lower=null;
-            for(var view:lowerViews){if(descentReaches(pos,view)){lower=view;break;}if(System.nanoTime()>=deadline)return false;}
-            if(lower==null)continue;
+        int total=descentSearchPosts.size()*descentSearchViews.size();
+        while(descentSearchCursor<total&&System.nanoTime()<deadline){
+            int sample=descentSearchCursor++;var pos=descentSearchPosts.get(sample/descentSearchViews.size());var lower=descentSearchViews.get(sample%descentSearchViews.size());
+            if(!supports.contains(pos)||!mc.world.getBlockState(pos).isOf(Blocks.DIRT)||!descentReaches(pos,lower))continue;
             if(pos.equals(mc.player.getBlockPos().down())&&mc.player.isOnGround()&&mc.player.getVelocity().horizontalLengthSquared()<.0001){
                 descentPost=descentView=null;
                 standGoal=lower;descentLanding=true;routeMining=mining=pos;walker.stop();status="Descending temporary scaffold";mineTick();return true;
@@ -1400,6 +1409,8 @@ public final class AutoBuilder extends Module {
             if(!walker.canReachStand(pos.up()))continue;
             descentPost=pos;descentView=lower;standGoal=pos.up();standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();status="Moving to a scaffold descent";return true;
         }
+        if(descentSearchCursor<total){walker.release();status="Checking scaffold return route";return true;}
+        descentSearchCursor=0;descentRetryAt=ticks+40;
         return false;
     }
     private boolean descentReaches(BlockPos removed,BlockPos destination){

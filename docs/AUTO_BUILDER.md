@@ -77,6 +77,8 @@ The selected post and lower view remain paired while walking to a descent. Arriv
 
 A safe landing alone is insufficient: recovery also checks a route from that landing to its intended view. Tall owned columns may descend through several checked steps, but each actual removal still waits for the native landing. A closed wall cannot be solved by repeatedly removing and rebuilding dirt on the same side.
 
+Descent searches retain their candidate cursor across ticks, keyed to the current position and build/storage destination. They examine up to 128 owned posts and eight lower views within bounded planning passes. An unusable nearby post cannot permanently hide a valid farther exit by consuming every tick's search allowance.
+
 For an enclosed placement view, recovery can temporarily reopen two completed full wall blocks only after a collision-only query proves a walkable route. It excludes block entities, fluids, unbreakable blocks and neighbours that would lose required support. Clearing and walking retain one intent; those wall cells are deferred until their associated target finishes, then restored through normal confirmed placement. The native regression places a west-facing shulker inside a sealed room, restores the wall, and checks server states, packet ordering, health and closed menus.
 
 Access stair construction commits to its selected standing view and climbs onto each completed intermediate step before constructing higher pieces. New pieces are protected during construction; older pieces can be reclaimed after that climb while the player's current footing remains protected.
