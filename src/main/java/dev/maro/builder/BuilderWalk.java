@@ -41,6 +41,7 @@ public final class BuilderWalk {
         if(jump)mc.options.jumpKey.setPressed(false);
         forward=jump=false;
     }
+    public boolean moving(){return forward||jump;}
     public boolean approach(BlockPos target,double distance){
         return approach(target,distance,false);
     }

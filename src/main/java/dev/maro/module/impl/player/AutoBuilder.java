@@ -63,6 +63,8 @@ public final class AutoBuilder extends Module {
     private final ModeSetting supplyMode=mode("Materials","Material Supply","Nearby Sections finishes compact areas with inventory-sized material batches","Nearby Sections","Nearby Sections","Layer by Layer","Whole Schematic").onChange(v->replan());
     private final BooleanSetting prebuyWhole=bool("Materials","Prepare Whole Build","Buy missing supplies for the whole build, store them in selected chests, then fetch each work batch",true);
     private final BooleanSetting autoMove=bool("Build","Auto Move","Walk safe ground routes toward out-of-reach blocks",true);
+    private final BooleanSetting useHomes=bool("Travel","Builder Homes","Require empty homes 1–3: storage, dry build interior, then upper access; teleport before reopening finished blocks",true);
+    private boolean homeSetupResume;
     private final BooleanSetting unstuck=bool("Build","Auto Unstuck","Jump onto a temporary dirt step when a walking route is stuck, then remove it",true);
     private final BooleanSetting autoEat=bool("Food","Auto Eat","Pause movement and building to eat steak when hungry",true);
     private final NumberSetting hungerLimit=number("Food","Hunger Threshold","Start eating at or below this food level (20 is full)",14,1,19,1);
@@ -75,7 +77,11 @@ public final class AutoBuilder extends Module {
     private final NumberSetting spacing=number("Build","Action Delay","Ticks between placements and inventory operations; server confirmation is still required",2,0,20,1);
     private final NumberSetting timingVariation=number("Build","Timing Variation","Extra random ticks added to action delay",1,0,6,1);
     private final BooleanSetting smoothTurning=bool("Build","Head Smoothing","Ease visible turns into and out of the target angle",true);
+    private final BooleanSetting headSpoofing=bool("Build","Head Spoofing","Keep the first-person camera independent while smooth, correctly aimed rotations reach the server",true);
     private float yawVelocity,pitchVelocity;
+    private float cameraYaw,cameraPitch;
+    private int cameraAimTick=-100;
+    private boolean cameraLocked;
     private final NumberSetting reach=fixedNumber("Reach","Maximum vanilla interaction distance; also clamped to player reach",4.4,2,5, .1);
     private final NumberSetting turnSpeed=fixedNumber("Turn Speed","Maximum view rotation per tick",45,5,180,1);
     private final BooleanSetting support=bool("Build","Temporary Supports","Place dirt under floating targets when an adjacent face is reachable",true);
@@ -236,6 +242,7 @@ public final class AutoBuilder extends Module {
     private Vec3d standProgressPos;
     private final IdentityHashMap<BlockState,BlockState> transformedStates=new IdentityHashMap<>();
     private final BuilderWalk walker=new BuilderWalk();
+    private final BuilderHomes homes=new BuilderHomes(walker);
     private final Set<BlockPos> escapeSupports=new LinkedHashSet<>();
     private final Map<BlockPos,Integer> escapeSupportWork=new HashMap<>();
     private BlockPos recoveryBase;
@@ -368,6 +375,7 @@ public final class AutoBuilder extends Module {
         button("Start","Cancel Schematic","Stop all actions and unload the schematic; placed blocks remain","Cancel",this::cancelSchematic);
         button("Snapshot","Capture Snapshot","Save the configured area from the placement origin to a vanilla .nbt file","Capture",this::startCapture);
         button("Materials","Mark Restock Container","R adds or refreshes the double chest you are looking at; Shift + R removes it","Add",this::markContainer);
+        button("Travel","Set Storage Home","Stand on dry ground beside your marked storage; verify empty home slots and set home 1","Set Home 1",()->setupHomes(false));
         button("Materials","Clear Restock Marks","Clear this world's selected supply chests","Clear",()->{pause("Supply chests cleared");preparationReady=false;containers.clear();triedContainers.clear();emptyChestItems.clear();chestStocks.clear();preparedStock.clear();});
         button("Materials","Buy Materials","Buy missing materials within your configured budget","Buy",()->startBuying(false));
         button("Materials","Estimate Cost","Read current auction listings without buying","Estimate",()->startBuying(true));
@@ -387,7 +395,7 @@ public final class AutoBuilder extends Module {
                 if(saveBuilds.get()&&infos.containsKey(selectedSlot)){buildSlot.set(selectedSlot==0?"Last Session":String.valueOf(selectedSlot));loadPlacement();}
             });
         },IO);
-        ClientReceiveMessageEvents.GAME.register((message,overlay)->{if(buying&&pendingOffer!=null&&(marketStage==2||marketStage==3)&&AuctionMarket.unavailable(message.getString()))soldNotice=true;});
+        ClientReceiveMessageEvents.GAME.register((message,overlay)->{homes.message(message.getString());if(buying&&pendingOffer!=null&&(marketStage==2||marketStage==3)&&AuctionMarket.unavailable(message.getString()))soldNotice=true;});
     }
     // Rendering/protocol defaults are internal; they no longer clutter the saved settings UI.
     private BooleanSetting fixedBool(String n,String d,boolean value){return new BooleanSetting(n,d,value);}
@@ -445,7 +453,7 @@ public final class AutoBuilder extends Module {
             }));
     }
     private static String rootMessage(Throwable error){while(error.getCause()!=null)error=error.getCause();return error.getMessage()==null?error.getClass().getSimpleName():error.getMessage();}
-    public void install(Schematic data){if(!restoringPlacement){checkpoint();activeBuildSlot=-1;placementName="";}pause("Schematic loaded");schematic=data;unconfirmedPlacements.clear();latePlacements.clear();supports.clear();escapeSupports.clear();escapeSupportWork.clear();cleanupStands.clear();recoveryAttempts=0;replan();}
+    public void install(Schematic data){if(!restoringPlacement){checkpoint();activeBuildSlot=-1;placementName="";}pause("Schematic loaded");floorAccessWork.clear();openingRepairDepth.clear();schematic=data;unconfirmedPlacements.clear();latePlacements.clear();supports.clear();escapeSupports.clear();escapeSupportWork.clear();cleanupStands.clear();recoveryAttempts=0;replan();}
     public Schematic schematic(){return schematic;}
     public String status(){return status;}
     public boolean loading(){return loading;}
@@ -524,9 +532,10 @@ public final class AutoBuilder extends Module {
     public int inventoryCount(Item item){if(mc.player==null)return 0;int count=0;for(int i=0;i<36;i++){var stack=mc.player.getInventory().getStack(i);if(stack.isOf(item))count+=stack.getCount();}return count;}
     public void setOrigin(BlockPos pos){
         if(pos==null||!inGame())return;pause("Origin moved");
+        if(!pos.equals(origin)){floorAccessWork.clear();openingRepairDepth.clear();}
         String nextDimension=mc.world.getRegistryKey().getValue().toString();
         String nextScope=scope();
-        if(!dimension.isEmpty()&&(!dimension.equals(nextDimension)||!worldScope.equals(nextScope))){containers.clear();supports.clear();escapeSupports.clear();escapeSupportWork.clear();}
+        if(!dimension.isEmpty()&&(!dimension.equals(nextDimension)||!worldScope.equals(nextScope))){homes.reset();containers.clear();supports.clear();escapeSupports.clear();escapeSupportWork.clear();}
         worldScope=nextScope;
         origin=pos.toImmutable();world=mc.world;dimension=nextDimension;replan();
     }
@@ -555,6 +564,7 @@ public final class AutoBuilder extends Module {
         if(activeBuildSlot>=0&&origin!=null&&world!=mc.world){notify("This placement belongs to another world — choose a saved build or set a new origin");return;}
         if(origin==null||world!=mc.world)setOrigin(mc.player.getBlockPos().offset(mc.player.getHorizontalFacing(),3));
         var miner=ModuleManager.get(AutoMine.class);if(miner!=null&&miner.isEnabled())miner.setEnabled(false);
+        if(useHomes.get()&&!mc.player.getAbilities().creativeMode&&!homes.ready()){setupHomes(true);return;}
         checkpoint();
         if(prebuyWhole.get()&&!preparationReady&&!mc.player.getAbilities().creativeMode){startPreparation();return;}
         buildEta.reset();setEnabled(true);building=true;preview=true;staffStopAt=0;checkpoint();triedContainers.clear();retryAt.clear();status=mode.is("Semi Auto")?"Hold right mouse to build":"Building";mc.setScreen(null);
@@ -591,10 +601,11 @@ public final class AutoBuilder extends Module {
         if(world==null&&origin!=null&&dimension.equals(mc.world.getRegistryKey().getValue().toString())&&worldScope.equals(scope())){world=mc.world;rescanSavedPlacement();}
         if(activeBuildSlot>=0&&origin!=null&&world!=mc.world){notify("This placement belongs to another world — choose a saved build or set a new origin");return;}
         if(origin==null||world!=mc.world)setOrigin(mc.player.getBlockPos().offset(mc.player.getHorizontalFacing(),3));
-        building=schematic!=null;preview=true;
+        building=schematic!=null&&(!useHomes.get()||mc.player.getAbilities().creativeMode||homes.ready());preview=true;
     }
     @Override protected void onDisable(){pause("Disabled");staffStopAt=0;captureStates=null;if(mc.player!=null&&originalSlot>=0)select(originalSlot);originalSlot=-1;}
     public void pause(String reason){
+        homes.cancel();homeSetupResume=false;
         waterDeparture=false;waterWorkTarget=null;liquidTopStand=null;liquidTopBlocks.clear();
         cleanupExit=cleanupExitSearchFeet=null;cleanupExits=List.of();cleanupExitCursor=cleanupExitRetryAt=0;
         stairPlacementPlan=Set.of();stairPlacementFeet=null;stairPlacementViews=List.of();stairPlacementCursor=0;
@@ -606,7 +617,7 @@ public final class AutoBuilder extends Module {
         lookWaitStarted=-1;queuedAimPoint=aimPoint=null;
         bridgeTarget=null;
         supportPickup=null;supportPickupUntil=supportRecycleAt=0;
-        yawVelocity=pitchVelocity=0;
+        yawVelocity=pitchVelocity=0;cameraLocked=false;
         placementAttemptTarget=null;failedPlacementUntil.clear();unexpectedBuildHandler=null;resetChestJourney();
         stopEating();navigatingCell=-1;foodRestock=foodShopping=supportRestock=supportShopping=false;
         preparationStage=0;depositQueue.clear();
@@ -622,7 +633,7 @@ public final class AutoBuilder extends Module {
         hatchSearchFeet=null;hatchCandidates=List.of();hatchViews.clear();hatchSearchCursor=hatchExitCursor=0;
         descentEscapes.clear();
         recycleSearchFeet=null;recyclePosts=List.of();recycleViews.clear();recyclePostCursor=recycleViewCursor=recycleRouteCursor=recycleRetryAt=0;
-        floorAccessWork.clear();openingRepairDepth.clear();openingRestoration=false;
+        openingRestoration=false;
     }
     private void notify(String message){Notifications.push("Auto Builder",message,Notifications.Type.INFO,5000);if(mc.player!=null)mc.player.sendMessage(Text.literal("[Auto Builder] "+message),false);}
     public void onActionBind(int key){if(markBind.matches(key)&&(isEnabled()||schematic!=null)){markContainer();return;}if(isEnabled()&&buyBind.matches(key))startBuying(false);}
@@ -636,8 +647,18 @@ public final class AutoBuilder extends Module {
         if(remove){if(existing!=null)containers.remove(existing);notify("Supply chest removed — "+containers.size()+" selected");}
         else{if(existing==null)containers.add((pos.compareTo(partner)<0?pos:partner).toImmutable());notify("Supply chest added / refreshed — "+containers.size()+" selected");}
     }
+    private void setupHomes(boolean resume){
+        if(!inGame()||homes.busy())return;
+        var chest=selectedSupplyChest();
+        if(chest==null||chest.getSquaredDistance(mc.player.getBlockPos())>25||!homes.safeHere()){
+            status="Stand on dry ground beside marked storage to set mandatory home 1";notify(status);return;
+        }
+        pause("Setting storage home");mc.setScreen(null);setEnabled(true);building=false;homeSetupResume=resume;
+        if(!homes.setup()){homeSetupResume=false;status="Close the container and stand still to set home 1";}
+    }
     private void tickWork(){
         ticks++;supportChainStarts.clear();viewPlanningDeadline=floorPlanningDeadline=0;if(delay>0)delay--;
+        if(cameraLocked&&(ticks-cameraAimTick>2||walker.moving()||homes.busy()||mc.currentScreen!=null))cameraLocked=false;
         latePlacements.values().removeIf(receipt->receipt.expires<=ticks);
         failedPlacementUntil.values().removeIf(until->until<=ticks);
         routeSupportExclusions.values().removeIf(until->until<=ticks);
@@ -647,10 +668,17 @@ public final class AutoBuilder extends Module {
         buildEta.tick(System.nanoTime()/1_000_000,building&&(!mode.is("Semi Auto")||mc.options.useKey.isPressed()));
         scan();captureTick();
         if(staffStopAt>0){if(logoff.get()&&System.currentTimeMillis()-staffStopAt>=logoffDelay.get()*1000){mc.world.disconnect(Text.literal(logoffMessage.get()));setEnabled(false);}return;}
-        if((building||buying||pasting||depositing)&&unsafe()){walker.release();return;}
+        if((building||buying||pasting||depositing||homes.busy())&&unsafe()){walker.release();return;}
         if(pendingPlacement!=null){placementReceiptTick();return;}
         if(mc.currentScreen==null&&autoMove.get()&&(depositing||building&&(!mode.is("Semi Auto")||mc.options.useKey.isPressed()))&&waterDepartureTick())return;
         if((building||buying||pasting||depositing)&&mc.player.getHealth()<minHealth.get()*2){walker.release();status="Paused — low health";return;}
+        if(useHomes.get()&&homes.tick(value->status=value,this::pause))return;
+        if(homeSetupResume&&homes.ready()){homeSetupResume=false;startBuild();return;}
+        if(useHomes.get()&&building&&!buying&&!depositing&&restockTarget==null&&placement==null&&mining==null&&mc.currentScreen==null&&schematic!=null){
+            var feet=mc.player.getBlockPos();var local=feet.subtract(anchor());
+            boolean inside=local.getX()>0&&local.getX()<schematic.rotatedWidth(turns())-1&&local.getZ()>0&&local.getZ()<schematic.rotatedLength(turns())-1&&local.getY()>0&&plannedSolid(feet.down());
+            if(homes.capture(inside,local.getY()>=schematic.height-1)){status="Saving checked build access home";return;}
+        }
         if(building&&!buying&&!depositing&&recoverUnexpectedBuildMenu())return;
         if(mc.currentScreen==null&&(building||depositing)&&clearPassageTick())return;
         if(mc.currentScreen==null&&(building||depositing)&&clearRouteSupportTick())return;
@@ -929,6 +957,11 @@ public final class AutoBuilder extends Module {
         // Retaining walls and basin floors must close before any bucket work,
         // even when the other temporary route still needs later cleanup.
         if(liquidBoundary(pos))return false;
+        // Confirmed homes provide the return route. Restore each completed
+        // access job as soon as the body clears it, rather than after all dirt.
+        boolean prompt=useHomes.get()&&homes.ready()&&(work<0||work>=states.length||states[work]==CORRECT||states[work]==IGNORED)
+            &&!new Box(pos).expand(.05).intersects(mc.player.getBoundingBox())&&!pos.equals(routeOpening)
+            &&!ceilingBlocks.contains(pos)&&!liquidTopBlocks.contains(pos);
         int openings=0;
         for(var opening:floorAccessWork.keySet()){
             int cell=schematic.indexAt(opening.subtract(anchor()),turns(),mirror.get());
@@ -944,7 +977,7 @@ public final class AutoBuilder extends Module {
             // New scaffolds for final wall repair are build work. Re-deferring
             // every repair when its first post appears cancels the committed
             // climb and sends cleanup straight back to mine that same post.
-            if(openings>0&&(solid-correct-ignoredSolid>openings||cleanup.get()&&!supports.isEmpty()&&!openingRestoration))return true;
+            if(!prompt&&openings>0&&(solid-correct-ignoredSolid>openings||cleanup.get()&&!supports.isEmpty()&&!openingRestoration))return true;
             var depth=openingRepairDepth.get(pos);
             if(depth!=null)for(var other:floorAccessWork.keySet()){
                 if(openingRepairDepth.getOrDefault(other,0)<=depth)continue;
@@ -975,7 +1008,7 @@ public final class AutoBuilder extends Module {
             if(cell<0)continue;updateState(cell);
             if(states[cell]!=CORRECT&&states[cell]!=IGNORED&&!floorDeferred(pos))repairs.add(cell);
         }
-        if(!repairs.isEmpty()&&(openingRestoration||repairs.stream().anyMatch(i->liquidBoundary(position(i))))){
+        if(!repairs.isEmpty()&&(useHomes.get()&&homes.ready()||openingRestoration||repairs.stream().anyMatch(i->liquidBoundary(position(i))))){
             activePhase=repairs.stream().mapToInt(this::taskPhase).min().orElse(activePhase);
             activeLayer=repairs.stream().mapToInt(this::taskLayer).min().orElse(activeLayer);
             workCells=List.copyOf(repairs);refreshSection();
@@ -1180,6 +1213,8 @@ public final class AutoBuilder extends Module {
         }
         if(search.cursor<total){walker.release();status="Checking placement access";return true;}
         if(search.expires==0)search.expires=ticks+120;
+        // A confirmed dry home can bypass the entire failed-route/scaffold cycle.
+        if(useHomes.get()&&homes.ready()&&homes.work(target,options)){resetAfterHome();status="Returning through checked build home";return true;}
         options.sort(Comparator.<BlockPos>comparingInt(p->p.equals(accessStand)?-1:directStands.contains(p)?0:1)
             .thenComparingInt(p->scaffoldDistance.getOrDefault(p,0)).thenComparingDouble(p->p.getSquaredDistance(mc.player.getBlockPos())));standGoal=null;
         long routeDeadline=System.nanoTime()+6_000_000;
@@ -1217,18 +1252,18 @@ public final class AutoBuilder extends Module {
             }
             if(search.recoveryStage==3){
                 boolean cleaning=target.equals(cleanupTarget)&&supports.contains(target);
-                if(wanted!=null&&(!wanted.isAir()||cleaning)&&states[cell]!=CORRECT&&preparePassage(options,cell))return true;
+                if(!useHomes.get()&&wanted!=null&&(!wanted.isAir()||cleaning)&&states[cell]!=CORRECT&&preparePassage(options,cell))return true;
                 search.recoveryStage=4;
             }
             if(search.recoveryStage==4){
                 boolean cleaning=target.equals(cleanupTarget)&&supports.contains(target);
-                if((cleaning||wanted!=null&&!wanted.isAir())&&prepareCeilingEntry(options,cell,search))return true;
+                if(!useHomes.get()&&(cleaning||wanted!=null&&!wanted.isAir())&&prepareCeilingEntry(options,cell,search))return true;
                 if(wanted!=null&&temporaryView(target,wanted,cell,tried,search))return true;
                 search.recoveryStage=5;
             }
             if(search.recoveryStage==5){
                 boolean cleaning=target.equals(cleanupTarget)&&supports.contains(target);
-                if((cleaning||wanted!=null&&!wanted.isAir()&&states[cell]!=CORRECT)&&prepareFloorOpening(options,cell))return true;
+                if(!useHomes.get()&&(cleaning||wanted!=null&&!wanted.isAir()&&states[cell]!=CORRECT)&&prepareFloorOpening(options,cell))return true;
                 search.recoveryStage=6;
             }
             if(search.recoveryStage==6){if(prepareSupportDescent(options,true))return true;search.recoveryStage=7;search.expires=ticks+40;}
@@ -2437,6 +2472,10 @@ public final class AutoBuilder extends Module {
         // us onto it. It can turn a checked drop into a longer damaging fall.
         if(!mc.player.isOnGround()&&!mc.player.getAbilities().flying){status="Landing before clearing a block";return;}
         var state=mc.world.getBlockState(mining);
+        int opened=schematic.indexAt(mining.subtract(anchor()),turns(),mirror.get());
+        if(opened>=0&&!desired(opened).isAir()&&matchesBuildState(state,desired(opened))&&!supports.contains(mining)){
+            floorAccessWork.putIfAbsent(mining,navigatingCell);openingRepairDepth.putIfAbsent(mining,-mining.getY());
+        }
         if(state.isAir()){supports.remove(mining);mining=null;digging=false;mc.interactionManager.cancelBlockBreaking();delay=actionDelay();return;}
         if(protectContainers.get()&&state.hasBlockEntity()||state.getHardness(mc.world,mining)<0||!state.getFluidState().isEmpty()){mining=null;return;}
         boolean shovel=state.isIn(BlockTags.SHOVEL_MINEABLE);
@@ -2535,6 +2574,10 @@ public final class AutoBuilder extends Module {
     private float[] angles(Vec3d point){return angles(mc.player.getEyePos(),point);}
     private float[] angles(Vec3d eye,Vec3d point){var delta=point.subtract(eye);return new float[]{(float)(Math.toDegrees(Math.atan2(delta.z,delta.x))-90),(float)-Math.toDegrees(Math.atan2(delta.y,Math.sqrt(delta.x*delta.x+delta.z*delta.z)))};}
     private boolean aim(Vec3d point){
+        if(headSpoofing.get()&&!dev.maro.nathan.modules.FreeCam.active()&&!dev.maro.nathan.modules.FreeLook.active()&&!walker.moving()){
+            if(!cameraLocked){cameraYaw=mc.player.getYaw();cameraPitch=mc.player.getPitch();cameraLocked=true;}
+            cameraAimTick=ticks;
+        }
         aimPoint=point;
         float[] goal=angles(point);float yaw=MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()),pitch=goal[1]-mc.player.getPitch();
         float speed=turnSpeed.getFloat();
@@ -2577,6 +2620,21 @@ public final class AutoBuilder extends Module {
         if(Math.abs(MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()))>2||Math.abs(goal[1]-mc.player.getPitch())>2)return;
         mc.player.setYaw(mc.player.getYaw()+MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()));mc.player.setPitch(goal[1]);
         queuedLookYaw=mc.player.getYaw();queuedLookPitch=mc.player.getPitch();
+    }
+    public float[] builderCameraLook(){
+        return cameraLocked&&headSpoofing.get()&&isEnabled()&&inGame()&&mc.currentScreen==null&&!walker.moving()&&!homes.busy()
+            &&ticks-cameraAimTick<=2&&!dev.maro.nathan.modules.FreeCam.active()&&!dev.maro.nathan.modules.FreeLook.active()?new float[]{cameraYaw,cameraPitch}:null;
+    }
+    public boolean turnBuilderCamera(double x,double y){
+        if(builderCameraLook()==null)return false;
+        cameraYaw+=(float)(x*.15);cameraPitch=MathHelper.clamp(cameraPitch+(float)(y*.15),-90,90);return true;
+    }
+    private void resetAfterHome(){
+        cameraLocked=false;queuedLookAction=null;queuedAimPoint=aimPoint=null;lookWaitStarted=-1;
+        yawVelocity=pitchVelocity=0;standGoal=null;accessStand=accessBase=null;accessFloor=false;
+        accessSupports.clear();accessStairs=Set.of();descentPost=descentView=null;descentLanding=false;
+        viewSearches.clear();triedStands.clear();cleanupStands.clear();retryAt.clear();
+        chestStand=null;chestTriedStands.clear();releaseSneak();
     }
     public void afterNormalMovement(){
         var action=queuedLookAction;queuedLookAction=null;
@@ -2673,6 +2731,7 @@ public final class AutoBuilder extends Module {
         mc.player.swingHand(Hand.MAIN_HAND);return true;
     }
     private BlockHitResult approachChest(BlockPos chest){
+        if(useHomes.get()&&homes.storage(chest)){resetAfterHome();status="Returning to storage through /home 1";return null;}
         if(standGoal!=null){followStandGoal();chestProgressAt=ticks;chestJourneyFailed=false;return null;}
         if(chestProgressPosition==null||mc.player.getEntityPos().squaredDistanceTo(chestProgressPosition)>.04){chestProgressPosition=mc.player.getEntityPos();chestProgressAt=ticks;}
         if(chestStand!=null){
@@ -3205,19 +3264,29 @@ public final class AutoBuilder extends Module {
         if(data.has("world-scope"))worldScope=data.get("world-scope").getAsString();if(data.has("dimension"))dimension=data.get("dimension").getAsString();if(data.has("origin"))origin=jsonPos(data.get("origin"));
         containers.clear();if(data.has("restock"))for(var pos:data.getAsJsonArray("restock"))containers.add(jsonPos(pos));
         if(containers.isEmpty()&&data.has("supply-chest"))containers.add(jsonPos(data.get("supply-chest")));
+        if(data.has("builder-homes"))homes.loadData(data.getAsJsonArray("builder-homes"));
+        loadOpenings(data);
         selected=data.has("file")?data.get("file").getAsString():"";
     }
     @Override public JsonObject saveExtra(){
         var result=new JsonObject();result.addProperty("file",selected);result.addProperty("dimension",dimension);result.addProperty("world-scope",worldScope);result.addProperty("active-build-slot",activeBuildSlot);
         var ignored=new JsonArray();for(var item:ignoredMaterials)ignored.add(Registries.ITEM.getId(item).toString());result.add("ignored-materials",ignored);
-        if(selectedSupplyChest()!=null)result.add("supply-chest",posJson(selectedSupplyChest()));if(origin!=null)result.add("origin",posJson(origin));var marks=new JsonArray();for(var pos:containers)marks.add(posJson(pos));result.add("restock",marks);return result;
+        var openings=new JsonArray();for(var entry:floorAccessWork.entrySet()){var opening=new JsonObject();opening.add("pos",posJson(entry.getKey()));opening.addProperty("work",entry.getValue());opening.addProperty("depth",openingRepairDepth.getOrDefault(entry.getKey(),0));openings.add(opening);}result.add("access-openings",openings);
+        result.add("builder-homes",homes.saveData());if(selectedSupplyChest()!=null)result.add("supply-chest",posJson(selectedSupplyChest()));if(origin!=null)result.add("origin",posJson(origin));var marks=new JsonArray();for(var pos:containers)marks.add(posJson(pos));result.add("restock",marks);return result;
     }
     private static JsonArray posJson(BlockPos pos){var a=new JsonArray();a.add(pos.getX());a.add(pos.getY());a.add(pos.getZ());return a;}
     private static BlockPos jsonPos(JsonElement value){var a=value.getAsJsonArray();if(a.size()!=3)throw new IllegalArgumentException("Position");return new BlockPos(a.get(0).getAsInt(),a.get(1).getAsInt(),a.get(2).getAsInt());}
+    private void loadOpenings(JsonObject data){
+        floorAccessWork.clear();openingRepairDepth.clear();if(!data.has("access-openings"))return;
+        var entries=data.getAsJsonArray("access-openings");if(entries.size()>1024)throw new IllegalArgumentException("Access openings");
+        for(var value:entries){var opening=value.getAsJsonObject();var pos=jsonPos(opening.get("pos"));
+            floorAccessWork.put(pos,opening.get("work").getAsInt());openingRepairDepth.put(pos,opening.get("depth").getAsInt());}
+    }
     @Override public void loadExtra(JsonObject data){
         try{ignoredMaterials.clear();if(data.has("ignored-materials"))for(var value:data.getAsJsonArray("ignored-materials")){var id=net.minecraft.util.Identifier.tryParse(value.getAsString());if(id!=null){var item=Registries.ITEM.get(id);if(item!=Items.AIR)ignoredMaterials.add(item);}}
             if(data.has("world-scope"))worldScope=data.get("world-scope").getAsString();if(data.has("dimension"))dimension=data.get("dimension").getAsString();if(data.has("origin"))origin=jsonPos(data.get("origin"));containers.clear();if(data.has("restock"))for(var pos:data.getAsJsonArray("restock"))containers.add(jsonPos(pos));
             if(containers.isEmpty()&&data.has("supply-chest"))containers.add(jsonPos(data.get("supply-chest")));
+            if(data.has("builder-homes"))homes.loadData(data.getAsJsonArray("builder-homes"));
             if(data.has("active-build-slot")&&data.get("active-build-slot").getAsInt()>=0){buildSlot.set(data.get("active-build-slot").getAsInt()==0?"Last Session":data.get("active-build-slot").getAsString());loadPlacement();}
             else if(data.has("file")){selected=data.get("file").getAsString();if(!selected.isBlank()&&Files.isRegularFile(folder().resolve(selected)))load(folder().resolve(selected));}
         }catch(RuntimeException e){Maro.LOGGER.warn("Invalid Auto Builder saved placement",e);}

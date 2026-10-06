@@ -11,6 +11,8 @@
     "FlowableFluidAccessor",
     "BuilderUseMixin",
     "BuilderMovementMixin",
+    "BuilderCameraMixin",
+    "BuilderHeadLookMixin",
     "ClientPlayerInteractionManagerAccessor",
     "ClientPlayerLookAccessor",
     "DrawContextAccessor",
