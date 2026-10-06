@@ -1303,8 +1303,15 @@ final class AutoBuilderChecks {
                 try{
                     var nav=AutoBuilder.class.getDeclaredField("navigatingCell");nav.setAccessible(true);nav.setInt(builder,0);
                     var search=AutoBuilder.class.getDeclaredMethod("prepareSupportDescent",List.class);search.setAccessible(true);
-                    require(!(boolean)search.invoke(builder,List.of()),"Same-level posts were accepted as a staged descent");
-                    require(field(builder,"routeMining")==null&&field(builder,"standGoal")==null&&owned.containsAll(posts),"Failed descent scheduled destructive work");
+                    // A bounded search may yield on a slower runner without
+                    // committing a descent. Finish it and inspect its intent
+                    // on every slice rather than treating a yield as a route.
+                    boolean searching=true;
+                    for(int attempt=0;searching&&attempt<128;attempt++){
+                        searching=(boolean)search.invoke(builder,List.of());
+                        require(field(builder,"routeMining")==null&&field(builder,"standGoal")==null&&owned.containsAll(posts),"Same-level descent scheduled destructive work");
+                    }
+                    require(!searching,"Same-level descent search did not finish");
                     nav.setInt(builder,-1);
                 }catch(ReflectiveOperationException error){throw new AssertionError(error);}
                 BuilderPacketChecks.begin();builder.startBuild();

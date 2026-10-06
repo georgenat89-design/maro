@@ -5,6 +5,14 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+At05:29, Upper58 on f4a57ab is running at617/710; the545 and612 pauses
+resumed into real placement. Read-only progress traces A/B/C retained.
+CI332 run37441653081 built/passed general-game but failed the pre-build
+sameLevelStaging assertion: it treated the bounded descent planner's search
+yield as a committed route. Test correction allows up to128 slices and asserts
+no mining/stand goal or lost owned posts after every slice, then requires search
+completion. No production change from f4a57ab. Latest full gates still pending.
+
 At05:13, isolated sameLevelStaging PASSED59s with the cleanup return bridge
 guard. The unchanged case previously FAILED2m19s on the body fix alone.
 Read-only cleanup trace1 proves the failure: actor at(4.5358,-26,1.5585),
