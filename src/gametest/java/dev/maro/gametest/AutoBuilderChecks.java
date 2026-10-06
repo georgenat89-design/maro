@@ -79,7 +79,7 @@ final class AutoBuilderChecks {
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")||Boolean.getBoolean("maro.gametest.builderStashFinalOnly")){stashBuild(context,singleplayer,builder,start);return;}
-            if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){raisedDoorEntry(context,singleplayer,builder,start);partialHeadroom(context,singleplayer,builder,start);stairPlacementPriority(context,singleplayer,builder,start);stairPlacementStaging(context,singleplayer,builder,start);blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);fixture(context,singleplayer,builder,start);offsetRecovery(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){raisedDoorEntry(context,singleplayer,builder,start);partialHeadroom(context,singleplayer,builder,start);stairPlacementPriority(context,singleplayer,builder,start);stairPlacementStaging(context,singleplayer,builder,start);blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);fixture(context,singleplayer,builder,start);offsetRecovery(context,singleplayer,builder,start);hopperCrossing(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderStagingOnly")){fixture(context,singleplayer,builder,start);sameLevelStaging(context,singleplayer,builder,start);thickWallEntry(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderCleanupOnly")){ownedChestCover(context,singleplayer,builder,start);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){compactAccessStep(context,singleplayer,builder,start);ownedChestCover(context,singleplayer,builder,start);elevatedFloorEntry(context,singleplayer,builder,start);sealedDirectionalAccess(context,singleplayer,builder,start,3);cleanupAccess(context,singleplayer,builder,start);return;}
@@ -555,19 +555,7 @@ final class AutoBuilderChecks {
         await(context,builder,600);verify(world,lastTarget,1,1,1,y->Blocks.STONE);
         require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(lastPost).isAir()),"Final post was not removed before descent");
         context.runOnClient(client->require(client.player.getHealth()==20&&builder.temporarySupports().isEmpty(),"Three-block post descent caused damage or left a support"));
-        fixture(context,world,builder,start);
-        world.getServer().runCommand("fill "+coords(start.add(1,-1,0))+" "+coords(start.add(5,-1,6))+" lava");
-        world.getServer().runCommand("fill "+coords(start.add(-5,-1,0))+" "+coords(start.add(-1,-1,6))+" lava");
-        for(int z=1;z<=4;z++)command(world,"setblock",start.south(z),"hopper");
-        world.getServer().runCommand("give @a stone 1");context.waitTicks(6);
-        context.runOnClient(client->{builder.install(new Schematic("hopper-walking-surface.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(start.south(7));builder.startBuild();});
-        boolean crossed=false;
-        for(int tick=0;tick<400&&context.computeOnClient(client->builder.building());tick++){
-            crossed|=context.computeOnClient(client->client.player.getY()>start.getY()+.55&&client.player.getZ()>start.getZ()+1&&client.player.getZ()<start.getZ()+5);context.waitTick();
-        }
-        await(context,builder,50);verify(world,start.south(7),1,1,1,y->Blocks.STONE);
-        require(crossed,"Walking route did not use the hopper surface");
-        context.runOnClient(client->require(client.player.getHealth()==20&&builder.temporarySupports().isEmpty(),"Hopper route crossed lava or created unnecessary supports"));
+        hopperCrossing(context,world,builder,start);
         fixture(context,world,builder,start);
         world.getServer().runCommand("fill "+coords(start)+" "+coords(start.up(3))+" stone");
         for(int distance=1;distance<=3;distance++)world.getServer().runCommand("fill "+coords(start.north(distance))+" "+coords(start.north(distance).up(3-distance))+" stone");
@@ -1076,6 +1064,22 @@ final class AutoBuilderChecks {
             context.runOnClient(client->require(client.player.getHealth()==20&&client.world.isSpaceEmpty(client.player,client.player.getBoundingBox()),"Door descent intersected a panel or caused damage"));
             require(world.getServer().computeOnServer(server->!server.getOverworld().getBlockState(door).get(Properties.OPEN)),"Door descent changed the intended closed state");
         }finally{context.runOnClient(client->descending.stop());}
+    }
+    private static void hopperCrossing(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Jump onto native hopper rims and cross without extra supports");
+        fixture(context,world,builder,start);
+        world.getServer().runCommand("fill "+coords(start.add(1,-1,0))+" "+coords(start.add(5,-1,6))+" lava");
+        world.getServer().runCommand("fill "+coords(start.add(-5,-1,0))+" "+coords(start.add(-1,-1,6))+" lava");
+        for(int z=1;z<=4;z++)command(world,"setblock",start.south(z),"hopper");
+        world.getServer().runCommand("give @a stone 1");context.waitTicks(6);
+        context.runOnClient(client->{builder.install(new Schematic("hopper-walking-surface.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(start.south(7));builder.startBuild();});
+        boolean crossed=false;
+        for(int tick=0;tick<400&&context.computeOnClient(client->builder.building());tick++){
+            crossed|=context.computeOnClient(client->client.player.getY()>start.getY()+.55&&client.player.getZ()>start.getZ()+1&&client.player.getZ()<start.getZ()+5);context.waitTick();
+        }
+        await(context,builder,50);verify(world,start.south(7),1,1,1,y->Blocks.STONE);
+        require(crossed,"Walking route did not use the hopper surface");
+        context.runOnClient(client->require(client.player.getHealth()==20&&builder.temporarySupports().isEmpty(),"Hopper route crossed lava or created unnecessary supports"));
     }
     private static void partialHeadroom(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         for(String facing:List.of("north","south","east","west")){

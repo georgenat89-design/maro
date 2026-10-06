@@ -224,10 +224,9 @@ public final class BuilderWalk {
                     &&!bodyCorridor(standingPoint(n.pos),standingPoint(step)))continue;
                 if(rise>.01){
                     var from=n.parent==null&&start.equals(walkingCell())?mc.player.getEntityPos():standingPoint(n.pos);
-                    var raised=new Vec3d(from.x,standingPoint(step).y,from.z);
                     // A closed door's centre can fit the body while its entry
                     // panel still blocks the jump. Prove the lift and approach.
-                    if(!bodyCorridor(from,raised)||!bodyCorridor(raised,standingPoint(step)))continue;
+                    if(!jumpClear(from,step))continue;
                 }
                 if(rise<-.01){
                     var from=n.parent==null&&start.equals(walkingCell())?mc.player.getEntityPos():standingPoint(n.pos);
@@ -280,6 +279,18 @@ public final class BuilderWalk {
         int samples=Math.max(1,(int)Math.ceil(from.distanceTo(to)/.2));
         for(int i=1;i<=samples;i++)if(!bodyClear(from.lerp(to,(double)i/samples)))return false;
         return true;
+    }
+    private boolean jumpClear(Vec3d from,BlockPos step){
+        var to=standingPoint(step);var raised=new Vec3d(from.x,to.y,from.z);
+        if(bodyCorridor(from,raised)&&bodyCorridor(raised,to))return true;
+        // A hopper's centred footing is lower than its rim. A normal jump can
+        // clear that lip and settle inside; the centre-height approach cannot.
+        double lip=to.y;
+        for(var box:mc.world.getBlockState(step.down()).getCollisionShape(mc.world,step.down()).getBoundingBoxes())
+            lip=Math.max(lip,step.getY()-1+box.maxY);
+        if(lip<=to.y+.001||lip>from.y+1.25)return false;
+        raised=new Vec3d(from.x,lip,from.z);var over=new Vec3d(to.x,lip,to.z);
+        return bodyCorridor(from,raised)&&bodyCorridor(raised,over)&&bodyCorridor(over,to);
     }
     /** Actual standing-body volume, including partial blocks in the head cell.
      * Future route masks are collision-only; no client or server state changes. */

@@ -5,6 +5,14 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+At06:41, hopper-surface1 PASSED1m7s on latest lip-jump correction. The native
+hopper row was crossed, its build completed, full health/no extra supports;
+all rising/falling door, blind-recovery rejection, actual offset-pit escape,
+trapdoor/bucket/stair and four hopper arrival checks also passed. Commit latest
+checkpoint then run fullUpper directly, followed by fresh and latest core/auction.
+Final5 oldd2 stopped unfinished; no seeded-final pass and no fullupper/freshpass.
+PR37 draft/unmerged; final artifact handoff pending. Latest base fetched06:23
+unchanged5036776. CI342 failure actual native hopper crossing; newcode fixes it.
 At06:30, proven-recovery1 PASSED1m3s on latest guard: native blocked upward
 recovery leaves phase0/no queued dirt; actual offset-pit escape still confirms
 its step, places the requested block and cleans up; rising/falling closed-door
@@ -511,3 +519,7 @@ CI338 (28dcd0d) failed before stair-placement staging began: the direct complete
 At06:28 final4 on431ca0c passedold106doorstall and still progressed, but generic unstuck steps addedowned dirt awayfromcommittedcolumns. Cleanup traceB/C preserved. Working recoveryTick now requires a complete future one-step onward route unless climbing an already checked committed column. Negative blocked-stair native fixture now asserts recoveryPhase0/noqueuedplacement for the blind upward target. UNCOMMITTED and UNTESTED while final4 stillrunning old431ca0c own36152/session37420. Do not treat final4 as verification of thisguard; run latestsurface plus actualoffsetpit/recovery fullsuite and fresh/lateststash tests.
 
 At06:29 final4 old431ca0c stopped with native stateC preserved: unfinished699/710/owned support counts114->117. Generic stepsguard now gets positive actualoffset-pit native escape added to focusedSurface suite, plus negativeblind-recovery assertion. Next surface-proven-recovery1 verifies latestUNCOMMITTEDproduction before lateststash/fullgates.
+
+CI342on5e8b705 failed in retainedPredictions hopper-crossing assertion after prior focused/staging/cleanup/entry cases passed. Native build finished but route avoidedhopper; upward guard onlytestedcentreheight. Working jumpClear fallback proves approach above actualfloor lip within1.25rise then landingbodypath. Hopper nativecrossing factored unchanged into Surface/fullcore. UNCOMMITTED/UNTESTED while final5 runs d2d4226 (own37292/session27588), not thisnewjumpfix. CI344/346ongoing. Need latestsurface beforefullgates.
+
+At06:39 final5 d2d4226 stopped unfinished699/710/owned117 because hopper jump regression from CI342 still affected itsproduction. No seeded-final pass. Surface-hopper1 nexttests UNCOMMITTED lipjump plus all guard/door/pit/surfacecases. Afterfocusedpass runfullUpper directly (coversallfivefinaljobs pluscleanup of same128legacy supports) andfresh; do not repeatoptional seededdiagnostic beforefullUpper, and do notclaimitpassed. Latestcompletecore/auction stillrequired.
