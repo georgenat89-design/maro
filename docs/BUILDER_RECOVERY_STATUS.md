@@ -487,3 +487,5 @@ Source checkpoints are pushed to the branch above. Detailed chronological notes
 and native logs are saved in the task's `outputs` directory, including
 `builder-current-status.txt` and `builder-stash-upper-41.log`. Read the newest
 entries first; earlier assertions and test sessions may be superseded.
+
+CI338 (28dcd0d) failed before stair-placement staging began: the direct complete-route query exhausted its3ms budget on Linux. Working test-only retry requires the same complete readonly route within60frames before injecting the plan; confirmed placement, protected footing and native packet checks remain unchanged. Checkpointbf76677 pushed; stash-final3 session37225 ownPID43944 running exactproduction. Fullupper/fresh/core gates pending.

@@ -1118,9 +1118,17 @@ final class AutoBuilderChecks {
         command(world,"setblock",stand.down(),"dirt");world.getServer().runCommand("give @a dirt 16");world.getServer().runCommand("give @a stone 1");
         world.getServer().runCommand("tp @a "+(start.getX()-7.5)+" "+start.getY()+" "+(start.getZ()+.5));context.waitTicks(12);
         try{
+            // Exact feasibility is capped at 3 ms, so a cold or busy runner can
+            // yield without disproving the route. Require a complete proof on
+            // a later frame before injecting the retained stair plan.
+            boolean proved=false;
+            for(int tick=0;tick<60&&!proved;tick++){
+                proved=context.computeOnClient(client->!new BuilderWalk().stairRoute(stand,plan).isEmpty());
+                if(!proved)context.waitTick();
+            }
+            require(proved,"Staging fixture has no complete future stair route");
             context.runOnClient(client->{
                 builder.install(new Schematic("stair-placement-return.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(stand);set(builder,"Temporary Supports",true);
-                require(!new BuilderWalk().stairRoute(stand,plan).isEmpty(),"Staging fixture has no complete future stair route");
                 BuilderPacketChecks.begin();builder.startBuild();
                 try{
                     for(String name:List.of("accessStand","accessStairs")){var f=AutoBuilder.class.getDeclaredField(name);f.setAccessible(true);f.set(builder,name.equals("accessStand")?stand:Collections.unmodifiableSet(plan));}
