@@ -48,8 +48,20 @@ now tests all these latest changes. It passed the ground-staging cleanup case at
 22:49:20 and the eight-support capacity case at 22:49:40. The latter requires four
 old slots freed before the first native jump and checks no pool overflow, the
 final server block, all temporary dirt removed, health 20, closed menus and native
-packet order. The rest of this full run and the upper/fresh stash builds remain
-required final gates. Keep the production code unchanged while they run.
+packet order. Run 6 subsequently failed in the enclosed directional shulker case:
+the builder stayed outside with "Mining target is obstructed". The three earlier
+raised/sealed storage and escape cases passed. Focused passage diagnostics now
+reproduce the exact mining intent; this is not yet a completed core pass. The
+upper/fresh stash builds also remain required final gates.
+
+Focused passage diagnostics reproduced a centre ray that only touches a shared
+corner: the short visibility ray accepts it, but vanilla's final rotation ray
+hits a neighbour. The current fix tries five interior face points and checks the
+full ray with Entity.getRotationVector and the same closest equivalent yaw used
+by smooth aiming. Vec3d.fromPolar and an unwrapped equivalent yaw have different
+float rounding and did not fix this failure. Focused run 11 completed the sealed
+directional shulker at 23:07:14 and no-restock escape at 23:07:40; the other cases
+and final upper/fresh/core gates still need to finish.
 
 ## Required gates on unchanged final production code
 

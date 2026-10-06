@@ -1853,13 +1853,26 @@ public final class AutoBuilder extends Module {
     private BlockHitResult visibleHit(BlockPos pos,Vec3d eye){
         var shape=mc.world.getBlockState(pos).getOutlineShape(mc.world,pos);if(shape.isEmpty())return null;
         var bounds=shape.getBoundingBox();
-        for(var face:Direction.values()){
+        for(var face:Direction.values())for(int sample=0;sample<5;sample++){
             double x=(bounds.minX+bounds.maxX)/2,y=(bounds.minY+bounds.maxY)/2,z=(bounds.minZ+bounds.maxZ)/2;
+            // A face centre can be visible only along a shared block corner.
+            // Float yaw/pitch rounding then makes vanilla hit its neighbour.
+            // Try interior points and prove the full native-angle ray as well.
+            double first=sample==1?.2:sample==2?-.2:0,second=sample==3?.2:sample==4?-.2:0;
+            switch(face.getAxis()){
+                case X->{y+=first*(bounds.maxY-bounds.minY);z+=second*(bounds.maxZ-bounds.minZ);}
+                case Y->{x+=first*(bounds.maxX-bounds.minX);z+=second*(bounds.maxZ-bounds.minZ);}
+                case Z->{x+=first*(bounds.maxX-bounds.minX);y+=second*(bounds.maxY-bounds.minY);}
+            }
             switch(face){case UP->y=bounds.maxY;case DOWN->y=bounds.minY;case NORTH->z=bounds.minZ;case SOUTH->z=bounds.maxZ;case EAST->x=bounds.maxX;case WEST->x=bounds.minX;}
             Vec3d point=new Vec3d(pos.getX()+x,pos.getY()+y,pos.getZ()+z);
             if(point.squaredDistanceTo(eye)>effectiveReach()*effectiveReach())continue;
             var hit=mc.world.raycast(new RaycastContext(eye,point.add(Vec3d.of(face.getVector()).multiply(-.002)),RaycastContext.ShapeType.OUTLINE,RaycastContext.FluidHandling.NONE,mc.player));
-            if(hit.getType()==HitResult.Type.BLOCK&&hit.getBlockPos().equals(pos))return hit;
+            if(hit.getType()!=HitResult.Type.BLOCK||!hit.getBlockPos().equals(pos))continue;
+            var look=angles(eye,hit.getPos());
+            look[0]=mc.player.getYaw()+MathHelper.wrapDegrees(look[0]-mc.player.getYaw());
+            var nativeHit=mc.world.raycast(new RaycastContext(eye,eye.add(mc.player.getRotationVector(look[1],look[0]).multiply(effectiveReach())),RaycastContext.ShapeType.OUTLINE,RaycastContext.FluidHandling.NONE,mc.player));
+            if(nativeHit.getType()==HitResult.Type.BLOCK&&nativeHit.getBlockPos().equals(pos))return hit;
         }return null;
     }
     private float[] angles(Vec3d point){return angles(mc.player.getEyePos(),point);}
