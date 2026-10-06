@@ -128,7 +128,7 @@ public final class EspPreviewScreen extends Screen {
         private final Supplier<String> label;
 
         PreviewButton(Supplier<String> label, PressAction action, int bx, int by, int bw, int bh) {
-            super(bx, by, bw, bh, Text.literal(label.get()), action, DEFAULT_NARRATION_SUPPLIER);
+            super(bx, by, bw, bh, net.minecraft.text.Text.literal(label.get()), action, DEFAULT_NARRATION_SUPPLIER);
             this.label = label;
         }
 
