@@ -16,8 +16,16 @@ builds. These are shared geometry fixes, with no schematic coordinate exceptions
 The latest upper-stash replay starts with 411 of 710 blocks built and 128 owned
 supports. Replay 40 revealed a same-level staging loop that mined 37 supports
 without building. Checkpoint 01c14ae requires a real lower landing for open-stage
-descent. Replay 41 tests that checkpoint; its result is pending. It also contains
-native underfoot startup for an otherwise verified elevated placement view.
+descent and adds native underfoot startup for a verified elevated placement view.
+Replay 41 reached 416, then stalled at the 128-support limit. Its recycling search
+repeated the earliest failed candidates each tick. b21dfb5 retains the post,
+view-enumeration and route cursors within a three-millisecond planning pass.
+
+The focused movement/recovery suite passed in 2m41s on b21dfb5 production. This
+includes a new ground-staging regression which rejects pointless same-level
+descent, builds an elevated target, and checks server completion, all temporary
+dirt removed, health 20, closed screens and native packet order. Upper replay 42
+now tests unchanged production. No full upper/fresh stash pass is established.
 
 ## Required gates on unchanged final production code
 
