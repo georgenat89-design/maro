@@ -5,6 +5,14 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+At 14:56, base 4f0de6b (ESP preview and Potato Graphics changes) was integrated
+without conflicts. Native top-cleanup-1 failed in the owned supply-lid fixture
+because liquid tests had left Restock When Empty disabled in the test config.
+The fixture now restores that setting before each independent case. Its debug
+"inventory" map actually reports remaining materials, not carried items.
+No production supply workaround was added. Native top-cleanup-2 is running
+on the integrated tree with that deterministic test reset.
+
 At 14:53, native top-fluid-8 PASSED in 3m09s on the working production.
 The captured stash roof replay filled all four actual sources in about 88s,
 kept all 20 basin retaining cells intact, preserved dry footing and full health,
