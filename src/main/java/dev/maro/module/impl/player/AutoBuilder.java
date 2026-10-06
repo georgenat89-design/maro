@@ -658,7 +658,7 @@ public final class AutoBuilder extends Module {
     private boolean clearRouteSupportTick(){
         if(buying||restockTarget!=null&&(ownedHandler!=null||restockWait>0))return false;
         if(routeMining!=null){
-            if(!removableRouteFloor(routeMining)){supports.remove(routeMining);escapeSupports.remove(routeMining);if(routeMining.equals(routeOpening))routeOpening=null;cleanupStands.clear();triedStands.clear();chestTriedStands.clear();chestProgressAt=ticks;routeMining=null;mining=null;digging=false;mc.interactionManager.cancelBlockBreaking();walker.stop();recoveryAttempts=Math.min(recoveryAttempts,2);delay=actionDelay();return true;}
+            if(!removableRouteFloor(routeMining)){supports.remove(routeMining);boolean escaped=escapeSupports.remove(routeMining);if(routeMining.equals(routeOpening))routeOpening=null;cleanupStands.clear();triedStands.clear();chestTriedStands.clear();chestProgressAt=ticks;routeMining=null;mining=null;digging=false;mc.interactionManager.cancelBlockBreaking();walker.stop();if(!escaped)recoveryAttempts=Math.min(recoveryAttempts,2);delay=actionDelay();return true;}
             mining=routeMining;mineTick();if(mining==null)routeMining=null;return true;
         }
         if(!walker.routeUnavailable()&&!walker.movementStalled())return false;
@@ -686,13 +686,18 @@ public final class AutoBuilder extends Module {
         if(ticks-recoveryStarted>60){endRecovery();recoveryCooldown=ticks+80;status="Unstuck step could not be placed — move or add a step";return true;}
         walker.release();
         if(recoveryPhase==1){
+            if(!walker.centerForJump(recoveryBase)){status="Centering before temporary step";return true;}
+            walker.stop();
             if(!selectMaterial(Items.DIRT)||!aim(Vec3d.ofCenter(recoveryBase.down()).add(0,.5,0))){status="Preparing temporary unstuck step";return true;}
             mc.options.jumpKey.setPressed(true);recoveryJump=true;recoveryPhase=2;status="Jumping out of stuck position";return true;
         }
         if(recoveryPhase==2){
+            if(supports.contains(recoveryBase)&&mc.world.getBlockState(recoveryBase).isOf(Blocks.DIRT)){
+                escapeSupports.add(recoveryBase);mc.options.jumpKey.setPressed(false);recoveryJump=false;recoveryPhase=3;status="Landing on confirmed temporary step";return true;
+            }
             if(mc.player.getY()<recoveryBase.getY()+1.01)return true;
             var job=placement(recoveryBase,Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true);
-            if(job!=null){placement=job;placeTick();if(supports.contains(recoveryBase)){escapeSupports.add(recoveryBase);mc.options.jumpKey.setPressed(false);recoveryJump=false;recoveryPhase=3;}}return true;
+            if(job!=null){placement=job;placeTick();}return true;
         }
         if(mc.player.isOnGround()&&mc.world.getBlockState(recoveryBase).isOf(Blocks.DIRT)){endRecovery();walker.stop();recoveryCooldown=ticks+40;status="Temporary step placed — replanning route";}
         return true;

@@ -87,6 +87,8 @@ final class AutoBuilderChecks {
             fixture(context,singleplayer,builder,start);
             scaffoldReach(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
+            offsetRecovery(context,singleplayer,builder,start);
+            fixture(context,singleplayer,builder,start);
             if(Boolean.getBoolean("maro.gametest.builderTurnOnly"))return;
             layerTail(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
@@ -908,6 +910,24 @@ final class AutoBuilderChecks {
             await(context,builder,2400);verify(world,target,1,1,1,y->Blocks.STONE);
             require(world.getServer().computeOnServer(server->{for(var pos:BlockPos.iterate(start.add(-7,0,-4),start.add(7,7,10)))if(server.getOverworld().getBlockState(pos).isOf(Blocks.DIRT))return false;return true;}),"Distant scaffold left temporary dirt behind");
             context.runOnClient(client->{require(builder.temporarySupports().isEmpty()&&client.player.getHealth()==20,"Distant scaffold did not finish safely");BuilderPacketChecks.verify();});
+        }finally{context.runOnClient(client->BuilderPacketChecks.recording=false);}
+    }
+    private static void offsetRecovery(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        world.getServer().runCommand("give @a stone 1");world.getServer().runCommand("give @a dirt 16");world.getServer().runCommand("give @a diamond_shovel 1");
+        world.getServer().runCommand("fill "+coords(start.add(-1,-2,-1))+" "+coords(start.add(1,-2,1))+" stone");
+        command(world,"setblock",start.down(3),"stone");command(world,"setblock",start.down(2),"air");command(world,"setblock",start.down(),"air");
+        world.getServer().runCommand("tp @a "+(start.getX()+.65)+" "+(start.getY()-2)+" "+(start.getZ()+.35)+" 90 0");context.waitTicks(8);
+        context.runOnClient(client->{builder.install(new Schematic("offset-jump-recovery.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(start.south(10));BuilderPacketChecks.begin();builder.startBuild();});
+        boolean receiptLanded=false;
+        try{
+            for(int tick=0;tick<1000&&context.computeOnClient(client->builder.building());tick++){
+                if(context.computeOnClient(client->(int)field(builder,"recoveryPhase")==3))receiptLanded=true;
+                context.waitTick();
+            }
+            await(context,builder,100);verify(world,start.south(10),1,1,1,y->Blocks.STONE);
+            require(receiptLanded,"Offset jump did not advance from its actual support receipt");
+            require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(start.down(2)).isAir()),"Offset escape left its temporary step behind");
+            context.runOnClient(client->{require(builder.temporarySupports().isEmpty()&&client.player.getHealth()==20,"Offset escape did not complete safely");BuilderPacketChecks.verify();});
         }finally{context.runOnClient(client->BuilderPacketChecks.recording=false);}
     }
     private static void layerTail(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){

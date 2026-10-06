@@ -34,6 +34,7 @@ public final class BuilderWalk {
         return approach(target,distance,false);
     }
     public boolean standAt(BlockPos target){return approach(target,.22,true);}
+    public boolean centerForJump(BlockPos target){return approach(target,.12,true);}
     public boolean canStand(BlockPos pos){return walkable(pos);}
     public boolean hasStandingClearance(BlockPos pos){return clear(pos)&&clear(pos.up());}
     public Vec3d standingPoint(BlockPos pos){return Vec3d.ofBottomCenter(pos).add(0,footingHeight(pos.down())-1,0);}
