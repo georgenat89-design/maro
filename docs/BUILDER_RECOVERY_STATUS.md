@@ -76,6 +76,19 @@ unchanged finished floor, all dirt removed, health 20, closed screens and packet
 ordering. Upper replay 44 now checks the latest production; full final gates
 remain required.
 
+Upper replay 44 passed 479 and reached 483, then stalled after a storage return
+on layer-5 stairs/bulbs. Its native views were at Y=68/69; an exterior column from
+ground Y=61 would exceed the six-block bound if forced to end at the exact view
+height. The entry query now also proves a top one block below the view and its
+ordinary native jump onto the finished floor. Candidate pairs are sorted by
+distance from the current feet, rather than accepting a far enumeration corner.
+The bounded retained search is at most 2,704 pairs in 3 ms windows. Both native
+raised-floor cases passed in 1m14s on the current production: heights 3 and 6,
+the latter requires a six-post column then a one-block jump to the Y=7 floor.
+Directional server blocks, unchanged finished floors, all raw/owned dirt gone,
+health 20, closed screens and native packet checks passed. Upper replay 45 is
+next; no complete latest upper/fresh/core pass has been established.
+
 ## Required gates on unchanged final production code
 
 - Finish the captured upper-stash build: all 710 server blocks, no owned or raw

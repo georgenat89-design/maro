@@ -185,6 +185,8 @@ public final class AutoBuilder extends Module {
     private BlockPos accessStand,accessBase;
     private BlockPos entrySearchFeet;
     private int entrySearchWork=-2,entrySearchHash,entrySearchCursor,entryRetryAt;
+    private record EntryCandidate(BlockPos top,BlockPos destination){}
+    private List<EntryCandidate> entryCandidates=List.of();
     private int accessStarted;
     private boolean accessFloor;
     private BlockPos recycleTarget;
@@ -1140,14 +1142,20 @@ public final class AutoBuilder extends Module {
     private boolean prepareElevatedEntry(List<BlockPos> views,int work){
         if(!support.get()||work<0||views.isEmpty())return false;
         var feet=mc.player.getBlockPos();int hash=views.hashCode();
-        if(!feet.equals(entrySearchFeet)||entrySearchWork!=work||entrySearchHash!=hash){entrySearchFeet=feet.toImmutable();entrySearchWork=work;entrySearchHash=hash;entrySearchCursor=entryRetryAt=0;}
+        if(!feet.equals(entrySearchFeet)||entrySearchWork!=work||entrySearchHash!=hash){
+            entrySearchFeet=feet.toImmutable();entrySearchWork=work;entrySearchHash=hash;entrySearchCursor=entryRetryAt=0;
+            var destinations=views.stream().filter(p->p.getY()>mc.player.getY()+.5&&p.getY()<=mc.player.getY()+7)
+                .sorted(Comparator.comparingDouble(p->p.getSquaredDistance(feet))).limit(8).toList();
+            var candidates=new ArrayList<EntryCandidate>();
+            for(var destination:destinations)for(int dy=0;dy>=-1;dy--)for(int dx=-6;dx<=6;dx++)for(int dz=-6;dz<=6;dz++)
+                candidates.add(new EntryCandidate(destination.add(dx,dy,dz),destination));
+            candidates.sort(Comparator.comparingDouble(c->c.top.getSquaredDistance(feet)));
+            entryCandidates=List.copyOf(candidates);
+        }
         if(ticks<entryRetryAt)return false;
-        var destinations=views.stream().filter(p->p.getY()>mc.player.getY()+.5&&p.getY()<=mc.player.getY()+6)
-            .sorted(Comparator.comparingDouble(p->p.getSquaredDistance(feet))).limit(8).toList();
-        int total=169*destinations.size();long deadline=System.nanoTime()+3_000_000;
+        int total=entryCandidates.size();long deadline=System.nanoTime()+3_000_000;
         while(entrySearchCursor<total&&System.nanoTime()<deadline){
-            int sample=entrySearchCursor++,offset=sample/destinations.size();var destination=destinations.get(sample%destinations.size());
-            var top=destination.add(offset/13-6,0,offset%13-6);
+            var candidate=entryCandidates.get(entrySearchCursor++);var top=candidate.top;var destination=candidate.destination;
             if(!walker.hasStandingClearance(top)||!mc.world.getBlockState(top.down()).isReplaceable()||plannedSolid(top.down()))continue;
             BlockPos base=null;boolean clear=true;
             for(int down=1;down<=6;down++){
