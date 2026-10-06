@@ -285,6 +285,8 @@ public final class AutoBuilder extends Module {
     private BlockPos routeMining;
     private final Map<BlockPos,Integer> floorAccessWork=new HashMap<>();
     private boolean openingRestoration;
+    private boolean waterDeparture;
+    private BlockPos waterWorkTarget;
     private final Map<BlockPos,Integer> openingRepairDepth=new HashMap<>();
     private BlockPos mining,restockTarget;
     private BlockPos tuningTarget,tuningSession;
@@ -583,6 +585,7 @@ public final class AutoBuilder extends Module {
     }
     @Override protected void onDisable(){pause("Disabled");staffStopAt=0;captureStates=null;if(mc.player!=null&&originalSlot>=0)select(originalSlot);originalSlot=-1;}
     public void pause(String reason){
+        waterDeparture=false;waterWorkTarget=null;
         cleanupExit=cleanupExitSearchFeet=null;cleanupExits=List.of();cleanupExitCursor=cleanupExitRetryAt=0;
         stairPlacementPlan=Set.of();stairPlacementFeet=null;stairPlacementViews=List.of();stairPlacementCursor=0;
         stairSearchStand=stairSearchFeet=null;stairSearchCursor=0;
@@ -635,8 +638,10 @@ public final class AutoBuilder extends Module {
         scan();captureTick();
         if(staffStopAt>0){if(logoff.get()&&System.currentTimeMillis()-staffStopAt>=logoffDelay.get()*1000){mc.world.disconnect(Text.literal(logoffMessage.get()));setEnabled(false);}return;}
         if((building||buying||pasting||depositing)&&unsafe()){walker.release();return;}
-        if(building&&!buying&&!depositing&&recoverUnexpectedBuildMenu())return;
         if(pendingPlacement!=null){placementReceiptTick();return;}
+        if(mc.currentScreen==null&&autoMove.get()&&(depositing||building&&(!mode.is("Semi Auto")||mc.options.useKey.isPressed()))&&waterDepartureTick())return;
+        if((building||buying||pasting||depositing)&&mc.player.getHealth()<minHealth.get()*2){walker.release();status="Paused — low health";return;}
+        if(building&&!buying&&!depositing&&recoverUnexpectedBuildMenu())return;
         if(mc.currentScreen==null&&(building||depositing)&&clearPassageTick())return;
         if(mc.currentScreen==null&&(building||depositing)&&clearRouteSupportTick())return;
         if(building&&!buying&&mc.currentScreen==null&&restockTarget==null&&ceilingTop!=null){
@@ -663,6 +668,19 @@ public final class AutoBuilder extends Module {
             if(autoBuy.get()&&maxSpend.get()>0){startBuying(false);if(buying)resumeAfterMarket=true;return;}
         }
         findWork();
+    }
+    private boolean waterDepartureTick(){
+        if(!mc.player.isTouchingWater()&&!waterDeparture)return false;
+        if(!waterDeparture){
+            waterWorkTarget=recoveryDestination();
+            if(waterWorkTarget==null)for(int cell:workCells)if(states[cell]!=CORRECT&&states[cell]!=IGNORED){waterWorkTarget=position(cell);break;}
+            waterDeparture=true;stopEating();releaseSneak();endRecovery();walker.stop();
+            mc.interactionManager.cancelBlockBreaking();digging=false;
+        }
+        if(walker.leaveWater(waterWorkTarget,effectiveReach())){
+            waterDeparture=false;waterWorkTarget=null;standStarted=standProgressAt=accessProgressAt=ticks;standProgressPos=mc.player.getEntityPos();return false;
+        }
+        status=walker.status;return true;
     }
     /** Follow the same verified stand/descent intent during building and chest trips. */
     private boolean followStandGoal(){
@@ -815,7 +833,6 @@ public final class AutoBuilder extends Module {
                 pause("Staff nearby: "+player.getName().getString());staffStopAt=System.currentTimeMillis();notify(status);return true;
             }
         }
-        if(mc.player.getHealth()<minHealth.get()*2){status="Paused — low health";return true;}
         if(pausePlayers.get()&&mc.world.getPlayers().stream().anyMatch(p->p!=mc.player&&p.squaredDistanceTo(mc.player)<playerRange.get()*playerRange.get())){status="Paused — player nearby";return true;}
         return false;
     }
@@ -1615,7 +1632,8 @@ public final class AutoBuilder extends Module {
         if(item==Items.WATER_BUCKET||item==Items.LAVA_BUCKET){
             if(item==Items.LAVA_BUCKET&&new Box(target).intersects(body))return null;
             for(var side:Direction.values()){
-                var neighbor=target.offset(side.getOpposite());var hit=visibleHit(neighbor,eye);if(hit!=null&&hit.getSide()==side&&mc.world.getBlockState(target).isReplaceable())return new Place(target,wanted,hit,item,index,false);
+                var neighbor=target.offset(side.getOpposite());var hit=visibleHit(neighbor,eye,side);
+                if(hit!=null&&bucketTarget(item,hit).equals(target)&&mc.world.getBlockState(target).isReplaceable())return new Place(target,wanted,hit,item,index,false);
             }return null;
         }
         if(!(item instanceof BlockItem blockItem))return null;
@@ -1684,6 +1702,11 @@ public final class AutoBuilder extends Module {
         if(state.getBlock() instanceof TrapdoorBlock||state.getBlock() instanceof DoorBlock)return state.get(net.minecraft.state.property.Properties.OPEN)?1:0;
         return -1;
     }
+    /** Water buckets fill a FluidFillable hit block before considering its adjacent cell. */
+    private BlockPos bucketTarget(Item item,BlockHitResult hit){
+        var pos=hit.getBlockPos();
+        return item==Items.WATER_BUCKET&&mc.world.getBlockState(pos).getBlock() instanceof FluidFillable?pos:pos.offset(hit.getSide());
+    }
     private void placeTick(){
         walker.release();Place job=placement;
         // Recheck after a queued hotbar transfer or a newly marked chest.
@@ -1716,7 +1739,15 @@ public final class AutoBuilder extends Module {
             deferPlacement(job,"Placement ray changed - trying another position");return;
         }
         if(job.item==Items.WATER_BUCKET||job.item==Items.LAVA_BUCKET){
-            releaseSneak();withPublishedLook(()->{beginPlacementReceipt(job);if(!mc.interactionManager.interactItem(mc.player,Hand.MAIN_HAND).isAccepted()){pendingPlacement=null;unconfirmedPlacements.remove(job.target);}delay=Math.max(10,actionDelay());placement=null;status="Placing schematic fluid source";});return;
+            releaseSneak();withPublishedLook(()->{
+                var actual=(BlockHitResult)mc.player.raycast(effectiveReach(),1,false);
+                if(actual.getType()!=HitResult.Type.BLOCK||!actual.getBlockPos().equals(job.hit.getBlockPos())||actual.getSide()!=job.hit.getSide()
+                    ||!bucketTarget(job.item,actual).equals(job.target)||!mc.world.getBlockState(job.target).isReplaceable()){
+                    deferPlacement(job,"Bucket target changed — trying another position");return;
+                }
+                beginPlacementReceipt(job);if(!mc.interactionManager.interactItem(mc.player,Hand.MAIN_HAND).isAccepted()){pendingPlacement=null;unconfirmedPlacements.remove(job.target);}
+                delay=Math.max(10,actionDelay());placement=null;status="Placing schematic fluid source";
+            });return;
         }
         var context=((BlockItem)job.item).getPlacementContext(new ItemPlacementContext(mc.player,Hand.MAIN_HAND,mc.player.getMainHandStack(),aimed));
         if(!planting&&(context==null||!context.getBlockPos().equals(job.target)||!compatible(((BlockItemAccessor)(Object)job.item).maro$placementState(context),job.state))){deferPlacement(job,"Placement state changed - trying another position");return;}
@@ -2350,9 +2381,13 @@ public final class AutoBuilder extends Module {
         return visibleHit(pos,mc.player.getEyePos());
     }
     private BlockHitResult visibleHit(BlockPos pos,Vec3d eye){
+        return visibleHit(pos,eye,null);
+    }
+    private BlockHitResult visibleHit(BlockPos pos,Vec3d eye,Direction requiredFace){
         var shape=mc.world.getBlockState(pos).getOutlineShape(mc.world,pos);if(shape.isEmpty())return null;
         var bounds=shape.getBoundingBox();
         for(var face:Direction.values())for(int sample=0;sample<5;sample++){
+            if(requiredFace!=null&&face!=requiredFace)continue;
             double x=(bounds.minX+bounds.maxX)/2,y=(bounds.minY+bounds.maxY)/2,z=(bounds.minZ+bounds.maxZ)/2;
             // A face centre can be visible only along a shared block corner.
             // Float yaw/pitch rounding then makes vanilla hit its neighbour.
@@ -2367,11 +2402,11 @@ public final class AutoBuilder extends Module {
             Vec3d point=new Vec3d(pos.getX()+x,pos.getY()+y,pos.getZ()+z);
             if(point.squaredDistanceTo(eye)>effectiveReach()*effectiveReach())continue;
             var hit=mc.world.raycast(new RaycastContext(eye,point.add(Vec3d.of(face.getVector()).multiply(-.002)),RaycastContext.ShapeType.OUTLINE,RaycastContext.FluidHandling.NONE,mc.player));
-            if(hit.getType()!=HitResult.Type.BLOCK||!hit.getBlockPos().equals(pos))continue;
+            if(hit.getType()!=HitResult.Type.BLOCK||!hit.getBlockPos().equals(pos)||requiredFace!=null&&hit.getSide()!=requiredFace)continue;
             var look=angles(eye,hit.getPos());
             look[0]=mc.player.getYaw()+MathHelper.wrapDegrees(look[0]-mc.player.getYaw());
             var nativeHit=mc.world.raycast(new RaycastContext(eye,eye.add(mc.player.getRotationVector(look[1],look[0]).multiply(effectiveReach())),RaycastContext.ShapeType.OUTLINE,RaycastContext.FluidHandling.NONE,mc.player));
-            if(nativeHit.getType()==HitResult.Type.BLOCK&&nativeHit.getBlockPos().equals(pos))return hit;
+            if(nativeHit.getType()==HitResult.Type.BLOCK&&nativeHit.getBlockPos().equals(pos)&&(requiredFace==null||nativeHit.getSide()==requiredFace))return hit;
         }return null;
     }
     private float[] angles(Vec3d point){return angles(mc.player.getEyePos(),point);}

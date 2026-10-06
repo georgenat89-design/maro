@@ -5,7 +5,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.math.*;
 import java.util.*;
 
-/** Bounded ground pathfinding. Uses normal movement keys and never teleports or mines a route. */
+/** Bounded native movement pathfinding. Uses normal keys and never teleports or mines a route. */
 public final class BuilderWalk {
     private final MinecraftClient mc=MinecraftClient.getInstance();
     private record Node(BlockPos pos,double cost,double score,Node parent){}
@@ -22,11 +22,19 @@ public final class BuilderWalk {
     private Set<BlockPos> clearedForSearch=Set.of();
     private BlockPos pillarForSearch;
     private Set<BlockPos> stairsForSearch=Set.of();
+    private Set<BlockPos> waterExitCells=Set.of();
+    private Set<BlockPos> waterDepartureCells=Set.of();
+    private final Set<BlockPos> waterExitRejected=new HashSet<>();
+    private BlockPos waterExitGoal,waterExitHint;
+    private int waterExitSearchTicks;
+    private double waterExitReach;
+    private boolean strictDrySearch;
     private float yawVelocity,turnLimit=45;
     public void turning(boolean smooth,float speed){this.smooth=smooth;turnLimit=speed;}
     public String status="";
     public void stop(){
-        release();path=List.of();goal=null;cursor=retry=stuck=failedRoutes=0;last=null;recoveryRequested=movementStalled=false;yawVelocity=0;
+        release();path=List.of();goal=waterExitGoal=null;cursor=retry=stuck=failedRoutes=0;last=null;recoveryRequested=movementStalled=false;yawVelocity=0;
+        waterDepartureCells=Set.of();waterExitRejected.clear();waterExitSearchTicks=0;waterExitHint=null;
     }
     public void release(){
         if(forward)mc.options.forwardKey.setPressed(false);
@@ -40,7 +48,63 @@ public final class BuilderWalk {
     public boolean centerForJump(BlockPos target){return approach(target,.12,true);}
     public boolean canStand(BlockPos pos){return walkable(pos);}
     public boolean hasStandingClearance(BlockPos pos){return clear(pos)&&clear(pos.up());}
-    public Vec3d standingPoint(BlockPos pos){return Vec3d.ofBottomCenter(pos).add(0,footingHeight(pos.down())-1,0);}
+    public Vec3d standingPoint(BlockPos pos){double floor=footingHeight(pos.down());return Vec3d.ofBottomCenter(pos).add(0,floor<.625&&swimmingCell(pos)?0:floor-1,0);}
+    /** Depart only the connected water already occupied; every route ends on dry native footing. */
+    public boolean leaveWater(BlockPos work,double reach){
+        if(mc.player==null||mc.world==null){stop();return false;}
+        if(!mc.player.isTouchingWater()&&waterDepartureCells.isEmpty()){stop();return true;}
+        var cells=waterDepartureCells.isEmpty()?occupiedWater():waterDepartureCells;
+        var previous=waterExitCells;waterExitCells=cells;waterExitHint=work;waterExitReach=reach;
+        try{
+            if(waterExitCells.isEmpty()){release();status="No checked water departure";return false;}
+            if(waterExitGoal==null||!dryStand(waterExitGoal)||path.isEmpty()){
+                waterExitSearchTicks++;
+                var route=find(walkingCell(),walkingCell(),.12,true,false,true);
+                if(route.isEmpty()){waterDepartureCells=cells;release();status="Checking a dry route out of water";return false;}
+                stop();waterDepartureCells=cells;waterExitGoal=goal=route.getLast();exact=true;path=route;cursor=0;retry=20;
+            }
+            boolean arrived=approach(waterExitGoal,.12,true)&&!mc.player.isTouchingWater();
+            if(arrived){stop();return true;}
+            status="Leaving water before building";return false;
+        }finally{waterExitCells=previous;}
+    }
+    private boolean dryDepartureGoal(BlockPos pos){
+        if(!dryStand(pos))return false;
+        // Give breathing priority if no ordinary work route is available.
+        // Usually prove the onward dry route too, instead of stopping on a wet island.
+        if(waterExitHint==null||waterExitSearchTicks>=80)return true;
+        if(waterExitRejected.contains(pos))return false;
+        var previous=waterExitCells;boolean previousStrict=strictDrySearch;waterExitCells=Set.of();strictDrySearch=true;
+        try{
+            var eye=standingPoint(pos).add(0,mc.player.getStandingEyeHeight(),0);
+            if(eye.squaredDistanceTo(Vec3d.ofCenter(waterExitHint))<=waterExitReach*waterExitReach||!find(pos,waterExitHint,waterExitReach,false).isEmpty())return true;
+            waterExitRejected.add(pos);return false;
+        }finally{waterExitCells=previous;strictDrySearch=previousStrict;}
+    }
+    private Set<BlockPos> occupiedWater(){
+        var cells=new HashSet<BlockPos>();var queue=new ArrayDeque<BlockPos>();var body=mc.player.getBoundingBox();var start=mc.player.getBlockPos();
+        for(var p:BlockPos.iterate(BlockPos.ofFloored(body.minX,body.minY,body.minZ),BlockPos.ofFloored(body.maxX,body.maxY,body.maxZ)))
+            if(mc.world.isChunkLoaded(p)&&mc.world.getFluidState(p).isIn(net.minecraft.registry.tag.FluidTags.WATER)){var seed=p.toImmutable();if(cells.add(seed))queue.add(seed);}
+        while(!queue.isEmpty()&&cells.size()<512){
+            var p=queue.removeFirst();
+            for(var side:Direction.values()){
+                if(cells.size()>=512)break;
+                var next=p.offset(side);
+                if(Math.abs(next.getX()-start.getX())>12||Math.abs(next.getZ()-start.getZ())>12||Math.abs(next.getY()-start.getY())>4
+                    ||!mc.world.isChunkLoaded(next)||!mc.world.getFluidState(next).isIn(net.minecraft.registry.tag.FluidTags.WATER))continue;
+                if(cells.add(next))queue.add(next);
+            }
+        }
+        return cells;
+    }
+    private boolean swimmingCell(BlockPos pos){return waterExitCells.contains(pos)||waterExitCells.contains(pos.up());}
+    private boolean dryStand(BlockPos pos){
+        if(!walkable(pos)||!mc.world.getFluidState(pos.down()).isEmpty())return false;
+        var point=standingPoint(pos);var dimensions=mc.player.getDimensions(net.minecraft.entity.EntityPose.STANDING);double half=dimensions.width()/2;
+        var body=new Box(point.x-half,point.y,point.z-half,point.x+half,point.y+dimensions.height(),point.z+half).contract(.000001);
+        for(var p:BlockPos.iterate(BlockPos.ofFloored(body.minX,body.minY,body.minZ),BlockPos.ofFloored(body.maxX,body.maxY,body.maxZ)))if(!mc.world.getFluidState(p).isEmpty())return false;
+        return true;
+    }
     public boolean canReachStand(BlockPos pos){return walkable(pos)&&(walkingCell().equals(pos)||mc.player.getEntityPos().squaredDistanceTo(standingPoint(pos))<=.22*.22||!find(walkingCell(),pos,.22,true).isEmpty());}
     public boolean canReachStandFrom(BlockPos from,BlockPos to){return walkable(from)&&walkable(to)&&(from.equals(to)||!find(from,to,.22,true).isEmpty());}
     /** Collision-only feasibility query; never changes client or server blocks. */
@@ -143,7 +207,8 @@ public final class BuilderWalk {
         }
         var node=path.get(cursor);var point=standingPoint(node);
         double dx=point.x-mc.player.getX(),dz=point.z-mc.player.getZ();
-        while(dx*dx+dz*dz<.16&&Math.abs(point.y-mc.player.getY())<.65&&mc.player.isOnGround()){
+        boolean swimming=!waterExitCells.isEmpty()&&mc.player.isTouchingWater();
+        while(dx*dx+dz*dz<.16&&Math.abs(point.y-mc.player.getY())<(swimming?.2:.65)&&(mc.player.isOnGround()||swimming)){
             if(exact&&cursor==path.size()-1&&node.equals(target))break;
             if(++cursor>=path.size()){release();return false;}
             node=path.get(cursor);point=standingPoint(node);dx=point.x-mc.player.getX();dz=point.z-mc.player.getZ();
@@ -184,7 +249,7 @@ public final class BuilderWalk {
         // Turn toward a raised waypoint before starting the jump. An early
         // jump while turning spends its height without reaching the ledge.
         boolean leavingWater=mc.player.isTouchingWater();
-        if(forward&&headingError<12&&dx*dx+dz*dz<1.3*1.3&&point.y>mc.player.getY()+(leavingWater?.05:.4)
+        if(forward&&headingError<12&&dx*dx+dz*dz<1.3*1.3&&point.y>mc.player.getY()+(swimming?-.05:leavingWater?.05:.4)
             &&(mc.player.isOnGround()||leavingWater)){jump=true;mc.options.jumpKey.setPressed(true);}
         else if(jump){mc.options.jumpKey.setPressed(false);jump=false;}
         Vec3d now=mc.player.getEntityPos();
@@ -219,6 +284,9 @@ public final class BuilderWalk {
         return find(start,target,reach,exactGoal,false);
     }
     private List<BlockPos> find(BlockPos start,BlockPos target,double reach,boolean exactGoal,boolean allowSegments){
+        return find(start,target,reach,exactGoal,allowSegments,false);
+    }
+    private List<BlockPos> find(BlockPos start,BlockPos target,double reach,boolean exactGoal,boolean allowSegments,boolean dryGoal){
         PriorityQueue<Node> open=new PriorityQueue<>(Comparator.comparingDouble(Node::score));
         Map<BlockPos,Double> costs=new HashMap<>();Set<BlockPos> closed=new HashSet<>();
         open.add(new Node(start,0,heuristic(start,target),null));costs.put(start,0.0);
@@ -230,7 +298,7 @@ public final class BuilderWalk {
             double remaining=heuristic(n.pos,target);
             if(remaining<frontierDistance){frontier=n;frontierDistance=remaining;}
             Vec3d eye=standingPoint(n.pos).add(0,mc.player.getStandingEyeHeight(),0);
-            if(exactGoal?n.pos.equals(target):eye.squaredDistanceTo(Vec3d.ofCenter(target))<=reach*reach){
+            if(dryGoal?n.parent!=null&&dryDepartureGoal(n.pos):exactGoal?n.pos.equals(target):eye.squaredDistanceTo(Vec3d.ofCenter(target))<=reach*reach){
                 LinkedList<BlockPos> result=new LinkedList<>();for(Node p=n;p.parent!=null;p=p.parent)result.addFirst(p.pos);return result;
             }
             for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++){
@@ -238,10 +306,11 @@ public final class BuilderWalk {
                 // A player can straddle a post with their centre over air. In
                 // that case moving toward this column's centre safely drops
                 // onto the floor below; cardinal-only neighbours miss it.
-                if(sameColumn&&(!n.pos.equals(start)||walkable(n.pos)))continue;boolean diagonal=dx!=0&&dz!=0;
+                boolean swimColumn=dryGoal&&swimmingCell(n.pos);
+                if(sameColumn&&!swimColumn&&(!n.pos.equals(start)||walkable(n.pos)))continue;boolean diagonal=dx!=0&&dz!=0;
                 if(diagonal&&(!walkable(n.pos.add(dx,0,0))||!walkable(n.pos.add(0,0,dz))))continue;
                 var adjacent=n.pos.add(dx,0,dz);BlockPos step=null;
-                for(int dy:sameColumn?new int[]{-1,-2,-3}:new int[]{0,1,-1,-2,-3}){var p=adjacent.up(dy);if(walkable(p)){step=p;break;}}
+                for(int dy:sameColumn?(swimColumn?new int[]{1,-1}:new int[]{-1,-2,-3}):new int[]{0,1,-1,-2,-3}){var p=adjacent.up(dy);if(walkable(p)){step=p;break;}}
                 if(step==null||closed.contains(step)||step.getManhattanDistance(start)>64)continue;
                 double rise=standingPoint(step).y-(n.parent==null?initialHeight:standingPoint(n.pos).y);
                 if(rise>1.2||rise< -3)continue;
@@ -273,7 +342,7 @@ public final class BuilderWalk {
                 if(!corridor)continue;
                 double cost=n.cost+(diagonal?Math.sqrt(2):1)+(step.getY()!=n.pos.getY()?.35:0);
                 if(cost>=costs.getOrDefault(step,Double.POSITIVE_INFINITY))continue;
-                costs.put(step,cost);open.add(new Node(step,cost,cost+heuristic(step,target),n));
+                costs.put(step,cost);open.add(new Node(step,cost,cost+(dryGoal?0:heuristic(step,target)),n));
             }
         }
         // Keep each search bounded. Long journeys advance along a verified safe
@@ -300,7 +369,7 @@ public final class BuilderWalk {
     }
     private boolean walkable(BlockPos p){
         if(!mc.world.isChunkLoaded(p)||!safe(p)||!safe(p.up())||!safe(p.down()))return false;
-        double height=footingHeight(p.down());if(height<.625)return false;
+        double height=footingHeight(p.down());if(height<.625)return swimmingCell(p)&&bodyClear(standingPoint(p));
         if(height==1&&clear(p)&&clear(p.up()))return true;
         return bodyClear(standingPoint(p));
     }
@@ -338,11 +407,11 @@ public final class BuilderWalk {
     }
     private boolean safe(BlockPos p){
         var state=mc.world.getBlockState(p);
-        // A bucket can fill the cell already occupied by the player. Permit
-        // departure through that existing water volume; do not plan entry into
-        // another wet cell, accept a fluid footing, or relax lava hazards.
-        boolean departingWater=state.getFluidState().isIn(net.minecraft.registry.tag.FluidTags.WATER)
+        // Ordinary queries permit departure through water already touching the body.
+        // The explicit departure search adds its bounded connected-volume mask;
+        // other fluids and physical hazards remain blocked.
+        boolean departingWater=!strictDrySearch&&state.getFluidState().isIn(net.minecraft.registry.tag.FluidTags.WATER)
             &&new Box(p).intersects(mc.player.getBoundingBox());
-        return (state.getFluidState().isEmpty()||departingWater)&&!state.isOf(Blocks.FIRE)&&!state.isOf(Blocks.SOUL_FIRE)&&!state.isOf(Blocks.MAGMA_BLOCK)&&!state.isOf(Blocks.CACTUS)&&!state.isOf(Blocks.SWEET_BERRY_BUSH)&&!state.isOf(Blocks.POWDER_SNOW)&&!state.isOf(Blocks.CAMPFIRE)&&!state.isOf(Blocks.SOUL_CAMPFIRE);
+        return (state.getFluidState().isEmpty()||departingWater||waterExitCells.contains(p)&&state.getFluidState().isIn(net.minecraft.registry.tag.FluidTags.WATER))&&!state.isOf(Blocks.FIRE)&&!state.isOf(Blocks.SOUL_FIRE)&&!state.isOf(Blocks.MAGMA_BLOCK)&&!state.isOf(Blocks.CACTUS)&&!state.isOf(Blocks.SWEET_BERRY_BUSH)&&!state.isOf(Blocks.POWDER_SNOW)&&!state.isOf(Blocks.CAMPFIRE)&&!state.isOf(Blocks.SOUL_CAMPFIRE);
     }
 }

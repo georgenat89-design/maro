@@ -79,13 +79,16 @@ final class AutoBuilderChecks {
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")||Boolean.getBoolean("maro.gametest.builderStashFinalOnly")){stashBuild(context,singleplayer,builder,start);return;}
-            if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly"))narrowDropLanding(context,singleplayer,builder,start);
+            if(Boolean.getBoolean("maro.gametest.builderWaterOnly")){lowBucketSource(context,singleplayer,builder,start);floodedAccessDeparture(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){lowBucketSource(context,singleplayer,builder,start);floodedAccessDeparture(context,singleplayer,builder,start);narrowDropLanding(context,singleplayer,builder,start);}
             if(Boolean.getBoolean("maro.gametest.builderCleanupOnly"))immediateOpeningRepair(context,singleplayer,builder,start);
             if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){fixture(context,singleplayer,builder,start);exhaustedAccessCapacity(context,singleplayer,builder,start);raisedDoorEntry(context,singleplayer,builder,start);partialHeadroom(context,singleplayer,builder,start);stairPlacementPriority(context,singleplayer,builder,start);stairPlacementStaging(context,singleplayer,builder,start);blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);fixture(context,singleplayer,builder,start);offsetRecovery(context,singleplayer,builder,start);hopperCrossing(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderStagingOnly")){verticalPillarPacing(context,singleplayer,builder,start);nearbyCleanupPriority(context,singleplayer,builder,start);fixture(context,singleplayer,builder,start);sameLevelStaging(context,singleplayer,builder,start);thickWallEntry(context,singleplayer,builder,start);ceilingColumnEntry(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderCleanupOnly")){ownedChestCover(context,singleplayer,builder,start);cleanupAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);airSupportFloorExit(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){compactAccessStep(context,singleplayer,builder,start);ownedChestCover(context,singleplayer,builder,start);elevatedFloorEntry(context,singleplayer,builder,start);sealedDirectionalAccess(context,singleplayer,builder,start,3);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")){sealedDirectionalAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);raisedChestReturn(context,singleplayer,builder,start);sealedChestReturn(context,singleplayer,builder,start);return;}
+            lowBucketSource(context,singleplayer,builder,start);
+            floodedAccessDeparture(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             exhaustedAccessCapacity(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
@@ -1184,6 +1187,49 @@ final class AutoBuilderChecks {
         await(context,builder,50);verify(world,start.south(7),1,1,1,y->Blocks.STONE);
         require(crossed,"Walking route did not use the hopper surface");
         context.runOnClient(client->require(client.player.getHealth()==20&&builder.temporarySupports().isEmpty(),"Hopper route crossed lava or created unnecessary supports"));
+    }
+    private static void lowBucketSource(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Fill the intended source from a low access opening without waterlogging its overhead panel");
+        fixture(context,world,builder,start);var goal=start.south(3).up();var panel=goal.up();
+        command(world,"setblock",goal.down(),"blackstone");
+        for(var side:List.of(Direction.NORTH,Direction.SOUTH,Direction.EAST))command(world,"setblock",goal.offset(side),"blackstone");
+        command(world,"setblock",panel,"warped_trapdoor[facing=north,half=bottom,open=true,waterlogged=false]");
+        world.getServer().runCommand("give @a water_bucket");
+        world.getServer().runCommand("tp @a "+(goal.getX()-.7)+" "+start.getY()+" "+(goal.getZ()+.45)+" -90 0");context.waitTicks(8);
+        try{
+            context.runOnClient(client->{set(builder,"Auto Move",false);builder.install(new Schematic("low-source.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.WATER.getDefaultState()}));builder.setOrigin(goal);BuilderPacketChecks.begin();builder.startBuild();});
+            for(int tick=0;tick<180&&context.computeOnClient(client->builder.building())&&!world.getServer().computeOnServer(server->server.getOverworld().getBlockState(panel).get(Properties.WATERLOGGED));tick++)context.waitTick();
+            require(world.getServer().computeOnServer(server->!server.getOverworld().getBlockState(panel).get(Properties.WATERLOGGED)),"Bucket filled the overhead trapdoor instead of the adjacent source");
+            await(context,builder,120);
+            require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(goal).equals(Blocks.WATER.getDefaultState())),"Low access bucket placement did not create the actual source");
+            context.runOnClient(client->{BuilderPacketChecks.verify(1);require(client.player.getHealth()==20&&client.currentScreen==null,"Low access bucket placement damaged the player or left a menu");});
+        }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
+    }
+    private static void floodedAccessDeparture(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        for(boolean lowHealth:List.of(false,true))floodedAccessDeparture(context,world,builder,start,lowHealth);
+    }
+    private static void floodedAccessDeparture(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,boolean lowHealth){
+        System.out.println("[builder-check] Leave the captured Upper68 flooded room with lowHealth="+lowHealth);
+        fixture(context,world,builder,start);var source=start.south(3).up(3);var next=start.west(12);
+        try(var input=AutoBuilderChecks.class.getResourceAsStream("/fixtures/stash-flooded-access.txt")){
+            var lines=new String(input.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8).lines().filter(line->!line.startsWith("#")).toList();
+            world.getServer().runOnServer(server->{for(var line:lines){var parts=line.split(" ",4);var pos=source.add(Integer.parseInt(parts[0]),Integer.parseInt(parts[1]),Integer.parseInt(parts[2]));try{var state=net.minecraft.command.argument.BlockArgumentParser.block(net.minecraft.registry.Registries.BLOCK,parts[3],false).blockState();server.getOverworld().setBlockState(pos,state,Block.NOTIFY_ALL);}catch(com.mojang.brigadier.exceptions.CommandSyntaxException failure){throw new AssertionError(failure);}}});
+        }catch(java.io.IOException failure){throw new AssertionError(failure);}
+        context.waitTicks(20);world.getServer().runCommand("give @a stone");
+        world.getServer().runCommand("tp @a "+(source.getX()-.7)+" "+(source.getY()-1)+" "+(source.getZ()+.4513929)+" -90 0");context.waitTicks(3);
+        if(lowHealth){world.getServer().runOnServer(server->{var player=server.getPlayerManager().getPlayerList().getFirst();player.setHealth(6);player.getHungerManager().setFoodLevel(1);player.getHungerManager().setSaturationLevel(0);});context.waitTick();}
+        try{
+            context.runOnClient(client->{require(client.player.isSubmergedIn(net.minecraft.registry.tag.FluidTags.WATER),"Captured access fixture did not immerse the native player's head");builder.install(new Schematic("after-bucket.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(next);BuilderPacketChecks.begin();builder.startBuild();});
+            for(int tick=0;tick<240&&context.computeOnClient(client->client.player.isTouchingWater()||(boolean)field(builder,"waterDeparture"));tick++){if(tick%40==0)context.runOnClient(client->System.out.println("[flooded-exit] pos="+client.player.getEntityPos()+" air="+client.player.getAir()+" health="+client.player.getHealth()+" status="+builder.status()));context.waitTick();}
+            context.runOnClient(client->{require(!client.player.isTouchingWater()&&!(boolean)field(builder,"waterDeparture")&&client.player.getHealth()>=(lowHealth?6:20),"Captured flooded opening stranded or damaged the native player");require(!new BuilderWalk().canStand(source),"Departure admitted ordinary re-entry to the wet source");});
+            require(world.getServer().computeOnServer(server->server.getOverworld().getFluidState(source).isIn(net.minecraft.registry.tag.FluidTags.WATER)&&server.getOverworld().getBlockState(source.up()).get(Properties.WATERLOGGED)),"Departure drained the source or its overhead panel");
+            if(lowHealth){context.runOnClient(client->{require(builder.status().equals("Paused — low health")&&client.world.getBlockState(next).isAir(),"Low-health departure did not pause normal work on dry ground");BuilderPacketChecks.verify(0);});return;}
+            await(context,builder,480);verify(world,next,1,1,1,y->Blocks.STONE);
+            context.runOnClient(client->{BuilderPacketChecks.verify(1);require(client.player.getHealth()==20&&builder.temporarySupports().isEmpty(),"Captured flooded departure damaged the player or created unnecessary supports");});
+        }finally{
+            context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});
+            if(lowHealth){world.getServer().runOnServer(server->{var player=server.getPlayerManager().getPlayerList().getFirst();player.setHealth(player.getMaxHealth());player.getHungerManager().setFoodLevel(20);player.getHungerManager().setSaturationLevel(5);});context.waitTicks(2);}
+        }
     }
     private static void partialHeadroom(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         for(String facing:List.of("north","south","east","west")){

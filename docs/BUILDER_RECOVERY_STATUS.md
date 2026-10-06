@@ -5,6 +5,36 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+At 13:35, Upper68 on the integrated ecc8aeb tree failed unfinished698/710
+with128supports. The server confirmed drowning during bucket access. Its
+saved native world showed a waterlogged overhead trapdoor and falling water
+in the requested source/opening. Bucket planning now searches the required
+support face and verifies Minecraft's actual FluidFillable target again at
+the published look, avoiding unintended waterlogging of an adjacent panel.
+Active Auto Move also leaves occupied, connected water through a bounded
+native collision route ending on dry footing. It checks an onward dry route
+to the pending work, keeps departure committed across isolated dry posts,
+and prioritizes breathing after a bounded unsuccessful onward search.
+Staff, nearby-player, Semi Auto and explicit pause guards still apply.
+Low health pauses ordinary work after departure rather than freezing in water.
+Normal water entry and all lava hazards remain rejected; no source is drained.
+Native water-source-1 reproduced the overhead-panel mistake before the fix.
+The captured491-block Upper68 room reproduced stationary head immersion and
+air loss before departure support. Water-source-8 PASSED55s: actual intended
+source with a dry overhead panel; captured-room escape and resumed server
+STONE placement at full health; a forced6-health escape without further
+damage followed by a low-health pause on dry ground; sources preserved,
+ordinary wet re-entry rejected, zero temporary placements and native packets.
+Water-surface-1 PASSED2m24: final water cases plus all16 narrow landings and
+retained surface/partial-panel/door/pit/hopper/capacity checks.
+Water-staging-1 PASSED3m31: five-post43tick pillar and full cleanup, nearby
+tips, thick walls and ceiling placement/owned cleanup, all restoration,
+zero dirt, full health and native packets.
+Water-cleanup-1 PASSED4m: registered repair11ticks before the250000-cell
+scan, selected lids, full/spare capacity, sealed-build and AIR-roof cleanup,
+all restoration, zero dirt, full health and native packet/menu checks.
+Full latest Upper/Fresh and exact-head complete builder/auction CI remain gates.
+
 At 12:45, work resumed after the user's pause. Upper67 on2c6f3f5 ended
 unfinished704/710 with128supports and fullhealth; it had stopped over a lower
 waypoint while the body's toe still overlapped the upper ledge. A native
