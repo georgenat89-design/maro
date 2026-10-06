@@ -2671,6 +2671,7 @@ public final class AutoBuilder extends Module {
     }
     private void resetAfterHome(){
         queuedLookAction=null;queuedAimPoint=aimPoint=null;lookWaitStarted=-1;
+        endRecovery();
         walker.resetLook();standGoal=null;accessStand=accessBase=null;accessFloor=false;
         accessSupports.clear();accessStairs=Set.of();descentPost=descentView=null;descentLanding=false;
         viewSearches.clear();triedStands.clear();cleanupStands.clear();retryAt.clear();
@@ -2841,7 +2842,9 @@ public final class AutoBuilder extends Module {
             if(selected.stream().anyMatch(chest->!excluded.contains(chest)&&chestAccessRetryAt.containsKey(chest))){walker.release();status="Retrying access to selected chest — contents not checked";return true;}
             return false;
         }
-        restockBatch=Map.copyOf(requiredMaterials());foodRestock=supportRestock=false;restockWait=inventoryWait=0;partialSource=-1;partialItem=null;restockTriedSlots.clear();restockSlotRetries.clear();resetChestJourney();walker.stop();status="Restocking";return true;
+        restockBatch=Map.copyOf(requiredMaterials());foodRestock=supportRestock=false;restockWait=inventoryWait=0;partialSource=-1;partialItem=null;restockTriedSlots.clear();restockSlotRetries.clear();resetChestJourney();walker.stop();status="Restocking";
+        if(useHomes.get()&&homes.restock(restockTarget)){resetAfterHome();status="Saving work return before restocking through /home 1";}
+        return true;
     }
     private void finishRestock(String reason){
         if(ownedHandler!=null&&mc.player.currentScreenHandler==ownedHandler)mc.player.closeHandledScreen();
@@ -2944,6 +2947,7 @@ public final class AutoBuilder extends Module {
     public BlockPos selectedSupplyChest(){return containers.stream().findFirst().orElse(null);}
     /** Keep both selected lids and their standing clearance free of temporary dirt. */
     private boolean reservedSupplyAccess(BlockPos pos){
+        if(useHomes.get()&&homes.reservesStorageSpace(pos))return true;
         for(var chest:containers){
             if(pos.getY()<=chest.getY()||pos.getY()>chest.getY()+2)continue;
             if(pos.getX()==chest.getX()&&pos.getZ()==chest.getZ())return true;

@@ -73,6 +73,12 @@ public final class BuilderHomes {
         slot=1;pending=points[1];begin(Stage.RETURN_WAIT);return true;
     }
     public boolean protectsFooting(BlockPos floor){return returnTrip&&points[1]!=null&&points[1].feet().down().equals(floor);}
+    /** Keep the confirmed storage arrival body clear of the builder's own scaffolding. */
+    public boolean reservesStorageSpace(BlockPos pos){
+        if(points[0]==null||mc.player==null)return false;
+        var point=points[0].position;var dimensions=mc.player.getDimensions(net.minecraft.entity.EntityPose.STANDING);double half=dimensions.width()/2;
+        return new Box(point.x-half,point.y,point.z-half,point.x+half,point.y+dimensions.height(),point.z+half).intersects(new Box(pos));
+    }
     private void clearReturn(){
         slot=1;pending=points[1];points[1]=null;returnTrip=false;begin(Stage.RETURN_DELETE);mc.getNetworkHandler().sendChatCommand("delhome 2");
     }

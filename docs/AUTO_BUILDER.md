@@ -17,6 +17,9 @@ withdraws the needed supplies, returns through `/home 2`, and deletes home 2
 only after actual grounded arrival. It then plans its next needed block from
 the returned work area. Existing home 2 is replaced for this trip. Home 3 is
 never created, used or deleted. Already being beside storage needs no round trip.
+Restocking saves the return point before any storage approach starts. The
+confirmed home-1 arrival body stays reserved against temporary dirt, keeping the
+builder from blocking its own storage teleport while scaffolding nearby.
 Temporary dirt beneath the return point stays protected while away. Confirmed
 return metadata survives pause and saved-placement reload; a rejected return
 keeps home 2 for retry. Travel stays still through warmup and checks actual

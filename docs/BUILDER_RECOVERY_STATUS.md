@@ -5,6 +5,22 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Latest, 17:12: full fresh-visible-restock-4 exposed a scaffold occupying the
+confirmed home-1 feet cell. Native read-only snapshot proved safeStorage=false,
+readyFor=false, dirt at the saved feet and end stone below. That correctly
+prevented unsafe teleporting, but caused ordinary walking supply trips instead
+of the requested home-2 cycle. The replay was stopped at 86/710, 45 supports.
+
+Home 1's exact standing body is now reserved in every temporary-placement and
+scaffold search through reservedSupplyAccess. beginRestock starts home-2 setup
+immediately, before any storage approach; home transitions also release owned
+recovery jump input. The full fresh verifier now requires actual home-2 round
+trips, eliminating a zero-trip false pass. builder-home-reserved-visible-native-1
+PASSED in 1m27 with Meteor: storage feet/head scaffold rejection, exact restock
+order/native supplies, protected saved return, rejected retry, repair14 ticks,
+crouched3/3 cleanup and actual visible/rendered turns all passed. Restart fresh
+with this protection. The earlier cddc963 test JAR lacks it and is superseded.
+
 Latest, 17:02: the user reported that the visible head did not turn. The retained
 independent camera had intentionally stayed fixed, hiding native head motion.
 It now visibly eases toward walking/action aim with 12-degree yaw / 8-degree
