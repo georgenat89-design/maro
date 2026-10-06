@@ -5,6 +5,27 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+At 10:33, the user's observed final cleanup loop has a native movement fix and
+a direct access-repair queue. Upper66 on a7da639 was stopped unfinished at
+698/710 with 16 supports after cleanup repeatedly overshot narrow lower posts,
+took fall damage and rebuilt access. External per-tick evidence records a
+checked three-block landing at ticks33945..33959 followed by overshoot and
+an unintended six-block fall by33973. It is not a pass.
+The walker now brakes horizontally above lower landing centres and only
+advances waypoints on ground contact; cleanup waits for landing and movement
+to settle before mining. Known openings are refreshed directly, original
+work phase/layer restored and repairs queued as soon as their access posts
+are cleared, retaining deeper-first repair and final completion guards.
+Surface-2 PASSED1m30s, including native narrow drops in four directions using
+both exact standing and cleanup approaches. Immediate-repair-cleanup-2
+PASSED3m55s: a registered block in a250000-cell schematic restored in11ticks
+before its next global scan completed despite a stale observer phase and
+empty work queue; retained chest lids, full/spare capacity, sealed-room and
+AIR-roof cleanup restored all openings with zero dirt/fullhealth/packets.
+First cleanup attempt failed test setup because a fixed internal budget was
+looked up as a public setting; the fixture now reads its actual NumberSetting.
+No production workaround. Full latest Upper/Fresh/core/AH remain pending.
+
 At09:52, the user's quicker build-up/removal request is implemented using vertical
 pillars instead of unnecessary stairs. Upper65 on9975a88 was stopped early
 unfinished to implement that request; no pass. Native quick-pillar-2 PASSED

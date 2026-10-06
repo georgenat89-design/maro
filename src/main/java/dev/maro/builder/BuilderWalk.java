@@ -143,7 +143,7 @@ public final class BuilderWalk {
         }
         var node=path.get(cursor);var point=standingPoint(node);
         double dx=point.x-mc.player.getX(),dz=point.z-mc.player.getZ();
-        while(dx*dx+dz*dz<.16&&Math.abs(point.y-mc.player.getY())<.65){
+        while(dx*dx+dz*dz<.16&&Math.abs(point.y-mc.player.getY())<.65&&mc.player.isOnGround()){
             if(exact&&cursor==path.size()-1&&node.equals(target))break;
             if(++cursor>=path.size()){release();return false;}
             node=path.get(cursor);point=standingPoint(node);dx=point.x-mc.player.getX();dz=point.z-mc.player.getZ();
@@ -169,7 +169,11 @@ public final class BuilderWalk {
         // next input. Full walking speed otherwise overshoots a small target
         // and spends repeated turns chasing it around the standing cell.
         boolean close=exact&&node.equals(target)&&dx*dx+dz*dz<.75*.75&&Math.abs(point.y-mc.player.getY())<.2;
-        boolean move=headingError<(close?8:24)&&(!close||mc.player.getVelocity().horizontalLengthSquared()<.0004);
+        // Brake over the centre of a lower landing while gravity catches up.
+        // Continuing forward at the old height can carry us past a one-block
+        // post, even though the planned three-block drop itself is safe.
+        boolean landing=point.y<mc.player.getY()-.2&&dx*dx+dz*dz<.4*.4;
+        boolean move=!landing&&headingError<(close?8:24)&&(!close||mc.player.getVelocity().horizontalLengthSquared()<.0004);
         if(move){forward=true;mc.options.forwardKey.setPressed(true);}
         else if(forward){mc.options.forwardKey.setPressed(false);forward=false;}
         // Turn toward a raised waypoint before starting the jump. An early

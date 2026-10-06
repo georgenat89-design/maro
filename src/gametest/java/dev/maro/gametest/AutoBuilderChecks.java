@@ -79,6 +79,8 @@ final class AutoBuilderChecks {
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")||Boolean.getBoolean("maro.gametest.builderStashFinalOnly")){stashBuild(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly"))narrowDropLanding(context,singleplayer,builder,start);
+            if(Boolean.getBoolean("maro.gametest.builderCleanupOnly"))immediateOpeningRepair(context,singleplayer,builder,start);
             if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){fixture(context,singleplayer,builder,start);exhaustedAccessCapacity(context,singleplayer,builder,start);raisedDoorEntry(context,singleplayer,builder,start);partialHeadroom(context,singleplayer,builder,start);stairPlacementPriority(context,singleplayer,builder,start);stairPlacementStaging(context,singleplayer,builder,start);blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);fixture(context,singleplayer,builder,start);offsetRecovery(context,singleplayer,builder,start);hopperCrossing(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderStagingOnly")){verticalPillarPacing(context,singleplayer,builder,start);nearbyCleanupPriority(context,singleplayer,builder,start);fixture(context,singleplayer,builder,start);sameLevelStaging(context,singleplayer,builder,start);thickWallEntry(context,singleplayer,builder,start);ceilingColumnEntry(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderCleanupOnly")){ownedChestCover(context,singleplayer,builder,start);cleanupAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);airSupportFloorExit(context,singleplayer,builder,start);return;}
@@ -88,6 +90,7 @@ final class AutoBuilderChecks {
             exhaustedAccessCapacity(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             raisedTurn(context,singleplayer,start);
+            narrowDropLanding(context,singleplayer,builder,start);
             shapedArrival(context,singleplayer,builder,start);
             raisedDoorEntry(context,singleplayer,builder,start);
             partialHeadroom(context,singleplayer,builder,start);
@@ -97,6 +100,7 @@ final class AutoBuilderChecks {
             compactAccessStep(context,singleplayer,builder,start);
             ownedChestCover(context,singleplayer,builder,start);
             cleanupAccess(context,singleplayer,builder,start);
+            immediateOpeningRepair(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             faceReach(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
@@ -981,6 +985,48 @@ final class AutoBuilderChecks {
         });
         await(context,builder,2400);verify(world,target,1,1,1,y->Blocks.STONE);
         context.runOnClient(client->require(client.currentScreen==null,"Long restock journey left its chest open"));
+    }
+    private static void immediateOpeningRepair(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Restore a registered opening before the next large schematic scan completes");
+        fixture(context,world,builder,start);var target=start.south(2);
+        command(world,"setblock",target,"stone");for(String item:List.of("stone 1","diamond_pickaxe","diamond_shovel"))world.getServer().runCommand("give @a "+item);context.waitTicks(6);
+        var cells=new BlockState[250_000];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());int repair=cells.length-1;cells[repair]=Blocks.STONE.getDefaultState();
+        var schematic=new Schematic("immediate-opening-repair.nbt","test",100,25,100,BlockPos.ORIGIN,cells);
+        try{
+            context.runOnClient(client->{((dev.maro.setting.NumberSetting)field(builder,"budget")).set(.25);builder.install(schematic);builder.setOrigin(target.subtract(schematic.local(repair)));builder.preview();});
+            for(int tick=0;tick<2000&&context.computeOnClient(client->(int)field(builder,"completedScans")==0);tick++)context.waitTick();
+            context.runOnClient(client->require(builder.state(repair)==AutoBuilder.CORRECT,"Opening repair fixture lacks an initial exact block"));
+            command(world,"setblock",target,"air");context.waitTicks(6);
+            int scans=context.computeOnClient(client->{
+                try{for(String name:List.of("scanCursor","lastPassTasks")){var value=AutoBuilder.class.getDeclaredField(name);value.setAccessible(true);value.setInt(builder,0);}var phase=AutoBuilder.class.getDeclaredField("activePhase");phase.setAccessible(true);phase.setInt(builder,2);var work=AutoBuilder.class.getDeclaredField("workCells");work.setAccessible(true);work.set(builder,List.of());}catch(ReflectiveOperationException error){throw new AssertionError(error);}
+                @SuppressWarnings("unchecked")var openings=(Map<BlockPos,Integer>)field(builder,"floorAccessWork");openings.put(target,-1);@SuppressWarnings("unchecked")var depths=(Map<BlockPos,Integer>)field(builder,"openingRepairDepth");depths.put(target,1);BuilderPacketChecks.begin();builder.startBuild();return (int)field(builder,"completedScans");
+            });
+            int repaired=-1;for(int tick=0;tick<80;tick++){if(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(target).isOf(Blocks.STONE))){repaired=tick;break;}context.waitTick();}
+            require(repaired>=0,"Registered opening waited for a full schematic scan");
+            context.runOnClient(client->require((int)field(builder,"completedScans")==scans,"Repair fixture completed its global scan before proving the direct queue"));
+            System.out.println("[repair-progress] Registered opening restored in "+repaired+"ticks before global scan completion");
+            await(context,builder,250);context.runOnClient(client->{require(client.player.getHealth()==20&&client.currentScreen==null&&builder.temporarySupports().isEmpty(),"Immediate repair left damage, menu or scaffold");BuilderPacketChecks.verify(1);});
+        }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);((dev.maro.setting.NumberSetting)field(builder,"budget")).set(2d);});}
+    }
+    private static void narrowDropLanding(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Brake over a narrow lower landing before cleanup can replan");
+        for(var side:Direction.Type.HORIZONTAL)for(boolean exact:List.of(false,true)){
+            fixture(context,world,builder,start);
+            var high=start.up(6);var landing=start.offset(side).up(3);
+            command(world,"setblock",high.down(),"stone");command(world,"setblock",landing.down(),"stone");
+            double yaw=Math.toDegrees(Math.atan2(side.getOffsetZ(),side.getOffsetX()))-90;
+            world.getServer().runCommand("tp @a "+(high.getX()+.63)+" "+high.getY()+" "+(high.getZ()+.55)+" "+yaw+" 0");context.waitTicks(10);
+            var walker=context.computeOnClient(client->new BuilderWalk());boolean arrived=false;
+            try{
+                context.runOnClient(client->require(walker.canReachStand(landing),"Narrow three-block landing lacks a checked route"));
+                for(int tick=0;tick<180&&!arrived;tick++){
+                    arrived=context.computeOnClient(client->{require(client.player.getHealth()==20,"Narrow landing caused fall damage");return exact?walker.standAt(landing):walker.approach(landing.down(),client.player.getBlockInteractionRange()-.85);});context.waitTick();
+                }
+                require(arrived,"Walker did not arrive over its narrow landing: "+side+" exact="+exact);
+                context.runOnClient(client->walker.release());context.waitTicks(20);
+                context.runOnClient(client->require(client.player.isOnGround()&&Math.abs(client.player.getY()-landing.getY())<.01&&client.player.getHealth()==20,"Native drop overshot its lower post: "+side+" exact="+exact));
+            }finally{context.runOnClient(client->walker.stop());}
+        }
     }
     private static void raisedTurn(ClientGameTestContext context,TestSingleplayerContext world,BlockPos start){
         command(world,"setblock",start.east(),"stone");

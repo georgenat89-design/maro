@@ -936,8 +936,26 @@ public final class AutoBuilder extends Module {
     }
     private void findWork(){
         if(completedScans==0){status="Checking schematic: "+(100L*scanCursor/Math.max(1,states.length))+"%";return;}
-        if((lastPassTasks==0||correct==solid&&!supports.isEmpty())&&(!supports.isEmpty()||ticks-lastAction>=20)){
+        // Access repairs are a small, known set. Refresh them directly instead
+        // of waiting for another whole-schematic scan after the last post goes.
+        var repairs=new ArrayList<Integer>();
+        for(var pos:List.copyOf(floorAccessWork.keySet())){
+            int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());
+            if(cell<0)continue;updateState(cell);
+            if(states[cell]!=CORRECT&&states[cell]!=IGNORED&&!floorDeferred(pos))repairs.add(cell);
+        }
+        if(openingRestoration&&!repairs.isEmpty()){
+            activePhase=repairs.stream().mapToInt(this::taskPhase).min().orElse(activePhase);
+            activeLayer=repairs.stream().mapToInt(this::taskLayer).min().orElse(activeLayer);
+            workCells=List.copyOf(repairs);refreshSection();
+        }
+        if(repairs.isEmpty()&&(lastPassTasks==0||correct==solid&&!supports.isEmpty())&&(!supports.isEmpty()||ticks-lastAction>=20)){
             if(cleanup.get()&&!supports.isEmpty()){
+                // Keep a checked drop's landing intact until the body settles.
+                // Replanning or mining while falling can delete its footing.
+                if(!mc.player.isOnGround()){
+                    walker.release();status="Settling before temporary support cleanup";return;
+                }
                 // Keep low access stairs until upper pieces are gone. Within one
                 // height, clear nearby pieces to avoid criss-crossing the build.
                 if(cleanupTarget!=null&&!supports.contains(cleanupTarget))cleanupTarget=null;
@@ -963,6 +981,7 @@ public final class AutoBuilder extends Module {
                     if(autoMove.get()&&repositionTarget(pos,cleanupStands.computeIfAbsent(pos,p->new HashMap<>())))status="Moving to clean temporary support";
                     else status="Cleanup needs a clear path — move off / around the support";return;
                 }
+                if(mc.player.getVelocity().horizontalLengthSquared()>=.0004){walker.release();status="Settling before temporary support cleanup";return;}
                 if(preserveCleanupExit(pos))return;
                 mining=pos;mineTick();return;
             }
@@ -977,6 +996,7 @@ public final class AutoBuilder extends Module {
         // A local neighborhood is cheap even for multi-million-cell schematics; global nearest cells
         // from the scan are appended for walking. A candidate's actual world state is rechecked below.
         for(int i:sectionSupply()?sectionCells:workCells)if(layerAllows(i)&&!floorDeferred(position(i))&&taskPhase(i)==activePhase&&(!layerSupply()||taskLayer(i)==supplyLayer())&&states[i]!=CORRECT&&states[i]!=IGNORED&&retryAt.getOrDefault(i,0)<=ticks)candidates.add(i);
+        for(int i:repairs)if(layerAllows(i)&&taskPhase(i)==activePhase&&!candidates.contains(i)&&retryAt.getOrDefault(i,0)<=ticks)candidates.add(i);
         if(navigatingCell>=0&&(states[navigatingCell]==CORRECT||!candidates.contains(navigatingCell)||ticks-navigationStarted>240)){navigatingCell=-1;walker.stop();}
         candidates.sort(Comparator.<Integer>comparingInt(i->i==navigatingCell?0:1).thenComparingDouble(i->taskLayer(i)*(sectionSupply()?8:100)+position(i).getSquaredDistance(mc.player.getBlockPos())));
         needed=null;Integer distant=null;List<Integer> blocked=new ArrayList<>();
