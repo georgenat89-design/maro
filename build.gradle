@@ -77,6 +77,8 @@ tasks.register('runProductionClientGameTest', net.fabricmc.loom.task.prod.Client
     jvmArgs.add("-Dmaro.gametest.builderStashUpperOnly=" + providers.gradleProperty("builderStashUpperTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.builderTurnOnly=" + providers.gradleProperty("builderTurnTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.builderEntryOnly=" + providers.gradleProperty("builderEntryTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderSurfaceOnly=" + providers.gradleProperty("builderSurfaceTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderCleanupOnly=" + providers.gradleProperty("builderCleanupTestOnly").getOrElse("false"))
     jvmArgs.addAll([
             "-Dfabric.client.gametest",
             "-Dfabric.client.gametest.disableNetworkSynchronizer=true",

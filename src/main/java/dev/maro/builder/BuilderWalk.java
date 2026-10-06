@@ -100,7 +100,7 @@ public final class BuilderWalk {
     private boolean approach(BlockPos target,double distance,boolean stand){
         if(mc.player==null||mc.world==null)return false;
         if(!target.equals(goal)||exact!=stand){stop();goal=target;exact=stand;}
-        if((exact?mc.player.getEntityPos().squaredDistanceTo(standingPoint(target)):mc.player.getEyePos().squaredDistanceTo(Vec3d.ofCenter(target)))<=distance*distance){
+        if(exact?atStandingView(target,distance):mc.player.getEyePos().squaredDistanceTo(Vec3d.ofCenter(target))<=distance*distance){
             release();if(!exact||mc.player.isOnGround()&&mc.player.getVelocity().horizontalLengthSquared()<.0004){failedRoutes=0;recoveryRequested=movementStalled=false;return true;}
             status="Settling at build position";return false;
         }
@@ -152,6 +152,19 @@ public final class BuilderWalk {
         if(last==null||now.subtract(last).horizontalLengthSquared()>.04||mc.player.isOnGround()&&Math.abs(now.y-last.y)>.2){last=now;stuck=0;movementStalled=false;}else if(forward)stuck++;
         if(stuck>30){recoveryRequested=movementStalled=true;path=List.of();release();stuck=0;retry=20;}
         status="Walking to build position";return false;
+    }
+    private boolean atStandingView(BlockPos target,double distance){
+        var point=standingPoint(target);var position=mc.player.getEntityPos();
+        if(position.squaredDistanceTo(point)<=distance*distance)return true;
+        double dx=position.x-point.x,dz=position.z-point.z;
+        if(dx*dx+dz*dz>distance*distance||!mc.player.isOnGround()||!walkable(target))return false;
+        // A hopper rim (or adjacent partial surface) can support the actual
+        // player above the nominal centre height. Do not orbit the centre to
+        // force that height: require an actual nearby native footing contact.
+        var contact=mc.player.getBoundingBox().offset(0,-.02,0);
+        for(var shape:mc.world.getBlockCollisions(mc.player,contact))for(var box:shape.getBoundingBoxes())
+            if(box.intersects(contact)&&Math.abs(box.maxY-position.y)<.025&&Math.abs(box.maxY-point.y)<=.5)return true;
+        return false;
     }
     private boolean straightTo(BlockPos node){
         var start=mc.player.getEntityPos();var end=standingPoint(node);double length=start.distanceTo(end);

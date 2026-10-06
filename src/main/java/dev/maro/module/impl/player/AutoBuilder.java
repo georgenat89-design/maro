@@ -181,6 +181,8 @@ public final class AutoBuilder extends Module {
     private final Map<Integer,Integer> retryAt=new HashMap<>();
     private final Map<Integer,Map<BlockPos,Integer>> triedStands=new HashMap<>();
     private final Map<BlockPos,Map<BlockPos,Integer>> cleanupStands=new HashMap<>();
+    // Cleanup still needs a route after every schematic work cell is finished.
+    private BlockPos cleanupTarget;
     private BlockPos standGoal;
     private BlockPos accessStand,accessBase;
     private BlockPos entrySearchFeet;
@@ -574,7 +576,7 @@ public final class AutoBuilder extends Module {
         preparationStage=0;depositQueue.clear();
         if(partialSource>=0&&ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler&&!ownedHandler.getCursorStack().isEmpty())mc.interactionManager.clickSlot(ownedHandler.syncId,partialSource,0,SlotActionType.PICKUP,mc.player);
         partialSource=-1;partialItem=null;
-        building=false;pasting=false;depositing=false;depositTarget=null;depositSlot=-1;resumeShoppingAfterDeposit=false;depositedShopping.clear();placement=pendingPlacement=null;pendingServerState=null;routeMining=null;mining=null;tuningTarget=tuningSession=null;tuningClicks=0;standGoal=null;descentPost=descentView=null;descentLanding=false;accessStand=accessBase=null;recycleTarget=null;accessFloor=false;accessSupports.clear();viewSearches.clear();digging=false;walker.stop();releaseSneak();endRecovery();
+        building=false;pasting=false;depositing=false;depositTarget=null;depositSlot=-1;resumeShoppingAfterDeposit=false;depositedShopping.clear();placement=pendingPlacement=null;pendingServerState=null;routeMining=null;mining=null;tuningTarget=tuningSession=null;tuningClicks=0;standGoal=null;descentPost=descentView=null;descentLanding=false;cleanupTarget=null;accessStand=accessBase=null;recycleTarget=null;accessFloor=false;accessSupports.clear();viewSearches.clear();digging=false;walker.stop();releaseSneak();endRecovery();
         if(mc.interactionManager!=null)mc.interactionManager.cancelBlockBreaking();
         if(ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler&&ownedHandler.getCursorStack().isEmpty())mc.player.closeHandledScreen();
         ownedHandler=null;restockTarget=null;routeOpening=null;restockBatch=Map.of();chestAccessRetryAt.clear();buying=false;pendingOffer=null;shopping.clear();status=reason;
@@ -891,15 +893,21 @@ public final class AutoBuilder extends Module {
             if(cleanup.get()&&!supports.isEmpty()){
                 // Keep low access stairs until upper pieces are gone. Within one
                 // height, clear nearby pieces to avoid criss-crossing the build.
-                var pos=supports.stream().min(Comparator.<BlockPos>comparingInt(p->-p.getY())
+                if(cleanupTarget!=null&&!supports.contains(cleanupTarget))cleanupTarget=null;
+                var pos=cleanupTarget!=null?cleanupTarget:supports.stream().min(Comparator.<BlockPos>comparingInt(p->-p.getY())
                     .thenComparingInt(p->new Box(p).intersects(mc.player.getBoundingBox().offset(0,-1,0))?1:0)
                     .thenComparingDouble(p->p.getSquaredDistance(mc.player.getBlockPos()))).orElseThrow();
+                cleanupTarget=pos;
                 if(!mc.world.isChunkLoaded(pos)){status="Cleanup paused — support chunk is unloaded";return;}
                 if(!mc.world.getBlockState(pos).isOf(Blocks.DIRT)){supports.remove(pos);cleanupStands.remove(pos);return;}
                 int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());
                 if(cell>=0&&desired(cell).isOf(Blocks.DIRT)){supports.remove(pos);return;}
                 if(!withinReach(pos,mc.player.getEyePos())){
-                    if(autoMove.get()){walker.approach(pos,effectiveReach()-.75);status="Returning to temporary supports";}else status="Move closer to clean temporary supports";return;
+                    if(autoMove.get()){
+                        if(walker.routeUnavailable()||walker.movementStalled()){
+                            if(!repositionTarget(pos,cleanupStands.computeIfAbsent(pos,p->new HashMap<>())))status="Cleanup needs a checked access route";
+                        }else{walker.approach(pos,effectiveReach()-.75);status="Returning to temporary supports";}
+                    }else status="Move closer to clean temporary supports";return;
                 }
                 if(new Box(pos).intersects(mc.player.getBoundingBox().offset(0,-1,0))||visibleHit(pos)==null){
                     if(autoMove.get()&&repositionTarget(pos,cleanupStands.computeIfAbsent(pos,p->new HashMap<>())))status="Moving to clean temporary support";
@@ -1134,17 +1142,24 @@ public final class AutoBuilder extends Module {
     }
     /** Finish one access route before selecting another target or reclaiming its new steps. */
     private boolean continueAccess(){
-        if(accessStand==null||navigatingCell<0)return false;
+        boolean cleaning=cleanup.get()&&cleanupTarget!=null&&supports.contains(cleanupTarget)&&mc.world.getBlockState(cleanupTarget).isOf(Blocks.DIRT);
+        if(cleanupTarget!=null&&!cleaning){cleanupTarget=null;accessStand=accessBase=null;accessFloor=false;accessSupports.clear();}
+        if(accessStand==null||!cleaning&&navigatingCell<0)return false;
+        var tried=cleaning?cleanupStands.computeIfAbsent(cleanupTarget,p->new HashMap<>()):triedStands.computeIfAbsent(navigatingCell,i->new HashMap<>());
         double gap=mc.player.getEntityPos().distanceTo(Vec3d.ofBottomCenter(accessStand));
         if(mc.player.isOnGround()&&gap<accessBestDistance-.25){accessBestDistance=gap;accessProgressAt=ticks;}
-        if(states[navigatingCell]==CORRECT||taskPhase(navigatingCell)!=activePhase||ticks-accessStarted>2400||ticks-accessProgressAt>600){
-            triedStands.computeIfAbsent(navigatingCell,i->new HashMap<>()).put(accessStand,ticks+600);
+        if(!cleaning&&(states[navigatingCell]==CORRECT||taskPhase(navigatingCell)!=activePhase)||ticks-accessStarted>2400||ticks-accessProgressAt>600){
+            tried.put(accessStand,ticks+600);
             accessStand=accessBase=null;accessFloor=false;accessSupports.clear();return false;
         }
-        var wanted=desired(navigatingCell);var item=Schematic.material(wanted);
-        var direct=inventoryCount(item)>0?placement(position(navigatingCell),wanted,item,navigatingCell,false):null;
-        if(direct!=null){
-            accessStand=accessBase=null;accessFloor=false;accessSupports.clear();placement=direct;placeTick();return true;
+        if(cleaning){
+            if(withinReach(cleanupTarget,mc.player.getEyePos())&&visibleHit(cleanupTarget)!=null&&!new Box(cleanupTarget).intersects(mc.player.getBoundingBox().offset(0,-1,0))){
+                accessStand=accessBase=null;accessFloor=false;accessSupports.clear();mining=cleanupTarget;mineTick();return true;
+            }
+        }else{
+            var wanted=desired(navigatingCell);var item=Schematic.material(wanted);
+            var direct=inventoryCount(item)>0?placement(position(navigatingCell),wanted,item,navigatingCell,false):null;
+            if(direct!=null){accessStand=accessBase=null;accessFloor=false;accessSupports.clear();placement=direct;placeTick();return true;}
         }
         int required=requiredAccessCapacity();
         if(required>0&&required>tempDirt.getInt()-supports.size()){
@@ -1152,8 +1167,8 @@ public final class AutoBuilder extends Module {
             // A finished recycling search can have no reachable safe candidate.
             // Do not request a jump that the full pool cannot supply each tick.
             // Let ordinary alternatives, other work and checked descents run.
-            triedStands.computeIfAbsent(navigatingCell,i->new HashMap<>()).put(accessStand,ticks+600);
-            retryAt.put(navigatingCell,ticks+40);navigatingCell=-1;
+            tried.put(accessStand,ticks+600);
+            if(!cleaning){retryAt.put(navigatingCell,ticks+40);navigatingCell=-1;}
             accessStand=accessBase=null;accessFloor=false;accessSupports.clear();walker.stop();
             status="Access capacity unavailable — checking alternatives";return false;
         }
@@ -1188,7 +1203,7 @@ public final class AutoBuilder extends Module {
         }
         // Geometry may have changed while walking. Defer this view rather than
         // alternately constructing and destroying it for another work target.
-        triedStands.computeIfAbsent(navigatingCell,i->new HashMap<>()).put(accessStand,ticks+600);
+        tried.put(accessStand,ticks+600);
         accessStand=accessBase=null;accessFloor=false;accessSupports.clear();return false;
     }
     private void commitAccess(BlockPos stand,boolean floor){
@@ -1197,7 +1212,7 @@ public final class AutoBuilder extends Module {
     }
     /** Reach a finished elevated floor by climbing outside it, rather than mining or pillaring underneath it. */
     private boolean prepareElevatedEntry(List<BlockPos> views,int work){
-        if(!support.get()||work<0||views.isEmpty())return false;
+        if(!support.get()||work<0&&cleanupTarget==null||views.isEmpty())return false;
         var feet=mc.player.getBlockPos();int hash=views.hashCode();
         if(!feet.equals(entrySearchFeet)||entrySearchWork!=work||entrySearchHash!=hash){
             entrySearchFeet=feet.toImmutable();entrySearchWork=work;entrySearchHash=hash;entrySearchCursor=entryRetryAt=entryDoorCursor=0;entryProbeBase=null;
@@ -1220,7 +1235,7 @@ public final class AutoBuilder extends Module {
         while(entrySearchCursor<total&&System.nanoTime()<deadline){
             if(entryProbeCursor!=entrySearchCursor){entryProbeCursor=entrySearchCursor;entryProbeBase=null;entryDoorCursor=0;}
             var candidate=entryCandidates.get(entrySearchCursor++);var top=candidate.top;var destination=candidate.destination;
-            var tried=triedStands.get(work);if(tried!=null&&tried.getOrDefault(top,0)>ticks)continue;
+            var tried=cleanupTarget!=null?cleanupStands.get(cleanupTarget):triedStands.get(work);if(tried!=null&&tried.getOrDefault(top,0)>ticks)continue;
             if(!walker.hasStandingClearance(top)||!mc.world.getBlockState(top.down()).isReplaceable()||plannedSolid(top.down()))continue;
             BlockPos base=null;boolean clear=true;
             for(int down=1;down<=6;down++){
@@ -1240,7 +1255,7 @@ public final class AutoBuilder extends Module {
                 reachable=walker.canReachFromPillar(top,destination);
                 if(!reachable){entryProbeBase=base;entryDoorCursor=0;}
             }else reachable=false;
-            if(!reachable&&unstuck.get()&&states[work]!=CORRECT){
+            if(!reachable&&unstuck.get()&&work>=0&&states[work]!=CORRECT){
                 var eye=Vec3d.ofBottomCenter(top).add(0,mc.player.getStandingEyeHeight(),0);
                 while(entryDoorCursor<ESCAPE_SIDES.length&&System.nanoTime()<deadline){
                     var bottom=top.offset(ESCAPE_SIDES[entryDoorCursor++]);var upper=bottom.up();var removed=Set.of(bottom,upper);
@@ -1564,14 +1579,14 @@ public final class AutoBuilder extends Module {
         return false;
     }
     private boolean plannedSolid(BlockPos pos){int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());return cell>=0&&!desired(cell).isAir()&&!desired(cell).isOf(Blocks.STRUCTURE_VOID);}
-    private BlockPos recoveryDestination(){return standGoal!=null?standGoal:restockTarget!=null?restockTarget:depositTarget!=null?depositTarget:accessStand!=null?accessStand:navigatingCell>=0?position(navigatingCell):walker.destination();}
+    private BlockPos recoveryDestination(){return standGoal!=null?standGoal:restockTarget!=null?restockTarget:depositTarget!=null?depositTarget:accessStand!=null?accessStand:cleanupTarget!=null?cleanupTarget:navigatingCell>=0?position(navigatingCell):walker.destination();}
     private boolean prepareSupportDescent(List<BlockPos> views){
         return prepareSupportDescent(views,true);
     }
     private boolean prepareSupportDescent(List<BlockPos> views,boolean allowStaging){
-        boolean staged=restockTarget!=null||navigatingCell>=0&&states[navigatingCell]!=CORRECT&&!desired(navigatingCell).isAir();
+        boolean staged=cleanupTarget!=null||restockTarget!=null||navigatingCell>=0&&states[navigatingCell]!=CORRECT&&!desired(navigatingCell).isAir();
         if(!staged&&views.isEmpty())return false;
-        var feet=mc.player.getBlockPos();var destination=restockTarget!=null?restockTarget:navigatingCell>=0?position(navigatingCell):views.getFirst();
+        var feet=mc.player.getBlockPos();var destination=restockTarget!=null?restockTarget:cleanupTarget!=null?cleanupTarget:navigatingCell>=0?position(navigatingCell):views.getFirst();
         if(!feet.equals(descentSearchFeet)||!destination.equals(descentSearchDestination)){
             descentSearchFeet=feet.toImmutable();descentSearchDestination=destination;descentSearchCursor=descentRetryAt=descentSearchPhase=0;descentHatchesReady=false;
             descentSearchViews=views.stream().filter(pos->walker.standingPoint(pos).y<mc.player.getY()-.5)

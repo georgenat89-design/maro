@@ -79,12 +79,16 @@ final class AutoBuilderChecks {
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")){stashBuild(context,singleplayer,builder,start);return;}
-            if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){elevatedFloorEntry(context,singleplayer,builder,start);sealedDirectionalAccess(context,singleplayer,builder,start,3);return;}
+            if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){shapedArrival(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderCleanupOnly")){cleanupAccess(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){elevatedFloorEntry(context,singleplayer,builder,start);sealedDirectionalAccess(context,singleplayer,builder,start,3);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")){sealedDirectionalAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);raisedChestReturn(context,singleplayer,builder,start);sealedChestReturn(context,singleplayer,builder,start);return;}
             fixture(context,singleplayer,builder,start);
             exhaustedAccessCapacity(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             raisedTurn(context,singleplayer,start);
+            shapedArrival(context,singleplayer,builder,start);
+            cleanupAccess(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             faceReach(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
@@ -1037,6 +1041,47 @@ final class AutoBuilderChecks {
                 require(!walker.needsRecovery()&&!walker.routeUnavailable(),"Successful walking route retained a stale pillar request");
             }catch(ReflectiveOperationException error){throw new AssertionError(error);}finally{walker.stop();}
         });
+    }
+    private static void cleanupAccess(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        for(boolean full:List.of(false,true)){
+            System.out.println("[builder-check] Finished-build cleanup needs a native exterior access column; fullPool="+full);
+            fixture(context,world,builder,start);var target=start.add(0,7,5);var complete=start.north(3);var ownedPosts=new HashSet<BlockPos>();ownedPosts.add(target);
+            world.getServer().runCommand("fill "+coords(start.add(-4,6,-4))+" "+coords(start.add(4,6,4))+" stone");command(world,"setblock",target,"dirt");command(world,"setblock",complete,"stone");
+            if(full){for(int x:new int[]{-3,-2,-1,1,2,3})ownedPosts.add(start.add(x,0,8));ownedPosts.add(start.south(9));for(var p:ownedPosts)command(world,"setblock",p,"dirt");}
+            for(String item:List.of("dirt 32","diamond_shovel","diamond_pickaxe"))world.getServer().runCommand("give @a "+item);
+            world.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+start.getY()+" "+(start.getZ()+8.5));context.waitTicks(12);
+            int limit=full?8:16;
+            try{
+                context.runOnClient(client->{set(builder,"Temporary Supports",true);set(builder,"Clean Temporary Supports",true);((dev.maro.setting.NumberSetting)field(builder,"tempDirt")).set((double)limit);builder.install(new Schematic("complete-cleanup-access.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(complete);@SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.addAll(ownedPosts);BuilderPacketChecks.begin();builder.startBuild();});
+                for(int tick=0;tick<1800&&context.computeOnClient(client->builder.building());tick++){
+                    context.runOnClient(client->require(builder.temporarySupports().size()<=limit,"Cleanup access exceeded its support budget"));
+                    if(tick%200==0)System.out.println((String)context.computeOnClient(client->"[cleanup-progress] "+builder.status()+" supports="+builder.temporarySupports().size()+" actor="+client.player.getEntityPos()+" target="+field(builder,"cleanupTarget")+" access="+field(builder,"accessStand")));
+                    context.waitTick();
+                }
+                await(context,builder,1);
+                context.runOnClient(client->{require(builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Cleanup access left owned dirt, damage or an open menu");BuilderPacketChecks.verify();});
+                require(world.getServer().computeOnServer(server->{var level=server.getOverworld();if(!level.getBlockState(complete).isOf(Blocks.STONE))return false;for(int x=-4;x<=4;x++)for(int z=-4;z<=4;z++)if(!level.getBlockState(start.add(x,6,z)).isOf(Blocks.STONE))return false;for(int x=-8;x<=8;x++)for(int y=0;y<=10;y++)for(int z=-8;z<=12;z++)if(level.getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Cleanup altered the finished floor or left old/new temporary dirt");
+            }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);((dev.maro.setting.NumberSetting)field(builder,"tempDirt")).set(128d);});}
+        }
+    }
+    private static void shapedArrival(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Native hopper-rim arrival without orbiting the standing cell");
+        for(var side:Direction.Type.HORIZONTAL){
+            fixture(context,world,builder,start);var floor=start.south(3);var target=floor.up();
+            command(world,"setblock",floor,"hopper[facing=east]");
+            world.getServer().runCommand("tp @a "+(floor.getX()+.5+side.getOffsetX()*.095)+" "+target.getY()+" "+(floor.getZ()+.5+side.getOffsetZ()*.095)+" 180 0");context.waitTicks(12);
+            var walk=context.computeOnClient(client->{require(client.player.isOnGround()&&Math.abs(client.player.getY()-target.getY())<.01,"Rim fixture did not settle on its native high collision surface");var w=new BuilderWalk();w.turning(true,45);return w;});
+            boolean arrived=false;float previous=context.computeOnClient(client->client.player.getYaw());double rotation=0;
+            try{
+                for(int tick=0;tick<40;tick++){
+                    arrived=context.computeOnClient(client->walk.standAt(target));float current=context.computeOnClient(client->client.player.getYaw());rotation+=Math.abs(MathHelper.wrapDegrees(current-previous));previous=current;
+                    if(arrived)break;context.waitTick();
+                }
+                require(arrived&&rotation<=180,"Hopper rim arrival chased its nominal centre height: arrived="+arrived+" rotation="+rotation+" side="+side);
+                context.runOnClient(client->require(client.player.getHealth()==20&&client.player.isOnGround(),"Shaped arrival did not retain safe native footing"));
+                require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(floor).isOf(Blocks.HOPPER)),"Shaped arrival changed its floor");
+            }finally{context.runOnClient(client->walk.stop());}
+        }
     }
     private static void elevatedFloorEntry(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         for(int height:List.of(3,6))elevatedFloorEntry(context,world,builder,start,height);

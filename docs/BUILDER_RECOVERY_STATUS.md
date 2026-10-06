@@ -5,6 +5,36 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Upper replay 51 passed the earlier 469/617 stalls, completed fluids and observers,
+and reached cleanup at 706/710 with four deferred final wall cells. It then
+stalled on a distant highest support at (-26217,68,-150574): walker path empty,
+84 failed searches, same ground pose and 126 supports. Out-of-reach cleanup only
+called walker.approach; it never used the access planner. Read-only native mining
+queries found no currently reachable view but proved eight ordinary exterior
+column/base/onward-view routes. The process was stopped, not passed.
+The current working change gives cleanup a retained target independent of an
+unfinished schematic cell, allows its ordinary checked entry, and shares the
+committed capacity/climb/descent logic. Finished walls remain deferred through
+cleanup. New native cases start a finished schematic with a high out-of-reach
+owned support, check both an ordinary and full eight-support budget, and require
+all old/new dirt removed, intact floor, health 20, closed menus and native packets.
+Cleanup-access run 1 passed both cases in 57s, with the strict 8/16 limits,
+finished 81-cell floors intact, exact existing schematic block, zero raw/owned
+dirt, health 20, closed menus and native packet ordering. A subsequent guard
+also clears this access intent if Clean Temporary Supports is switched off;
+the final focused/full gates must compile that latest guard. The original native
+hopper-rim arrival test failed in 20s: north rim position, arrived true but
+444.99 degrees of rotation at a single standing view. Arrival now accepts a real
+grounded block-collision contact inside the horizontal arrival radius, within
+0.5 of the nominal height and 0.025 of the actual feet. Surface run 2 passed all
+four rim positions in 25s, without changing route/standingPoint heights or native
+placement validation. Latest combined entry/room/cleanup run passed in 4m46s:
+height-3/6 entries, wide floor, isolated five-post return with its bounded descent,
+524,288-cell raised sealed room and both cleanup budgets. Native directions and
+finished floors/walls were preserved, raw/owned dirt was zero, health 20, menus
+closed and packet checks passed. Upper replay 52 is next on this production;
+complete upper/fresh/core remain required. No release or merge.
+
 Upper replay 50 stopped at 617/710 on an isolated owned column after restocking.
 Read-only native queries proved a safe five-step descent to the ground and
 multiple reachable open exits. Nearby roof columns and a single bridge did not
