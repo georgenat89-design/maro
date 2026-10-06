@@ -44,8 +44,12 @@ post existed; ordinary walking only searched two-block drops.
 The current checkpoint permits actual-footing drops of at most three blocks,
 checks the whole falling corridor, and waits for grounded footing before mining
 so a landing post cannot be removed mid-fall. Run 6 (`builder-core-reserve-6.log`)
-now tests all these latest changes. The eight-support case and all final release
-gates remain unverified until this run and the upper/fresh stash builds finish.
+now tests all these latest changes. It passed the ground-staging cleanup case at
+22:49:20 and the eight-support capacity case at 22:49:40. The latter requires four
+old slots freed before the first native jump and checks no pool overflow, the
+final server block, all temporary dirt removed, health 20, closed menus and native
+packet order. The rest of this full run and the upper/fresh stash builds remain
+required final gates. Keep the production code unchanged while they run.
 
 ## Required gates on unchanged final production code
 
