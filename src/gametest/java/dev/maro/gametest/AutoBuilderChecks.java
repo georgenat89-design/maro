@@ -80,7 +80,7 @@ final class AutoBuilderChecks {
         try{
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")||Boolean.getBoolean("maro.gametest.builderStashFinalOnly")){stashBuild(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){fixture(context,singleplayer,builder,start);exhaustedAccessCapacity(context,singleplayer,builder,start);raisedDoorEntry(context,singleplayer,builder,start);partialHeadroom(context,singleplayer,builder,start);stairPlacementPriority(context,singleplayer,builder,start);stairPlacementStaging(context,singleplayer,builder,start);blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);fixture(context,singleplayer,builder,start);offsetRecovery(context,singleplayer,builder,start);hopperCrossing(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
-            if(Boolean.getBoolean("maro.gametest.builderStagingOnly")){fixture(context,singleplayer,builder,start);sameLevelStaging(context,singleplayer,builder,start);thickWallEntry(context,singleplayer,builder,start);ceilingColumnEntry(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderStagingOnly")){verticalPillarPacing(context,singleplayer,builder,start);nearbyCleanupPriority(context,singleplayer,builder,start);fixture(context,singleplayer,builder,start);sameLevelStaging(context,singleplayer,builder,start);thickWallEntry(context,singleplayer,builder,start);ceilingColumnEntry(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderCleanupOnly")){ownedChestCover(context,singleplayer,builder,start);cleanupAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);airSupportFloorExit(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){compactAccessStep(context,singleplayer,builder,start);ownedChestCover(context,singleplayer,builder,start);elevatedFloorEntry(context,singleplayer,builder,start);sealedDirectionalAccess(context,singleplayer,builder,start,3);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")){sealedDirectionalAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);raisedChestReturn(context,singleplayer,builder,start);sealedChestReturn(context,singleplayer,builder,start);return;}
@@ -107,6 +107,8 @@ final class AutoBuilderChecks {
             activeStepProtection(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             sameLevelStaging(context,singleplayer,builder,start);
+            verticalPillarPacing(context,singleplayer,builder,start);
+            nearbyCleanupPriority(context,singleplayer,builder,start);
             thickWallEntry(context,singleplayer,builder,start);
             ceilingColumnEntry(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
@@ -1278,6 +1280,47 @@ final class AutoBuilderChecks {
             for(int tick=0;tick<200&&context.computeOnClient(client->field(builder,"standGoal")!=null);tick++)context.waitTick();
             context.runOnClient(client->{require(field(builder,"standGoal")==null&&client.player.getY()>=step.getY()+.9&&((Set<?>)field(builder,"accessSupports")).contains(step),"Intermediate arrival released a still-needed access step");require(client.player.getHealth()==20,"Compact stair caused damage");BuilderPacketChecks.verify(1);builder.setEnabled(false);});
             require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(step).isOf(Blocks.DIRT)&&server.getOverworld().getBlockState(step.down()).isAir()&&server.getOverworld().getBlockState(step.down(2)).isAir()),"Compact step added unnecessary dirt below its native attachment");
+        }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
+    }
+    private static void verticalPillarPacing(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Five-block vertical pillar without per-block recovery waits, then native cleanup");
+        fixture(context,world,builder,start);var target=start.up(6).east(6);
+        for(int x=1;x<=6;x++)command(world,"setblock",start.up(5).east(x),"stone");
+        world.getServer().runCommand("give @a stone 1");world.getServer().runCommand("give @a dirt 16");world.getServer().runCommand("give @a diamond_shovel 1");context.waitTicks(6);
+        try{
+            context.runOnClient(client->{set(builder,"Temporary Supports",true);builder.install(new Schematic("quick-vertical-pillar.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);BuilderPacketChecks.begin();builder.startBuild();});
+            int first=-1,top=-1;
+            for(int tick=0;tick<400;tick++){
+                final int sample=tick;
+                int count=context.computeOnClient(client->{for(var post:builder.temporarySupports())require(post.getX()==start.getX()&&post.getZ()==start.getZ(),"Vertical route built side stairs instead of its checked pillar");return builder.temporarySupports().size();});
+                if(count>0&&first<0)first=tick;
+                if(count==5&&context.computeOnClient(client->client.player.isOnGround()&&client.player.getY()>=start.getY()+4.9)){top=sample;break;}
+                context.waitTick();
+            }
+            require(first>=0&&top>=0,"Native five-block pillar was not completed");
+            require(top-first<120,"Checked pillar kept the two-second wait between blocks: "+(top-first)+"ticks");
+            System.out.println("[pillar-progress] First confirmed post to five-block landing: "+(top-first)+"ticks");
+            await(context,builder,900);verify(world,target,1,1,1,y->Blocks.STONE);
+            require(world.getServer().computeOnServer(server->{for(int x=-2;x<=8;x++)for(int y=0;y<=8;y++)for(int z=-2;z<=2;z++)if(server.getOverworld().getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return false;for(int x=1;x<=6;x++)if(!server.getOverworld().getBlockState(start.up(5).east(x)).isOf(Blocks.STONE))return false;return true;}),"Pillar cleanup left dirt or changed its unowned platform");
+            context.runOnClient(client->{require(builder.temporarySupports().isEmpty(),"Pillar retained owned posts");require(client.player.getHealth()==20,"Pillar build or cleanup caused damage");require(client.currentScreen==null,"Pillar left a menu open");BuilderPacketChecks.verify();});
+        }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
+    }
+    private static void nearbyCleanupPriority(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Remove a reachable column tip before constructing access to distant scaffold");
+        fixture(context,world,builder,start);var near=start.east(3);var far=start.east(8).up(7);var target=start.south(2);var lower=start.east(2);var upper=lower.up().north();
+        for(var post:List.of(near,far,lower,upper))command(world,"setblock",post,"dirt");command(world,"setblock",target,"stone");world.getServer().runCommand("give @a diamond_shovel 1");world.getServer().runCommand("give @a dirt 16");context.waitTicks(6);
+        try{
+            context.runOnClient(client->{set(builder,"Temporary Supports",true);builder.install(new Schematic("nearby-cleanup-first.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);@SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.addAll(List.of(near,far,lower,upper));BuilderPacketChecks.begin();builder.startBuild();});
+            int cleared=-1;
+            for(int tick=0;tick<80;tick++){
+                context.runOnClient(client->require(builder.temporarySupports().size()<=4,"Cleanup built new scaffold before removing its visible tip"));
+                require(world.getServer().computeOnServer(server->!server.getOverworld().getBlockState(lower).isAir()||!server.getOverworld().getBlockState(upper).isOf(Blocks.DIRT)),"Quick cleanup removed a stair connection before its upper step");
+                if(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(near).isAir())){cleared=tick;break;}
+                context.waitTick();
+            }
+            require(cleared>=0,"Cleanup skipped its immediately reachable tip");
+            require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(far).isOf(Blocks.DIRT)),"Priority fixture unexpectedly changed its distant post");
+            context.runOnClient(client->{require(client.player.getHealth()==20,"Nearby cleanup caused damage");BuilderPacketChecks.verify(0);});
         }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
     }
     private static void ownedChestCover(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){

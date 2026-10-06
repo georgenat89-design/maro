@@ -5,6 +5,25 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+At09:52, the user's quicker build-up/removal request is implemented using vertical
+pillars instead of unnecessary stairs. Upper65 on9975a88 was stopped early
+unfinished to implement that request; no pass. Native quick-pillar-2 PASSED
+3m22s, including a five-post straight-column climb in43ticks (first confirmed
+post to grounded five-block landing), complete target placement/cleanup,
+zero dirt/fullhealth/unchanged platform/packets, nearby-tip cleanup before
+building distant access, and retained staging/thick-wall/ceiling cases.
+Quick-pillar-3 PASSED3m28s with additional adjacent-stair connection protection
+and continuous pacing restricted to a fully proved committed column; its
+five-post climb also took43ticks and completed all restoration/cleanup checks.
+Quick-pillar-surface-1 PASSED1m7s, retaining blocked-climb and full-capacity
+guards, native pit recovery, committed stair staging/protection and hopper paths.
+Changes:
+bounded shortest-current-column planning before exterior/stair search, full
+native ascent/onward proof for exterior columns too, exact remaining column
+capacity and base protection, no40tick pause between confirmed column jumps,
+and nearby visible cleanup tips before distant high targets. Full Upper/Fresh,
+latest core/AH CI and final merged artifacts remain pending.
+
 At 09:36, Upper64 on889b114 FAILED its30-minute fixture deadline during
 cleanup. All original water/lava/observer targets were placed; the ceiling
 placement route worked, and owned-support cleanup selected ceiling entry,
