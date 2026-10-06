@@ -63,6 +63,19 @@ float rounding and did not fix this failure. Focused run 11 completed the sealed
 directional shulker at 23:07:14 and no-restock escape at 23:07:40; the other cases
 and final upper/fresh/core gates still need to finish.
 
+Run 11 passed all four focused cases in 2m34s on 67dd409. Upper replay 43 then
+passed the previous 416 and 478 stalls but stopped at 479 on north-facing shulkers.
+Read-only geometry queries found valid elevated views and clear column bases,
+but none of those bases were reachable from the outside ground below the floor.
+The new exterior-entry planner proves a reachable base, a clear native column,
+and an onward route from its future top onto an existing placement view. It
+retains a bounded 3 ms cursor and the chosen base across capacity trips, and
+tries this entry before reopening finished walls. The new native elevated-floor
+test passed in 45s before this final priority change: directional server state,
+unchanged finished floor, all dirt removed, health 20, closed screens and packet
+ordering. Upper replay 44 now checks the latest production; full final gates
+remain required.
+
 ## Required gates on unchanged final production code
 
 - Finish the captured upper-stash build: all 710 server blocks, no owned or raw

@@ -79,6 +79,7 @@ final class AutoBuilderChecks {
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")){stashBuild(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){elevatedFloorEntry(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")){sealedDirectionalAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);raisedChestReturn(context,singleplayer,builder,start);sealedChestReturn(context,singleplayer,builder,start);return;}
             fixture(context,singleplayer,builder,start);
             raisedTurn(context,singleplayer,start);
@@ -94,6 +95,8 @@ final class AutoBuilderChecks {
             sameLevelStaging(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             accessCapacity(context,singleplayer,builder,start);
+            fixture(context,singleplayer,builder,start);
+            elevatedFloorEntry(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             if(Boolean.getBoolean("maro.gametest.builderTurnOnly"))return;
             layerTail(context,singleplayer,builder,start);
@@ -1014,6 +1017,26 @@ final class AutoBuilderChecks {
                 require(!walker.needsRecovery()&&!walker.routeUnavailable(),"Successful walking route retained a stale pillar request");
             }catch(ReflectiveOperationException error){throw new AssertionError(error);}finally{walker.stop();}
         });
+    }
+    private static void elevatedFloorEntry(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Exterior column entry onto a finished elevated floor");
+        fixture(context,world,builder,start);
+        world.getServer().runCommand("fill "+coords(start.add(-4,3,-4))+" "+coords(start.add(4,3,4))+" stone");
+        var target=start.up(5);command(world,"setblock",target.south(),"stone");
+        for(String item:List.of("black_shulker_box","dirt 16","diamond_pickaxe","diamond_shovel"))world.getServer().runCommand("give @a "+item);
+        world.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+start.getY()+" "+(start.getZ()+6.5));context.waitTicks(12);
+        try{
+            context.runOnClient(client->{
+                var walk=new BuilderWalk();var top=start.add(0,4,5);var view=start.up(4).north();
+                require(!walk.canStand(top)&&walk.canReachFromPillar(top,view),"Future exterior column does not expose the elevated floor");
+                require(!walk.canStand(top)&&client.world.getBlockState(top.down()).isAir(),"Pillar feasibility changed world collision or leaked its mask");
+                set(builder,"Temporary Supports",true);((dev.maro.setting.NumberSetting)field(builder,"tempDirt")).set(16d);set(builder,"Auto Buy When Missing",false);
+                builder.install(new Schematic("exterior-entry.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.BLACK_SHULKER_BOX.getDefaultState().with(net.minecraft.block.ShulkerBoxBlock.FACING,Direction.NORTH)}));builder.setOrigin(target);BuilderPacketChecks.begin();builder.startBuild();
+            });
+            await(context,builder,1800);
+            context.runOnClient(client->{require(builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Exterior entry left supports/damage/menu");BuilderPacketChecks.verify();});
+            require(world.getServer().computeOnServer(server->{var level=server.getOverworld();if(!level.getBlockState(target).equals(Blocks.BLACK_SHULKER_BOX.getDefaultState().with(net.minecraft.block.ShulkerBoxBlock.FACING,Direction.NORTH)))return false;for(int x=-4;x<=4;x++)for(int z=-4;z<=4;z++)if(!level.getBlockState(start.add(x,3,z)).isOf(Blocks.STONE))return false;for(int x=-10;x<=10;x++)for(int y=0;y<=10;y++)for(int z=-10;z<=10;z++)if(level.getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Exterior entry removed the finished floor or left temporary dirt");
+        }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
     }
     private static void sameLevelStaging(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-check] Ground-level posts cannot trigger a destructive staging tour");

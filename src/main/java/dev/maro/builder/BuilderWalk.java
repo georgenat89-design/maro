@@ -20,6 +20,7 @@ public final class BuilderWalk {
     private boolean movementStalled;
     private boolean smooth=true;
     private Set<BlockPos> clearedForSearch=Set.of();
+    private BlockPos pillarForSearch;
     private float yawVelocity,turnLimit=45;
     public void turning(boolean smooth,float speed){this.smooth=smooth;turnLimit=speed;}
     public String status="";
@@ -45,6 +46,11 @@ public final class BuilderWalk {
     public boolean canReachAfterClearing(BlockPos from,BlockPos to,Set<BlockPos> removed){
         var previous=clearedForSearch;clearedForSearch=removed;
         try{return canReachStandFrom(from,to);}finally{clearedForSearch=previous;}
+    }
+    /** Prove a route from a future native pillar without modifying the world. */
+    public boolean canReachFromPillar(BlockPos top,BlockPos to){
+        var previous=pillarForSearch;pillarForSearch=top.down();
+        try{return canReachStandFrom(top,to);}finally{pillarForSearch=previous;}
     }
     public BlockPos descentLanding(BlockPos removed){
         if(!canDescendThrough(removed))return null;
@@ -204,8 +210,9 @@ public final class BuilderWalk {
         return List.of();
     }
     private static double heuristic(BlockPos a,BlockPos b){int x=Math.abs(a.getX()-b.getX()),z=Math.abs(a.getZ()-b.getZ());return Math.max(x,z)+(Math.sqrt(2)-1)*Math.min(x,z)+Math.abs(a.getY()-b.getY())*.6;}
-    private boolean clear(BlockPos p){return mc.world.isChunkLoaded(p)&&(clearedForSearch.contains(p)||mc.world.getBlockState(p).getCollisionShape(mc.world,p).isEmpty())&&safe(p);}
+    private boolean clear(BlockPos p){return !p.equals(pillarForSearch)&&mc.world.isChunkLoaded(p)&&(clearedForSearch.contains(p)||mc.world.getBlockState(p).getCollisionShape(mc.world,p).isEmpty())&&safe(p);}
     private double footingHeight(BlockPos p){
+        if(p.equals(pillarForSearch))return 1;
         if(clearedForSearch.contains(p))return 0;
         var state=mc.world.getBlockState(p);
         if(state.isSideSolidFullSquare(mc.world,p,Direction.UP))return 1;
