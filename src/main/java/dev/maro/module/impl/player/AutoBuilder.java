@@ -222,6 +222,7 @@ public final class AutoBuilder extends Module {
     private final IdentityHashMap<BlockState,BlockState> transformedStates=new IdentityHashMap<>();
     private final BuilderWalk walker=new BuilderWalk();
     private final Set<BlockPos> escapeSupports=new LinkedHashSet<>();
+    private final Map<BlockPos,Integer> escapeSupportWork=new HashMap<>();
     private BlockPos recoveryBase;
     private int recoveryPhase,recoveryStarted,recoveryAttempts,recoveryCooldown;
     private boolean recoveryJump;
@@ -377,6 +378,7 @@ public final class AutoBuilder extends Module {
         var builder=ModuleManager.get(AutoBuilder.class);
         if(builder==null||builder.world!=mc.world)return;
         if(state.isAir()&&builder.supports.contains(pos)&&builder.accessStand!=null)builder.accessProgressAt=builder.ticks;
+        if(!state.isOf(Blocks.DIRT)){builder.escapeSupports.remove(pos);builder.escapeSupportWork.remove(pos);}
         if(pos.equals(builder.routeMining)||pos.equals(builder.mining)||builder.unconfirmedPlacements.containsKey(pos))builder.viewSearches.clear();
         if(builder.pendingPlacement!=null&&builder.pendingPlacement.target.equals(pos))builder.pendingServerState=state;
         var job=builder.unconfirmedPlacements.get(pos);
@@ -407,7 +409,7 @@ public final class AutoBuilder extends Module {
             }));
     }
     private static String rootMessage(Throwable error){while(error.getCause()!=null)error=error.getCause();return error.getMessage()==null?error.getClass().getSimpleName():error.getMessage();}
-    public void install(Schematic data){if(!restoringPlacement){checkpoint();activeBuildSlot=-1;placementName="";}pause("Schematic loaded");schematic=data;unconfirmedPlacements.clear();latePlacements.clear();supports.clear();escapeSupports.clear();cleanupStands.clear();recoveryAttempts=0;replan();}
+    public void install(Schematic data){if(!restoringPlacement){checkpoint();activeBuildSlot=-1;placementName="";}pause("Schematic loaded");schematic=data;unconfirmedPlacements.clear();latePlacements.clear();supports.clear();escapeSupports.clear();escapeSupportWork.clear();cleanupStands.clear();recoveryAttempts=0;replan();}
     public Schematic schematic(){return schematic;}
     public String status(){return status;}
     public boolean loading(){return loading;}
@@ -488,7 +490,7 @@ public final class AutoBuilder extends Module {
         if(pos==null||!inGame())return;pause("Origin moved");
         String nextDimension=mc.world.getRegistryKey().getValue().toString();
         String nextScope=scope();
-        if(!dimension.isEmpty()&&(!dimension.equals(nextDimension)||!worldScope.equals(nextScope))){containers.clear();supports.clear();}
+        if(!dimension.isEmpty()&&(!dimension.equals(nextDimension)||!worldScope.equals(nextScope))){containers.clear();supports.clear();escapeSupports.clear();escapeSupportWork.clear();}
         worldScope=nextScope;
         origin=pos.toImmutable();world=mc.world;dimension=nextDimension;replan();
     }
@@ -543,7 +545,7 @@ public final class AutoBuilder extends Module {
         ++ioGeneration;loading=false;pause("Schematic cancelled");setEnabled(false);preparationReady=false;chestStocks.clear();preparedStock.clear();emptyChestItems.clear();buildBudgetActive=false;buildBudgetSpent=0;
         schematic=null;unconfirmedPlacements.clear();latePlacements.clear();selected="";preview=false;captureStates=null;capture=null;
         states=unitsLeft=new byte[0];scanCursor=correct=solid=completedScans=passTasks=lastPassTasks=0;
-        remaining.clear();remainingByLayer.clear();activeLayer=-1;scanLayer=Integer.MAX_VALUE;ignoredMaterials.clear();supports.clear();cleanupStands.clear();triedStands.clear();retryAt.clear();transformedStates.clear();
+        remaining.clear();remainingByLayer.clear();activeLayer=-1;scanLayer=Integer.MAX_VALUE;ignoredMaterials.clear();supports.clear();escapeSupports.clear();escapeSupportWork.clear();cleanupStands.clear();triedStands.clear();retryAt.clear();transformedStates.clear();
         visible=workCells=sectionCells=List.of();visibleScan.clear();workScan.clear();needed=null;delay=inventoryWait=0;staffStopAt=0;
         status="Schematic cancelled — choose another to start";
     }
@@ -746,7 +748,7 @@ public final class AutoBuilder extends Module {
         }
         if(recoveryPhase==2){
             if(supports.contains(recoveryBase)&&mc.world.getBlockState(recoveryBase).isOf(Blocks.DIRT)){
-                escapeSupports.add(recoveryBase);mc.options.jumpKey.setPressed(false);recoveryJump=false;recoveryPhase=3;status="Landing on confirmed temporary step";return true;
+                protectEscapeSupport(recoveryBase);mc.options.jumpKey.setPressed(false);recoveryJump=false;recoveryPhase=3;status="Landing on confirmed temporary step";return true;
             }
             if(mc.player.getY()<recoveryBase.getY()+1.01)return true;
             var job=placement(recoveryBase,Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true);
@@ -833,6 +835,15 @@ public final class AutoBuilder extends Module {
             }
         }
         states[index]=next;
+        if(next!=old&&(next==CORRECT||next==IGNORED)&&escapeSupportWork.entrySet().removeIf(entry->{
+            if(entry.getValue()!=index)return false;
+            escapeSupports.remove(entry.getKey());return true;
+        }))recycleSearchFeet=null;
+    }
+    private void protectEscapeSupport(BlockPos pos){
+        escapeSupports.add(pos);
+        if(navigatingCell>=0&&navigatingCell<states.length&&states[navigatingCell]!=CORRECT&&states[navigatingCell]!=IGNORED)
+            escapeSupportWork.put(pos,navigatingCell);
     }
     private double effectiveReach(){return Math.min(reach.get(),mc.player.getBlockInteractionRange()-.1);}
     private boolean floorDeferred(BlockPos pos){
@@ -1817,7 +1828,7 @@ public final class AutoBuilder extends Module {
         if(actual!=null&&compatible(actual,job.state)&&!actual.equals(pendingBefore)){
             placementAttemptTarget=null;failedPlacementUntil.remove(job.target);
             lastAction=ticks;triedContainers.clear();triedStands.clear();retryAt.clear();if(!job.temporary)navigatingCell=-1;else navigationStarted=ticks;
-            if(job.temporary){supports.add(job.target);if(accessFloor&&accessStand!=null&&job.target.getX()==accessStand.getX()&&job.target.getZ()==accessStand.getZ()&&job.target.getY()<accessStand.getY())accessSupports.add(job.target);if(recoveryPhase==2&&job.target.equals(recoveryBase)){escapeSupports.add(job.target);mc.options.jumpKey.setPressed(false);recoveryJump=false;recoveryPhase=3;}}
+            if(job.temporary){supports.add(job.target);if(accessFloor&&accessStand!=null&&job.target.getX()==accessStand.getX()&&job.target.getZ()==accessStand.getZ()&&job.target.getY()<accessStand.getY())accessSupports.add(job.target);if(recoveryPhase==2&&job.target.equals(recoveryBase)){protectEscapeSupport(job.target);mc.options.jumpKey.setPressed(false);recoveryJump=false;recoveryPhase=3;}}
             else{recoveryAttempts=0;accessStand=accessBase=null;accessSupports.clear();}
             if(job.index>=0)updateState(job.index);status="Placement confirmed";
         }else{
@@ -2541,6 +2552,7 @@ public final class AutoBuilder extends Module {
         data.addProperty("material-supply",supplyMode.get());data.addProperty("layer-mode",layerMode.get());data.addProperty("layer",layer.getInt());data.addProperty("build-budget-active",buildBudgetActive);data.addProperty("build-budget-spent",buildBudgetSpent);data.addProperty("auction-budget",maxSpend.get());
         var temporary=new JsonArray();for(var pos:supports)temporary.add(posJson(pos));data.add("temporary-supports",temporary);
         var escape=new JsonArray();for(var pos:escapeSupports)escape.add(posJson(pos));data.add("escape-supports",escape);
+        var escapeWork=new JsonArray();escapeSupportWork.forEach((pos,work)->{if(supports.contains(pos)&&escapeSupports.contains(pos)){var entry=new JsonObject();entry.add("position",posJson(pos));entry.addProperty("work",work);escapeWork.add(entry);}});data.add("escape-support-work",escapeWork);
         savedBuildInfo.put(slot,data.deepCopy());var snapshot=schematic;
         return CompletableFuture.runAsync(()->{try{savedBuilds.save(slot,snapshot,data);}catch(IOException error){throw new CompletionException(error);}},IO);
     }
@@ -2555,8 +2567,12 @@ public final class AutoBuilder extends Module {
                 rotation.set(data.get("rotation").getAsString());mirror.set(data.get("mirror").getAsString());useOffset.set(data.get("use-offset").getAsBoolean());
                 layerMode.set(data.get("layer-mode").getAsString());layer.set(data.get("layer").getAsDouble());
                 if(data.has("material-supply"))supplyMode.set(data.get("material-supply").getAsString());
-                supports.clear();escapeSupports.clear();if(data.has("temporary-supports"))for(var pos:data.getAsJsonArray("temporary-supports"))supports.add(jsonPos(pos));
+                supports.clear();escapeSupports.clear();escapeSupportWork.clear();if(data.has("temporary-supports"))for(var pos:data.getAsJsonArray("temporary-supports"))supports.add(jsonPos(pos));
                 if(data.has("escape-supports"))for(var pos:data.getAsJsonArray("escape-supports"))escapeSupports.add(jsonPos(pos));
+                if(data.has("escape-support-work"))for(var value:data.getAsJsonArray("escape-support-work")){
+                    var entry=value.getAsJsonObject();var pos=jsonPos(entry.get("position"));int work=entry.get("work").getAsInt();
+                    if(work>=0&&work<schematic.size()&&supports.contains(pos)&&escapeSupports.contains(pos))escapeSupportWork.put(pos,work);
+                }
                 replan();if(data.has("auction-budget"))maxSpend.set(data.get("auction-budget").getAsDouble());buildBudgetActive=data.get("build-budget-active").getAsBoolean();buildBudgetSpent=data.get("build-budget-spent").getAsDouble();spent=buildBudgetSpent;
                 activeBuildSlot=slot;buildSlot.set(slot==0?"Last Session":String.valueOf(slot));placementName=data.get("name").getAsString();
                 world=inGame()&&worldScope.equals(scope())&&dimension.equals(mc.world.getRegistryKey().getValue().toString())?mc.world:null;

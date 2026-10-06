@@ -314,11 +314,14 @@ final class AutoBuilderChecks {
         try{java.nio.file.Files.deleteIfExists(cancelFile);}catch(java.io.IOException e){throw new AssertionError(e);}
     }
     private static void savedPlacement(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
-        var origin=start.add(0,0,2);var chest=start.east(3);
+        var origin=start.add(0,0,2);var chest=start.east(3);var support=start.west(2);
         command(world,"setblock",chest,"chest[facing=north,type=left]");command(world,"setblock",chest.east(),"chest[facing=north,type=right]");
-        command(world,"setblock",origin,"stone");world.getServer().runCommand("give @a stone 1");context.waitTicks(6);
+        command(world,"setblock",origin,"stone");command(world,"setblock",support,"dirt");world.getServer().runCommand("give @a stone 1");context.waitTicks(6);
         var saved=context.computeOnClient(client->{
             builder.install(new Schematic("persisted.litematic","test",2,1,1,new BlockPos(-2,0,3),new BlockState[]{Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState()}));builder.setOrigin(origin);
+            @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.add(support);
+            @SuppressWarnings("unchecked")var escape=(Set<BlockPos>)field(builder,"escapeSupports");escape.add(support);
+            @SuppressWarnings("unchecked")var owners=(Map<BlockPos,Integer>)field(builder,"escapeSupportWork");owners.put(support,1);
             client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();set(builder,"Build Slot","10");return builder.savePlacement("Survival stash");
         });
         for(int i=0;i<200&&!saved.isDone();i++)context.waitTick();saved.join();
@@ -332,11 +335,14 @@ final class AutoBuilderChecks {
         context.runOnClient(client->{
             require(builder.schematic()!=null&&builder.origin().equals(origin)&&builder.schematic().offset.equals(new BlockPos(-2,0,3)),"Saved origin, file offset or snapshot was lost");
             require(builder.restockContainers().contains(chest)&&builder.placementName().equals("Survival stash")&&!builder.building(),"Saved chest/name or paused resume was lost");
+            @SuppressWarnings("unchecked")var owners=(Map<BlockPos,Integer>)field(builder,"escapeSupportWork");
+            require(builder.temporarySupports().contains(support)&&Integer.valueOf(1).equals(owners.get(support)),"Saved escape support lost its unfinished work owner");
             // A re-created ClientWorld must retain the saved anchor and rescan actual blocks.
             try{var field=AutoBuilder.class.getDeclaredField("world");field.setAccessible(true);field.set(builder,null);}catch(Exception error){throw new AssertionError(error);}
             builder.startBuild();require(builder.origin().equals(origin),"Reconnect silently moved the saved placement");
         });
         await(context,builder,300);verify(world,origin,2,1,1,y->Blocks.STONE);
+        world.getServer().runOnServer(server->require(server.getOverworld().getBlockState(support).isAir(),"Resumed completed work left its saved temporary support"));
         context.runOnClient(client->require(builder.inventoryCount(Items.STONE)==0,"Resume bought/placed an already completed block"));
     }
     private static void rejectedPlacement(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
@@ -1067,7 +1073,10 @@ final class AutoBuilderChecks {
         }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
     }
     private static void accessCapacity(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
-        System.out.println("[builder-check] Reserve a complete access column before climbing a full support pool");
+        for(boolean retired:List.of(false,true)){fixture(context,world,builder,start);accessCapacity(context,world,builder,start,retired);}
+    }
+    private static void accessCapacity(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,boolean retired){
+        System.out.println("[builder-check] Reserve full access capacity; completed escape work="+retired);
         var target=start.add(0,6,3);var posts=new HashSet<BlockPos>();
         for(int x=5;x<=6;x++)for(int z=-3;z<=0;z++){var post=start.add(x,0,z);posts.add(post);command(world,"setblock",post,"dirt");}
         world.getServer().runCommand("fill "+coords(start.add(1,0,3))+" "+coords(start.add(1,6,3))+" stone");
@@ -1076,8 +1085,13 @@ final class AutoBuilderChecks {
         try{
             context.runOnClient(client->{
                 set(builder,"Temporary Supports",true);((dev.maro.setting.NumberSetting)field(builder,"tempDirt")).set(8d);
-                builder.install(new Schematic("access-capacity.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);
+                builder.install(new Schematic("access-capacity.nbt","test",retired?2:1,1,1,BlockPos.ORIGIN,retired?new BlockState[]{Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState()}:new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);
                 @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.addAll(posts);
+                if(retired){
+                    @SuppressWarnings("unchecked")var escape=(Set<BlockPos>)field(builder,"escapeSupports");escape.addAll(posts);
+                    @SuppressWarnings("unchecked")var owners=(Map<BlockPos,Integer>)field(builder,"escapeSupportWork");
+                    for(var post:posts)owners.put(post,post.getX()==start.getX()+5?0:1);
+                }
                 BuilderPacketChecks.begin();builder.startBuild();
                 try{
                     var stand=start.up(4);var eye=Vec3d.ofBottomCenter(stand).add(0,client.player.getStandingEyeHeight(),0);var body=client.player.getBoundingBox().offset(eye.subtract(client.player.getEyePos()));
@@ -1091,6 +1105,10 @@ final class AutoBuilderChecks {
             for(int tick=0;tick<2400&&context.computeOnClient(client->builder.building());tick++){
                 boolean inJump=context.computeOnClient(client->{
                     require(builder.temporarySupports().size()<=8,"Access exceeded its eight-support pool");
+                    if(retired&&builder.state(0)!=AutoBuilder.CORRECT){
+                        @SuppressWarnings("unchecked")var escape=(Set<BlockPos>)field(builder,"escapeSupports");
+                        require(posts.stream().filter(p->p.getX()==start.getX()+5).allMatch(p->builder.temporarySupports().contains(p)&&escape.contains(p)),"Capacity reclaimed escape footing for unfinished work");
+                    }
                     if((int)field(builder,"recoveryPhase")!=2)return false;
                     require(posts.stream().filter(builder.temporarySupports()::contains).count()<=4,"Access jumped before freeing the complete column budget");return true;
                 });

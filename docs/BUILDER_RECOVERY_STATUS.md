@@ -1,9 +1,30 @@
 # Builder recovery work in progress
 
-Updated: 2026-10-05. Branch: `codex/builder-ghost-and-look-recovery`.
+Updated: 2026-10-06. Branch: `codex/builder-ghost-and-look-recovery`.
 Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
+
+Upper replay 45 was stopped on unchanged 74659b2 production, at 699/710 after
+four minutes with unchanged position and capacity status. A read-only snapshot
+found 33 protected posts and mostly hidden remaining candidates. Its repeated
+capacity searches expose another lifetime issue:
+escape columns stay protected after their work completes. The current untested
+working change binds newly protected posts to unfinished work, releases those
+markers on completion/ignore, and invalidates the retained recycling snapshot.
+Current footing, attachment and active-column guards still apply. Unbound
+escape supports retain their protection. Owner bindings persist in saved builds.
+The new capacity fixture must retain unfinished-work posts while reclaiming
+completed-work posts; the save/resume fixture checks ownership and final cleanup.
+The focused support-owner run 1 passed in 4m5s: both capacity variants, protected
+active/unbound escape footing, ground-staging cleanup, native movement/reach and
+raised-floor entry at heights 3 and 6. The owner variant completed in 19s and
+checks actual target state, protected unfinished posts, all dirt cleanup, health
+20, closed menus and native packet checks. Saved ownership still needs the full
+core suite. Ignored
+run/options.txt inactivityFpsLimit="minimized" was restored before launch; the
+previous test's AFK limiter slowed long runs. Do not alter
+the user's live profile. Final upper/fresh/core gates remain required.
 
 The user requested a complete builder reliability fix and authorized continued
 work, pushing and merging. Do not release this branch as verified yet.
