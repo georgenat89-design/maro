@@ -80,7 +80,7 @@ final class AutoBuilderChecks {
         try{
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")||Boolean.getBoolean("maro.gametest.builderStashFinalOnly")){stashBuild(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){fixture(context,singleplayer,builder,start);exhaustedAccessCapacity(context,singleplayer,builder,start);raisedDoorEntry(context,singleplayer,builder,start);partialHeadroom(context,singleplayer,builder,start);stairPlacementPriority(context,singleplayer,builder,start);stairPlacementStaging(context,singleplayer,builder,start);blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);fixture(context,singleplayer,builder,start);offsetRecovery(context,singleplayer,builder,start);hopperCrossing(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
-            if(Boolean.getBoolean("maro.gametest.builderStagingOnly")){fixture(context,singleplayer,builder,start);sameLevelStaging(context,singleplayer,builder,start);thickWallEntry(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderStagingOnly")){fixture(context,singleplayer,builder,start);sameLevelStaging(context,singleplayer,builder,start);thickWallEntry(context,singleplayer,builder,start);ceilingColumnEntry(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderCleanupOnly")){ownedChestCover(context,singleplayer,builder,start);cleanupAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);airSupportFloorExit(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){compactAccessStep(context,singleplayer,builder,start);ownedChestCover(context,singleplayer,builder,start);elevatedFloorEntry(context,singleplayer,builder,start);sealedDirectionalAccess(context,singleplayer,builder,start,3);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")){sealedDirectionalAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);raisedChestReturn(context,singleplayer,builder,start);sealedChestReturn(context,singleplayer,builder,start);return;}
@@ -108,6 +108,7 @@ final class AutoBuilderChecks {
             fixture(context,singleplayer,builder,start);
             sameLevelStaging(context,singleplayer,builder,start);
             thickWallEntry(context,singleplayer,builder,start);
+            ceilingColumnEntry(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             accessCapacity(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
@@ -766,6 +767,28 @@ final class AutoBuilderChecks {
             await(context,builder,2400);
             context.runOnClient(client->{require(client.player.getHealth()==20&&client.currentScreen==null&&builder.temporarySupports().isEmpty(),"Sealed build escape left damage/menu/supports");BuilderPacketChecks.verify();});
             require(world.getServer().computeOnServer(server->{var level=server.getOverworld();for(int i=0;i<room.size();i++)if(!room.state(i).isAir()&&!level.getBlockState(origin.add(room.local(i))).isOf(Blocks.STONE))return false;for(int x=-5;x<=8;x++)for(int y=0;y<=10;y++)for(int z=-5;z<=5;z++)if(level.getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Sealed build escape did not restore its floor or clear temporary dirt");
+        }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
+    }
+    /** A finished floor above a clear column must admit a checked upward entry. */
+    private static void ceilingColumnEntry(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Checked ceiling column entry, native placement and full opening/support restoration");
+        fixture(context,world,builder,start);var origin=start.add(-3,4,-3);var cells=new BlockState[196];Arrays.fill(cells,Blocks.AIR.getDefaultState());
+        for(int y=0;y<4;y++)for(int z=0;z<7;z++)for(int x=0;x<7;x++)if(y==0||y==3||x==0||x==6||z==0||z==6)cells[x+z*7+y*49]=Blocks.STONE.getDefaultState();
+        int target=5+3*7+49;cells[target]=Blocks.STONE.getDefaultState();var room=new Schematic("ceiling-column-entry.nbt","test",7,4,7,BlockPos.ORIGIN,cells);
+        world.getServer().runOnServer(server->{for(int i=0;i<room.size();i++)if(i!=target&&!room.state(i).isAir())server.getOverworld().setBlockState(origin.add(room.local(i)),room.state(i),net.minecraft.block.Block.NOTIFY_ALL);});
+        // Unrelated bedrock prevents an exterior column from bypassing this entry.
+        for(int side=-4;side<=4;side++)for(int y=0;y<=10;y++)for(var pos:List.of(start.add(-4,y,side),start.add(4,y,side),start.add(side,y,-4),start.add(side,y,4)))command(world,"setblock",pos,"bedrock");
+        for(String item:List.of("stone 64","dirt 64","diamond_pickaxe","diamond_shovel"))world.getServer().runCommand("give @a "+item);context.waitTicks(12);
+        boolean opened=false;
+        try{
+            context.runOnClient(client->{set(builder,"Temporary Supports",true);set(builder,"Auto Buy When Missing",false);set(builder,"Material Supply","Nearby Sections");builder.install(room);builder.setOrigin(origin);BuilderPacketChecks.begin();builder.startBuild();});
+            for(int tick=0;tick<3600&&context.computeOnClient(client->builder.building());tick++){
+                if(context.computeOnClient(client->!((Map<?,?>)field(builder,"floorAccessWork")).isEmpty()))opened=true;
+                context.waitTick();
+            }
+            await(context,builder,1);require(opened,"Ceiling fixture never opened its checked entry");
+            context.runOnClient(client->{require(client.player.getHealth()==20&&client.currentScreen==null&&builder.temporarySupports().isEmpty(),"Ceiling entry left damage/menu/supports");BuilderPacketChecks.verify();});
+            require(world.getServer().computeOnServer(server->{var level=server.getOverworld();for(int i=0;i<room.size();i++)if(!room.state(i).isAir()&&!level.getBlockState(origin.add(room.local(i))).equals(room.state(i)))return false;for(var pos:BlockPos.iterate(start.add(-4,0,-4),start.add(4,10,4)))if(level.getBlockState(pos).isOf(Blocks.DIRT))return false;for(int side=-4;side<=4;side++)for(int y=0;y<=10;y++)for(var pos:List.of(start.add(-4,y,side),start.add(4,y,side),start.add(side,y,-4),start.add(side,y,4)))if(!level.getBlockState(pos).isOf(Blocks.BEDROCK))return false;return true;}),"Ceiling entry failed to restore its opening or changed unrelated walls");
         }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
     }
     /** Cleanup of a schematic-air post must still escape through its finished floor. */

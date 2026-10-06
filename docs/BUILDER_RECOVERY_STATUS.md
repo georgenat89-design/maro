@@ -5,6 +5,27 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+At 08:35, ceiling-entry-1 PASSED 3m1s, including retained ground-level staging
+guards and both thick-wall placement/cleanup cases. The new native enclosed
+room requires entry through a finished ceiling above an empty column. It proves
+actual mining, four acknowledged scaffold jumps, placement, full floor repair,
+zero owned/world dirt, health20, no menus, native packet ordering and unchanged
+unowned bedrock. Upper62 on5d stopped unfinished704/710 after repeated access
+searches; it is not a pass. Its read-only native proof found a safe three-cell
+ceiling opening above an unplanned AIR column, a complete jump-body sweep and
+an onward walking route to a real water view. Recovery now checks that complete
+ascent, reserves its whole support budget before mining, mines from its real
+base and keeps the opening registered for final restoration. Every opened cell
+must be in mining reach from that base. Upper/Fresh and latest complete core/AH
+are pending on this change. Base fetched08:26 unchanged5036776 and already an
+ancestor. PR37 remains draft/unmerged; final artifact delivery pending.
+
+At 08:03, full-column-cleanup-3 PASSED 3m16s: selected chest-cover protection,
+spare/full-pool cleanup, sealed room and AIR roof-support cleanup all restored
+their schematic cells, removed all dirt and retained health20/packet ordering.
+Complete floor-plus-owned-column exit proof, a final opening-restoration phase
+and real mining views fix the observed cleanup add/mine and virtual-view loops.
+
 At 07:19, water-exit-surface-5 PASSED 1m9s. Upper60 on e42f8e7
 advanced beyond the old 475/512/545 stalls to 704/710, then stopped making
 progress after placing a water source intersecting its native body. Read-only

@@ -67,6 +67,24 @@ public final class BuilderWalk {
         var previous=clearedForSearch;clearedForSearch=removed;
         try{return canReachFromPillar(top,to);}finally{clearedForSearch=previous;}
     }
+    /** Prove every native jump of an opened ceiling column and its onward route. */
+    public boolean canClimbAfterClearing(BlockPos base,BlockPos top,BlockPos to,Set<BlockPos> removed){
+        int rise=top.getY()-base.getY();
+        if(rise<1||rise>6||base.getX()!=top.getX()||base.getZ()!=top.getZ())return false;
+        var previous=clearedForSearch;var previousStairs=stairsForSearch;
+        clearedForSearch=removed;var posts=new HashSet<BlockPos>();stairsForSearch=posts;
+        try{
+            if(!canPillar(base))return false;
+            for(int step=0;step<rise;step++){
+                var feet=base.up(step);
+                if(!clear(feet)||!clear(feet.up())||!clear(feet.up(2))||!clear(feet.up(3)))return false;
+                var point=Vec3d.ofBottomCenter(feet);
+                if(!bodyClear(point)||!bodyCorridor(point,point.add(0,1.25,0)))return false;
+                posts.add(feet);
+            }
+            return canReachStandFrom(top,to);
+        }finally{clearedForSearch=previous;stairsForSearch=previousStairs;}
+    }
     public BlockPos descentLanding(BlockPos removed){
         if(!canDescendThrough(removed))return null;
         for(int drop=1;drop<=3;drop++)if(footingHeight(removed.down(drop))>=.625)return removed.down(drop).up();

@@ -256,7 +256,8 @@ public final class AutoBuilder extends Module {
     private final Map<BlockPos,List<BlockPos>> supportChainStarts=new HashMap<>();
     private record ViewKey(BlockPos target,BlockPos feet,boolean bridge){}
     private static final class ViewSearch {
-        int expires,cursor,routeCursor,stepCursor,temporaryCursor,recoveryStage;
+        int expires,cursor,routeCursor,stepCursor,temporaryCursor,ceilingCursor,recoveryStage;
+        List<BlockPos> ceilingViews;
         List<BlockPos> temporaryViews;
         final List<BlockPos> options=new ArrayList<>();
         final Set<BlockPos> direct=new HashSet<>();
@@ -265,6 +266,10 @@ public final class AutoBuilder extends Module {
     private final LinkedHashMap<ViewKey,ViewSearch> viewSearches=new LinkedHashMap<>();
     private long viewPlanningDeadline;
     private long floorPlanningDeadline;
+    private BlockPos ceilingBase,ceilingTop;
+    private final Set<BlockPos> ceilingBlocks=new LinkedHashSet<>();
+    private int ceilingStarted,ceilingProgressAt;
+    private Vec3d ceilingProgressPos;
     private BlockPos floorSearchFeet;
     private int floorSearchCursor;
     private BlockPos bridgeTarget;
@@ -597,7 +602,7 @@ public final class AutoBuilder extends Module {
         if(mc.interactionManager!=null)mc.interactionManager.cancelBlockBreaking();
         if(ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler&&ownedHandler.getCursorStack().isEmpty())mc.player.closeHandledScreen();
         ownedHandler=null;restockTarget=null;routeOpening=null;restockBatch=Map.of();chestAccessRetryAt.clear();buying=false;pendingOffer=null;shopping.clear();status=reason;
-        floorSearchFeet=null;floorSearchCursor=0;
+        floorSearchFeet=null;floorSearchCursor=0;ceilingBase=ceilingTop=null;ceilingBlocks.clear();ceilingProgressPos=null;
         entrySearchFeet=null;entrySearchWork=-2;entrySearchCursor=entryRetryAt=0;passageBlocks.clear();passageStand=passageSearchFeet=null;passageSearchWork=-2;passageSearchCursor=passageRetryAt=0;
         descentSearchFeet=descentSearchDestination=null;descentSearchPosts=descentSearchViews=descentHatchViews=List.of();descentSearchCursor=descentRetryAt=descentSearchPhase=0;descentHatchesReady=false;
         hatchSearchFeet=null;hatchCandidates=List.of();hatchViews.clear();hatchSearchCursor=hatchExitCursor=0;
@@ -633,6 +638,9 @@ public final class AutoBuilder extends Module {
         if(pendingPlacement!=null){placementReceiptTick();return;}
         if(mc.currentScreen==null&&(building||depositing)&&clearPassageTick())return;
         if(mc.currentScreen==null&&(building||depositing)&&clearRouteSupportTick())return;
+        if(building&&!buying&&mc.currentScreen==null&&ceilingTop!=null){
+            if(followStandGoal()||continueCeilingEntry())return;
+        }
         if(building&&!buying&&mc.currentScreen==null&&restockTarget==null&&eatTick())return;
         if(mc.currentScreen==null&&(depositing||building&&(!mode.is("Semi Auto")||mc.options.useKey.isPressed()))&&recoveryTick())return;
         if(buying){marketTick();return;}
@@ -1143,7 +1151,11 @@ public final class AutoBuilder extends Module {
                 if(wanted!=null&&(!wanted.isAir()||cleaning)&&states[cell]!=CORRECT&&preparePassage(options,cell))return true;
                 search.recoveryStage=4;
             }
-            if(search.recoveryStage==4){if(wanted!=null&&temporaryView(target,wanted,cell,tried,search))return true;search.recoveryStage=5;}
+            if(search.recoveryStage==4){
+                if(wanted!=null&&!wanted.isAir()&&prepareCeilingEntry(options,cell,search))return true;
+                if(wanted!=null&&temporaryView(target,wanted,cell,tried,search))return true;
+                search.recoveryStage=5;
+            }
             if(search.recoveryStage==5){
                 boolean cleaning=target.equals(cleanupTarget)&&supports.contains(target);
                 if((cleaning||wanted!=null&&!wanted.isAir()&&states[cell]!=CORRECT)&&prepareFloorOpening(options,cell))return true;
@@ -1153,6 +1165,70 @@ public final class AutoBuilder extends Module {
             return false;
         }
         standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();status="Moving around an obstructed block";return true;
+    }
+    /** Enter a finished ceiling through a short opening above a clear, checked column. */
+    private boolean prepareCeilingEntry(List<BlockPos> views,int work,ViewSearch search){
+        if(!unstuck.get()||!support.get()||work<0||states[work]==CORRECT||views.isEmpty())return false;
+        var feet=mc.player.getBlockPos();
+        if(search.ceilingViews==null){
+            var covers=new ArrayList<BlockPos>();
+            for(int dx=-5;dx<=5;dx++)for(int dz=-5;dz<=5;dz++)for(int dy=1;dy<=6;dy++){
+                var cover=feet.add(dx,dy,dz);if(passageCell(cover))covers.add(cover);
+            }
+            covers.sort(Comparator.comparingDouble(pos->pos.getSquaredDistance(feet)));search.ceilingViews=covers;
+        }
+        long deadline=System.nanoTime()+3_000_000;
+        while(search.ceilingCursor<search.ceilingViews.size()&&System.nanoTime()<deadline){
+            var top=search.ceilingViews.get(search.ceilingCursor++);if(!passageCell(top))continue;
+            var removed=new LinkedHashSet<BlockPos>();removed.add(top);boolean eligible=true;
+            for(int up=1;up<=2;up++){
+                var pos=top.up(up);var state=mc.world.getBlockState(pos);
+                if(state.getCollisionShape(mc.world,pos).isEmpty()&&state.getFluidState().isEmpty())continue;
+                if(!passageCell(pos)){eligible=false;break;}removed.add(pos);
+            }
+            if(!eligible||!safeToRecycle(removed))continue;
+            BlockPos base=null;
+            for(int down=1;down<=6;down++){
+                var next=top.down(down);
+                if(reservedSupplyAccess(next)||plannedSolid(next)||!mc.world.isChunkLoaded(next)||!mc.world.getBlockState(next).isReplaceable()
+                    ||!mc.world.getFluidState(next).isEmpty()||routeSupportExclusions.getOrDefault(next,0)>ticks)break;
+                if(walker.canPillar(next)&&walker.canReachStand(next)){base=next;break;}
+            }
+            if(base==null||top.getY()-base.getY()>tempDirt.getInt())continue;
+            var eye=Vec3d.ofBottomCenter(base).add(0,mc.player.getStandingEyeHeight(),0);
+            if(visibleHit(top,eye)==null||removed.stream().anyMatch(pos->!withinReach(pos,eye)))continue;
+            boolean proved=false;
+            for(var view:views)if(walker.canClimbAfterClearing(base,top,view,removed)){proved=true;break;}
+            if(!proved)continue;
+            commitAccess(top,true);ceilingBase=base;ceilingTop=top;ceilingBlocks.addAll(removed);passageBlocks.addAll(removed);
+            ceilingStarted=ceilingProgressAt=ticks;ceilingProgressPos=mc.player.getEntityPos();
+            for(var opening:removed){floorAccessWork.put(opening,work);openingRepairDepth.put(opening,opening.getY()-base.getY());}
+            walker.stop();status="Opening checked ceiling access";return true;
+        }
+        if(search.ceilingCursor<search.ceilingViews.size()){walker.release();status="Checking ceiling access column";return true;}
+        return false;
+    }
+    private boolean continueCeilingEntry(){
+        if(ceilingTop==null)return false;
+        if(ceilingProgressPos==null||mc.player.getEntityPos().squaredDistanceTo(ceilingProgressPos)>.04){ceilingProgressPos=mc.player.getEntityPos();ceilingProgressAt=ticks;}
+        if(ticks-ceilingStarted>2400||ticks-ceilingProgressAt>600||accessStand==null){
+            ceilingBase=ceilingTop=null;ceilingBlocks.clear();accessStand=accessBase=null;accessFloor=false;walker.stop();return false;
+        }
+        if(requiredAccessCapacity()>tempDirt.getInt()-supports.size()){
+            if(recycleSupport())return true;
+            ceilingBase=ceilingTop=null;ceilingBlocks.clear();accessStand=accessBase=null;accessFloor=false;walker.stop();return false;
+        }
+        if(inventoryCount(Items.DIRT)==0){ensureSupportDirt();return true;}
+        if(!walker.standAt(ceilingBase)){status="Walking under checked ceiling access";return true;}
+        ceilingBlocks.removeIf(pos->mc.world.getBlockState(pos).isAir());
+        if(!ceilingBlocks.isEmpty()){
+            var next=ceilingBlocks.iterator().next();
+            if(!removableRouteFloor(next)||!safeToRecycle(ceilingBlocks)||visibleHit(next)==null){
+                ceilingBase=ceilingTop=null;ceilingBlocks.clear();accessStand=accessBase=null;accessFloor=false;walker.stop();return false;
+            }
+            passageBlocks.add(next);routeMining=mining=next;walker.release();mineTick();ceilingProgressAt=ticks;return true;
+        }
+        ceilingBase=ceilingTop=null;walker.stop();walker.requestRecovery();status="Climbing checked ceiling access";return true;
     }
     /** Add a real, acknowledged floor when an otherwise usable placement view has none. */
     private boolean temporaryView(BlockPos target,BlockState wanted,int cell,Map<BlockPos,Integer> tried,ViewSearch search){
