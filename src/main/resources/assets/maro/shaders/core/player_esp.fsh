@@ -12,6 +12,7 @@
 uniform sampler2D u_Mask;
 
 in vec2 texCoord;
+flat in float quadTag;
 
 const int MAX_PLAYERS = 16;
 
@@ -24,12 +25,15 @@ layout(std140) uniform EspData {
     vec4 FillParams;    // x style, y opacity, z edge fade, w enabled
     vec4 LineParams;    // x colour mode, y width (px), z opacity, w enabled
     vec4 GlowParams;    // x enabled, y radius (px), z strength, w mask texels per screen pixel
-    vec4 PlayerInfo;    // x number of player rects
+    vec4 PlayerInfo;    // x number of player rects, y tracer width (px), z rainbow tracers, w tracer count
     // Each player's screen rect in pixels (x0, y0, x1, y1) and, four to a vec4, how much of the
     // full contour and glow width that player gets: small, distant players get thinner ones so
     // their shape stays readable.
     vec4 PlayerRects[MAX_PLAYERS];
     vec4 PlayerScales[MAX_PLAYERS / 4];
+    // Each tracer from its start to its player (x0, y0, x1, y1 in pixels), and its colour.
+    vec4 TracerLines[MAX_PLAYERS];
+    vec4 TracerColors[MAX_PLAYERS];
 };
 
 out vec4 fragColor;
@@ -232,7 +236,31 @@ float playerScale(vec2 q) {
     return scale;
 }
 
+// A tracer: exact distance from this pixel to the line segment, anti-aliased over one pixel like
+// the contour, fading out near its start so the lines do not pile up over the crosshair.
+vec4 tracer(int index, vec2 px) {
+    vec4 line = TracerLines[index];
+    vec2 a = line.xy, ab = line.zw - line.xy;
+    float along = clamp(dot(px - a, ab) / max(dot(ab, ab), 1e-4), 0.0, 1.0);
+    float d = length(px - a - ab * along);
+    float alpha = clamp(PlayerInfo.y * 0.5 + 0.5 - d, 0.0, 1.0);
+    alpha *= smoothstep(6.0, 22.0, length(px - a));
+    vec3 color = TracerColors[index].rgb;
+    if (PlayerInfo.z > 0.5) {
+        float t = Timing.x * Timing.y;
+        color = hsv2rgb(vec3(fract(along * 0.6 + float(index) * 0.13 - t * 0.2), 0.7, 1.0));
+    }
+    return vec4(color, alpha * TracerColors[index].a);
+}
+
 void main() {
+    if (quadTag > 0.5) {
+        vec4 line = tracer(int(quadTag - 0.5), gl_FragCoord.xy);
+        if (line.a <= 0.002) discard;
+        fragColor = line;
+        return;
+    }
+
     float maskScale = max(GlowParams.w, 1.0);
     vec2 size = vec2(textureSize(u_Mask, 0)) / maskScale;
     vec2 texel = 1.0 / size;

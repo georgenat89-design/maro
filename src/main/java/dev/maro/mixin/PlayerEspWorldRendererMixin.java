@@ -21,6 +21,7 @@ import net.minecraft.client.util.Handle;
 import net.minecraft.client.util.ObjectAllocator;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
+import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
 import org.spongepowered.asm.mixin.Final;
@@ -93,6 +94,7 @@ public abstract class PlayerEspWorldRendererMixin {
             Entity entity = ((EntityRenderStateAccess) state).maro$getEntity();
             if (entity == null || !PlayerEspRenderer.shouldDraw(entity)) continue;
             maro$drawSilhouette(entity, state, matrices, worldState);
+            PlayerEspRenderer.addTracer(entity, state.x, state.y, state.z, camera);
             drawn.add(entity);
         }
 
@@ -103,8 +105,10 @@ public abstract class PlayerEspWorldRendererMixin {
             float tickProgress = client.getRenderTickCounter().getTickProgress(false);
             for (var player : client.world.getPlayers()) {
                 if (drawn.contains(player) || !PlayerEspRenderer.shouldDraw(player)) continue;
+                Vec3d at = player.getLerpedPos(tickProgress);
+                PlayerEspRenderer.addTracer(player, at.x, at.y, at.z, camera);
+                if (!PlayerEspRenderer.onScreen(at.x, at.y + player.getHeight() / 2, at.z, camera)) continue;
                 EntityRenderState state = entityRenderManager.getAndUpdateRenderState(player, tickProgress);
-                if (!PlayerEspRenderer.onScreen(state.x, state.y + player.getHeight() / 2, state.z, camera)) continue;
                 maro$drawSilhouette(player, state, matrices, worldState);
                 drawn.add(player);
             }
