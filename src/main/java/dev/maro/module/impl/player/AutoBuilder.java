@@ -195,6 +195,13 @@ public final class AutoBuilder extends Module {
     private BlockPos descentSearchFeet,descentSearchDestination;
     private List<BlockPos> descentSearchPosts=List.of(),descentSearchViews=List.of();
     private int descentSearchCursor,descentRetryAt;
+    private BlockPos hatchSearchFeet;
+    private List<BlockPos> hatchCandidates=List.of();
+    private final List<BlockPos> hatchViews=new ArrayList<>();
+    private int hatchSearchCursor,hatchExitCursor;
+    private static final Direction[] ESCAPE_SIDES={Direction.NORTH,Direction.SOUTH,Direction.WEST,Direction.EAST};
+    private static final class EscapeSearch {int cursor;BlockPos view;}
+    private final Map<BlockPos,EscapeSearch> descentEscapes=new HashMap<>();
     private final Set<BlockPos> accessSupports=new HashSet<>();
     private int navigatingCell=-1,navigationStarted,eatPreviousSlot=-1,eatBefore,eatDeadline;
     private boolean eating,ownsFoodUse,foodRestock,foodShopping,supportRestock,supportShopping;
@@ -557,6 +564,8 @@ public final class AutoBuilder extends Module {
         floorSearchFeet=null;floorSearchCursor=0;
         passageBlocks.clear();passageStand=passageSearchFeet=null;passageSearchWork=-2;passageSearchCursor=passageRetryAt=0;
         descentSearchFeet=descentSearchDestination=null;descentSearchPosts=descentSearchViews=List.of();descentSearchCursor=descentRetryAt=0;
+        hatchSearchFeet=null;hatchCandidates=List.of();hatchViews.clear();hatchSearchCursor=hatchExitCursor=0;
+        descentEscapes.clear();
         floorAccessWork.clear();
     }
     private void notify(String message){Notifications.push("Auto Builder",message,Notifications.Type.INFO,5000);if(mc.player!=null)mc.player.sendMessage(Text.literal("[Auto Builder] "+message),false);}
@@ -1035,6 +1044,20 @@ public final class AutoBuilder extends Module {
             var body=mc.player.getBoundingBox().offset(feet.subtract(mc.player.getEntityPos()));
             if(!mc.world.isSpaceEmpty(body))continue;
             if(placement(target,wanted,Schematic.material(wanted),cell,false,eye,body)==null)continue;
+            // The first cell of an underfoot column is occupied until the
+            // native jump. Commit its proven view before asking for that cell's
+            // ground-level placement context, which necessarily rejects it.
+            var current=mc.player.getBlockPos();
+            boolean clearColumn=true;
+            if(stand.getX()==current.getX()&&stand.getZ()==current.getZ())for(int y=current.getY();y<stand.getY();y++){
+                var column=new BlockPos(current.getX(),y,current.getZ());
+                if(plannedSolid(column)||!mc.world.getBlockState(column).isReplaceable()||!mc.world.getFluidState(column).isEmpty()){clearColumn=false;break;}
+            }
+            if(clearColumn&&stand.getX()==current.getX()&&stand.getZ()==current.getZ()&&stand.getY()>mc.player.getY()&&walker.canPillar(current)){
+                if(supports.size()>=tempDirt.getInt())return recycleSupport();
+                if(inventoryCount(Items.DIRT)==0){ensureSupportDirt();return true;}
+                commitAccess(stand,true);walker.requestRecovery();status="Starting checked scaffold jump";return true;
+            }
             var job=viewFloorJob(stand);
             if(job==null)continue;
             if(supports.size()>=tempDirt.getInt())return recycleSupport();
@@ -1384,24 +1407,40 @@ public final class AutoBuilder extends Module {
     private boolean plannedSolid(BlockPos pos){int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());return cell>=0&&!desired(cell).isAir()&&!desired(cell).isOf(Blocks.STRUCTURE_VOID);}
     private BlockPos recoveryDestination(){return standGoal!=null?standGoal:restockTarget!=null?restockTarget:depositTarget!=null?depositTarget:accessStand!=null?accessStand:navigatingCell>=0?position(navigatingCell):walker.destination();}
     private boolean prepareSupportDescent(List<BlockPos> views){
-        if(views.isEmpty())return false;
+        boolean staged=restockTarget!=null||navigatingCell>=0&&states[navigatingCell]!=CORRECT&&!desired(navigatingCell).isAir();
+        if(!staged&&views.isEmpty())return false;
+        if(staged&&collectDescentHatches()){walker.release();status="Checking staged scaffold return";return true;}
         var feet=mc.player.getBlockPos();var destination=restockTarget!=null?restockTarget:navigatingCell>=0?position(navigatingCell):views.getFirst();
         if(!feet.equals(descentSearchFeet)||!destination.equals(descentSearchDestination)){
             descentSearchFeet=feet.toImmutable();descentSearchDestination=destination;descentSearchCursor=descentRetryAt=0;
-            descentSearchViews=views.stream().filter(pos->walker.standingPoint(pos).y<mc.player.getY()-.5)
-                .sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(feet))).limit(8).toList();
+            var options=new ArrayList<BlockPos>(views.stream().filter(pos->walker.standingPoint(pos).y<mc.player.getY()-.5)
+                .sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(feet))).limit(8).toList());
+            if(staged)options.addAll(hatchViews.stream().filter(pos->walker.standingPoint(pos).y<mc.player.getY()-.5)
+                .sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(feet))).limit(8).toList());
+            descentSearchViews=options.stream().distinct().toList();
             descentSearchPosts=supports.stream().filter(pos->pos.getY()>=mc.player.getY()-3.1&&pos.getY()<mc.player.getY()+.1)
                 .filter(pos->mc.world.getBlockState(pos).isOf(Blocks.DIRT)&&!plannedSolid(pos)&&walker.canDescendThrough(pos)&&safeToRecycle(pos))
                 .sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(feet))).limit(128).toList();
         }
-        if(descentSearchViews.isEmpty()||descentSearchPosts.isEmpty()||ticks<descentRetryAt)return false;
+        if(!staged&&descentSearchViews.isEmpty()||descentSearchPosts.isEmpty()||ticks<descentRetryAt)return false;
         // An isolated finished ledge may first require a safe two-block drop
         // onto a reachable owned post, then normal post-by-post descent.
         long deadline=System.nanoTime()+3_000_000;
-        int total=descentSearchPosts.size()*descentSearchViews.size();
+        int viewCount=Math.max(1,descentSearchViews.size()),total=descentSearchPosts.size()*viewCount;
         while(descentSearchCursor<total&&System.nanoTime()<deadline){
-            int sample=descentSearchCursor++;var pos=descentSearchPosts.get(sample/descentSearchViews.size());var lower=descentSearchViews.get(sample%descentSearchViews.size());
-            if(!supports.contains(pos)||!mc.world.getBlockState(pos).isOf(Blocks.DIRT)||!descentReaches(pos,lower))continue;
+            int sample=descentSearchCursor++;var pos=descentSearchPosts.get(sample/viewCount);var lower=descentSearchViews.isEmpty()?null:descentSearchViews.get(sample%viewCount);
+            if(!supports.contains(pos)||!mc.world.getBlockState(pos).isOf(Blocks.DIRT))continue;
+            boolean escapePending=staged&&sample%viewCount==viewCount-1&&descentEscapes.containsKey(pos);
+            if(escapePending||lower==null||!descentReaches(pos,lower)){
+                if(!staged||sample%viewCount!=viewCount-1)continue;
+                var search=descentEscapes.computeIfAbsent(pos,p->new EscapeSearch());var geometry=descentGeometry(pos);
+                // Staging must actually leave this level. Walking onto a low
+                // post just to remove it and return to the same floor is not
+                // recovery, and can tour the entire scaffold without building.
+                if(geometry==null||walker.standingPoint(geometry.landing).y>=mc.player.getY()-.5||!safeToRecycle(geometry.removed))continue;
+                lower=openDescentExit(geometry,search,deadline);
+                if(lower==null){if(search.cursor<192){descentSearchCursor--;walker.release();status="Checking open scaffold exit";return true;}continue;}
+            }
             if(pos.equals(mc.player.getBlockPos().down())&&mc.player.isOnGround()&&mc.player.getVelocity().horizontalLengthSquared()<.0001){
                 descentPost=descentView=null;
                 standGoal=lower;descentLanding=true;routeMining=mining=pos;walker.stop();status="Descending temporary scaffold";mineTick();return true;
@@ -1412,6 +1451,53 @@ public final class AutoBuilder extends Module {
         if(descentSearchCursor<total){walker.release();status="Checking scaffold return route";return true;}
         descentSearchCursor=0;descentRetryAt=ticks+40;
         return false;
+    }
+    /** Checked intermediate views for routes which need both an owned-post drop and a floor hatch. */
+    private boolean collectDescentHatches(){
+        var feet=mc.player.getBlockPos();
+        if(!feet.equals(hatchSearchFeet)){
+            hatchSearchFeet=feet.toImmutable();hatchSearchCursor=hatchExitCursor=0;hatchViews.clear();descentEscapes.clear();
+            hatchCandidates=supports.stream().filter(pos->mc.world.getBlockState(pos).isOf(Blocks.DIRT))
+                .flatMap(pos->java.util.stream.IntStream.rangeClosed(1,3).mapToObj(pos::up)).distinct()
+                .filter(pos->pos.getY()<mc.player.getY()-.5&&pos.getY()>=mc.player.getY()-5)
+                .filter(pos->{int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());var state=mc.world.getBlockState(pos);
+                    return cell>=0&&states[cell]==CORRECT&&!state.hasBlockEntity()&&state.getFluidState().isEmpty()&&state.getHardness(mc.world,pos)>=0&&state.isFullCube(mc.world,pos);})
+                .sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(feet))).limit(128).toList();
+        }
+        long deadline=System.nanoTime()+3_000_000;
+        while(hatchSearchCursor<hatchCandidates.size()&&System.nanoTime()<deadline){
+            var cover=hatchCandidates.get(hatchSearchCursor);
+            if(!walker.canStand(cover.up())||!safeToRecycle(cover)||!walker.canDescendThrough(cover)){hatchSearchCursor++;hatchExitCursor=0;continue;}
+            var geometry=descentGeometry(cover);if(geometry==null||!safeToRecycle(geometry.removed)){hatchSearchCursor++;hatchExitCursor=0;continue;}
+            var search=new EscapeSearch();search.cursor=hatchExitCursor;boolean proved=openDescentExit(geometry,search,deadline)!=null;hatchExitCursor=search.cursor;
+            if(proved){hatchViews.add(cover.up());hatchSearchCursor++;hatchExitCursor=0;}
+            else if(hatchExitCursor==192){hatchSearchCursor++;hatchExitCursor=0;}
+        }
+        return hatchSearchCursor<hatchCandidates.size();
+    }
+    private BlockPos openDescentExit(DescentGeometry geometry,EscapeSearch search,long deadline){
+        if(search.view!=null&&openScaffoldStand(search.view)&&walker.canReachAfterClearing(geometry.landing,search.view,geometry.removed))return search.view;
+        while(search.cursor<192&&System.nanoTime()<deadline){
+            int sample=search.cursor++;var exit=geometry.landing.offset(ESCAPE_SIDES[sample/3%4],sample/12+1).down(sample%3);
+            if(!openScaffoldStand(exit))continue;
+            if(walker.canReachAfterClearing(geometry.landing,exit,geometry.removed)){search.view=exit;return exit;}
+        }
+        return null;
+    }
+    private boolean openScaffoldStand(BlockPos pos){
+        if(!walker.canStand(pos))return false;
+        for(int up=2;up<=8;up++)if(plannedSolid(pos.up(up))||!walker.hasStandingClearance(pos.up(up)))return false;
+        return true;
+    }
+    private record DescentGeometry(BlockPos landing,Set<BlockPos> removed){}
+    private DescentGeometry descentGeometry(BlockPos removed){
+        var landing=walker.descentLanding(removed);if(landing==null)return null;
+        var cleared=new HashSet<BlockPos>();cleared.add(removed);
+        for(int steps=0;steps<128;steps++){
+            var post=landing.down();if(!supports.contains(post)||plannedSolid(post)||!mc.world.getBlockState(post).isOf(Blocks.DIRT))break;
+            cleared.add(post);landing=walker.descentLandingAfterClearing(post,cleared);if(landing==null)return null;
+        }
+        return new DescentGeometry(landing,cleared);
     }
     private boolean descentReaches(BlockPos removed,BlockPos destination){
         var landing=walker.descentLanding(removed);
