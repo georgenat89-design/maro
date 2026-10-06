@@ -186,6 +186,10 @@ public final class AutoBuilder extends Module {
     private Set<BlockPos> accessStairs=Set.of();
     private BlockPos stairSearchStand,stairSearchFeet;
     private int stairSearchCursor;
+    private Set<BlockPos> stairPlacementPlan=Set.of();
+    private BlockPos stairPlacementFeet;
+    private List<BlockPos> stairPlacementViews=List.of();
+    private int stairPlacementCursor;
     private BlockPos standGoal;
     private BlockPos accessStand,accessBase;
     private BlockPos entrySearchFeet;
@@ -384,6 +388,7 @@ public final class AutoBuilder extends Module {
     public static void serverBlockUpdate(BlockPos pos,BlockState state){
         var builder=ModuleManager.get(AutoBuilder.class);
         if(builder==null||builder.world!=mc.world)return;
+        if(builder.accessStairs.stream().anyMatch(piece->piece.getSquaredDistance(pos)<=25))builder.stairPlacementPlan=Set.of();
         if(state.isAir()&&builder.supports.contains(pos)&&builder.accessStand!=null)builder.accessProgressAt=builder.ticks;
         if(!state.isOf(Blocks.DIRT)){builder.escapeSupports.remove(pos);builder.escapeSupportWork.remove(pos);}
         if(pos.equals(builder.routeMining)||pos.equals(builder.mining)||builder.unconfirmedPlacements.containsKey(pos))builder.viewSearches.clear();
@@ -566,6 +571,7 @@ public final class AutoBuilder extends Module {
     }
     @Override protected void onDisable(){pause("Disabled");staffStopAt=0;captureStates=null;if(mc.player!=null&&originalSlot>=0)select(originalSlot);originalSlot=-1;}
     public void pause(String reason){
+        stairPlacementPlan=Set.of();stairPlacementFeet=null;stairPlacementViews=List.of();stairPlacementCursor=0;
         stairSearchStand=stairSearchFeet=null;stairSearchCursor=0;
         buildEta.tick(System.nanoTime()/1_000_000,false);
         if(pendingPlacement!=null&&inGame()&&world==mc.world&&(pendingServerState==null||!compatible(pendingServerState,pendingPlacement.state)))
@@ -1575,7 +1581,7 @@ public final class AutoBuilder extends Module {
                 if(inventoryCount(Items.DIRT)==0){ensureSupportDirt();return true;}
                 placement=job;placeTick();return true;
             }
-            return false;
+            return stageStairPlacement();
         }
         if(stand.equals(accessStand)){
             var next=accessSupports.stream().map(BlockPos::up).filter(pos->pos.getY()<=stand.getY())
@@ -1589,6 +1595,33 @@ public final class AutoBuilder extends Module {
             if(intermediate!=null&&buildAccessStep(intermediate))return true;
         }
         return buildAccessStep(stand);
+    }
+    /** Capacity trips can leave us beyond the next face. Walk back to a real
+     * placement view without discarding the proved stair or adding another post. */
+    private boolean stageStairPlacement(){
+        var feet=mc.player.getBlockPos();
+        if(!accessStairs.equals(stairPlacementPlan)||!feet.equals(stairPlacementFeet)){
+            stairPlacementPlan=accessStairs;stairPlacementFeet=feet.toImmutable();stairPlacementCursor=0;
+            var views=new LinkedHashSet<BlockPos>();
+            for(var piece:accessStairs)if(mc.world.getBlockState(piece).isReplaceable())
+                for(int dx=-3;dx<=3;dx++)for(int dz=-3;dz<=3;dz++)for(int dy=-6;dy<=2;dy++)views.add(piece.add(dx,dy,dz));
+            stairPlacementViews=views.stream().sorted(Comparator.comparingDouble(p->p.getSquaredDistance(feet))).toList();
+        }
+        long deadline=System.nanoTime()+3_000_000;
+        while(stairPlacementCursor<stairPlacementViews.size()&&System.nanoTime()<deadline){
+            var stand=stairPlacementViews.get(stairPlacementCursor++);
+            if(!walker.canStand(stand)||walker.standingPoint(stand).squaredDistanceTo(mc.player.getEntityPos())<.22*.22)continue;
+            var eye=walker.standingPoint(stand).add(0,mc.player.getStandingEyeHeight(),0);
+            var body=mc.player.getBoundingBox().offset(eye.subtract(mc.player.getEyePos()));
+            boolean usable=false;
+            for(var piece:accessStairs)if(mc.world.getBlockState(piece).isReplaceable()&&stairCell(piece)&&withinReach(piece,eye)
+                &&placement(piece,Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true,eye,body)!=null){usable=true;break;}
+            if(!usable||!walker.canReachStand(stand))continue;
+            standGoal=stand;standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();
+            status="Walking to next checked stair face";return true;
+        }
+        if(stairPlacementCursor<stairPlacementViews.size()){walker.release();status="Checking next stair placement view";return true;}
+        return false;
     }
     private boolean buildAccessStep(BlockPos stand){
         int rise=stand.getY()-mc.player.getBlockPos().getY();if(rise<1||rise>(stand.equals(accessStand)?6:3))return false;

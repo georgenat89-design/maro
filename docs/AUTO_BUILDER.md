@@ -1,5 +1,10 @@
 # Auto Builder — Minecraft 1.21.11
 
+Committed stairs survive trips to reclaim temporary block capacity. When the
+next piece is out of reach, the builder searches real standing positions and
+walks to a checked placement face before resuming the same stair. This staging
+uses ordinary movement and adds no temporary blocks of its own.
+
 ## Start the build
 
 1. Right-click **Player → Auto Builder** to open the control panel. Click **Choose Schematic**. Use **Open Folder** in the library to put files in the game's `schematics` folder.

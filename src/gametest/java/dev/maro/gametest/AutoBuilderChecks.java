@@ -79,7 +79,7 @@ final class AutoBuilderChecks {
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")){stashBuild(context,singleplayer,builder,start);return;}
-            if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){stairPlacementStaging(context,singleplayer,builder,start);blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderCleanupOnly")){ownedChestCover(context,singleplayer,builder,start);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){compactAccessStep(context,singleplayer,builder,start);ownedChestCover(context,singleplayer,builder,start);elevatedFloorEntry(context,singleplayer,builder,start);sealedDirectionalAccess(context,singleplayer,builder,start,3);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")){sealedDirectionalAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);raisedChestReturn(context,singleplayer,builder,start);sealedChestReturn(context,singleplayer,builder,start);return;}
@@ -88,6 +88,7 @@ final class AutoBuilderChecks {
             fixture(context,singleplayer,builder,start);
             raisedTurn(context,singleplayer,start);
             shapedArrival(context,singleplayer,builder,start);
+            stairPlacementStaging(context,singleplayer,builder,start);
             blockedAccessStep(context,singleplayer,builder,start);
             compactAccessStep(context,singleplayer,builder,start);
             ownedChestCover(context,singleplayer,builder,start);
@@ -1044,6 +1045,35 @@ final class AutoBuilderChecks {
                 require(!walker.needsRecovery()&&!walker.routeUnavailable(),"Successful walking route retained a stale pillar request");
             }catch(ReflectiveOperationException error){throw new AssertionError(error);}finally{walker.stop();}
         });
+    }
+    private static void stairPlacementStaging(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Resume retained stairs after a capacity trip beyond placement reach");
+        fixture(context,world,builder,start);var stand=start.up(3).south(3);var first=start.south();
+        var plan=new LinkedHashSet<>(List.of(first,start.south(2),start.up().south(2)));
+        command(world,"setblock",stand.down(),"dirt");world.getServer().runCommand("give @a dirt 16");world.getServer().runCommand("give @a stone 1");
+        world.getServer().runCommand("tp @a "+(start.getX()-7.5)+" "+start.getY()+" "+(start.getZ()+.5));context.waitTicks(12);
+        try{
+            context.runOnClient(client->{
+                builder.install(new Schematic("stair-placement-return.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(stand);set(builder,"Temporary Supports",true);
+                require(!new BuilderWalk().stairRoute(stand,plan).isEmpty(),"Staging fixture has no complete future stair route");
+                BuilderPacketChecks.begin();builder.startBuild();
+                try{
+                    for(String name:List.of("accessStand","accessStairs")){var f=AutoBuilder.class.getDeclaredField(name);f.setAccessible(true);f.set(builder,name.equals("accessStand")?stand:Collections.unmodifiableSet(plan));}
+                    var nav=AutoBuilder.class.getDeclaredField("navigatingCell");nav.setAccessible(true);nav.setInt(builder,0);
+                    for(String name:List.of("accessStarted","accessProgressAt")){var f=AutoBuilder.class.getDeclaredField(name);f.setAccessible(true);f.setInt(builder,(int)field(builder,"ticks"));}
+                    @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.add(stand.down());
+                    @SuppressWarnings("unchecked")var protectedSteps=(Set<BlockPos>)field(builder,"accessSupports");protectedSteps.addAll(plan);protectedSteps.add(stand.down());
+                }catch(ReflectiveOperationException failure){throw new AssertionError(failure);}
+            });
+            boolean staged=false;
+            for(int tick=0;tick<300&&!context.computeOnClient(client->builder.temporarySupports().contains(first));tick++){
+                staged|=context.computeOnClient(client->field(builder,"standGoal")!=null&&stand.equals(field(builder,"accessStand")));
+                context.waitTick();
+            }
+            require(staged,"Retained stair never walked to its next native placement face");
+            context.runOnClient(client->{require(builder.temporarySupports().contains(first)&&client.player.getHealth()==20,"Stair return failed to confirm its next piece safely");require(field(builder,"routeMining")==null,"Stair return started needless recycling with available capacity");BuilderPacketChecks.verify(1);builder.setEnabled(false);});
+            require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(first).isOf(Blocks.DIRT)&&server.getOverworld().getBlockState(stand.down()).isOf(Blocks.DIRT)),"Native stair return lost its next piece or existing destination footing");
+        }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
     }
     private static void blockedAccessStep(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-check] Unreachable stair destination must not create fragments");

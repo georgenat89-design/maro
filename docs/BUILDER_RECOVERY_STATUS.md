@@ -5,6 +5,23 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Upper replay55 was stopped at539/710 after extended plateaus at512 and539.
+Read-only access trace B records a complete nine-piece stair at tick18348,
+capacity reclamation moving the actor to another footing, and the entire plan
+cleared at18524 despite progress at18455. No next placement view was attempted
+when the remaining pieces were beyond the current eye/body placement context.
+Later the same high dirt at(-26211,67,-150584) was placed and reclaimed again.
+The working fix retains the stair and searches bounded real walking positions
+for an actual remaining native placement. It can stage horizontally or lower
+after a capacity trip; it creates no extra dirt during that movement. Nearby
+server geometry changes invalidate that staging search. Native Surface1 now
+includes a capacity-trip return regression with a proved complete stair,
+outside initial placement reach, actual key movement and server-confirmed dirt.
+Surface1 PASSED in33s: native staging return, rejected stair/no fragments,
+compact upper piece/protected old footing and four hopper rims; actual blocks,
+health and packet assertions passed. Full upper/fresh/core gates remain
+required; no merge or release. Upper56 is next on this production.
+
 Upper replay 54 was stopped after another prolonged 512/710 plateau. Native
 access snapshot A retained work1239, a side-stair view (-26211,68,-150584),
 accessFloor=false and one protected high piece while reclaiming a distant low
