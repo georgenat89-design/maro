@@ -202,6 +202,10 @@ public final class AutoBuilder extends Module {
     private static final Direction[] ESCAPE_SIDES={Direction.NORTH,Direction.SOUTH,Direction.WEST,Direction.EAST};
     private static final class EscapeSearch {int cursor;BlockPos view;}
     private final Map<BlockPos,EscapeSearch> descentEscapes=new HashMap<>();
+    private BlockPos recycleSearchFeet;
+    private int recycleSearchHash,recyclePostCursor,recycleViewCursor,recycleRouteCursor,recycleRetryAt;
+    private List<BlockPos> recyclePosts=List.of();
+    private final List<BlockPos> recycleViews=new ArrayList<>();
     private final Set<BlockPos> accessSupports=new HashSet<>();
     private int navigatingCell=-1,navigationStarted,eatPreviousSlot=-1,eatBefore,eatDeadline;
     private boolean eating,ownsFoodUse,foodRestock,foodShopping,supportRestock,supportShopping;
@@ -566,6 +570,7 @@ public final class AutoBuilder extends Module {
         descentSearchFeet=descentSearchDestination=null;descentSearchPosts=descentSearchViews=List.of();descentSearchCursor=descentRetryAt=0;
         hatchSearchFeet=null;hatchCandidates=List.of();hatchViews.clear();hatchSearchCursor=hatchExitCursor=0;
         descentEscapes.clear();
+        recycleSearchFeet=null;recyclePosts=List.of();recycleViews.clear();recyclePostCursor=recycleViewCursor=recycleRouteCursor=recycleRetryAt=0;
         floorAccessWork.clear();
     }
     private void notify(String message){Notifications.push("Auto Builder",message,Notifications.Type.INFO,5000);if(mc.player!=null)mc.player.sendMessage(Text.literal("[Auto Builder] "+message),false);}
@@ -1655,31 +1660,46 @@ public final class AutoBuilder extends Module {
             // A full pool must not strand the builder above supports hidden by
             // the finished floor. Walk to a verified mining view before trying
             // to free capacity; never mine an unseen or unrelated block.
-            var options=supports.stream().filter(pos->mc.world.isChunkLoaded(pos)&&mc.world.getBlockState(pos).isOf(Blocks.DIRT)&&!plannedSolid(pos)&&!servesActiveScaffold(pos))
-                .sorted(Comparator.<BlockPos>comparingInt(BlockPos::getY).reversed().thenComparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).toList();
-            long deadline=System.nanoTime()+8_000_000;int checked=0;
+            var feet=mc.player.getBlockPos();int hash=supports.hashCode();
+            if(!feet.equals(recycleSearchFeet)||hash!=recycleSearchHash){
+                recycleSearchFeet=feet.toImmutable();recycleSearchHash=hash;
+                recyclePostCursor=recycleViewCursor=recycleRouteCursor=recycleRetryAt=0;recycleViews.clear();
+                recyclePosts=supports.stream().filter(pos->mc.world.isChunkLoaded(pos)&&mc.world.getBlockState(pos).isOf(Blocks.DIRT)&&!plannedSolid(pos)&&!servesActiveScaffold(pos))
+                    .sorted(Comparator.<BlockPos>comparingInt(BlockPos::getY).reversed().thenComparingDouble(pos->pos.getSquaredDistance(feet))).limit(128).toList();
+            }
+            if(ticks<recycleRetryAt)return false;
+            long deadline=System.nanoTime()+3_000_000;
             int below=(int)Math.floor(effectiveReach()+mc.player.getStandingEyeHeight()-.5),above=(int)Math.floor(effectiveReach()-mc.player.getStandingEyeHeight()+.5);
-            for(var pos:options){
-                if(++checked>32||System.nanoTime()>deadline)break;
-                if(!safeToRecycle(pos))continue;
+            int heights=below+above+1,total=49*heights;
+            while(recyclePostCursor<recyclePosts.size()&&System.nanoTime()<deadline){
+                var pos=recyclePosts.get(recyclePostCursor);
+                if(!supports.contains(pos)||!mc.world.getBlockState(pos).isOf(Blocks.DIRT)||servesActiveScaffold(pos)||!safeToRecycle(pos)){
+                    recyclePostCursor++;recycleViewCursor=recycleRouteCursor=0;recycleViews.clear();continue;
+                }
                 var tried=cleanupStands.computeIfAbsent(pos,p->new HashMap<>());tried.values().removeIf(until->until<=ticks);
-                var views=new ArrayList<BlockPos>();
-                for(int dx=-3;dx<=3;dx++)for(int dz=-3;dz<=3;dz++)for(int dy=-below;dy<=above;dy++){
+                while(recycleViewCursor<total&&System.nanoTime()<deadline){
+                    int sample=recycleViewCursor++;int dy=sample%heights-below,dx=sample/heights/7-3,dz=sample/heights%7-3;
                     var stand=pos.add(dx,dy,dz);
                     if(tried.containsKey(stand)||!walker.canStand(stand))continue;
                     var eye=walker.standingPoint(stand).add(0,mc.player.getStandingEyeHeight(),0);
                     if(new Box(pos).intersects(mc.player.getBoundingBox().offset(eye.subtract(mc.player.getEyePos())).offset(0,-1,0))||visibleHit(pos,eye)==null)continue;
-                    views.add(stand);
+                    recycleViews.add(stand);
                 }
-                views.sort(Comparator.comparingDouble(stand->stand.getSquaredDistance(mc.player.getBlockPos())));
-                for(var stand:views){
+                if(recycleViewCursor<total)break;
+                if(recycleRouteCursor==0)recycleViews.sort(Comparator.comparingDouble(stand->stand.getSquaredDistance(feet)));
+                while(recycleRouteCursor<recycleViews.size()&&System.nanoTime()<deadline){
+                    var stand=recycleViews.get(recycleRouteCursor++);
+                    if(tried.containsKey(stand)||!walker.canStand(stand))continue;
                     tried.put(stand,ticks+100);
                     if(walker.canReachStand(stand)){
                         recycleTarget=pos;standGoal=stand;standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();status="Moving to reuse temporary supports";return true;
                     }
-                    if(System.nanoTime()>deadline)break;
                 }
+                if(recycleRouteCursor<recycleViews.size())break;
+                recyclePostCursor++;recycleViewCursor=recycleRouteCursor=0;recycleViews.clear();
             }
+            if(recyclePostCursor<recyclePosts.size()){walker.release();status="Checking temporary support reuse route";return true;}
+            recyclePostCursor=recycleViewCursor=recycleRouteCursor=0;recycleViews.clear();recycleRetryAt=ticks+40;
             return false;
         }
         routeSupportExclusions.put(candidate,ticks+600);routeMining=candidate;mining=candidate;walker.release();status="Reusing temporary support capacity";mineTick();return true;

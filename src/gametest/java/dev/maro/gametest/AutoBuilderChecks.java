@@ -91,6 +91,8 @@ final class AutoBuilderChecks {
             fixture(context,singleplayer,builder,start);
             activeStepProtection(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
+            sameLevelStaging(context,singleplayer,builder,start);
+            fixture(context,singleplayer,builder,start);
             if(Boolean.getBoolean("maro.gametest.builderTurnOnly"))return;
             layerTail(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
@@ -1010,6 +1012,31 @@ final class AutoBuilderChecks {
                 require(!walker.needsRecovery()&&!walker.routeUnavailable(),"Successful walking route retained a stale pillar request");
             }catch(ReflectiveOperationException error){throw new AssertionError(error);}finally{walker.stop();}
         });
+    }
+    private static void sameLevelStaging(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Ground-level posts cannot trigger a destructive staging tour");
+        var target=start.add(0,6,3);var posts=Set.of(start.east(4),start.west(4),start.north(4),start.south(6));
+        for(var post:posts)command(world,"setblock",post,"dirt");
+        world.getServer().runCommand("fill "+coords(start.add(1,0,3))+" "+coords(start.add(1,3,3))+" stone");
+        for(String item:List.of("stone 1","dirt 24","diamond_shovel"))world.getServer().runCommand("give @a "+item);
+        context.waitTicks(6);
+        try{
+            context.runOnClient(client->{
+                set(builder,"Temporary Supports",true);builder.install(new Schematic("same-level-staging.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);
+                @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.addAll(posts);
+                try{
+                    var nav=AutoBuilder.class.getDeclaredField("navigatingCell");nav.setAccessible(true);nav.setInt(builder,0);
+                    var search=AutoBuilder.class.getDeclaredMethod("prepareSupportDescent",List.class);search.setAccessible(true);
+                    require(!(boolean)search.invoke(builder,List.of()),"Same-level posts were accepted as a staged descent");
+                    require(field(builder,"routeMining")==null&&field(builder,"standGoal")==null&&owned.containsAll(posts),"Failed descent scheduled destructive work");
+                    nav.setInt(builder,-1);
+                }catch(ReflectiveOperationException error){throw new AssertionError(error);}
+                BuilderPacketChecks.begin();builder.startBuild();
+            });
+            await(context,builder,2400);verify(world,target,1,1,1,y->Blocks.STONE);
+            require(world.getServer().computeOnServer(server->{for(var pos:BlockPos.iterate(start.add(-7,0,-7),start.add(7,8,10)))if(server.getOverworld().getBlockState(pos).isOf(Blocks.DIRT))return false;return true;}),"Staging regression left temporary dirt behind");
+            context.runOnClient(client->{require(builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Ground staging did not finish safely");BuilderPacketChecks.verify();});
+        }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
     }
     private static void layerTail(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         // Only diagonal standing cells are safe. A wall blocks the initial placement ray,
