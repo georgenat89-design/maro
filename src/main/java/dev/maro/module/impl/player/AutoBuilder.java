@@ -1120,7 +1120,11 @@ public final class AutoBuilder extends Module {
                 if(search.stepCursor<options.size()){walker.release();status="Checking remaining access steps";return true;}
                 search.recoveryStage=3;
             }
-            if(search.recoveryStage==3){if(wanted!=null&&!wanted.isAir()&&states[cell]!=CORRECT&&preparePassage(options,cell))return true;search.recoveryStage=4;}
+            if(search.recoveryStage==3){
+                boolean cleaning=target.equals(cleanupTarget)&&supports.contains(target);
+                if(wanted!=null&&(!wanted.isAir()||cleaning)&&states[cell]!=CORRECT&&preparePassage(options,cell))return true;
+                search.recoveryStage=4;
+            }
             if(search.recoveryStage==4){if(wanted!=null&&temporaryView(target,wanted,cell,tried,search))return true;search.recoveryStage=5;}
             if(search.recoveryStage==5){if(wanted!=null&&!wanted.isAir()&&states[cell]!=CORRECT&&prepareFloorOpening(options,cell))return true;search.recoveryStage=6;}
             if(search.recoveryStage==6){if(prepareSupportDescent(options,true))return true;search.recoveryStage=7;search.expires=ticks+40;}

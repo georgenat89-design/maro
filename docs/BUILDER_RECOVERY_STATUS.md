@@ -5,6 +5,22 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+At06:09, final2 was stopped after all five final jobs were placed, but cleanup
+cycled between122/123owned posts around target(-26215,66,-150583). Native
+cleanup-view trace shows the same raised column recommitted repeatedly. Cause:
+prepareElevatedEntry proves an opening for an owned support in a schematic AIR
+cell, but repositionTarget stage3 skips actual preparePassage when wanted.isAir.
+Cleanup-door proof confirms a safe masked route from top(-26219,66,-150583)
+through a finished note-block wall to a useful mining view. Neither geometry
+nor pose was changed by diagnostics. Working stage3 permits this checked
+passage for the current owned cleanup target. Thick-room test now runs both
+requested-block entry and cleanup-only entry (owned dirt in schematic air);
+both require restored original walls, zero dirt, health20, closed menus and
+native packets. Cleanup-entry1 PASSED in 2m37s on these changes: same-level posts stay protected, both requested-build and cleanup-only thick-room cases restored every wall, removed all owned/world dirt, retained full health and closed menus, and passed native packet assertions.
+Pose proof at66 showed actualHit=null and projectedHit=null; eyeheight1.62.
+Centre-lift proof had no valid cardinal67neighbour. No centering/pose code was
+changed from these rejected hypotheses. Current HEAD28dcd0d, PR37 draft.
+
 At05:56, Jump-surface1 PASSED50s. Native raised closed-door arrival took a
 clear side, kept the intended closed door state, full health and clear body.
 Prior four open/closed trapdoor cases, native source bucket, retained stair/

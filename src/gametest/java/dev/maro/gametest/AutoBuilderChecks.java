@@ -1306,20 +1306,24 @@ final class AutoBuilderChecks {
         }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);((dev.maro.setting.NumberSetting)field(builder,"tempDirt")).set(128d);});}
     }
     private static void thickWallEntry(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
-        System.out.println("[builder-check] Prove a two-deep elevated wall entry; restore all walls after cleanup");
+        for(boolean cleanOnly:List.of(false,true))thickWallEntry(context,world,builder,start,cleanOnly);
+    }
+    private static void thickWallEntry(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,boolean cleanOnly){
+        System.out.println("[builder-check] Prove a two-deep elevated wall entry; restore all walls; cleanup-only="+cleanOnly);
         fixture(context,world,builder,start);var origin=start.south(3);var target=origin.add(3,3,3);var spawn=origin.west(3).south(3);
         var blocks=new BlockState[7*6*7];Arrays.fill(blocks,Blocks.AIR.getDefaultState());
         for(int y=2;y<6;y++)for(int z=0;z<7;z++)for(int x=0;x<7;x++)
             if(y==2||y==5||x<2||x>4||z<2||z>4)blocks[(y*7+z)*7+x]=Blocks.STONE.getDefaultState();
-        blocks[(3*7+3)*7+3]=Blocks.STONE.getDefaultState();
+        if(!cleanOnly)blocks[(3*7+3)*7+3]=Blocks.STONE.getDefaultState();
         var schematic=new Schematic("thick-elevated-entry.nbt","test",7,6,7,BlockPos.ORIGIN,blocks);
         world.getServer().runOnServer(server->{var level=server.getOverworld();for(int i=0;i<schematic.size();i++){var pos=origin.add(schematic.transformed(i,0,"None"));if(!pos.equals(target)&&!schematic.state(i).isAir())level.setBlockState(pos,schematic.state(i),Block.NOTIFY_ALL);}});
+        if(cleanOnly)command(world,"setblock",target,"dirt");
         world.getServer().runCommand("tp @a "+(spawn.getX()+.5)+" "+spawn.getY()+" "+(spawn.getZ()+.5)+" 0 0");
         // Include repair stock: mined wall drops may fall below the exterior
         // platform, and this geometry test deliberately has no chest or market.
         for(String item:List.of("stone 16","dirt 64","diamond_pickaxe","diamond_shovel"))world.getServer().runCommand("give @a "+item);context.waitTicks(10);
         try{
-            context.runOnClient(client->{set(builder,"Temporary Supports",true);builder.install(schematic);builder.setOrigin(origin);BuilderPacketChecks.begin();builder.startBuild();});
+            context.runOnClient(client->{set(builder,"Temporary Supports",true);builder.install(schematic);builder.setOrigin(origin);if(cleanOnly)((Set<BlockPos>)field(builder,"supports")).add(target);BuilderPacketChecks.begin();builder.startBuild();});
             await(context,builder,3600);
             require(world.getServer().computeOnServer(server->{var level=server.getOverworld();for(int i=0;i<schematic.size();i++)if(!schematic.state(i).isAir()&&!level.getBlockState(origin.add(schematic.transformed(i,0,"None"))).equals(schematic.state(i)))return false;for(var pos:BlockPos.iterate(origin.add(-7,0,-7),origin.add(13,9,13)))if(level.getBlockState(pos).isOf(Blocks.DIRT))return false;return true;}),"Thick entry left dirt or failed to restore a finished wall");
             context.runOnClient(client->{require(builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Thick entry did not finish safely");BuilderPacketChecks.verify();});
