@@ -275,6 +275,10 @@ public final class AutoBuilder extends Module {
     private Vec3d ceilingProgressPos;
     private BlockPos floorSearchFeet;
     private int floorSearchCursor;
+    private BlockPos floorSearchView;
+    private int floorSearchWork=-2;
+    private record FloorProbe(BlockPos view,DescentGeometry geometry){}
+    private final Map<BlockPos,FloorProbe> floorProbes=new HashMap<>();
     private BlockPos bridgeTarget;
     private BlockPos supportPickup;
     private int supportPickupUntil,supportRecycleAt;
@@ -409,12 +413,14 @@ public final class AutoBuilder extends Module {
         if(builder.accessStairs.stream().anyMatch(piece->piece.getSquaredDistance(pos)<=25))builder.stairPlacementPlan=Set.of();
         if(state.isAir()&&builder.supports.contains(pos)&&builder.accessStand!=null)builder.accessProgressAt=builder.ticks;
         if(!state.isOf(Blocks.DIRT)){builder.escapeSupports.remove(pos);builder.escapeSupportWork.remove(pos);}
-        if(pos.equals(builder.routeMining)||pos.equals(builder.mining)||builder.unconfirmedPlacements.containsKey(pos))builder.viewSearches.clear();
+        if(pos.equals(builder.routeMining)||pos.equals(builder.mining)||builder.unconfirmedPlacements.containsKey(pos)){
+            builder.viewSearches.clear();builder.floorProbes.clear();
+        }
         if(builder.pendingPlacement!=null&&builder.pendingPlacement.target.equals(pos))builder.pendingServerState=state;
         var job=builder.unconfirmedPlacements.get(pos);
         var late=builder.latePlacements.remove(pos);if(job==null&&late!=null)job=late.job;
         if(job!=null){
-            builder.viewSearches.clear();
+            builder.viewSearches.clear();builder.floorProbes.clear();
             if(state.getBlock()==job.state.getBlock()){
                 builder.unconfirmedPlacements.remove(pos);
                 if(job.temporary)builder.supports.add(pos.toImmutable());
@@ -610,7 +616,7 @@ public final class AutoBuilder extends Module {
         if(mc.interactionManager!=null)mc.interactionManager.cancelBlockBreaking();
         if(ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler&&ownedHandler.getCursorStack().isEmpty())mc.player.closeHandledScreen();
         ownedHandler=null;restockTarget=null;routeOpening=null;restockBatch=Map.of();chestAccessRetryAt.clear();buying=false;pendingOffer=null;shopping.clear();status=reason;
-        floorSearchFeet=null;floorSearchCursor=0;ceilingBase=ceilingTop=null;ceilingBlocks.clear();ceilingProgressPos=null;accessColumn=Set.of();
+        floorSearchFeet=floorSearchView=null;floorSearchCursor=0;floorSearchWork=-2;floorProbes.clear();ceilingBase=ceilingTop=null;ceilingBlocks.clear();ceilingProgressPos=null;accessColumn=Set.of();
         entrySearchFeet=null;entrySearchWork=-2;entrySearchCursor=entryRetryAt=0;passageBlocks.clear();passageStand=passageSearchFeet=null;passageSearchWork=-2;passageSearchCursor=passageRetryAt=0;
         descentSearchFeet=descentSearchDestination=null;descentSearchPosts=descentSearchViews=descentHatchViews=List.of();descentSearchCursor=descentRetryAt=descentSearchPhase=0;descentHatchesReady=false;
         hatchSearchFeet=null;hatchCandidates=List.of();hatchViews.clear();hatchSearchCursor=hatchExitCursor=0;
@@ -1250,6 +1256,7 @@ public final class AutoBuilder extends Module {
         long deadline=System.nanoTime()+3_000_000;
         while(search.ceilingCursor<search.ceilingViews.size()&&System.nanoTime()<deadline){
             var top=search.ceilingViews.get(search.ceilingCursor++);if(!passageCell(top))continue;
+            if(work>=0&&desired(work).getBlock() instanceof FluidBlock&&top.getY()<=position(work).getY())continue;
             var removed=new LinkedHashSet<BlockPos>();removed.add(top);boolean eligible=true;
             for(int up=1;up<=2;up++){
                 var pos=top.up(up);var state=mc.world.getBlockState(pos);
@@ -2194,32 +2201,52 @@ public final class AutoBuilder extends Module {
             .min(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).orElse(null);
         var candidates=supports.stream().filter(pos->mc.world.getBlockState(pos).isOf(Blocks.DIRT))
             .flatMap(pos->java.util.stream.IntStream.rangeClosed(1,3).mapToObj(pos::up)).distinct()
+            .filter(pos->work<0||!(desired(work).getBlock() instanceof FluidBlock)||pos.getY()>position(work).getY())
             .filter(pos->{int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());var actual=mc.world.getBlockState(pos);
                 return cell>=0&&states[cell]==CORRECT&&plannedSolid(pos)&&!liquidBoundary(pos)&&!actual.hasBlockEntity()&&actual.getHardness(mc.world,pos)>=0&&actual.isSideSolidFullSquare(mc.world,pos,Direction.UP);})
             .sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).toList();
-        var feet=mc.player.getBlockPos();if(!feet.equals(floorSearchFeet)){floorSearchFeet=feet.toImmutable();floorSearchCursor=0;}
+        var feet=mc.player.getBlockPos();
+        if(!feet.equals(floorSearchFeet)||!Objects.equals(lowerView,floorSearchView)||work!=floorSearchWork){
+            floorSearchFeet=feet.toImmutable();floorSearchView=lowerView;floorSearchWork=work;floorSearchCursor=0;floorProbes.clear();
+        }
         if(candidates.isEmpty())return false;
         if(floorPlanningDeadline==0)floorPlanningDeadline=System.nanoTime()+2_000_000;
         if(floorSearchCursor>=candidates.size())floorSearchCursor=0;
         for(int checked=0;checked<4&&floorSearchCursor<candidates.size()&&System.nanoTime()<floorPlanningDeadline;checked++){
             var cover=candidates.get(floorSearchCursor++);
-            if(!walker.canDescendThrough(cover)||!safeToRecycle(cover)||!walker.canReachStand(cover.up()))continue;
-            var lower=lowerView;
-            if(lower==null||!descentReaches(cover,lower)){
+            var probe=floorProbes.get(cover);
+            if(probe==null){
+                if(!walker.canDescendThrough(cover)||!safeToRecycle(cover)||!walker.canReachStand(cover.up()))continue;
+                var lower=lowerView;DescentGeometry geometry=null;
+                if(lower==null||!descentReaches(cover,lower)){
+                    geometry=descentGeometry(cover);
+                    if(geometry==null||!safeToRecycle(geometry.removed))continue;
+                    lower=null;
+                }
+                probe=new FloorProbe(lower,geometry);floorProbes.put(cover,probe);
+                // Native preflight can consume this frame's budget. Retain it
+                // so the next frame advances the exit cursor, instead of doing
+                // the same costly preflight forever on an earlier bad hatch.
+                if(System.nanoTime()>=floorPlanningDeadline){floorSearchCursor--;walker.release();status="Checking floor descent route";return true;}
+            }
+            var lower=probe.view;
+            if(lower==null){
                 // The first landing inside a floor is not standable until the
                 // hatch opens. Prove the complete owned-column descent and its
                 // dry exterior exit with the same read-only masks used by the
                 // native walker; never ask the current solid floor to admit it.
-                var geometry=descentGeometry(cover);
-                if(geometry==null||!safeToRecycle(geometry.removed))continue;
                 var search=descentEscapes.computeIfAbsent(cover,p->new EscapeSearch());
-                lower=openDescentExit(geometry,search,floorPlanningDeadline);
+                lower=openDescentExit(probe.geometry,search,floorPlanningDeadline);
                 if(lower==null){
                     if(search.cursor<192){floorSearchCursor--;walker.release();status="Checking complete floor descent exit";return true;}
                     continue;
                 }
             }
-            if(lower==null||!descentReaches(cover,lower))continue;
+            // Cached masks select a candidate only. Prove the actual approach,
+            // support, complete descent and attachments again before mining.
+            if(lower==null||!walker.canDescendThrough(cover)||!safeToRecycle(cover)||!walker.canReachStand(cover.up())||!descentReaches(cover,lower)){
+                floorProbes.remove(cover);continue;
+            }
             int pendingWork=work;
             // A storage trip can start before a placement target is selected.
             // Keep its exit open for the pending build work as well, rather than

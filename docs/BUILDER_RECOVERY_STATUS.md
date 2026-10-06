@@ -5,6 +5,35 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+At 14:53, native top-fluid-8 PASSED in 3m09s on the working production.
+The captured stash roof replay filled all four actual sources in about 88s,
+kept all 20 basin retaining cells intact, preserved dry footing and full health,
+opened only cells above their associated source, and passed the escaped-fluid,
+unintended-waterlogging and native interaction checks. Closed-roof water and
+lava cases also restored their complete roofs and removed all temporary dirt;
+healthy and low-health flooded-room departure cases passed. Fluid fallback
+floor and ceiling openings now also require a height above the source.
+The focused source replay does not establish full stash restoration or cleanup.
+Native top-cleanup-1 is checking the updated floor-search cache next; latest
+full Upper/Fresh and exact-head core/auction CI remain required before delivery.
+
+At 14:42, Upper70 on ff7deb4 was stopped unfinished704/710 with full health
+and128supports during roof departure for the water layer. Read-only native
+queries proved a reachable hatch at (-26211,69,-150581), with complete owned
+column descents to all seven valid dry fluid views. An earlier rejected hatch
+repeated expensive native preflight before each exit search; preflight used
+the frame budget, so the escape cursor never advanced to the useful hatch.
+The working fix retains candidate preflight/geometry across frames, resets
+it when the feet, work or closest view changes or native work geometry updates,
+and revalidates actual approach, attachments and full descent before mining.
+The native water regression now also starts at the captured roof pose, with
+the actual stash and captured posts. It must fill all four level0 sources
+(three WATER cells282/339/390 atY64, LAVA cell582 atY65), retain all basin
+walls/floors, open no low water entrance and preserve full health/dry footing,
+with no escaped fluid/unintended waterlogging and native packet checks.
+This is a focused source replay, not a completed stash/cleanup gate. Testing
+the working cache fix and roof regression is underway; final full gates remain.
+
 At 14:10 the user requested safe access from above for water and lava.
 Upper69 on fd396da was stopped unfinished at 700/710, 128 supports and
 full health to implement that steering. No full replay pass is claimed.

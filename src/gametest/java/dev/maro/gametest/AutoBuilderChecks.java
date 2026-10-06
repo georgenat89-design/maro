@@ -79,7 +79,7 @@ final class AutoBuilderChecks {
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")||Boolean.getBoolean("maro.gametest.builderStashFinalOnly")){stashBuild(context,singleplayer,builder,start);return;}
-            if(Boolean.getBoolean("maro.gametest.builderWaterOnly")){lowBucketSource(context,singleplayer,builder,start);containedTopLiquids(context,singleplayer,builder,start);floodedAccessDeparture(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderWaterOnly")){lowBucketSource(context,singleplayer,builder,start);containedTopLiquids(context,singleplayer,builder,start);roofStashLiquids(context,singleplayer,builder,start);floodedAccessDeparture(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){lowBucketSource(context,singleplayer,builder,start);floodedAccessDeparture(context,singleplayer,builder,start);narrowDropLanding(context,singleplayer,builder,start);}
             if(Boolean.getBoolean("maro.gametest.builderCleanupOnly"))immediateOpeningRepair(context,singleplayer,builder,start);
             if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){fixture(context,singleplayer,builder,start);exhaustedAccessCapacity(context,singleplayer,builder,start);raisedDoorEntry(context,singleplayer,builder,start);partialHeadroom(context,singleplayer,builder,start);stairPlacementPriority(context,singleplayer,builder,start);stairPlacementStaging(context,singleplayer,builder,start);blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);fixture(context,singleplayer,builder,start);offsetRecovery(context,singleplayer,builder,start);hopperCrossing(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
@@ -89,6 +89,7 @@ final class AutoBuilderChecks {
             if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")){sealedDirectionalAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);raisedChestReturn(context,singleplayer,builder,start);sealedChestReturn(context,singleplayer,builder,start);return;}
             lowBucketSource(context,singleplayer,builder,start);
             containedTopLiquids(context,singleplayer,builder,start);
+            roofStashLiquids(context,singleplayer,builder,start);
             floodedAccessDeparture(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             exhaustedAccessCapacity(context,singleplayer,builder,start);
@@ -384,15 +385,16 @@ final class AutoBuilderChecks {
             await(context,builder,350);require(rejected.get(),"Server rejection fixture did not intercept the placement");verify(world,target,1,1,1,y->Blocks.STONE);
         }finally{gate.set(false);}
     }
-    private static void stashBuild(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos original){
-        var start=new BlockPos(-26210,61,-150577);var origin=start.add(-16,2,-8);var chest=start.east(3);
-        Schematic stash;
+    private static Schematic stashFixture(){
         try{
             var file=java.nio.file.Files.createTempFile("maro-stash-build", ".litematic");
             try(var source=AutoBuilderChecks.class.getResourceAsStream("/fixtures/farex-small-stash.litematic")){
-                java.nio.file.Files.copy(source,file,java.nio.file.StandardCopyOption.REPLACE_EXISTING);stash=SchematicIO.read(file);
+                java.nio.file.Files.copy(source,file,java.nio.file.StandardCopyOption.REPLACE_EXISTING);return SchematicIO.read(file);
             }finally{java.nio.file.Files.deleteIfExists(file);}
         }catch(java.io.IOException error){throw new AssertionError(error);}
+    }
+    private static void stashBuild(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos original){
+        var start=new BlockPos(-26210,61,-150577);var origin=start.add(-16,2,-8);var chest=start.east(3);var stash=stashFixture();
         world.getServer().runCommand("gamemode creative @a");world.getServer().runCommand("tp @a "+coords(start));context.waitTicks(30);fixture(context,world,builder,start);
         world.getServer().runCommand("fill "+coords(start.add(-24,-1,-24))+" "+coords(start.add(24,-1,24))+" end_stone");
         world.getServer().runCommand("fill "+coords(start.add(-24,0,-24))+" "+coords(start.add(24,12,24))+" air");
@@ -1237,6 +1239,38 @@ final class AutoBuilderChecks {
                 context.runOnClient(client->{require(client.player.getHealth()==20&&client.currentScreen==null&&builder.temporarySupports().isEmpty(),"Top fluid work left damage/menu/supports");BuilderPacketChecks.verify();});
             }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
         }
+    }
+    /** Reproduce Upper70's roof departure into its real water and lava basins. */
+    @SuppressWarnings("unchecked")
+    private static void roofStashLiquids(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos original){
+        System.out.println("[builder-check] Depart the captured stash roof, pass earlier rejected hatches and fill three water basins plus lava from above");
+        var start=new BlockPos(-26210,61,-150577);var origin=start.add(-16,2,-8);var stash=stashFixture();var posts=new HashSet<BlockPos>();var sources=new ArrayList<Integer>();
+        world.getServer().runCommand("gamemode creative @a");world.getServer().runCommand("tp @a "+coords(start));context.waitTicks(30);fixture(context,world,builder,start);
+        world.getServer().runCommand("fill "+coords(start.add(-24,-1,-24))+" "+coords(start.add(24,-1,24))+" end_stone");
+        world.getServer().runCommand("fill "+coords(start.add(-24,0,-24))+" "+coords(start.add(24,12,24))+" air");
+        try(var input=AutoBuilderChecks.class.getResourceAsStream("/fixtures/stash-upper-supports.txt")){
+            for(var line:new String(input.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8).lines().toList()){var parts=line.trim().split("\\s+");var pos=new BlockPos(Integer.parseInt(parts[0]),Integer.parseInt(parts[1]),Integer.parseInt(parts[2]));int cell=stash.indexAt(pos.subtract(origin),0,"None");if(cell<0||stash.state(cell).isAir())posts.add(pos);}
+        }catch(java.io.IOException error){throw new AssertionError(error);}
+        for(int cell=0;cell<stash.size();cell++)if(stash.state(cell).getBlock() instanceof FluidBlock&&Schematic.material(stash.state(cell))!=Items.AIR)sources.add(cell);
+        require(sources.size()==4,"Captured roof fixture lost its three water sources or lava source");
+        world.getServer().runOnServer(server->{var level=server.getOverworld();for(int cell=0;cell<stash.size();cell++)if(!stash.state(cell).isAir()&&!(stash.state(cell).getBlock() instanceof FluidBlock)&&!(stash.state(cell).getBlock() instanceof net.minecraft.block.ObserverBlock))level.setBlockState(origin.add(stash.local(cell)),stash.state(cell),Block.NOTIFY_ALL);for(var pos:posts)level.setBlockState(pos,Blocks.DIRT.getDefaultState(),Block.NOTIFY_ALL);});
+        for(String item:List.of("dirt 64","diamond_pickaxe","diamond_shovel","cooked_beef 16"))world.getServer().runCommand("give @a "+item);
+        for(int cell:sources)world.getServer().runCommand("give @a "+net.minecraft.registry.Registries.ITEM.getId(Schematic.material(stash.state(cell))));
+        world.getServer().runCommand("gamemode creative @a");world.getServer().runCommand("tp @a -26221.657616489858 71 -150578.3950203814");context.waitTicks(15);world.getServer().runCommand("gamemode survival @a");context.waitTicks(6);
+        try{
+            context.runOnClient(client->{set(builder,"Temporary Supports",true);set(builder,"Auto Buy When Missing",false);set(builder,"Restock When Empty",false);set(builder,"Material Supply","Whole Schematic");builder.install(stash);builder.setOrigin(origin);((Set<BlockPos>)field(builder,"supports")).addAll(posts);BuilderPacketChecks.begin();builder.startBuild();});
+            boolean filled=false,opened=false;
+            for(int tick=0;tick<3600&&!filled;tick++){
+                if(tick%100==0)context.runOnClient(client->System.out.println("[roof-fluid-progress] "+builder.status()+" pos="+client.player.getEntityPos()+" openings="+field(builder,"floorAccessWork")));
+                context.runOnClient(client->{require(client.player.getHealth()==20&&!client.player.isTouchingWater(),"Roof liquid access caused damage or entered water");for(var entry:((Map<BlockPos,Integer>)field(builder,"floorAccessWork")).entrySet())if(sources.contains(entry.getValue()))require(entry.getKey().getY()>builder.position(entry.getValue()).getY(),"Roof liquid access opened a low entrance at "+entry.getKey()+" for "+entry.getValue());});
+                opened|=context.computeOnClient(client->!((Map<?,?>)field(builder,"floorAccessWork")).isEmpty());
+                filled=world.getServer().computeOnServer(server->{var level=server.getOverworld();boolean complete=true;for(int cell:sources){var target=origin.add(stash.local(cell));for(var side:Direction.values())if(side!=Direction.UP){var pos=target.offset(side);int other=stash.indexAt(pos.subtract(origin),0,"None");require(other>=0&&level.getBlockState(pos).equals(stash.state(other)),"Roof access changed a basin retaining block");}if(!level.getBlockState(target).equals(stash.state(cell)))complete=false;}return complete;});
+                context.waitTick();
+            }
+            require(filled&&opened,"Captured roof access did not fill all four sources within its bounded native replay");
+            require(world.getServer().computeOnServer(server->{var level=server.getOverworld();for(var pos:BlockPos.iterate(start.add(-24,0,-24),start.add(24,12,24)))if(!level.getFluidState(pos).isEmpty()){int cell=stash.indexAt(pos.subtract(origin),0,"None");if(cell<0||!AutoBuilder.matchesBuildState(level.getBlockState(pos),stash.state(cell)))return false;}return true;}),"Captured roof access leaked fluid or waterlogged an unintended block");
+            context.runOnClient(client->BuilderPacketChecks.verify(4));
+        }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});world.getServer().runCommand("gamemode creative @a");world.getServer().runCommand("tp @a "+coords(original));context.waitTicks(20);}
     }
     private static void floodedAccessDeparture(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         for(boolean lowHealth:List.of(false,true))floodedAccessDeparture(context,world,builder,start,lowHealth);
