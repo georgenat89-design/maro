@@ -5,6 +5,25 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+At05:56, Jump-surface1 PASSED50s. Native raised closed-door arrival took a
+clear side, kept the intended closed door state, full health and clear body.
+Prior four open/closed trapdoor cases, native source bucket, retained stair/
+placement priority, blocked no-fragment proof and hopper rims also passed.
+Upward-edge body corridor is ready for a checkpoint. Stash-final2 is next.
+
+At05:55, seeded stash-final1 on7d0579f placed all final sources/observer but
+was stopped during cleanup: five opened repair cells remained, owned124, actor
+(-26217.49999,64,-150582.30000) repeatedly jumped at stand(-26218,65,-150582).
+Read-only jump-body proof: target body fits/canStand=true, vertical lift=true,
+horizontal approach=false. A closed south-facing dark-oak door occupies the
+raised landing's entry panel; landing-only and same-height corridor checks
+missed the blocked upward approach. Working BuilderWalk now proves vertical
+lift and horizontal body corridor for upward edges. Jump-surface1 session20816
+is running a new native raised closed-door approach from a clear side plus
+all prior body/trapdoor/stair/hopper surface cases. UNCOMMITTED; full gates pending.
+Diagnostic stateA had all three waters placed; stateB has no missing fluid or
+observer, only deferred wall repair cells. Final1 is not a full completion pass.
+
 At05:48, Thick-entry3 PASSED1m58s: corrected staged-search intent gate,
 native staging cleanup, two-deep elevated-room entry, requested interior block,
 all179solid server states restored, zero server/owned dirt, full health, closed

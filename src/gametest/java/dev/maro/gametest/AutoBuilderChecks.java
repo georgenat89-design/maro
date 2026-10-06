@@ -79,7 +79,7 @@ final class AutoBuilderChecks {
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")||Boolean.getBoolean("maro.gametest.builderStashFinalOnly")){stashBuild(context,singleplayer,builder,start);return;}
-            if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){partialHeadroom(context,singleplayer,builder,start);stairPlacementPriority(context,singleplayer,builder,start);stairPlacementStaging(context,singleplayer,builder,start);blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){raisedDoorEntry(context,singleplayer,builder,start);partialHeadroom(context,singleplayer,builder,start);stairPlacementPriority(context,singleplayer,builder,start);stairPlacementStaging(context,singleplayer,builder,start);blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderStagingOnly")){fixture(context,singleplayer,builder,start);sameLevelStaging(context,singleplayer,builder,start);thickWallEntry(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderCleanupOnly")){ownedChestCover(context,singleplayer,builder,start);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){compactAccessStep(context,singleplayer,builder,start);ownedChestCover(context,singleplayer,builder,start);elevatedFloorEntry(context,singleplayer,builder,start);sealedDirectionalAccess(context,singleplayer,builder,start,3);cleanupAccess(context,singleplayer,builder,start);return;}
@@ -89,6 +89,7 @@ final class AutoBuilderChecks {
             fixture(context,singleplayer,builder,start);
             raisedTurn(context,singleplayer,start);
             shapedArrival(context,singleplayer,builder,start);
+            raisedDoorEntry(context,singleplayer,builder,start);
             partialHeadroom(context,singleplayer,builder,start);
             stairPlacementStaging(context,singleplayer,builder,start);
             stairPlacementPriority(context,singleplayer,builder,start);
@@ -1052,6 +1053,18 @@ final class AutoBuilderChecks {
                 require(!walker.needsRecovery()&&!walker.routeUnavailable(),"Successful walking route retained a stale pillar request");
             }catch(ReflectiveOperationException error){throw new AssertionError(error);}finally{walker.stop();}
         });
+    }
+    private static void raisedDoorEntry(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Raised closed-door landing fits, but its panel must block the jump approach");
+        fixture(context,world,builder,start);var goal=start.south().up();
+        command(world,"setblock",goal.down(),"stone");command(world,"setblock",goal,"dark_oak_door[facing=south,half=lower,hinge=right,open=false]");command(world,"setblock",goal.up(),"dark_oak_door[facing=south,half=upper,hinge=right,open=false]");context.waitTicks(6);
+        var walker=context.computeOnClient(client->{var w=new BuilderWalk();require(w.canStand(goal),"Closed-door centre should fit a standing body");w.turning(true,45);return w;});
+        try{
+            boolean arrived=false;for(int tick=0;tick<300&&!arrived;tick++){arrived=context.computeOnClient(client->walker.standAt(goal));context.waitTick();}
+            require(arrived,"Native movement kept jumping into the closed door instead of approaching a clear side");
+            context.runOnClient(client->require(client.player.getHealth()==20&&client.world.isSpaceEmpty(client.player,client.player.getBoundingBox()),"Raised door approach intersected a panel or caused damage"));
+            require(world.getServer().computeOnServer(server->!server.getOverworld().getBlockState(goal).get(Properties.OPEN)),"Door approach changed the intended closed state");
+        }finally{context.runOnClient(client->walker.stop());}
     }
     private static void partialHeadroom(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         for(String facing:List.of("north","south","east","west")){

@@ -222,6 +222,13 @@ public final class BuilderWalk {
                 // otherwise prefer another side instead of walking into its panel.
                 if(Math.abs(rise)<.01&&(!clear(n.pos)||!clear(n.pos.up())||!clear(step)||!clear(step.up()))
                     &&!bodyCorridor(standingPoint(n.pos),standingPoint(step)))continue;
+                if(rise>.01){
+                    var from=n.parent==null&&start.equals(walkingCell())?mc.player.getEntityPos():standingPoint(n.pos);
+                    var raised=new Vec3d(from.x,standingPoint(step).y,from.z);
+                    // A closed door's centre can fit the body while its entry
+                    // panel still blocks the jump. Prove the lift and approach.
+                    if(!bodyCorridor(from,raised)||!bodyCorridor(raised,standingPoint(step)))continue;
+                }
                 if(step.getY()>n.pos.getY()&&!clear(n.pos.up(2)))continue;
                 // Check the whole falling corridor, including the headroom at
                 // the ledge. An ordinary three-block drop is safe when actual

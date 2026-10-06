@@ -11,6 +11,9 @@ blocks. An open trapdoor may permit headroom while its vertical panel blocks
 one entry edge; the pathfinder checks that corridor and approaches another side.
 Closed low panels remain blocked. Future scaffold queries use the same body
 checks against read-only collision masks.
+Raised steps also check the body's lift and approach path. A landing behind a
+closed door can fit the player while the panel blocks entry; that edge is rejected
+so the walker can choose a clear side instead of repeatedly jumping at the door.
 Final cleanup checks whether removing a reachable support would cut the route
 to permanent lower footing. It walks down before clearing that return bridge,
 then resumes removing its own temporary blocks from a safe position.
