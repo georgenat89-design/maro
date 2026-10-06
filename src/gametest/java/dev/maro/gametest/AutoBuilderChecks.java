@@ -93,6 +93,8 @@ final class AutoBuilderChecks {
             fixture(context,singleplayer,builder,start);
             sameLevelStaging(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
+            accessCapacity(context,singleplayer,builder,start);
+            fixture(context,singleplayer,builder,start);
             if(Boolean.getBoolean("maro.gametest.builderTurnOnly"))return;
             layerTail(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
@@ -1037,6 +1039,41 @@ final class AutoBuilderChecks {
             require(world.getServer().computeOnServer(server->{for(var pos:BlockPos.iterate(start.add(-7,0,-7),start.add(7,8,10)))if(server.getOverworld().getBlockState(pos).isOf(Blocks.DIRT))return false;return true;}),"Staging regression left temporary dirt behind");
             context.runOnClient(client->{require(builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Ground staging did not finish safely");BuilderPacketChecks.verify();});
         }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
+    }
+    private static void accessCapacity(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Reserve a complete access column before climbing a full support pool");
+        var target=start.add(0,6,3);var posts=new HashSet<BlockPos>();
+        for(int x=5;x<=6;x++)for(int z=-3;z<=0;z++){var post=start.add(x,0,z);posts.add(post);command(world,"setblock",post,"dirt");}
+        world.getServer().runCommand("fill "+coords(start.add(1,0,3))+" "+coords(start.add(1,6,3))+" stone");
+        for(String item:List.of("stone 1","dirt 16","diamond_shovel"))world.getServer().runCommand("give @a "+item);context.waitTicks(6);
+        boolean jumped=false;
+        try{
+            context.runOnClient(client->{
+                set(builder,"Temporary Supports",true);((dev.maro.setting.NumberSetting)field(builder,"tempDirt")).set(8d);
+                builder.install(new Schematic("access-capacity.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);
+                @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.addAll(posts);
+                BuilderPacketChecks.begin();builder.startBuild();
+                try{
+                    var stand=start.up(4);var eye=Vec3d.ofBottomCenter(stand).add(0,client.player.getStandingEyeHeight(),0);var body=client.player.getBoundingBox().offset(eye.subtract(client.player.getEyePos()));
+                    var plan=AutoBuilder.class.getDeclaredMethod("placement",BlockPos.class,BlockState.class,Item.class,int.class,boolean.class,Vec3d.class,Box.class);plan.setAccessible(true);
+                    require(plan.invoke(builder,target,Blocks.STONE.getDefaultState(),Items.STONE,0,false,eye,body)!=null,"Capacity fixture has no valid elevated placement view");
+                    var nav=AutoBuilder.class.getDeclaredField("navigatingCell");nav.setAccessible(true);nav.setInt(builder,0);
+                    var commit=AutoBuilder.class.getDeclaredMethod("commitAccess",BlockPos.class,boolean.class);commit.setAccessible(true);commit.invoke(builder,stand,true);
+                    ((BuilderWalk)field(builder,"walker")).requestRecovery();
+                }catch(ReflectiveOperationException error){throw new AssertionError(error);}
+            });
+            for(int tick=0;tick<2400&&context.computeOnClient(client->builder.building());tick++){
+                boolean inJump=context.computeOnClient(client->{
+                    require(builder.temporarySupports().size()<=8,"Access exceeded its eight-support pool");
+                    if((int)field(builder,"recoveryPhase")!=2)return false;
+                    require(posts.stream().filter(builder.temporarySupports()::contains).count()<=4,"Access jumped before freeing the complete column budget");return true;
+                });
+                jumped|=inJump;context.waitTick();
+            }
+            await(context,builder,100);verify(world,target,1,1,1,y->Blocks.STONE);require(jumped,"Capacity fixture did not exercise native column climbing");
+            require(world.getServer().computeOnServer(server->{for(var pos:BlockPos.iterate(start.add(-7,0,-7),start.add(7,8,10)))if(server.getOverworld().getBlockState(pos).isOf(Blocks.DIRT))return false;return true;}),"Reserved column left temporary dirt behind");
+            context.runOnClient(client->{require(builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Reserved access did not complete safely");BuilderPacketChecks.verify();});
+        }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);((dev.maro.setting.NumberSetting)field(builder,"tempDirt")).set(128d);});}
     }
     private static void layerTail(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         // Only diagonal standing cells are safe. A wall blocks the initial placement ray,

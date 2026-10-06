@@ -27,6 +27,17 @@ descent, builds an elevated target, and checks server completion, all temporary
 dirt removed, health 20, closed screens and native packet order. Upper replay 42
 now tests unchanged production. No full upper/fresh stash pass is established.
 
+Replay 42 found a usable recycling view but remained at 416: one-slot reclamation
+interrupted each new column piece, and the overall access timeout abandoned the
+route. The next checkpoint reserves a complete short column budget, prefers
+nearby safe tips, returns to existing committed steps and tracks actual access
+progress separately from an overall bound. Direct useful exits also precede
+general staging; building tries other access alternatives before a staging drop.
+
+The preceding production passed focused movement/ground staging in 2m50s. The
+current full core/auction run (`builder-core-reserve-5.log`) includes the latest
+exit ordering and a new eight-support capacity regression; its result is pending.
+
 ## Required gates on unchanged final production code
 
 - Finish the captured upper-stash build: all 710 server blocks, no owned or raw
