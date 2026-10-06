@@ -35,8 +35,17 @@ progress separately from an overall bound. Direct useful exits also precede
 general staging; building tries other access alternatives before a staging drop.
 
 The preceding production passed focused movement/ground staging in 2m50s. The
-current full core/auction run (`builder-core-reserve-5.log`) includes the latest
-exit ordering and a new eight-support capacity regression; its result is pending.
+full core/auction run 5 included the latest exit ordering and a new eight-support
+capacity regression. It failed earlier, in ground-staging cleanup: the target was
+built, but cleanup left the player on an unowned four-block-high ledge after its
+intermediate supports were gone. A safe three-block return to a remaining ground
+post existed; ordinary walking only searched two-block drops.
+
+The current checkpoint permits actual-footing drops of at most three blocks,
+checks the whole falling corridor, and waits for grounded footing before mining
+so a landing post cannot be removed mid-fall. Run 6 (`builder-core-reserve-6.log`)
+now tests all these latest changes. The eight-support case and all final release
+gates remain unverified until this run and the upper/fresh stash builds finish.
 
 ## Required gates on unchanged final production code
 

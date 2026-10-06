@@ -1784,6 +1784,9 @@ public final class AutoBuilder extends Module {
     }
     private void mineTick(){
         walker.release();if(mining==null)return;
+        // Do not remove a landing post while vanilla gravity is still taking
+        // us onto it. It can turn a checked drop into a longer damaging fall.
+        if(!mc.player.isOnGround()&&!mc.player.getAbilities().flying){status="Landing before clearing a block";return;}
         var state=mc.world.getBlockState(mining);
         if(state.isAir()){supports.remove(mining);mining=null;digging=false;mc.interactionManager.cancelBlockBreaking();delay=actionDelay();return;}
         if(protectContainers.get()&&state.hasBlockEntity()||state.getHardness(mc.world,mining)<0||!state.getFluidState().isEmpty()){mining=null;return;}

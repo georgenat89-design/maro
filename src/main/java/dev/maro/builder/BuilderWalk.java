@@ -178,16 +178,18 @@ public final class BuilderWalk {
                 if(sameColumn&&(!n.pos.equals(start)||walkable(n.pos)))continue;boolean diagonal=dx!=0&&dz!=0;
                 if(diagonal&&(!walkable(n.pos.add(dx,0,0))||!walkable(n.pos.add(0,0,dz))))continue;
                 var adjacent=n.pos.add(dx,0,dz);BlockPos step=null;
-                for(int dy:sameColumn?new int[]{-1,-2}:new int[]{0,1,-1,-2}){var p=adjacent.up(dy);if(walkable(p)){step=p;break;}}
+                for(int dy:sameColumn?new int[]{-1,-2,-3}:new int[]{0,1,-1,-2,-3}){var p=adjacent.up(dy);if(walkable(p)){step=p;break;}}
                 if(step==null||closed.contains(step)||step.getManhattanDistance(start)>64)continue;
                 double rise=standingPoint(step).y-(n.parent==null?initialHeight:standingPoint(n.pos).y);
-                if(rise>1.2||rise< -2)continue;
+                if(rise>1.2||rise< -3)continue;
                 if(diagonal&&step.getY()!=n.pos.getY())continue;
                 if(step.getY()>n.pos.getY()&&!clear(n.pos.up(2)))continue;
-                if(step.getY()<n.pos.getY()-1&&!clear(step.up(2)))continue;
-                // A lower cell may be clear once standing there, but its ceiling can
-                // catch the player's head before they leave the higher ledge.
-                if(step.getY()<n.pos.getY()&&!clear(new BlockPos(step.getX(),n.pos.getY()+1,step.getZ())))continue;
+                // Check the whole falling corridor, including the headroom at
+                // the ledge. An ordinary three-block drop is safe when actual
+                // footing heights agree, but a low ceiling can obstruct it.
+                boolean corridor=true;
+                if(step.getY()<n.pos.getY())for(int y=step.getY()+2;y<=n.pos.getY()+1;y++)if(!clear(new BlockPos(step.getX(),y,step.getZ()))){corridor=false;break;}
+                if(!corridor)continue;
                 double cost=n.cost+(diagonal?Math.sqrt(2):1)+(step.getY()!=n.pos.getY()?.35:0);
                 if(cost>=costs.getOrDefault(step,Double.POSITIVE_INFINITY))continue;
                 costs.put(step,cost);open.add(new Node(step,cost,cost+heuristic(step,target),n));
