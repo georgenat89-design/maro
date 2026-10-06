@@ -1167,11 +1167,17 @@ public final class AutoBuilder extends Module {
             entrySearchFeet=feet.toImmutable();entrySearchWork=work;entrySearchHash=hash;entrySearchCursor=entryRetryAt=0;
             var destinations=views.stream().filter(p->p.getY()>mc.player.getY()+.5&&p.getY()<=mc.player.getY()+7)
                 .sorted(Comparator.comparingDouble(p->p.getSquaredDistance(feet))).limit(8).toList();
-            var candidates=new ArrayList<EntryCandidate>();
-            for(var destination:destinations)for(int dy=0;dy>=-1;dy--)for(int dx=-6;dx<=6;dx++)for(int dz=-6;dz<=6;dz++)
-                candidates.add(new EntryCandidate(destination.add(dx,dy,dz),destination));
-            candidates.sort(Comparator.comparingDouble(c->c.top.getSquaredDistance(feet)));
-            entryCandidates=List.copyOf(candidates);
+            var unique=new LinkedHashSet<EntryCandidate>();
+            for(var destination:destinations)for(int dy=0;dy>=-1;dy--){
+                // A usable roof entry can be near the player but far from the
+                // placement view. Climb here, then prove ordinary walking across
+                // the finished floor, rather than build stairs toward the item.
+                for(int dx=-3;dx<=3;dx++)for(int dz=-3;dz<=3;dz++)
+                    unique.add(new EntryCandidate(new BlockPos(feet.getX()+dx,destination.getY()+dy,feet.getZ()+dz),destination));
+                for(int dx=-6;dx<=6;dx++)for(int dz=-6;dz<=6;dz++)
+                    unique.add(new EntryCandidate(destination.add(dx,dy,dz),destination));
+            }
+            entryCandidates=unique.stream().sorted(Comparator.comparingDouble(c->c.top.getSquaredDistance(feet))).toList();
         }
         if(ticks<entryRetryAt)return false;
         int total=entryCandidates.size();long deadline=System.nanoTime()+3_000_000;

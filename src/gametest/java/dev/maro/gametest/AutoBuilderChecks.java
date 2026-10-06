@@ -1028,17 +1028,21 @@ final class AutoBuilderChecks {
     }
     private static void elevatedFloorEntry(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         for(int height:List.of(3,6))elevatedFloorEntry(context,world,builder,start,height);
+        elevatedFloorEntry(context,world,builder,start,6,12,true);
     }
     private static void elevatedFloorEntry(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,int height){
-        System.out.println("[builder-check] Exterior column entry onto finished floor at height "+height);
+        elevatedFloorEntry(context,world,builder,start,height,4,false);
+    }
+    private static void elevatedFloorEntry(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,int height,int width,boolean fromEast){
+        System.out.println("[builder-check] Exterior column entry onto finished floor at height "+height+" width="+(width*2+1));
         fixture(context,world,builder,start);
-        world.getServer().runCommand("fill "+coords(start.add(-4,height,-4))+" "+coords(start.add(4,height,4))+" stone");
+        world.getServer().runCommand("fill "+coords(start.add(-width,height,-4))+" "+coords(start.add(width,height,4))+" stone");
         var target=start.up(height+2);command(world,"setblock",target.south(),"stone");
         for(String item:List.of("black_shulker_box","dirt 16","diamond_pickaxe","diamond_shovel"))world.getServer().runCommand("give @a "+item);
-        world.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+start.getY()+" "+(start.getZ()+6.5));context.waitTicks(12);
+        world.getServer().runCommand("tp @a "+(start.getX()+.5+(fromEast?width+2:0))+" "+start.getY()+" "+(start.getZ()+.5+(fromEast?0:6)));context.waitTicks(12);
         try{
             context.runOnClient(client->{
-                var walk=new BuilderWalk();var top=start.add(0,Math.min(6,height+1),5);var view=start.up(height+1).north();
+                var walk=new BuilderWalk();var top=fromEast?start.add(width+1,Math.min(6,height+1),0):start.add(0,Math.min(6,height+1),5);var view=fromEast?start.up(height+1).east():start.up(height+1).north();
                 require(!walk.canStand(top)&&walk.canReachFromPillar(top,view),"Future exterior column does not expose the elevated floor");
                 require(!walk.canStand(top)&&client.world.getBlockState(top.down()).isAir(),"Pillar feasibility changed world collision or leaked its mask");
                 set(builder,"Temporary Supports",true);((dev.maro.setting.NumberSetting)field(builder,"tempDirt")).set(16d);set(builder,"Auto Buy When Missing",false);
@@ -1046,7 +1050,7 @@ final class AutoBuilderChecks {
             });
             await(context,builder,1800);
             context.runOnClient(client->{require(builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Exterior entry left supports/damage/menu");BuilderPacketChecks.verify();});
-            require(world.getServer().computeOnServer(server->{var level=server.getOverworld();if(!level.getBlockState(target).equals(Blocks.BLACK_SHULKER_BOX.getDefaultState().with(net.minecraft.block.ShulkerBoxBlock.FACING,Direction.NORTH)))return false;for(int x=-4;x<=4;x++)for(int z=-4;z<=4;z++)if(!level.getBlockState(start.add(x,height,z)).isOf(Blocks.STONE))return false;for(int x=-10;x<=10;x++)for(int y=0;y<=10;y++)for(int z=-10;z<=10;z++)if(level.getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Exterior entry removed the finished floor or left temporary dirt");
+            require(world.getServer().computeOnServer(server->{var level=server.getOverworld();if(!level.getBlockState(target).equals(Blocks.BLACK_SHULKER_BOX.getDefaultState().with(net.minecraft.block.ShulkerBoxBlock.FACING,Direction.NORTH)))return false;for(int x=-width;x<=width;x++)for(int z=-4;z<=4;z++)if(!level.getBlockState(start.add(x,height,z)).isOf(Blocks.STONE))return false;for(int x=-width-4;x<=width+4;x++)for(int y=0;y<=10;y++)for(int z=-10;z<=10;z++)if(level.getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Exterior entry removed the finished floor or left temporary dirt");
         }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);((dev.maro.setting.NumberSetting)field(builder,"tempDirt")).set(128d);});}
     }
     private static void sameLevelStaging(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){

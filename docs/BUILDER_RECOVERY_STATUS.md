@@ -5,6 +5,21 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Upper replay 48 passed the old 469 stall and reached 617/710, then stopped
+outside the roof after restocking. A read-only nearby-column query proved 14
+valid entry/view pairs, including a column beside the actor and ordinary walking
+across the finished roof. The target-centred six-block search could not include
+that column because the placement views were nine or more blocks away. The
+latest working change adds a three-block actor-centred candidate region at the
+same two destination heights, deduplicated with the existing region. It retains
+the three-millisecond cursor, cooldowns and native column/onward-route proofs.
+A new 25-block-wide elevated floor test checks entry far from the placement
+target, exact server direction, unchanged floor, dirt cleanup, health and packets.
+Nearby-entry run 1 passed all three cases in 1m48s, including the wide-floor
+crossing, exact server direction, unchanged finished floor, no remaining dirt,
+health 20, closed menus and native packet checks. Upper replay 49 is next;
+latest complete upper/fresh/core remain required. No release.
+
 Upper replay 47 stopped at 469 after cycling several targets through the same
 capacity-blocked exterior top. The entry planner did not consult the failed-view
 cooldowns recorded by the capacity fallback, so it recommitted that top instead

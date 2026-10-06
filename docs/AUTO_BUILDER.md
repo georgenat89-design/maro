@@ -65,6 +65,8 @@ Access construction retains its chosen view until the route is finished or that 
 
 If an access column needs capacity and the bounded recycling search finds no safe reachable candidate, its view and target are deferred. The builder clears that recovery request and tries other work or a checked descent, instead of repeatedly requesting a jump that the full support pool cannot supply.
 
+Elevated floor entries consider columns near both the placement view and the player. A nearby climb can therefore lead onto a wide finished roof before ordinary walking crosses to the target. The planner deduplicates at most 3,488 entry/view candidates, retains its cursor in three-millisecond passes, respects failed-view cooldowns, and checks the complete column and onward route before committing.
+
 A short access column reserves enough free support slots before climbing, so it does not need a separate descent/recycling trip for each new piece. Recycling searches retain their post, view and route cursors in three-millisecond passes and prefer nearby safe column tips. Existing committed steps are used when returning from a capacity trip. The route has a progress timeout and an overall bound; confirmed capacity reclamation and closer grounded positions count as progress.
 
 With **Auto Unstuck**, a valid higher view can use a bounded access column with intermediate stairs and ordinary jump placements. It starts with an actually attachable base and advances toward its selected view, up to six blocks above the starting pose. It stops adding access blocks as soon as the intended schematic block can be placed from the current pose. The same support pool, clear headroom, safe footing and server confirmations apply.
