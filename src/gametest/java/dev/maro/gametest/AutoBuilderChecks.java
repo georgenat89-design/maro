@@ -1036,7 +1036,7 @@ final class AutoBuilderChecks {
             await(context,builder,1800);
             context.runOnClient(client->{require(builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Exterior entry left supports/damage/menu");BuilderPacketChecks.verify();});
             require(world.getServer().computeOnServer(server->{var level=server.getOverworld();if(!level.getBlockState(target).equals(Blocks.BLACK_SHULKER_BOX.getDefaultState().with(net.minecraft.block.ShulkerBoxBlock.FACING,Direction.NORTH)))return false;for(int x=-4;x<=4;x++)for(int z=-4;z<=4;z++)if(!level.getBlockState(start.add(x,3,z)).isOf(Blocks.STONE))return false;for(int x=-10;x<=10;x++)for(int y=0;y<=10;y++)for(int z=-10;z<=10;z++)if(level.getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Exterior entry removed the finished floor or left temporary dirt");
-        }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
+        }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);((dev.maro.setting.NumberSetting)field(builder,"tempDirt")).set(128d);});}
     }
     private static void sameLevelStaging(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-check] Ground-level posts cannot trigger a destructive staging tour");
