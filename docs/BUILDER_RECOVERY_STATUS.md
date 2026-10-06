@@ -5,6 +5,20 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+At 09:05, ceiling-entry-2 PASSED 3m17s: retained staging/thick-wall regressions,
+ceiling placement, and owned AIR-cell cleanup from an owned base beneath a low
+ceiling. The cleanup case starts with four posts and a five-post limit, reserves
+the three-jump budget by reclaiming spares, preserves the committed base,
+restores its opening, removes all dirt, retains health20 and checks packets and
+unowned walls. Upper63 finished all original fluid/observer jobs but stopped
+unfinished702/710 with eight access repairs and127supports. Native full-body
+proof found valid ceiling-assisted mining routes that the placement-only guard
+excluded. Ceiling entry now also serves actual owned cleanup targets; a real
+standing base is tested through the complete future opening before rejecting
+its blocked jump volume, and owned base footing is retained through capacity
+trips. Pending storage trips keep their ordinary tick priority. Latest Upper64,
+Fresh and complete core/AH remain required. No full Upper/Fresh pass yet.
+
 At 08:35, ceiling-entry-1 PASSED 3m1s, including retained ground-level staging
 guards and both thick-wall placement/cleanup cases. The new native enclosed
 room requires entry through a finished ceiling above an empty column. It proves

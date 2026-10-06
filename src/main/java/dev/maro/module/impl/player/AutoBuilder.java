@@ -638,7 +638,7 @@ public final class AutoBuilder extends Module {
         if(pendingPlacement!=null){placementReceiptTick();return;}
         if(mc.currentScreen==null&&(building||depositing)&&clearPassageTick())return;
         if(mc.currentScreen==null&&(building||depositing)&&clearRouteSupportTick())return;
-        if(building&&!buying&&mc.currentScreen==null&&ceilingTop!=null){
+        if(building&&!buying&&mc.currentScreen==null&&restockTarget==null&&ceilingTop!=null){
             if(followStandGoal()||continueCeilingEntry())return;
         }
         if(building&&!buying&&mc.currentScreen==null&&restockTarget==null&&eatTick())return;
@@ -1152,7 +1152,8 @@ public final class AutoBuilder extends Module {
                 search.recoveryStage=4;
             }
             if(search.recoveryStage==4){
-                if(wanted!=null&&!wanted.isAir()&&prepareCeilingEntry(options,cell,search))return true;
+                boolean cleaning=target.equals(cleanupTarget)&&supports.contains(target);
+                if((cleaning||wanted!=null&&!wanted.isAir())&&prepareCeilingEntry(options,cell,search))return true;
                 if(wanted!=null&&temporaryView(target,wanted,cell,tried,search))return true;
                 search.recoveryStage=5;
             }
@@ -1168,7 +1169,8 @@ public final class AutoBuilder extends Module {
     }
     /** Enter a finished ceiling through a short opening above a clear, checked column. */
     private boolean prepareCeilingEntry(List<BlockPos> views,int work,ViewSearch search){
-        if(!unstuck.get()||!support.get()||work<0||states[work]==CORRECT||views.isEmpty())return false;
+        boolean cleaning=cleanupTarget!=null&&supports.contains(cleanupTarget)&&mc.world.getBlockState(cleanupTarget).isOf(Blocks.DIRT);
+        if(!unstuck.get()||!support.get()||!cleaning&&(work<0||states[work]==CORRECT)||views.isEmpty())return false;
         var feet=mc.player.getBlockPos();
         if(search.ceilingViews==null){
             var covers=new ArrayList<BlockPos>();
@@ -1192,7 +1194,10 @@ public final class AutoBuilder extends Module {
                 var next=top.down(down);
                 if(reservedSupplyAccess(next)||plannedSolid(next)||!mc.world.isChunkLoaded(next)||!mc.world.getBlockState(next).isReplaceable()
                     ||!mc.world.getFluidState(next).isEmpty()||routeSupportExclusions.getOrDefault(next,0)>ticks)break;
-                if(walker.canPillar(next)&&walker.canReachStand(next)){base=next;break;}
+                // A standing base can have a ceiling within the jump volume.
+                // The complete masked ascent below proves its removal first.
+                var floor=next.down();
+                if(walker.canStand(next)&&mc.world.getBlockState(floor).isSideSolidFullSquare(mc.world,floor,Direction.UP)&&walker.canReachStand(next)){base=next;break;}
             }
             if(base==null||top.getY()-base.getY()>tempDirt.getInt())continue;
             var eye=Vec3d.ofBottomCenter(base).add(0,mc.player.getStandingEyeHeight(),0);
@@ -1201,6 +1206,8 @@ public final class AutoBuilder extends Module {
             for(var view:views)if(walker.canClimbAfterClearing(base,top,view,removed)){proved=true;break;}
             if(!proved)continue;
             commitAccess(top,true);ceilingBase=base;ceilingTop=top;ceilingBlocks.addAll(removed);passageBlocks.addAll(removed);
+            if(supports.contains(base.down()))accessSupports.add(base.down());
+            if(cleaning)openingRestoration=false;
             ceilingStarted=ceilingProgressAt=ticks;ceilingProgressPos=mc.player.getEntityPos();
             for(var opening:removed){floorAccessWork.put(opening,work);openingRepairDepth.put(opening,opening.getY()-base.getY());}
             walker.stop();status="Opening checked ceiling access";return true;
@@ -1212,11 +1219,11 @@ public final class AutoBuilder extends Module {
         if(ceilingTop==null)return false;
         if(ceilingProgressPos==null||mc.player.getEntityPos().squaredDistanceTo(ceilingProgressPos)>.04){ceilingProgressPos=mc.player.getEntityPos();ceilingProgressAt=ticks;}
         if(ticks-ceilingStarted>2400||ticks-ceilingProgressAt>600||accessStand==null){
-            ceilingBase=ceilingTop=null;ceilingBlocks.clear();accessStand=accessBase=null;accessFloor=false;walker.stop();return false;
+            abandonCeilingEntry();return false;
         }
         if(requiredAccessCapacity()>tempDirt.getInt()-supports.size()){
             if(recycleSupport())return true;
-            ceilingBase=ceilingTop=null;ceilingBlocks.clear();accessStand=accessBase=null;accessFloor=false;walker.stop();return false;
+            abandonCeilingEntry();return false;
         }
         if(inventoryCount(Items.DIRT)==0){ensureSupportDirt();return true;}
         if(!walker.standAt(ceilingBase)){status="Walking under checked ceiling access";return true;}
@@ -1224,11 +1231,15 @@ public final class AutoBuilder extends Module {
         if(!ceilingBlocks.isEmpty()){
             var next=ceilingBlocks.iterator().next();
             if(!removableRouteFloor(next)||!safeToRecycle(ceilingBlocks)||visibleHit(next)==null){
-                ceilingBase=ceilingTop=null;ceilingBlocks.clear();accessStand=accessBase=null;accessFloor=false;walker.stop();return false;
+                abandonCeilingEntry();return false;
             }
             passageBlocks.add(next);routeMining=mining=next;walker.release();mineTick();ceilingProgressAt=ticks;return true;
         }
         ceilingBase=ceilingTop=null;walker.stop();walker.requestRecovery();status="Climbing checked ceiling access";return true;
+    }
+    private void abandonCeilingEntry(){
+        passageBlocks.removeAll(ceilingBlocks);ceilingBase=ceilingTop=null;ceilingBlocks.clear();
+        accessStand=accessBase=null;accessFloor=false;accessSupports.clear();accessStairs=Set.of();walker.stop();
     }
     /** Add a real, acknowledged floor when an otherwise usable placement view has none. */
     private boolean temporaryView(BlockPos target,BlockState wanted,int cell,Map<BlockPos,Integer> tried,ViewSearch search){
