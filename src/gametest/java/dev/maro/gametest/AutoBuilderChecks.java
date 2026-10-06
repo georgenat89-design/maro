@@ -79,7 +79,7 @@ final class AutoBuilderChecks {
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")){stashBuild(context,singleplayer,builder,start);return;}
-            if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){shapedArrival(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderCleanupOnly")){ownedChestCover(context,singleplayer,builder,start);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){compactAccessStep(context,singleplayer,builder,start);ownedChestCover(context,singleplayer,builder,start);elevatedFloorEntry(context,singleplayer,builder,start);sealedDirectionalAccess(context,singleplayer,builder,start,3);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")){sealedDirectionalAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);raisedChestReturn(context,singleplayer,builder,start);sealedChestReturn(context,singleplayer,builder,start);return;}
@@ -88,6 +88,7 @@ final class AutoBuilderChecks {
             fixture(context,singleplayer,builder,start);
             raisedTurn(context,singleplayer,start);
             shapedArrival(context,singleplayer,builder,start);
+            blockedAccessStep(context,singleplayer,builder,start);
             compactAccessStep(context,singleplayer,builder,start);
             ownedChestCover(context,singleplayer,builder,start);
             cleanupAccess(context,singleplayer,builder,start);
@@ -1044,19 +1045,36 @@ final class AutoBuilderChecks {
             }catch(ReflectiveOperationException error){throw new AssertionError(error);}finally{walker.stop();}
         });
     }
+    private static void blockedAccessStep(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Unreachable stair destination must not create fragments");
+        fixture(context,world,builder,start);var stand=start.up(5).south(4);var step=start.up(2).south(2);
+        for(var p:List.of(start,start.up(),stand.down()))command(world,"setblock",p,"dirt");
+        command(world,"setblock",start.up().south(),"stone");command(world,"setblock",start.up(2).south(3),"stone");
+        for(int x=-1;x<=1;x++)for(int z=-1;z<=1;z++)if(x!=0||z!=0)for(int y=0;y<=1;y++)command(world,"setblock",stand.add(x,y,z),"stone");
+        world.getServer().runCommand("give @a dirt 16");world.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+(start.getY()+2)+" "+(start.getZ()+.5));context.waitTicks(12);
+        context.runOnClient(client->{builder.install(new Schematic("blocked-stair.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(stand);set(builder,"Temporary Supports",true);@SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.addAll(List.of(start,start.up(),stand.down()));});
+        boolean exhausted=false;
+        for(int attempt=0;attempt<12;attempt++){
+            boolean waiting=context.computeOnClient(client->{try{var plan=AutoBuilder.class.getDeclaredMethod("buildAccessStep",BlockPos.class);plan.setAccessible(true);boolean more=(boolean)plan.invoke(builder,stand);require(field(builder,"placement")==null&&field(builder,"pendingPlacement")==null&&builder.temporarySupports().size()==3,"Unproved stair created or queued an unnecessary fragment");require(!new BuilderWalk().canStand(step.up()),"Future stair query leaked collision geometry");return more;}catch(ReflectiveOperationException failure){throw new AssertionError(failure);}});
+            if(!waiting){exhausted=true;break;}context.waitTick();
+        }
+        require(exhausted,"Rejected stair planning did not finish its bounded search");
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(step).isAir()&&server.getOverworld().getBlockState(step.down()).isAir()&&server.getOverworld().getBlockState(step.down(2)).isAir()),"Rejected stair changed native blocks");
+    }
     private static void compactAccessStep(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-check] Use an attachable upper step without a ground column; retain it on arrival");
         fixture(context,world,builder,start);var stand=start.up(5).south(4);var step=start.up(2).south(2);
         for(var p:List.of(start,start.up(),stand.down()))command(world,"setblock",p,"dirt");
-        command(world,"setblock",start.up().south(),"stone");command(world,"setblock",start.up(2).south(3),"stone");
+        command(world,"setblock",start.up().south(),"stone");command(world,"setblock",start.up(2).south(3),"dirt");
         world.getServer().runCommand("give @a dirt 16");world.getServer().runCommand("give @a stone 1");world.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+(start.getY()+2)+" "+(start.getZ()+.5));context.waitTicks(12);
         try{
             context.runOnClient(client->{
                 builder.install(new Schematic("compact-upper-step.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(stand);set(builder,"Temporary Supports",true);
-                @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.addAll(List.of(start,start.up(),stand.down()));BuilderPacketChecks.begin();builder.startBuild();
+                @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.addAll(List.of(start,start.up(),stand.down(),start.up(2).south(3)));BuilderPacketChecks.begin();builder.startBuild();
                 try{
                     var plan=AutoBuilder.class.getDeclaredMethod("buildAccessStep",BlockPos.class);plan.setAccessible(true);require((boolean)plan.invoke(builder,stand),"Upper step planner found no native placement");
                     var job=field(builder,"placement");var target=job.getClass().getDeclaredMethod("target");target.setAccessible(true);require(target.invoke(job).equals(step),"Planner added a needless lower column instead of the attachable upper step");
+                    require(((Set<?>)field(builder,"accessSupports")).contains(start.up(2).south(3)),"Checked stair did not preserve its existing owned attachment");
                 }catch(ReflectiveOperationException failure){throw new AssertionError(failure);}
             });
             for(int tick=0;tick<200&&!context.computeOnClient(client->builder.temporarySupports().contains(step));tick++)context.waitTick();

@@ -5,6 +5,27 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Upper replay 54 was stopped after another prolonged 512/710 plateau. Native
+access snapshot A retained work1239, a side-stair view (-26211,68,-150584),
+accessFloor=false and one protected high piece while reclaiming a distant low
+post. The heuristic stair branch reserved no complete budget and proved only
+individual placements, so smaller pieces/protection alone did not fix the loop.
+The working replacement constructs a complete cardinal stair blueprint with
+only necessary attachment roots, proves the entire future walking route using
+a read-only collision mask, retains the plan and reserves its exact remaining
+support count. Four directions share a retained cursor and bounded planning
+passes. Native placement/acknowledgement remains unchanged. All access resets
+clear the transient plan; pause resets its search cursor too. Existing owned
+footing on the proved route and owned attachment neighbours stay protected
+during capacity reclamation. Entry/room/cleanup run5 PASSED in4m59s (before the
+small cursor-reset and existing-footing guards). Latest Surface run2 PASSED in
+29s: blocked destination produces no fragments and restores the mask, compact
+upper step leaves lower cells empty and protects its existing owned attachment
+and new step through native arrival, four hopper-rim arrivals do not orbit.
+Native health/block/packet assertions passed. Upper replay55 is next on this
+production; latest full core repeats all focused cases.
+No full upper/fresh/core pass or release is claimed.
+
 Upper replay 53 was stopped after reaching 513/710: it spent roughly three
 minutes at 512, repeatedly building/recycling lower access stairs before a
 checked column finally completed the work. Read-only access snapshots retain

@@ -21,6 +21,7 @@ public final class BuilderWalk {
     private boolean smooth=true;
     private Set<BlockPos> clearedForSearch=Set.of();
     private BlockPos pillarForSearch;
+    private Set<BlockPos> stairsForSearch=Set.of();
     private float yawVelocity,turnLimit=45;
     public void turning(boolean smooth,float speed){this.smooth=smooth;turnLimit=speed;}
     public String status="";
@@ -51,6 +52,15 @@ public final class BuilderWalk {
     public boolean canReachFromPillar(BlockPos top,BlockPos to){
         var previous=pillarForSearch;pillarForSearch=top.down();
         try{return canReachStandFrom(top,to);}finally{pillarForSearch=previous;}
+    }
+    /** Check a complete proposed stair using collision masks, without changing blocks. */
+    public boolean canReachWithStairs(BlockPos to,Set<BlockPos> stairs){
+        return !stairRoute(to,stairs).isEmpty();
+    }
+    public List<BlockPos> stairRoute(BlockPos to,Set<BlockPos> stairs){
+        var previous=stairsForSearch;stairsForSearch=stairs;
+        try{return walkable(to)?find(walkingCell(),to,.22,true):List.of();}
+        finally{stairsForSearch=previous;}
     }
     /** Combined column/door feasibility, still without changing real blocks. */
     public boolean canReachFromPillarAfterClearing(BlockPos top,BlockPos to,Set<BlockPos> removed){
@@ -228,9 +238,9 @@ public final class BuilderWalk {
         return List.of();
     }
     private static double heuristic(BlockPos a,BlockPos b){int x=Math.abs(a.getX()-b.getX()),z=Math.abs(a.getZ()-b.getZ());return Math.max(x,z)+(Math.sqrt(2)-1)*Math.min(x,z)+Math.abs(a.getY()-b.getY())*.6;}
-    private boolean clear(BlockPos p){return !p.equals(pillarForSearch)&&mc.world.isChunkLoaded(p)&&(clearedForSearch.contains(p)||mc.world.getBlockState(p).getCollisionShape(mc.world,p).isEmpty())&&safe(p);}
+    private boolean clear(BlockPos p){return !stairsForSearch.contains(p)&&!p.equals(pillarForSearch)&&mc.world.isChunkLoaded(p)&&(clearedForSearch.contains(p)||mc.world.getBlockState(p).getCollisionShape(mc.world,p).isEmpty())&&safe(p);}
     private double footingHeight(BlockPos p){
-        if(p.equals(pillarForSearch))return 1;
+        if(p.equals(pillarForSearch)||stairsForSearch.contains(p))return 1;
         if(clearedForSearch.contains(p))return 0;
         var state=mc.world.getBlockState(p);
         if(state.isSideSolidFullSquare(mc.world,p,Direction.UP))return 1;
