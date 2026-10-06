@@ -14,6 +14,10 @@ checks against read-only collision masks.
 Final cleanup checks whether removing a reachable support would cut the route
 to permanent lower footing. It walks down before clearing that return bridge,
 then resumes removing its own temporary blocks from a safe position.
+For enclosed work, entry checks can prove a short passage through one to three
+wall blocks. Only finished safe schematic walls or obsolete owned dirt are
+eligible. The passage stays open through remaining work and scaffold cleanup;
+restoration fills deeper wall cells before the outer face to preserve access.
 
 ## Start the build
 

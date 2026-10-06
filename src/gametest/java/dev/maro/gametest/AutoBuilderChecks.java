@@ -78,9 +78,9 @@ final class AutoBuilderChecks {
         AutoBuilder builder=ModuleManager.get(AutoBuilder.class);
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
-            if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")){stashBuild(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")||Boolean.getBoolean("maro.gametest.builderStashFinalOnly")){stashBuild(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){partialHeadroom(context,singleplayer,builder,start);stairPlacementPriority(context,singleplayer,builder,start);stairPlacementStaging(context,singleplayer,builder,start);blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
-            if(Boolean.getBoolean("maro.gametest.builderStagingOnly")){fixture(context,singleplayer,builder,start);sameLevelStaging(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderStagingOnly")){fixture(context,singleplayer,builder,start);sameLevelStaging(context,singleplayer,builder,start);thickWallEntry(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderCleanupOnly")){ownedChestCover(context,singleplayer,builder,start);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){compactAccessStep(context,singleplayer,builder,start);ownedChestCover(context,singleplayer,builder,start);elevatedFloorEntry(context,singleplayer,builder,start);sealedDirectionalAccess(context,singleplayer,builder,start,3);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")){sealedDirectionalAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);raisedChestReturn(context,singleplayer,builder,start);sealedChestReturn(context,singleplayer,builder,start);return;}
@@ -106,6 +106,7 @@ final class AutoBuilderChecks {
             activeStepProtection(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             sameLevelStaging(context,singleplayer,builder,start);
+            thickWallEntry(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             accessCapacity(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
@@ -391,23 +392,25 @@ final class AutoBuilderChecks {
             inventory.setStack(slot++,new ItemStack(Items.DIAMOND_PICKAXE));inventory.setStack(slot++,new ItemStack(Items.DIAMOND_SHOVEL));inventory.setStack(slot,new ItemStack(Items.COOKED_BEEF,64));inventory.markDirty();
         });context.waitTicks(6);
         Set<BlockPos> priorSupports=new HashSet<>();
-        boolean upper=Boolean.getBoolean("maro.gametest.builderStashUpperOnly");
+        boolean finalTargets=Boolean.getBoolean("maro.gametest.builderStashFinalOnly");
+        boolean upper=Boolean.getBoolean("maro.gametest.builderStashUpperOnly")||finalTargets;
         if(upper){
             try(var source=AutoBuilderChecks.class.getResourceAsStream("/fixtures/stash-upper-supports.txt")){
                 for(var line:new String(source.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8).lines().toList()){
                     var parts=line.trim().split("\\s+");priorSupports.add(new BlockPos(Integer.parseInt(parts[0]),Integer.parseInt(parts[1]),Integer.parseInt(parts[2])));
                 }
             }catch(java.io.IOException error){throw new AssertionError(error);}
+            if(finalTargets)priorSupports.removeIf(pos->{int cell=stash.indexAt(pos.subtract(origin),0,"None");return cell>=0&&!stash.state(cell).isAir();});
             world.getServer().runOnServer(server->{
                 var level=server.getOverworld();
-                for(int cell=0;cell<stash.size();cell++){var expected=stash.state(cell);if(stash.local(cell).getY()<=3&&!expected.isAir()&&!(expected.getBlock() instanceof net.minecraft.block.FluidBlock)&&!(expected.getBlock() instanceof net.minecraft.block.ObserverBlock))level.setBlockState(origin.add(stash.local(cell)),expected,net.minecraft.block.Block.NOTIFY_ALL);}
+                for(int cell=0;cell<stash.size();cell++){var expected=stash.state(cell);if((finalTargets||stash.local(cell).getY()<=3)&&!expected.isAir()&&!(expected.getBlock() instanceof net.minecraft.block.FluidBlock)&&!(expected.getBlock() instanceof net.minecraft.block.ObserverBlock))level.setBlockState(origin.add(stash.local(cell)),expected,net.minecraft.block.Block.NOTIFY_ALL);}
                 for(var support:priorSupports)level.setBlockState(support,Blocks.DIRT.getDefaultState(),net.minecraft.block.Block.NOTIFY_ALL);
             });
             world.getServer().runCommand("gamemode creative @a");world.getServer().runCommand("tp @a -26209.7 65 -150576.2");context.waitTicks(20);world.getServer().runCommand("gamemode survival @a");context.waitTicks(10);
             // The captured stall was after preparation and the layer-4 chest trip.
             // Restore that batch rather than starting a new preparation journey.
             var held=new HashMap<Item,Integer>();
-            for(int cell=0;cell<stash.size();cell++)if(stash.local(cell).getY()==4){var expected=stash.state(cell);var item=Schematic.material(expected);if(item!=Items.AIR)held.merge(item,Schematic.units(expected),Integer::sum);if(expected.getBlock() instanceof net.minecraft.block.FlowerPotBlock)held.merge(Items.FLOWER_POT,1,Integer::sum);}
+            for(int cell=0;cell<stash.size();cell++)if(finalTargets?stash.state(cell).getBlock() instanceof net.minecraft.block.FluidBlock||stash.state(cell).getBlock() instanceof net.minecraft.block.ObserverBlock:stash.local(cell).getY()==4){var expected=stash.state(cell);var item=Schematic.material(expected);if(item!=Items.AIR)held.merge(item,Schematic.units(expected),Integer::sum);if(expected.getBlock() instanceof net.minecraft.block.FlowerPotBlock)held.merge(Items.FLOWER_POT,1,Integer::sum);}
             held.put(Items.DIRT,64);held.put(Items.DIAMOND_PICKAXE,1);held.put(Items.DIAMOND_SHOVEL,1);held.put(Items.COOKED_BEEF,16);
             held.forEach((item,count)->world.getServer().runCommand("give @a "+net.minecraft.registry.Registries.ITEM.getId(item)+" "+count));context.waitTicks(6);
         }
@@ -1288,6 +1291,26 @@ final class AutoBuilderChecks {
             context.runOnClient(client->{require(builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Exterior entry left supports/damage/menu");BuilderPacketChecks.verify();});
             require(world.getServer().computeOnServer(server->{var level=server.getOverworld();if(!level.getBlockState(target).equals(Blocks.BLACK_SHULKER_BOX.getDefaultState().with(net.minecraft.block.ShulkerBoxBlock.FACING,Direction.NORTH)))return false;for(int x=-width;x<=width;x++)for(int z=-4;z<=4;z++)if(!level.getBlockState(start.add(x,height,z)).isOf(Blocks.STONE))return false;for(int x=-width-4;x<=width+4;x++)for(int y=0;y<=10;y++)for(int z=-10;z<=10;z++)if(level.getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Exterior entry removed the finished floor or left temporary dirt");
         }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);((dev.maro.setting.NumberSetting)field(builder,"tempDirt")).set(128d);});}
+    }
+    private static void thickWallEntry(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Prove a two-deep elevated wall entry; restore all walls after cleanup");
+        fixture(context,world,builder,start);var origin=start.south(3);var target=origin.add(3,3,3);var spawn=origin.west(3).south(3);
+        var blocks=new BlockState[7*6*7];Arrays.fill(blocks,Blocks.AIR.getDefaultState());
+        for(int y=2;y<6;y++)for(int z=0;z<7;z++)for(int x=0;x<7;x++)
+            if(y==2||y==5||x<2||x>4||z<2||z>4)blocks[(y*7+z)*7+x]=Blocks.STONE.getDefaultState();
+        blocks[(3*7+3)*7+3]=Blocks.STONE.getDefaultState();
+        var schematic=new Schematic("thick-elevated-entry.nbt","test",7,6,7,BlockPos.ORIGIN,blocks);
+        world.getServer().runOnServer(server->{var level=server.getOverworld();for(int i=0;i<schematic.size();i++){var pos=origin.add(schematic.transformed(i,0,"None"));if(!pos.equals(target)&&!schematic.state(i).isAir())level.setBlockState(pos,schematic.state(i),Block.NOTIFY_ALL);}});
+        world.getServer().runCommand("tp @a "+(spawn.getX()+.5)+" "+spawn.getY()+" "+(spawn.getZ()+.5)+" 0 0");
+        // Include repair stock: mined wall drops may fall below the exterior
+        // platform, and this geometry test deliberately has no chest or market.
+        for(String item:List.of("stone 16","dirt 64","diamond_pickaxe","diamond_shovel"))world.getServer().runCommand("give @a "+item);context.waitTicks(10);
+        try{
+            context.runOnClient(client->{set(builder,"Temporary Supports",true);builder.install(schematic);builder.setOrigin(origin);BuilderPacketChecks.begin();builder.startBuild();});
+            await(context,builder,3600);
+            require(world.getServer().computeOnServer(server->{var level=server.getOverworld();for(int i=0;i<schematic.size();i++)if(!schematic.state(i).isAir()&&!level.getBlockState(origin.add(schematic.transformed(i,0,"None"))).equals(schematic.state(i)))return false;for(var pos:BlockPos.iterate(origin.add(-7,0,-7),origin.add(13,9,13)))if(level.getBlockState(pos).isOf(Blocks.DIRT))return false;return true;}),"Thick entry left dirt or failed to restore a finished wall");
+            context.runOnClient(client->{require(builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Thick entry did not finish safely");BuilderPacketChecks.verify();});
+        }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
     }
     private static void sameLevelStaging(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-check] Ground-level posts cannot trigger a destructive staging tour");

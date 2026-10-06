@@ -5,6 +5,49 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+At05:48, Thick-entry3 PASSED1m58s: corrected staged-search intent gate,
+native staging cleanup, two-deep elevated-room entry, requested interior block,
+all179solid server states restored, zero server/owned dirt, full health, closed
+menus and native packet checks. Deeper entry and repair order are ready for a
+checkpoint. The seeded final-target stash test is next; full gates remain open.
+
+At05:46, Thick-entry2 was stopped at177/179 with supports0 and two inner wall
+cells left at(-7,-27/26,12). It had repaired the near outer wall first, blocking
+the remaining inner cells. Production now tracks horizontal repair depth for
+committed passage openings, keeps them deferred until other work and temporary
+cleanup finish, and restores deeper wall cells before the outer face. This also
+avoids reopening the same entry between remaining interior targets. Thick-entry3
+session30941 is running staging plus the same two-deep room with repair stock.
+All deeper-entry/repair-order changes remain uncommitted and need native gates.
+Test-only builderStashFinalTestOnly seeds all non-fluid/non-observer cells in the
+supplied stash, preserves only owned supports in schematic air cells and holds
+the final-job materials. It isolates the final five cells without replacing the
+full upper/fresh gates. It has not yet run.
+
+At05:42, Thick-entry1 reached the interior, completed its requested block and
+removed all owned dirt, then waited for Stone to restore four opened wall cells
+(trace correct175, supports0, Missing Stone). Its one-stone/no-chest/no-AH test
+supply omitted repair stock; mined drops can fall below the exterior platform.
+Fixture now supplies16stone to test geometry/restoration without a market.
+Thick-entry2 is running session24196 on the same uncommitted production.
+
+At05:38, Upper58 was stopped at705/710 after an extended final-target loop.
+Read-only fluid-body proof confirms water targets now nativeClear=true,
+canStand=true and nativeJob!=null. Fluid-route proof finds many interior65
+views with actual routes into them. Entry-door3 proof finds valid two-deep
+openings from top(-26213,65,-150585), base(-26213,61,-150585), through walls
+(-26213,65/66,-150584) and(-26213,65/66,-150583), to several interior65 views.
+All non-air cells are finished safe schematic walls or owned dirt; safeToRecycle
+and future pillar+masked route passed. One-depth entry probes failed. No real
+geometry was changed by diagnostics. Production now considers depths1..3 with
+the existing bounded search cursor, only approved wall/obsolete-own-dirt cells,
+target attachment protection and complete safe masked route proof. Actual
+passage opening uses the same depths and records finished walls for restoration.
+Thick-entry1 is running staging plus a new native two-deep elevated-room test:
+all original walls/roof must be restored, zero dirt/full health/closed menus/
+native packet checks. These latest changes are UNCOMMITTED/UNVERIFIED.
+CI334 on7807d4e is running; production there is f4a57ab, without deeper entries.
+
 At05:29, Upper58 on f4a57ab is running at617/710; the545 and612 pauses
 resumed into real placement. Read-only progress traces A/B/C retained.
 CI332 run37441653081 built/passed general-game but failed the pre-build

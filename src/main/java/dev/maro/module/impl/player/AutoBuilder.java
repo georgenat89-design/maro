@@ -278,6 +278,7 @@ public final class AutoBuilder extends Module {
     private int placementDeadline;
     private BlockPos routeMining;
     private final Map<BlockPos,Integer> floorAccessWork=new HashMap<>();
+    private final Map<BlockPos,Integer> openingRepairDepth=new HashMap<>();
     private BlockPos mining,restockTarget;
     private BlockPos tuningTarget,tuningSession;
     private int tuningObserved,tuningExpected,tuningDeadline,tuningClicks;
@@ -601,7 +602,7 @@ public final class AutoBuilder extends Module {
         hatchSearchFeet=null;hatchCandidates=List.of();hatchViews.clear();hatchSearchCursor=hatchExitCursor=0;
         descentEscapes.clear();
         recycleSearchFeet=null;recyclePosts=List.of();recycleViews.clear();recyclePostCursor=recycleViewCursor=recycleRouteCursor=recycleRetryAt=0;
-        floorAccessWork.clear();
+        floorAccessWork.clear();openingRepairDepth.clear();
     }
     private void notify(String message){Notifications.push("Auto Builder",message,Notifications.Type.INFO,5000);if(mc.player!=null)mc.player.sendMessage(Text.literal("[Auto Builder] "+message),false);}
     public void onActionBind(int key){if(markBind.matches(key)&&(isEnabled()||schematic!=null)){markContainer();return;}if(isEnabled()&&buyBind.matches(key))startBuying(false);}
@@ -881,17 +882,24 @@ public final class AutoBuilder extends Module {
         if(work<0||work>=states.length||states[work]==CORRECT||states[work]==IGNORED){
             // The final wall must not close behind us while our access column
             // still needs cleanup. Once those posts are gone, restore normally.
-            if(cleanup.get()&&!supports.isEmpty()){
-                int openings=0;
-                for(var opening:floorAccessWork.keySet()){
-                    int cell=schematic.indexAt(opening.subtract(anchor()),turns(),mirror.get());
-                    if(cell>=0&&!desired(cell).isAir()&&states[cell]!=IGNORED&&mc.world.isChunkLoaded(opening)
-                        &&!matchesBuildState(mc.world.getBlockState(opening),desired(cell)))openings++;
-                }
-                if(openings>0&&solid-correct-ignoredSolid<=openings)return true;
+            int openings=0;
+            for(var opening:floorAccessWork.keySet()){
+                int cell=schematic.indexAt(opening.subtract(anchor()),turns(),mirror.get());
+                if(cell>=0&&!desired(cell).isAir()&&states[cell]!=IGNORED&&mc.world.isChunkLoaded(opening)
+                    &&!matchesBuildState(mc.world.getBlockState(opening),desired(cell)))openings++;
+            }
+            // Keep the entry for subsequent work and cleanup. Repair the deeper
+            // wall first; filling the outer face can hide the inner cells.
+            if(openings>0&&(solid-correct-ignoredSolid>openings||cleanup.get()&&!supports.isEmpty()))return true;
+            var depth=openingRepairDepth.get(pos);
+            if(depth!=null)for(var other:floorAccessWork.keySet()){
+                if(openingRepairDepth.getOrDefault(other,0)<=depth)continue;
+                int cell=schematic.indexAt(other.subtract(anchor()),turns(),mirror.get());
+                if(cell>=0&&states[cell]!=IGNORED&&!desired(cell).isAir()&&mc.world.isChunkLoaded(other)
+                    &&!matchesBuildState(mc.world.getBlockState(other),desired(cell)))return true;
             }
             int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());
-            if(cell<0||states[cell]==IGNORED||mc.world.isChunkLoaded(pos)&&matchesBuildState(mc.world.getBlockState(pos),desired(cell)))floorAccessWork.remove(pos);
+            if(cell<0||states[cell]==IGNORED||mc.world.isChunkLoaded(pos)&&matchesBuildState(mc.world.getBlockState(pos),desired(cell))){floorAccessWork.remove(pos);openingRepairDepth.remove(pos);}
             return false;
         }
         return true;
@@ -1287,13 +1295,13 @@ public final class AutoBuilder extends Module {
             }else reachable=false;
             if(!reachable&&unstuck.get()&&work>=0&&states[work]!=CORRECT){
                 var eye=Vec3d.ofBottomCenter(top).add(0,mc.player.getStandingEyeHeight(),0);
-                while(entryDoorCursor<ESCAPE_SIDES.length&&System.nanoTime()<deadline){
-                    var bottom=top.offset(ESCAPE_SIDES[entryDoorCursor++]);var upper=bottom.up();var removed=Set.of(bottom,upper);
-                    var attachment=attachmentSide(desired(work));if(attachment!=null&&removed.contains(position(work).offset(attachment)))continue;
-                    if(!passageCell(bottom)||!passageCell(upper)||!safeToRecycle(removed)||visibleHit(bottom,eye)==null&&visibleHit(upper,eye)==null)continue;
+                while(entryDoorCursor<ESCAPE_SIDES.length*3&&System.nanoTime()<deadline){
+                    int sample=entryDoorCursor++;var side=ESCAPE_SIDES[sample%ESCAPE_SIDES.length];
+                    var removed=checkedPassage(top.offset(side),side,sample/ESCAPE_SIDES.length+1,work);
+                    if(removed==null||!safeToRecycle(removed)||removed.stream().noneMatch(p->visibleHit(p,eye)!=null))continue;
                     if(walker.canReachFromPillarAfterClearing(top,destination,removed)){reachable=true;break;}
                 }
-                if(!reachable&&entryDoorCursor<ESCAPE_SIDES.length){entrySearchCursor--;walker.release();status="Checking elevated passage entry";return true;}
+                if(!reachable&&entryDoorCursor<ESCAPE_SIDES.length*3){entrySearchCursor--;walker.release();status="Checking elevated passage entry";return true;}
             }
             entryProbeBase=null;entryDoorCursor=0;
             if(!reachable||!walker.canReachStand(base))continue;
@@ -1833,23 +1841,40 @@ public final class AutoBuilder extends Module {
         var feet=BlockPos.ofFloored(mc.player.getEntityPos().add(0,.4,0));
         if(!feet.equals(passageSearchFeet)||work!=passageSearchWork){passageSearchFeet=feet;passageSearchWork=work;passageSearchCursor=0;}
         var destinations=views.stream().sorted(Comparator.comparingDouble(p->p.getSquaredDistance(feet))).limit(8).toList();
-        int total=75*destinations.size();long deadline=System.nanoTime()+3_000_000;
+        int total=75*destinations.size()*3;long deadline=System.nanoTime()+3_000_000;
         while(passageSearchCursor<total&&System.nanoTime()<deadline){
-            int sample=passageSearchCursor++,candidate=sample/destinations.size();
+            int sample=passageSearchCursor++,depth=sample/(75*destinations.size())+1,candidate=sample/destinations.size()%75;
             var bottom=feet.add(candidate/15-2,candidate%3-1,candidate/3%5-2);var top=bottom.up();
             if(bottom.getY()<mc.player.getY()-.2||new Box(bottom).intersects(mc.player.getBoundingBox())||new Box(top).intersects(mc.player.getBoundingBox()))continue;
-            var removed=Set.of(bottom,top);
-            var attachment=attachmentSide(desired(work));if(attachment!=null&&removed.contains(position(work).offset(attachment)))continue;
-            if(!passageCell(bottom)||!passageCell(top)||visibleHit(bottom)==null&&visibleHit(top)==null||!safeToRecycle(removed))continue;
+            int dx=bottom.getX()-feet.getX(),dz=bottom.getZ()-feet.getZ();if(dx==0&&dz==0)continue;
+            var side=Math.abs(dx)>Math.abs(dz)?dx>0?Direction.EAST:Direction.WEST:dz>0?Direction.SOUTH:Direction.NORTH;
+            var removed=checkedPassage(bottom,side,depth,work);
+            if(removed==null||removed.stream().anyMatch(p->new Box(p).intersects(mc.player.getBoundingBox()))
+                ||removed.stream().noneMatch(p->visibleHit(p)!=null)||!safeToRecycle(removed))continue;
             var destination=destinations.get(sample%destinations.size());
             if(!walker.canReachAfterClearing(feet,destination,removed))continue;
             passageBlocks.addAll(removed);passageStand=destination;
-            floorAccessWork.put(bottom,work);floorAccessWork.put(top,work);
+            for(var opening:removed)if(passageCell(opening)){
+                floorAccessWork.put(opening,work);openingRepairDepth.put(opening,Math.abs(opening.getX()-feet.getX())+Math.abs(opening.getZ()-feet.getZ()));
+            }
             placement=null;accessStand=accessBase=null;accessFloor=false;accessSupports.clear();accessStairs=Set.of();descentPost=descentView=null;standGoal=null;
             walker.stop();status="Opening verified placement passage";return true;
         }
         if(passageSearchCursor<total){walker.release();status="Checking enclosed placement route";return true;}
         passageSearchCursor=0;passageRetryAt=ticks+40;return false;
+    }
+    /** A short entry tunnel may contain finished walls or obsolete owned dirt.
+     * Never remove unrelated blocks, active steps or the target's attachment. */
+    private Set<BlockPos> checkedPassage(BlockPos first,Direction direction,int depth,int work){
+        var removed=new LinkedHashSet<BlockPos>();var attachment=attachmentSide(desired(work));
+        for(int along=0;along<depth;along++)for(int up=0;up<2;up++){
+            var pos=first.offset(direction,along).up(up);var state=mc.world.getBlockState(pos);
+            if(state.isAir())continue;
+            if(pos.equals(position(work))||attachment!=null&&pos.equals(position(work).offset(attachment)))return null;
+            if(!passageCell(pos)&&!(supports.contains(pos)&&state.isOf(Blocks.DIRT)&&!plannedSolid(pos)&&!servesActiveScaffold(pos)))return null;
+            removed.add(pos);
+        }
+        return removed.isEmpty()?null:removed;
     }
     private boolean passageCell(BlockPos pos){
         int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());var state=mc.world.getBlockState(pos);
