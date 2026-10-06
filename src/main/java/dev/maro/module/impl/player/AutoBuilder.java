@@ -271,8 +271,15 @@ public final class AutoBuilder extends Module {
         int work=-2,hash,cursor,retryAt,doorCursor,probeCursor=-1;
         List<EntryCandidate> candidates=List.of();
     }
+    private static final class DescentSearch {
+        BlockPos feet,destination;
+        int cursor,retryAt,phase;
+        List<BlockPos> posts=List.of(),views=List.of(),hatchViews=List.of();
+        boolean hatchesReady;
+    }
     private static final class ViewSearch {
         final EntrySearch entry=new EntrySearch();
+        final DescentSearch descent=new DescentSearch();
         int expires,cursor,routeCursor,stepCursor,temporaryCursor,ceilingCursor,columnCursor,recoveryStage;
         List<BlockPos> ceilingViews;
         List<BlockPos> temporaryViews;
@@ -1250,7 +1257,7 @@ public final class AutoBuilder extends Module {
                 if(supportFallback&&!bridge&&repositionTarget(target,tried,true)){bridgeTarget=target;return true;}
                 search.recoveryStage=1;
             }
-            if(search.recoveryStage==1){if(prepareSupportDescent(options,false))return true;search.recoveryStage=2;}
+            if(search.recoveryStage==1){if(prepareSupportDescent(options,false,search))return true;search.recoveryStage=2;}
             if(search.recoveryStage==2){
                 if(prepareDirectColumn(options,cell,search))return true;
                 // Prove an exterior column and its onward walking route before
@@ -1284,7 +1291,13 @@ public final class AutoBuilder extends Module {
                 if(!useHomes.get()&&(cleaning||wanted!=null&&!wanted.isAir()&&states[cell]!=CORRECT)&&prepareFloorOpening(options,cell))return true;
                 search.recoveryStage=6;
             }
-            if(search.recoveryStage==6){if(prepareSupportDescent(options,true))return true;search.recoveryStage=7;search.expires=ticks+40;}
+            if(search.recoveryStage==6){if(prepareSupportDescent(options,true,search))return true;search.recoveryStage=7;search.expires=ticks+40;}
+            if(search.recoveryStage==7&&useHomes.get()){
+                var chest=selectedSupplyChest();
+                // A safe storage arrival can change an exhausted roof viewpoint
+                // even when ordinary walking from that home still needs a pillar.
+                if(chest!=null&&homes.storage(chest)){resetAfterHome();status="Returning to storage ground to recheck build access";return true;}
+            }
             return false;
         }
         if(topWork&&search.liquidOpenings.containsKey(standGoal)){
@@ -2069,6 +2082,21 @@ public final class AutoBuilder extends Module {
     private BlockPos recoveryDestination(){return standGoal!=null?standGoal:restockTarget!=null?restockTarget:depositTarget!=null?depositTarget:accessStand!=null?accessStand:cleanupTarget!=null?cleanupTarget:navigatingCell>=0?position(navigatingCell):walker.destination();}
     private boolean prepareSupportDescent(List<BlockPos> views){
         return prepareSupportDescent(views,true);
+    }
+    /** Alternating placement targets retain their own unfinished descent proof. */
+    private boolean prepareSupportDescent(List<BlockPos> views,boolean allowStaging,ViewSearch search){
+        var descent=search.descent;
+        descentSearchFeet=descent.feet;descentSearchDestination=descent.destination;
+        descentSearchCursor=descent.cursor;descentRetryAt=descent.retryAt;descentSearchPhase=descent.phase;
+        descentSearchPosts=descent.posts;descentSearchViews=descent.views;
+        descentHatchViews=descent.hatchViews;descentHatchesReady=descent.hatchesReady;
+        try{return prepareSupportDescent(views,allowStaging);}
+        finally{
+            descent.feet=descentSearchFeet;descent.destination=descentSearchDestination;
+            descent.cursor=descentSearchCursor;descent.retryAt=descentRetryAt;descent.phase=descentSearchPhase;
+            descent.posts=descentSearchPosts;descent.views=descentSearchViews;
+            descent.hatchViews=descentHatchViews;descent.hatchesReady=descentHatchesReady;
+        }
     }
     private boolean prepareSupportDescent(List<BlockPos> views,boolean allowStaging){
         boolean staged=cleanupTarget!=null||restockTarget!=null||navigatingCell>=0&&states[navigatingCell]!=CORRECT&&!desired(navigatingCell).isAir();

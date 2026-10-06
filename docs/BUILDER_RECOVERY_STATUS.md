@@ -5,6 +5,20 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Latest, 18:57: fresh6 reached549/710, then stayed at the same finished roof
+footing69 while four targets alternated. The captured server scene has548
+exact states and549 compatible states,127 owned posts, safe/clear storage home1,
+no saved home2 and no registered openings. Trace showed descent probes sharing
+one destination/cursor, and also confirmed some searches exhausted without a
+usable roof exit. ViewSearch now retains both useful-only and staged descent
+progress. After fully exhausting access planners, a dry safe home1 can return
+the actor to storage ground so pillar recovery can approach from another side.
+No home2 is saved for this recovery, and home3 remains untouched. Fresh6 was
+stopped deliberately after preserving its real scene; it is not a fresh710 pass.
+Native549 replay with Meteor, exec10852/PID6064, restored that exact scene and
+has progressed to554 after native home1 travel, reclamation and a new climb.
+Full710/zero-dirt/liquid/health/packet checks and current CI remain pending.
+
 Latest: CI402 passed five-post column construction in43 ticks and complete native
 cleanup, then failed accessCapacity(false): Settling on retained ledge footing
 with three old dirt posts left and the body on another solid ground block.

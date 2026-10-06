@@ -14,11 +14,15 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
-/** Actual server blocks, supplies and owned posts captured before stopping the 423-block stall. */
+/** Actual server blocks, supplies and owned posts captured before stopping fresh-build stalls. */
 final class BuilderCheckpointFixture {
     final JsonObject data;
+    final int progress;
     BuilderCheckpointFixture(){
-        try(var stream=getClass().getResourceAsStream("/fixtures/stash-fresh-423.json")){
+        var stage=System.getProperty("maro.gametest.builderStashCheckpointStage","423");
+        if(!List.of("423","549").contains(stage))throw new AssertionError("Unsupported captured stall: "+stage);
+        progress=Integer.parseInt(stage);
+        try(var stream=getClass().getResourceAsStream("/fixtures/stash-fresh-"+stage+".json")){
             if(stream==null)throw new AssertionError("Missing real server checkpoint");
             data=JsonParser.parseReader(new InputStreamReader(stream,StandardCharsets.UTF_8)).getAsJsonObject();
         }catch(IOException error){throw new AssertionError(error);}

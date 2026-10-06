@@ -411,7 +411,7 @@ final class AutoBuilderChecks {
         Set<BlockPos> priorSupports=new HashSet<>();
         boolean homeTest=Boolean.getBoolean("maro.gametest.builderStashHomesOnly");
         var checkpoint=Boolean.getBoolean("maro.gametest.builderStashCheckpointOnly")?new BuilderCheckpointFixture():null;
-        if(homeTest){BuilderHomeChecks.installCommands(world,chest);System.out.println(checkpoint==null?"[builder-check] Fresh 710-block schematic on empty ground with storage homes and independent head aim enabled":"[builder-check] Captured 423-block server stall replay with unchanged native supplies and owned posts");}
+        if(homeTest){BuilderHomeChecks.installCommands(world,chest);System.out.println(checkpoint==null?"[builder-check] Fresh 710-block schematic on empty ground with storage homes and independent head aim enabled":"[builder-check] Captured "+checkpoint.progress+"-block server stall replay with unchanged native supplies and owned posts");}
         if(checkpoint!=null){require(homeTest,"Checkpoint needs native home commands");checkpoint.restoreServer(world);context.waitTicks(20);}
         boolean finalTargets=Boolean.getBoolean("maro.gametest.builderStashFinalOnly");
         boolean upper=Boolean.getBoolean("maro.gametest.builderStashUpperOnly")||finalTargets;
@@ -437,7 +437,7 @@ final class AutoBuilderChecks {
         }
         try{
             if(homeTest&&checkpoint==null)require(world.getServer().computeOnServer(server->{for(int cell=0;cell<stash.size();cell++)if(!stash.state(cell).isAir()&&!server.getOverworld().getBlockState(origin.add(stash.local(cell))).isAir())return false;return true;}),"Fresh build contained prebuilt schematic blocks");
-            if(checkpoint!=null)require(world.getServer().computeOnServer(server->{int count=0;for(int cell=0;cell<stash.size();cell++)if(!stash.state(cell).isAir()&&AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(origin.add(stash.local(cell))),stash.state(cell)))count++;return count;})==423,"Captured server checkpoint no longer matches the 423-block stall");
+            if(checkpoint!=null)require(world.getServer().computeOnServer(server->{int count=0;for(int cell=0;cell<stash.size();cell++)if(!stash.state(cell).isAir()&&AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(origin.add(stash.local(cell))),stash.state(cell)))count++;return count;})==checkpoint.progress,"Captured server checkpoint no longer matches its recorded progress");
             context.runOnClient(client->{
                 set(builder,"Temporary Supports",true);set(builder,"Clean Temporary Supports",true);set(builder,"Support Dirt Reserve",64);set(builder,"Auto Buy Tools",true);
                 set(builder,"Material Supply",homeTest?"Nearby Sections":"Layer by Layer");set(builder,"Prepare Whole Build",!upper&&checkpoint==null);set(builder,"Stockpile In Chests",true);set(builder,"Auto Eat",true);builder.auctionBudget(1000);

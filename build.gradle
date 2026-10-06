@@ -76,6 +76,7 @@ tasks.register('runProductionClientGameTest', net.fabricmc.loom.task.prod.Client
     jvmArgs.add("-Dmaro.gametest.builderStashOnly=" + providers.gradleProperty("builderStashTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.builderStashHomesOnly=" + providers.gradleProperty("builderStashHomesTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.builderStashCheckpointOnly=" + providers.gradleProperty("builderStashCheckpointTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderStashCheckpointStage=" + providers.gradleProperty("builderStashCheckpointStage").getOrElse("423"))
     jvmArgs.add("-Dmaro.gametest.builderStashUpperOnly=" + providers.gradleProperty("builderStashUpperTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.builderStashFinalOnly=" + providers.gradleProperty("builderStashFinalTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.builderTurnOnly=" + providers.gradleProperty("builderTurnTestOnly").getOrElse("false"))
