@@ -5,6 +5,24 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Upper replay 52 failed at 545/710 after a prolonged full-pool side-stair trip
+at 542. The saved native server world (New World 285) contains newly placed
+dirt at (-26207,62,-150577), directly above the selected chest, plus dirt above
+it at y63; neither was in the captured support fixture. Opening that chest
+paused the build as blocked. This is a failed gate, not a completed replay.
+The working change reserves both selected chest lids and their two-block
+standing clearance in temporary placement planning, queued jobs and prospective
+columns. Existing owned lid dirt is cleared through normal mining; unrelated
+dirt still pauses safely. Checked exterior entries/onward routes now precede
+speculative side stairs and speculative capacity recycling. Focused native
+entry/room/cleanup run 3 PASSED in 4m58s, including new owned/unowned lid cases,
+all four elevated entries, isolated descent, the large raised sealed room and
+both cleanup budgets. Native blocks, intact floors/restored walls, zero owned
+dirt, health, closed menus and packet checks passed. Run 2's unowned case had
+an incorrect packet assertion requiring interactions where none were expected;
+that assertion was corrected before run 3. Upper replay 53 is next. Complete
+upper/fresh/core remain required before any merge or release.
+
 Upper replay 51 passed the earlier 469/617 stalls, completed fluids and observers,
 and reached cleanup at 706/710 with four deferred final wall cells. It then
 stalled on a distant highest support at (-26217,68,-150574): walker path empty,

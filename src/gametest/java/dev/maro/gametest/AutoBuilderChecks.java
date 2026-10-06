@@ -80,14 +80,15 @@ final class AutoBuilderChecks {
         try{
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")){stashBuild(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){shapedArrival(context,singleplayer,builder,start);return;}
-            if(Boolean.getBoolean("maro.gametest.builderCleanupOnly")){cleanupAccess(context,singleplayer,builder,start);return;}
-            if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){elevatedFloorEntry(context,singleplayer,builder,start);sealedDirectionalAccess(context,singleplayer,builder,start,3);cleanupAccess(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderCleanupOnly")){ownedChestCover(context,singleplayer,builder,start);cleanupAccess(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){ownedChestCover(context,singleplayer,builder,start);elevatedFloorEntry(context,singleplayer,builder,start);sealedDirectionalAccess(context,singleplayer,builder,start,3);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")){sealedDirectionalAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);raisedChestReturn(context,singleplayer,builder,start);sealedChestReturn(context,singleplayer,builder,start);return;}
             fixture(context,singleplayer,builder,start);
             exhaustedAccessCapacity(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             raisedTurn(context,singleplayer,start);
             shapedArrival(context,singleplayer,builder,start);
+            ownedChestCover(context,singleplayer,builder,start);
             cleanupAccess(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             faceReach(context,singleplayer,builder,start);
@@ -1041,6 +1042,37 @@ final class AutoBuilderChecks {
                 require(!walker.needsRecovery()&&!walker.routeUnavailable(),"Successful walking route retained a stale pillar request");
             }catch(ReflectiveOperationException error){throw new AssertionError(error);}finally{walker.stop();}
         });
+    }
+    private static void ownedChestCover(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        for(boolean owned:List.of(true,false)){
+            System.out.println("[builder-check] Reserved supply lids and existing cover recovery; owned="+owned);
+            fixture(context,world,builder,start);var chest=start.east(2);var partner=chest.east();var target=start.south(2);
+            command(world,"setblock",chest,"chest[facing=north,type=left]");command(world,"setblock",partner,"chest[facing=north,type=right]");
+            world.getServer().runCommand("item replace block "+coords(chest)+" container.0 with stone 4");
+            world.getServer().runCommand("give @a diamond_shovel");world.getServer().runCommand("give @a dirt 16");context.waitTicks(8);
+            context.runOnClient(client->{
+                builder.install(new Schematic("reserved-chest-cover.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);set(builder,"Temporary Supports",true);
+                client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();
+                try{
+                    var planning=AutoBuilder.class.getDeclaredMethod("placement",BlockPos.class,BlockState.class,Item.class,int.class,boolean.class);planning.setAccessible(true);
+                    for(var half:List.of(chest,partner))for(int y=1;y<=2;y++)require(planning.invoke(builder,half.up(y),Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true)==null,"Temporary placement covers a selected supply lid");
+                }catch(ReflectiveOperationException failure){throw new AssertionError(failure);}
+            });
+            for(var half:List.of(chest,partner))command(world,"setblock",half.up(),"dirt");context.waitTicks(6);
+            try{
+                context.runOnClient(client->{if(owned){@SuppressWarnings("unchecked")var supports=(Set<BlockPos>)field(builder,"supports");supports.add(chest.up());supports.add(partner.up());}BuilderPacketChecks.begin();builder.startBuild();});
+                if(owned){
+                    await(context,builder,700);verify(world,target,1,1,1,y->Blocks.STONE);
+                    require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(chest.up()).isAir()&&server.getOverworld().getBlockState(partner.up()).isAir()),"Owned lid covers were not cleared");
+                    context.runOnClient(client->require(builder.temporarySupports().isEmpty()&&client.currentScreen==null&&client.player.getHealth()==20,"Owned lid recovery left scaffold, menu or damage"));
+                }else{
+                    for(int tick=0;tick<300&&context.computeOnClient(client->builder.building());tick++)context.waitTick();
+                    context.runOnClient(client->require(!builder.building()&&builder.status().contains("chest is blocked"),"Unowned lid cover did not pause safely"));
+                    require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(chest.up()).isOf(Blocks.DIRT)&&server.getOverworld().getBlockState(partner.up()).isOf(Blocks.DIRT)),"Chest recovery mined unrelated dirt");
+                }
+                if(owned)context.runOnClient(client->BuilderPacketChecks.verify());
+            }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
+        }
     }
     private static void cleanupAccess(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         for(boolean full:List.of(false,true)){
