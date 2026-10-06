@@ -5,6 +5,19 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Latest, 17:40: CI398 on 39f80d1 passed the standalone rotation checks and failed
+verticalPillarPacing with only the bottom two owned posts left. The five-post
+buildup itself took43 ticks. In the isolated Maro-column-cleanup checkout,
+cleanup without homes now proves the complete owned-column descent before
+removing a reachable tip that would strand its lower posts. It uses existing
+native acknowledged one-step descents, protects dependencies and preserves the
+unowned platform. Build plus compileGametestJava PASSED in1m59. Native CI is next.
+This new path is explicitly gated to Use Homes=false, so the active fresh replay
+with homes enabled continues unchanged in the original checkout. Fresh5 has
+reached359/710 with128 supports; it reclaimed capacity and kept building. The
+read-only home snapshot confirms safeStorage=true, readyFor=true, air in the
+saved arrival body, and no stale home2 after return. Full completion is pending.
+
 Latest, 17:18: fresh-reserved-homes-5 is running unchanged production 9ae4ee7,
 exec session33697, owned Java PID27936. It has progressed beyond 58/710.
 CI394 failed its standalone raisedTurn walker because the test never advanced

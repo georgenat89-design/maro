@@ -1480,6 +1480,7 @@ final class AutoBuilderChecks {
             await(context,builder,900);verify(world,target,1,1,1,y->Blocks.STONE);
             require(world.getServer().computeOnServer(server->{for(int x=-2;x<=8;x++)for(int y=0;y<=8;y++)for(int z=-2;z<=2;z++)if(server.getOverworld().getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return false;for(int x=1;x<=6;x++)if(!server.getOverworld().getBlockState(start.up(5).east(x)).isOf(Blocks.STONE))return false;return true;}),"Pillar cleanup left dirt or changed its unowned platform");
             context.runOnClient(client->{require(builder.temporarySupports().isEmpty(),"Pillar retained owned posts");require(client.player.getHealth()==20,"Pillar build or cleanup caused damage");require(client.currentScreen==null,"Pillar left a menu open");BuilderPacketChecks.verify();});
+            System.out.println("[pillar-progress] All five posts removed with full health and unchanged native platform");
         }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
     }
     private static void nearbyCleanupPriority(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){

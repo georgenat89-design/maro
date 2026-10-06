@@ -2329,9 +2329,19 @@ public final class AutoBuilder extends Module {
             .sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos())))
             .filter(this::safeToRecycle).findFirst().orElse(null);
     }
+    /** Keep a complete owned-column descent before mining away its reachable tip. */
+    private boolean descendCleanupColumn(BlockPos removed){
+        if(useHomes.get()||!autoMove.get()||!supports.contains(removed.down())||plannedSolid(removed))return false;
+        var geometry=descentGeometry(removed);
+        if(geometry==null||walker.standingPoint(geometry.landing).y>=mc.player.getY()-.5||!safeToRecycle(geometry.removed))return false;
+        var feet=BlockPos.ofFloored(mc.player.getEntityPos().add(0,.4,0));
+        if(walker.canReachAfterClearing(feet,geometry.landing,Set.of(removed)))return false;
+        return descentReaches(removed,geometry.landing)&&beginSupportDescent(removed,geometry.landing);
+    }
     /** Leave a higher ledge before deleting its only ordinary return bridge. */
     private boolean preserveCleanupExit(BlockPos removed){
         if(useHomes.get()&&homes.hasSafeReturn())return false;
+        if(!useHomes.get()&&descendCleanupColumn(removed))return true;
         if(!autoMove.get()||supports.stream().noneMatch(p->p.getY()+1<mc.player.getY()-.5))return false;
         var feet=BlockPos.ofFloored(mc.player.getEntityPos().add(0,.4,0));
         if(cleanupExit!=null&&(!walker.canStand(cleanupExit)||supports.contains(cleanupExit.down())
