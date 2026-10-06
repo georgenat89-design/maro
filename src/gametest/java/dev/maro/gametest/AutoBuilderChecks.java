@@ -79,7 +79,7 @@ final class AutoBuilderChecks {
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")||Boolean.getBoolean("maro.gametest.builderStashFinalOnly")){stashBuild(context,singleplayer,builder,start);return;}
-            if(Boolean.getBoolean("maro.gametest.builderWaterOnly")){lowBucketSource(context,singleplayer,builder,start);floodedAccessDeparture(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderWaterOnly")){lowBucketSource(context,singleplayer,builder,start);containedTopLiquids(context,singleplayer,builder,start);floodedAccessDeparture(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){lowBucketSource(context,singleplayer,builder,start);floodedAccessDeparture(context,singleplayer,builder,start);narrowDropLanding(context,singleplayer,builder,start);}
             if(Boolean.getBoolean("maro.gametest.builderCleanupOnly"))immediateOpeningRepair(context,singleplayer,builder,start);
             if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){fixture(context,singleplayer,builder,start);exhaustedAccessCapacity(context,singleplayer,builder,start);raisedDoorEntry(context,singleplayer,builder,start);partialHeadroom(context,singleplayer,builder,start);stairPlacementPriority(context,singleplayer,builder,start);stairPlacementStaging(context,singleplayer,builder,start);blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);fixture(context,singleplayer,builder,start);offsetRecovery(context,singleplayer,builder,start);hopperCrossing(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
@@ -88,6 +88,7 @@ final class AutoBuilderChecks {
             if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){compactAccessStep(context,singleplayer,builder,start);ownedChestCover(context,singleplayer,builder,start);elevatedFloorEntry(context,singleplayer,builder,start);sealedDirectionalAccess(context,singleplayer,builder,start,3);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")){sealedDirectionalAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);raisedChestReturn(context,singleplayer,builder,start);sealedChestReturn(context,singleplayer,builder,start);return;}
             lowBucketSource(context,singleplayer,builder,start);
+            containedTopLiquids(context,singleplayer,builder,start);
             floodedAccessDeparture(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             exhaustedAccessCapacity(context,singleplayer,builder,start);
@@ -1189,7 +1190,7 @@ final class AutoBuilderChecks {
         context.runOnClient(client->require(client.player.getHealth()==20&&builder.temporarySupports().isEmpty(),"Hopper route crossed lava or created unnecessary supports"));
     }
     private static void lowBucketSource(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
-        System.out.println("[builder-check] Fill the intended source from a low access opening without waterlogging its overhead panel");
+        System.out.println("[builder-check] Refuse a leaking low entrance, then pour from above without waterlogging the panel");
         fixture(context,world,builder,start);var goal=start.south(3).up();var panel=goal.up();
         command(world,"setblock",goal.down(),"blackstone");
         for(var side:List.of(Direction.NORTH,Direction.SOUTH,Direction.EAST))command(world,"setblock",goal.offset(side),"blackstone");
@@ -1198,12 +1199,44 @@ final class AutoBuilderChecks {
         world.getServer().runCommand("tp @a "+(goal.getX()-.7)+" "+start.getY()+" "+(goal.getZ()+.45)+" -90 0");context.waitTicks(8);
         try{
             context.runOnClient(client->{set(builder,"Auto Move",false);builder.install(new Schematic("low-source.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.WATER.getDefaultState()}));builder.setOrigin(goal);BuilderPacketChecks.begin();builder.startBuild();});
-            for(int tick=0;tick<180&&context.computeOnClient(client->builder.building())&&!world.getServer().computeOnServer(server->server.getOverworld().getBlockState(panel).get(Properties.WATERLOGGED));tick++)context.waitTick();
+            context.waitTicks(80);
+            require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(goal).isAir()&&!server.getOverworld().getBlockState(panel).get(Properties.WATERLOGGED)),"Unsafe low opening admitted a bucket or waterlogged its panel");
+            context.runOnClient(client->{BuilderPacketChecks.verify(0);builder.pause("Test: seal and move above the basin");});
+            command(world,"setblock",goal.west(),"blackstone");
+            world.getServer().runCommand("tp @a "+(goal.getX()-.5)+" "+(goal.getY()+1)+" "+(goal.getZ()+.5)+" -90 60");context.waitTicks(8);
+            context.runOnClient(client->{BuilderPacketChecks.begin();builder.startBuild();});
             require(world.getServer().computeOnServer(server->!server.getOverworld().getBlockState(panel).get(Properties.WATERLOGGED)),"Bucket filled the overhead trapdoor instead of the adjacent source");
             await(context,builder,120);
-            require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(goal).equals(Blocks.WATER.getDefaultState())),"Low access bucket placement did not create the actual source");
+            require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(goal).equals(Blocks.WATER.getDefaultState())),"Contained top bucket placement did not create the actual source");
             context.runOnClient(client->{BuilderPacketChecks.verify(1);require(client.player.getHealth()==20&&client.currentScreen==null,"Low access bucket placement damaged the player or left a menu");});
         }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
+    }
+    @SuppressWarnings("unchecked")
+    private static void containedTopLiquids(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        for(boolean water:List.of(true,false)){
+            System.out.println("[builder-check] Climb above a closed basin, restore its old low opening before pouring, and restore the roof; water="+water);
+            fixture(context,world,builder,start);var origin=start.add(-2,0,3);var cells=new BlockState[75];Arrays.fill(cells,Blocks.STONE.getDefaultState());
+            int source=2+2*5+25;cells[source]=(water?Blocks.WATER:Blocks.LAVA).getDefaultState();
+            var room=new Schematic("contained-top-liquid.nbt","test",5,3,5,BlockPos.ORIGIN,cells);var goal=origin.add(room.local(source));var oldOpening=goal.west();
+            world.getServer().runOnServer(server->{for(int i=0;i<room.size();i++)if(i!=source&&!origin.add(room.local(i)).equals(oldOpening))server.getOverworld().setBlockState(origin.add(room.local(i)),room.state(i),Block.NOTIFY_ALL);});
+            for(String item:List.of("stone 16","dirt 64","diamond_pickaxe","diamond_shovel",water?"water_bucket":"lava_bucket"))world.getServer().runCommand("give @a "+item);
+            context.waitTicks(10);boolean openedRoof=false,poured=false,sealed=false;
+            try{
+                context.runOnClient(client->{set(builder,"Temporary Supports",true);set(builder,"Auto Buy When Missing",false);set(builder,"Material Supply","Nearby Sections");builder.install(room);builder.setOrigin(origin);BuilderPacketChecks.begin();builder.startBuild();((Map<BlockPos,Integer>)field(builder,"floorAccessWork")).put(oldOpening,source);});
+                for(int tick=0;tick<2400&&context.computeOnClient(client->builder.building());tick++){
+                    boolean closed=world.getServer().computeOnServer(server->server.getOverworld().getBlockState(oldOpening).isOf(Blocks.STONE));
+                    if(sealed)require(closed,"Fluid access reopened its retaining wall");sealed|=closed;
+                    openedRoof|=world.getServer().computeOnServer(server->server.getOverworld().getBlockState(goal.up()).isAir());
+                    boolean filled=world.getServer().computeOnServer(server->server.getOverworld().getBlockState(goal).isOf(water?Blocks.WATER:Blocks.LAVA));
+                    if(filled&&!poured){require(closed,"Bucket poured before repairing the old retaining wall");context.runOnClient(client->require(client.player.getY()>=goal.getY()+1&&!client.player.isTouchingWater(),"Bucket was used from below or inside the liquid"));poured=true;}
+                    require(world.getServer().computeOnServer(server->{for(var pos:BlockPos.iterate(origin.add(-3,-1,-3),origin.add(7,4,7)))if(!pos.equals(goal)&&!server.getOverworld().getFluidState(pos).isEmpty())return false;return true;}),"Fluid escaped its basin");
+                    context.waitTick();
+                }
+                await(context,builder,1);require(openedRoof&&poured&&sealed,"Top access did not open, pour and repair in the native world");
+                require(world.getServer().computeOnServer(server->{for(int i=0;i<room.size();i++)if(!server.getOverworld().getBlockState(origin.add(room.local(i))).equals(room.state(i)))return false;for(var pos:BlockPos.iterate(start.add(-8,0,-8),start.add(8,8,12)))if(server.getOverworld().getBlockState(pos).isOf(Blocks.DIRT))return false;return true;}),"Top liquid access left a roof hole or temporary dirt");
+                context.runOnClient(client->{require(client.player.getHealth()==20&&client.currentScreen==null&&builder.temporarySupports().isEmpty(),"Top fluid work left damage/menu/supports");BuilderPacketChecks.verify();});
+            }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
+        }
     }
     private static void floodedAccessDeparture(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         for(boolean lowHealth:List.of(false,true))floodedAccessDeparture(context,world,builder,start,lowHealth);

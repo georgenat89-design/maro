@@ -5,6 +5,30 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+At 14:10 the user requested safe access from above for water and lava.
+Upper69 on fd396da was stopped unfinished at 700/710, 128 supports and
+full health to implement that steering. No full replay pass is claimed.
+The working change restricts bucket placement to dry views above the source,
+aims at the basin floor's UP face, checks the connected planned liquid volume
+using vanilla flow feasibility, and rechecks containment at the actual bucket
+interaction. Basin floors and retaining walls are excluded from access mining;
+registered retaining openings get immediate restoration priority. A closed
+roof can supply a checked opening above the source, with its intact viewing
+ledge preserved and every removed roof block registered for later repair.
+Native top-fluid-5 PASSED 1m28s: low leaking access refused; an actual
+contained source poured from above without waterlogging the overhead panel;
+closed-roof water and lava fixtures each repaired an old low opening before
+pouring, opened only roof access, retained every basin wall, contained all
+fluid, restored all roof blocks and removed all dirt with full health and
+native packet/menu checks. Captured flooded-room healthy/low-health departure
+regressions also passed. A buried retaining repair shares the roof strategy.
+Native top-surface-1 PASSED 2m23s, including all16 narrow landing variants,
+partial panels, contained bucket work, doors, pit recovery, hoppers, native
+stair staging and full-capacity guards. Production was unchanged between
+the two focused passes.
+Latest full Upper/Fresh, exact-head builder/auction CI and merged artifacts
+remain required gates.
+
 At 13:35, Upper68 on the integrated ecc8aeb tree failed unfinished698/710
 with128supports. The server confirmed drowning during bucket access. Its
 saved native world showed a waterlogged overhead trapdoor and falling water

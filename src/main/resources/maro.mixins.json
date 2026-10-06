@@ -8,6 +8,7 @@
     "PetRenderMixin",
     "AutoToolMixin",
     "BlockItemAccessor",
+    "FlowableFluidAccessor",
     "BuilderUseMixin",
     "BuilderMovementMixin",
     "ClientPlayerInteractionManagerAccessor",
