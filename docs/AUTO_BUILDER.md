@@ -69,6 +69,8 @@ Walking turns toward raised steps before jumping. Close placement approaches bra
 
 Reach prechecks use the nearest face of a block, not its centre. Every actual action still requires an in-range native hit/context. This prevents arriving at a checked corner view and immediately walking away because the centre is farther away. The focused movement test also places two server-confirmed blocks from such a view with walking disabled. Repeated block-state scans reuse the same derived-property set instead of allocating it for every property check.
 
+When a chosen scaffold view can reach only the first support, arrival places that support even if the final schematic block is still farther away. It commits to climbing the new post, building native intermediate stairs for a rise of up to six blocks, before extending more supports. The focused regression builds a target six levels above the initial pose and checks server completion, full temporary-dirt cleanup, unchanged health and native packet ordering.
+
 Recycling preserves the short attachment column serving the active target. A stranded finished ledge can use a reachable owned post up to two blocks lower, followed by safe incremental descent through that post. Completed schematic blocks remain intact.
 
 The selected post and lower view remain paired while walking to a descent. Arrival waits for a settled pose and rechecks ownership, footing, landing and neighbouring support rules before mining that post.

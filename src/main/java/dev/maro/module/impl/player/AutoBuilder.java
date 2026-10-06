@@ -823,7 +823,15 @@ public final class AutoBuilder extends Module {
             if(waitingForBuiltNeighbour(target,desired))continue;
             if(desired.isAir()&&supports.contains(target)&&correct!=solid)continue;
             if(desired.isAir()&&!mineOut.get()||Schematic.companion(desired))continue;
-            if(!withinReach(target,mc.player.getEyePos())){if(distant==null)distant=i;continue;}
+            if(!withinReach(target,mc.player.getEyePos())){
+                // A scaffold view reaches its first piece, not necessarily the
+                // final block. Complete that native job before routing away again.
+                if(i==navigatingCell&&!desired.isAir()&&inventoryCount(Schematic.material(desired))>0&&!hasAttachment(target,desired)){
+                    var first=supportPlacement(target,mc.player.getEyePos(),mc.player.getBoundingBox());
+                    if(first!=null){if(inventoryCount(Items.DIRT)==0){ensureSupportDirt();return;}navigationStarted=ticks;commitAccess(first.target.up(),false);accessSupports.add(first.target);placement=first;placeTick();return;}
+                }
+                if(distant==null)distant=i;continue;
+            }
             if(actual.isOf(Blocks.NOTE_BLOCK)&&desired.isOf(Blocks.NOTE_BLOCK)){tuneNote(target,desired.get(NoteBlock.NOTE));return;}
             if(actual.getBlock()==desired.getBlock()&&compatible(actual,desired)&&configuration(actual)!=configuration(desired)){tuneConfiguration(target,configuration(desired));return;}
             if(desired.isAir()&&mineOut.get()){
@@ -1292,7 +1300,7 @@ public final class AutoBuilder extends Module {
     }
     private boolean buildAccessStep(BlockPos stand){
         if(supports.size()>=tempDirt.getInt())return false;
-        int rise=stand.getY()-mc.player.getBlockPos().getY();if(rise<1||rise>3)return false;
+        int rise=stand.getY()-mc.player.getBlockPos().getY();if(rise<1||rise>(stand.equals(accessStand)?6:3))return false;
         var floor=stand.down();int cell=schematic.indexAt(floor.subtract(anchor()),turns(),mirror.get());
         // Add stairs only for this committed placement view or its intermediate post.
         boolean ownedStep=supports.contains(floor)&&mc.world.getBlockState(floor).isOf(Blocks.DIRT);

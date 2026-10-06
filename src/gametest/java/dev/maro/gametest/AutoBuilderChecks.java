@@ -85,6 +85,8 @@ final class AutoBuilderChecks {
             fixture(context,singleplayer,builder,start);
             faceReach(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
+            scaffoldReach(context,singleplayer,builder,start);
+            fixture(context,singleplayer,builder,start);
             if(Boolean.getBoolean("maro.gametest.builderTurnOnly"))return;
             layerTail(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
@@ -892,6 +894,20 @@ final class AutoBuilderChecks {
         try{
             await(context,builder,300);verify(world,target,1,1,1,y->Blocks.STONE);verify(world,target.south(4),1,1,1,y->Blocks.STONE);
             context.runOnClient(client->{require(client.player.getEntityPos().squaredDistanceTo(before)<.01,"Reachable face caused unnecessary walking");BuilderPacketChecks.verify();});
+        }finally{context.runOnClient(client->BuilderPacketChecks.recording=false);}
+    }
+    private static void scaffoldReach(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        var target=start.add(0,6,3);
+        world.getServer().runCommand("fill "+coords(start.add(1,0,3))+" "+coords(start.add(1,3,3))+" stone");
+        world.getServer().runCommand("give @a stone 1");world.getServer().runCommand("give @a dirt 24");world.getServer().runCommand("give @a diamond_shovel 1");context.waitTicks(6);
+        context.runOnClient(client->{
+            set(builder,"Temporary Supports",true);builder.install(new Schematic("distant-scaffold-start.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);
+            BuilderPacketChecks.begin();builder.startBuild();
+        });
+        try{
+            await(context,builder,2400);verify(world,target,1,1,1,y->Blocks.STONE);
+            require(world.getServer().computeOnServer(server->{for(var pos:BlockPos.iterate(start.add(-7,0,-4),start.add(7,7,10)))if(server.getOverworld().getBlockState(pos).isOf(Blocks.DIRT))return false;return true;}),"Distant scaffold left temporary dirt behind");
+            context.runOnClient(client->{require(builder.temporarySupports().isEmpty()&&client.player.getHealth()==20,"Distant scaffold did not finish safely");BuilderPacketChecks.verify();});
         }finally{context.runOnClient(client->BuilderPacketChecks.recording=false);}
     }
     private static void layerTail(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
