@@ -390,6 +390,19 @@ public class MaroClientGameTest implements FabricClientGameTest {
         settle(context);
         String lowered = context.computeOnClient(snapshot::apply);
         context.takeScreenshot("maro-potato-graphics-on");
+        String hiding = context.computeOnClient(client -> {
+            var p = client.player;
+            var near = new net.minecraft.entity.decoration.ArmorStandEntity(client.world, p.getX() + 4, p.getY(), p.getZ());
+            var far = new net.minecraft.entity.decoration.ArmorStandEntity(client.world, p.getX() + 60, p.getY(), p.getZ());
+            var farPlayer = new net.minecraft.client.network.OtherClientPlayerEntity(client.world,
+                    new com.mojang.authlib.GameProfile(java.util.UUID.randomUUID(), "MaroPotatoFar"));
+            farPlayer.setPosition(p.getX() + 60, p.getY(), p.getZ());
+            return "near=" + dev.maro.module.impl.visuals.PotatoGraphics.hidesEntity(near)
+                    + " far=" + dev.maro.module.impl.visuals.PotatoGraphics.hidesEntity(far)
+                    + " farPlayer=" + dev.maro.module.impl.visuals.PotatoGraphics.hidesEntity(farPlayer);
+        });
+        if (!hiding.endsWith("near=false far=true farPlayer=false"))
+            throw new AssertionError("Potato Graphics did not hide far entities (and only those): " + hiding);
         boolean ok = context.computeOnClient(client -> client.options.getViewDistance().getValue() <= 6
                 && !client.options.getAo().getValue()
                 && client.options.getCloudRenderMode().getValue() == net.minecraft.client.option.CloudRenderMode.OFF

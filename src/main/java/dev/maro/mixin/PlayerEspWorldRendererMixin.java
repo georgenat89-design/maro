@@ -15,6 +15,7 @@ import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.client.render.command.OrderedRenderCommandQueue;
 import net.minecraft.client.render.command.RenderDispatcher;
 import net.minecraft.client.render.entity.EntityRenderManager;
+import net.minecraft.client.render.entity.state.EntityRenderState;
 import net.minecraft.client.render.state.WorldRenderState;
 import net.minecraft.client.util.Handle;
 import net.minecraft.client.util.ObjectAllocator;
@@ -29,6 +30,10 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
 
 /**
  * Renders the Player ESP's silhouettes.
@@ -82,27 +87,30 @@ public abstract class PlayerEspWorldRendererMixin {
         if (mask == null) return;
 
         var camera = worldState.cameraRenderState.pos;
-        boolean empty = true;
+        Set<Entity> drawn = Collections.newSetFromMap(new IdentityHashMap<>());
 
         for (var state : worldState.entityRenderStates) {
             Entity entity = ((EntityRenderStateAccess) state).maro$getEntity();
             if (entity == null || !PlayerEspRenderer.shouldDraw(entity)) continue;
-
-            maro$silhouettes.setColor(PlayerEspRenderer.color(entity));
-
-            var renderer = entityRenderManager.getRenderer(state);
-            var offset = renderer.getPositionOffset(state);
-
-            matrices.push();
-            matrices.translate(state.x - camera.x + offset.x, state.y - camera.y + offset.y, state.z - camera.z + offset.z);
-            renderer.render(state, matrices, maro$silhouettes, worldState.cameraRenderState);
-            matrices.pop();
-
-            PlayerEspRenderer.include(entity, state.x, state.y, state.z, camera);
-            empty = false;
+            maro$drawSilhouette(entity, state, matrices, worldState);
+            drawn.add(entity);
         }
 
-        if (empty) return;
+        // Players the game left out of this frame - culled for distance, by another mod's entity
+        // culling, or hidden by a render setting - are still tracked, so draw them ourselves.
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.world != null) {
+            float tickProgress = client.getRenderTickCounter().getTickProgress(false);
+            for (var player : client.world.getPlayers()) {
+                if (drawn.contains(player) || !PlayerEspRenderer.shouldDraw(player)) continue;
+                EntityRenderState state = entityRenderManager.getAndUpdateRenderState(player, tickProgress);
+                if (!PlayerEspRenderer.onScreen(state.x, state.y + player.getHeight() / 2, state.z, camera)) continue;
+                maro$drawSilhouette(player, state, matrices, worldState);
+                drawn.add(player);
+            }
+        }
+
+        if (drawn.isEmpty()) return;
 
         if (maro$silhouetteDispatcher == null) {
             MinecraftClient mc = MinecraftClient.getInstance();
@@ -142,6 +150,22 @@ public abstract class PlayerEspWorldRendererMixin {
         } finally {
             maro$popOutline();
         }
+    }
+
+    @Unique
+    private void maro$drawSilhouette(Entity entity, EntityRenderState state, MatrixStack matrices, WorldRenderState worldState) {
+        var camera = worldState.cameraRenderState.pos;
+        maro$silhouettes.setColor(PlayerEspRenderer.color(entity));
+
+        var renderer = entityRenderManager.getRenderer(state);
+        var offset = renderer.getPositionOffset(state);
+
+        matrices.push();
+        matrices.translate(state.x - camera.x + offset.x, state.y - camera.y + offset.y, state.z - camera.z + offset.z);
+        renderer.render(state, matrices, maro$silhouettes, worldState.cameraRenderState);
+        matrices.pop();
+
+        PlayerEspRenderer.include(entity, state.x, state.y, state.z, camera);
     }
 
     @Unique

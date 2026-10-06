@@ -9,11 +9,16 @@ import dev.maro.setting.NumberSetting;
 import dev.maro.setting.Setting;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
+import com.mojang.authlib.GameProfile;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.OtherClientPlayerEntity;
 import net.minecraft.client.option.Perspective;
+import net.minecraft.entity.Entity;
 
 import javax.imageio.ImageIO;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.UUID;
 
 /** Player ESP on yourself in third person: the silhouette must be drawn, and drawn where you are. */
 final class PlayerEspChecks {
@@ -71,15 +76,70 @@ final class PlayerEspChecks {
                 context.waitTicks(3);
                 context.takeScreenshot("maro-player-esp-" + style.toLowerCase());
             }
+
+            // Another player far away behind a wall, past the entity distance the game draws at
+            // (halved here, as Potato Graphics does): the ESP must still show them.
+            world.getServer().runCommand("fill -8 99 -8 8 99 46 minecraft:stone");
+            world.getServer().runCommand("fill -8 100 -8 8 106 46 minecraft:air");
+            world.getServer().runCommand("fill -8 100 4 8 106 4 minecraft:stone");
+            world.getServer().runCommand("tp @a 0 100 0 0 0");
+            context.waitTicks(10);
+            context.runOnClient(c -> {
+                c.options.setPerspective(Perspective.FIRST_PERSON);
+                c.options.getEntityDistanceScaling().setValue(0.5);
+                esp.getSettings().forEach(Setting::reset);
+                ((ModeSetting) setting(esp, "Fill Style")).set("Solid");
+                ((ColorSetting) setting(esp, "Color")).set(0xFFFF00FF);
+                ((NumberSetting) setting(esp, "Fill Opacity")).set(100.0);
+                ((NumberSetting) setting(esp, "Edge Fade")).set(0.0);
+                ((BooleanSetting) setting(esp, "Glow")).set(false);
+                esp.setEnabled(true);
+                c.player.setYaw(0);
+                c.player.setPitch(0);
+            });
+            int farId = context.computeOnClient(c -> spawnPlayer(c, 0.5, 100, 40.5));
+            context.waitTicks(5);
+            Path far = context.takeScreenshot("maro-player-esp-far-behind-wall");
+            int[] farPixels = magenta(far);
+            System.out.println("PLAYER ESP far magenta=" + farPixels[0] + " centre=" + farPixels[1] + "/" + farPixels[3]);
+            require(farPixels[0] > 40, "Player ESP did not draw a far player behind a wall: " + farPixels[0]);
+            require(Math.abs(farPixels[1] - farPixels[2] / 2) < farPixels[2] * 0.08, "Far player's silhouette is off target: x " + farPixels[1]);
+
+            // A nearer one with the default look, to see the contour and glow at a middle distance.
+            context.runOnClient(c -> {
+                c.world.removeEntity(farId, Entity.RemovalReason.DISCARDED);
+                c.options.getEntityDistanceScaling().setValue(1.0);
+                esp.getSettings().forEach(Setting::reset);
+                esp.setEnabled(true);
+            });
+            int nearId = context.computeOnClient(c -> spawnPlayer(c, 0.5, 100, 14.5));
+            context.waitTicks(5);
+            context.takeScreenshot("maro-player-esp-through-wall");
+            context.runOnClient(c -> c.world.removeEntity(nearId, Entity.RemovalReason.DISCARDED));
         } finally {
             context.runOnClient(c -> {
                 esp.setEnabled(false);
                 esp.getSettings().forEach(Setting::reset);
                 c.options.setPerspective(perspective);
+                c.options.getEntityDistanceScaling().setValue(1.0);
             });
             world.getServer().runCommand("tp @a " + original.x + " " + original.y + " " + original.z);
             context.waitTicks(3);
         }
+    }
+
+    /** Adds a client-side player facing the camera at the given position; returns its entity id. */
+    private static int spawnPlayer(MinecraftClient client, double x, double y, double z) {
+        var other = new OtherClientPlayerEntity(client.world, new GameProfile(UUID.randomUUID(), "MaroEspTarget"));
+        other.setPosition(x, y, z);
+        other.lastX = other.lastRenderX = x;
+        other.lastY = other.lastRenderY = y;
+        other.lastZ = other.lastRenderZ = z;
+        other.setYaw(180f);
+        other.setBodyYaw(180f);
+        other.setHeadYaw(180f);
+        client.world.addEntity(other);
+        return other.getId();
     }
 
     /** {count, centre x, image width, centre y} of strongly magenta pixels. */

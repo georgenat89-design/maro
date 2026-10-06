@@ -77,10 +77,10 @@ public class PlayerESP extends Module {
             .suffix("%").visible(glow::get));
 
     private final List<SettingSection> sections = List.of(
+            SettingSection.of("Targets", range, self, friends, friendColor, friendTint, healthColors, spectators),
             SettingSection.of("Fill", fill, fillStyle, colorA, colorB, fillOpacity, edgeFade, stars, scale, speed),
             SettingSection.of("Outline", outline, outlineColorMode, outlineColor, outlineWidth, outlineOpacity),
-            SettingSection.of("Glow", glow, glowRadius, glowStrength),
-            SettingSection.of("Targets", self, friends, friendColor, friendTint, healthColors, spectators, range));
+            SettingSection.of("Glow", glow, glowRadius, glowStrength));
 
     private final long start = System.nanoTime();
 

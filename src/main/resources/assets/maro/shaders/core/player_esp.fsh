@@ -13,7 +13,9 @@ uniform sampler2D u_Mask;
 
 in vec2 texCoord;
 
-// Seven vec4s and nothing else, so std140 lays it out exactly as PlayerEspRenderer writes it.
+const int MAX_PLAYERS = 16;
+
+// Only vec4s, so std140 lays it out exactly as PlayerEspRenderer writes it.
 layout(std140) uniform EspData {
     vec4 FillColorA;    // rgb
     vec4 FillColorB;    // rgb
@@ -22,6 +24,12 @@ layout(std140) uniform EspData {
     vec4 FillParams;    // x style, y opacity, z edge fade, w enabled
     vec4 LineParams;    // x colour mode, y width (px), z opacity, w enabled
     vec4 GlowParams;    // x enabled, y radius (px), z strength, w mask texels per screen pixel
+    vec4 PlayerInfo;    // x number of player rects
+    // Each player's screen rect in pixels (x0, y0, x1, y1) and, four to a vec4, how much of the
+    // full contour and glow width that player gets: small, distant players get thinner ones so
+    // their shape stays readable.
+    vec4 PlayerRects[MAX_PLAYERS];
+    vec4 PlayerScales[MAX_PLAYERS / 4];
 };
 
 out vec4 fragColor;
@@ -181,6 +189,49 @@ vec4 maskAt(vec2 uv) {
     return vec4(s.a > 0.0 ? s.rgb / s.a : vec3(0.0), s.a);
 }
 
+// Coverage averaged over a two-pixel box: smooth enough that its 0.5 level is a straight line
+// along a straight edge, which is what the edge fit below relies on.
+float smoothCoverage(vec2 uv, vec2 maskTexel) {
+    return 0.25 * (texture(u_Mask, uv + vec2(-maskTexel.x, -maskTexel.y)).a
+                 + texture(u_Mask, uv + vec2( maskTexel.x, -maskTexel.y)).a
+                 + texture(u_Mask, uv + vec2(-maskTexel.x,  maskTexel.y)).a
+                 + texture(u_Mask, uv + vec2( maskTexel.x,  maskTexel.y)).a);
+}
+
+// Signed distance (positive outside) from this pixel to the edge near the sample at offset q,
+// treating the edge there as a straight line fitted to the smoothed coverage. Falls back to the
+// coarse estimate where there is no clear edge to fit.
+float fitEdge(vec2 q, float coarse, vec2 texel, vec2 maskTexel) {
+    vec2 uv = texCoord + q * texel;
+    vec2 hx = vec2(texel.x * 0.5, 0.0);
+    vec2 hy = vec2(0.0, texel.y * 0.5);
+    float c = smoothCoverage(uv, maskTexel);
+    vec2 g = vec2(smoothCoverage(uv + hx, maskTexel) - smoothCoverage(uv - hx, maskTexel),
+                  smoothCoverage(uv + hy, maskTexel) - smoothCoverage(uv - hy, maskTexel));
+    float slope = length(g);
+    if (slope < 0.08) return coarse;
+    vec2 n = g / slope;
+    float fitted = dot(q, n) + (0.5 - c) / slope;
+    return abs(fitted - coarse) < 0.75 ? fitted : coarse;
+}
+
+// How much of the full contour and glow width the player around screen point q gets.
+float playerScale(vec2 q) {
+    float scale = 1.0;
+    float bestArea = 1e12;
+    int count = min(int(PlayerInfo.x + 0.5), MAX_PLAYERS);
+    for (int i = 0; i < count; i++) {
+        vec4 r = PlayerRects[i];
+        if (q.x < r.x || q.y < r.y || q.x > r.z || q.y > r.w) continue;
+        float area = (r.z - r.x) * (r.w - r.y);
+        if (area < bestArea) {
+            bestArea = area;
+            scale = PlayerScales[i >> 2][i & 3];
+        }
+    }
+    return scale;
+}
+
 void main() {
     float maskScale = max(GlowParams.w, 1.0);
     vec2 size = vec2(textureSize(u_Mask, 0)) / maskScale;
@@ -209,6 +260,8 @@ void main() {
 
     float toInside = 1e4;
     float toOutside = 1e4;
+    vec2 nearIn = vec2(0.0);
+    vec2 nearOut = vec2(0.0);
     vec3 nearest = center.rgb;
     for (int y = -reach; y <= reach; y++) {
         for (int x = -reach; x <= reach; x++) {
@@ -220,25 +273,34 @@ void main() {
                 float di = d + 0.5 - s.a;
                 if (di < toInside) {
                     toInside = di;
+                    nearIn = o;
                     nearest = s.rgb;
                 }
             }
-            if (s.a < 1.0) toOutside = min(toOutside, d + s.a - 0.5);
+            if (s.a < 1.0) {
+                float dout = d + s.a - 0.5;
+                if (dout < toOutside) {
+                    toOutside = dout;
+                    nearOut = o;
+                }
+            }
         }
     }
 
     // Glow reaches further than the box search, so the remaining rings are walked sparsely.
-    float glowDistance = toInside;
-    if (glowOn && !inside && glowDistance > float(reach)) {
+    float ringDistance = 1e4;
+    if (glowOn && !inside && toInside > float(reach)) {
         int rings = int(ceil(GlowParams.y)) + 1;
         for (int r = reach + 1; r <= rings; r++) {
             bool found = false;
             float twist = (r % 2 == 0) ? 0.5 : 0.0;
             for (int k = 0; k < 24; k++) {
                 float angle = (float(k) + twist) * (TAU / 24.0);
-                vec4 s = maskAt(texCoord + vec2(cos(angle), sin(angle)) * float(r) * texel);
+                vec2 o = vec2(cos(angle), sin(angle)) * float(r);
+                vec4 s = maskAt(texCoord + o * texel);
                 if (s.a > 0.0) {
-                    glowDistance = float(r) + 0.5 - s.a;
+                    ringDistance = float(r) + 0.5 - s.a;
+                    nearIn = o;
                     nearest = s.rgb;
                     found = true;
                     break;
@@ -249,10 +311,20 @@ void main() {
     }
 
     // Nothing within reach of this pixel: skip the pattern work entirely.
-    if (center.a <= 0.0 && toInside > 1e3 && glowDistance > 1e3) discard;
+    if (center.a <= 0.0 && toInside > 1e3 && ringDistance > 1e3) discard;
 
-    // Signed distance to the silhouette's edge: negative inside, positive outside.
+    // Signed distance to the silhouette's edge: negative inside, positive outside. Close to the
+    // edge it is refined against a straight-line fit, which keeps contours free of pixel jitter.
+    vec2 maskTexel = 1.0 / vec2(textureSize(u_Mask, 0));
     float sd = inside ? -max(toOutside, 0.0) : max(toInside, 0.0);
+    if (!inside && toInside < 1e3) sd = fitEdge(nearIn, sd, texel, maskTexel);
+    else if (inside && toOutside < 1e3) sd = fitEdge(nearOut, sd, texel, maskTexel);
+    float glowDistance = toInside < 1e3 ? sd : ringDistance;
+
+    // Contour and glow shrink with the player they belong to, so far players stay readable.
+    float sizeScale = playerScale(px + (inside ? vec2(0.0) : nearIn));
+    width *= sizeScale;
+    float glowRadius = GlowParams.y * sizeScale;
 
     // ---- fill: one pixel of anti-aliasing centred on the edge.
     float coverage = clamp(0.5 - sd, 0.0, 1.0);
@@ -283,7 +355,7 @@ void main() {
     // ---- glow: quadratic falloff away from the edge, outside the silhouette only.
     float glowAlpha = 0.0;
     if (glowOn && !inside && glowDistance < 1e3) {
-        float k = 1.0 - clamp(max(glowDistance, 0.0) / max(GlowParams.y, 1.0), 0.0, 1.0);
+        float k = 1.0 - clamp(max(glowDistance, 0.0) / max(glowRadius, 1.0), 0.0, 1.0);
         glowAlpha = k * k * GlowParams.z * (1.0 - coverage);
     }
 
