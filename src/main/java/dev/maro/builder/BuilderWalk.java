@@ -317,17 +317,25 @@ public final class BuilderWalk {
         return find(start,target,reach,exactGoal,allowSegments,false);
     }
     private List<BlockPos> find(BlockPos start,BlockPos target,double reach,boolean exactGoal,boolean allowSegments,boolean dryGoal){
+        // A search reads one immutable collision/mask snapshot. Neighbour checks
+        // revisit these same cells many times; resolve their shapes once per pass.
+        Map<BlockPos,Boolean> standingCache=new HashMap<>(),clearCache=new HashMap<>();
+        Map<BlockPos,Vec3d> pointCache=new HashMap<>();
+        java.util.function.Predicate<BlockPos> standable=pos->standingCache.computeIfAbsent(pos,this::walkable);
+        java.util.function.Predicate<BlockPos> clearance=pos->clearCache.computeIfAbsent(pos,this::clear);
+        java.util.function.Function<BlockPos,Vec3d> points=pos->pointCache.computeIfAbsent(pos,this::standingPoint);
+
         PriorityQueue<Node> open=new PriorityQueue<>(Comparator.comparingDouble(Node::score));
         Map<BlockPos,Double> costs=new HashMap<>();Set<BlockPos> closed=new HashSet<>();
         open.add(new Node(start,0,heuristic(start,target),null));costs.put(start,0.0);
         Node frontier=null;double initialDistance=heuristic(start,target),frontierDistance=initialDistance;
-        double initialHeight=clearedForSearch.isEmpty()&&start.equals(walkingCell())?mc.player.getY():standingPoint(start).y;
+        double initialHeight=clearedForSearch.isEmpty()&&start.equals(walkingCell())?mc.player.getY():points.apply(start).y;
         long deadline=System.nanoTime()+3_000_000;int visited=0;
         while(!open.isEmpty()&&visited++<2048&&System.nanoTime()<deadline){
             Node n=open.poll();if(!closed.add(n.pos))continue;
             double remaining=heuristic(n.pos,target);
             if(remaining<frontierDistance){frontier=n;frontierDistance=remaining;}
-            Vec3d eye=standingPoint(n.pos).add(0,mc.player.getStandingEyeHeight(),0);
+            Vec3d eye=points.apply(n.pos).add(0,mc.player.getStandingEyeHeight(),0);
             if(dryGoal?n.parent!=null&&dryDepartureGoal(n.pos):exactGoal?n.pos.equals(target):eye.squaredDistanceTo(Vec3d.ofCenter(target))<=reach*reach){
                 LinkedList<BlockPos> result=new LinkedList<>();for(Node p=n;p.parent!=null;p=p.parent)result.addFirst(p.pos);return result;
             }
@@ -337,38 +345,38 @@ public final class BuilderWalk {
                 // that case moving toward this column's centre safely drops
                 // onto the floor below; cardinal-only neighbours miss it.
                 boolean swimColumn=dryGoal&&swimmingCell(n.pos);
-                if(sameColumn&&!swimColumn&&(!n.pos.equals(start)||walkable(n.pos)))continue;boolean diagonal=dx!=0&&dz!=0;
-                if(diagonal&&(!walkable(n.pos.add(dx,0,0))||!walkable(n.pos.add(0,0,dz))))continue;
+                if(sameColumn&&!swimColumn&&(!n.pos.equals(start)||standable.test(n.pos)))continue;boolean diagonal=dx!=0&&dz!=0;
+                if(diagonal&&(!standable.test(n.pos.add(dx,0,0))||!standable.test(n.pos.add(0,0,dz))))continue;
                 var adjacent=n.pos.add(dx,0,dz);BlockPos step=null;
-                for(int dy:sameColumn?(swimColumn?new int[]{1,-1}:new int[]{-1,-2,-3}):new int[]{0,1,-1,-2,-3}){var p=adjacent.up(dy);if(walkable(p)){step=p;break;}}
+                for(int dy:sameColumn?(swimColumn?new int[]{1,-1}:new int[]{-1,-2,-3}):new int[]{0,1,-1,-2,-3}){var p=adjacent.up(dy);if(standable.test(p)){step=p;break;}}
                 if(step==null||closed.contains(step)||step.getManhattanDistance(start)>64)continue;
-                double rise=standingPoint(step).y-(n.parent==null?initialHeight:standingPoint(n.pos).y);
+                double rise=points.apply(step).y-(n.parent==null?initialHeight:points.apply(n.pos).y);
                 if(rise>1.2||rise< -3)continue;
                 if(diagonal&&step.getY()!=n.pos.getY())continue;
                 // An open trapdoor can leave room for the body at a cell's
                 // centre while blocking entry across one edge. Check that edge,
                 // otherwise prefer another side instead of walking into its panel.
-                if(Math.abs(rise)<.01&&(!clear(n.pos)||!clear(n.pos.up())||!clear(step)||!clear(step.up()))
-                    &&!bodyCorridor(standingPoint(n.pos),standingPoint(step)))continue;
+                if(Math.abs(rise)<.01&&(!clearance.test(n.pos)||!clearance.test(n.pos.up())||!clearance.test(step)||!clearance.test(step.up()))
+                    &&!bodyCorridor(points.apply(n.pos),points.apply(step)))continue;
                 if(rise>.01){
-                    var from=n.parent==null&&start.equals(walkingCell())?mc.player.getEntityPos():standingPoint(n.pos);
+                    var from=n.parent==null&&start.equals(walkingCell())?mc.player.getEntityPos():points.apply(n.pos);
                     // A closed door's centre can fit the body while its entry
                     // panel still blocks the jump. Prove the lift and approach.
                     if(!jumpClear(from,step))continue;
                 }
                 if(rise<-.01){
-                    var from=n.parent==null&&start.equals(walkingCell())?mc.player.getEntityPos():standingPoint(n.pos);
-                    var over=new Vec3d(standingPoint(step).x,from.y,standingPoint(step).z);
+                    var from=n.parent==null&&start.equals(walkingCell())?mc.player.getEntityPos():points.apply(n.pos);
+                    var over=new Vec3d(points.apply(step).x,from.y,points.apply(step).z);
                     // A clear lower landing does not prove the ledge approach:
                     // doors and other partial panels can block the body above it.
-                    if(!bodyCorridor(from,over)||!bodyCorridor(over,standingPoint(step)))continue;
+                    if(!bodyCorridor(from,over)||!bodyCorridor(over,points.apply(step)))continue;
                 }
-                if(step.getY()>n.pos.getY()&&!clear(n.pos.up(2)))continue;
+                if(step.getY()>n.pos.getY()&&!clearance.test(n.pos.up(2)))continue;
                 // Check the whole falling corridor, including the headroom at
                 // the ledge. An ordinary three-block drop is safe when actual
                 // footing heights agree, but a low ceiling can obstruct it.
                 boolean corridor=true;
-                if(step.getY()<n.pos.getY())for(int y=step.getY()+2;y<=n.pos.getY()+1;y++)if(!clear(new BlockPos(step.getX(),y,step.getZ()))){corridor=false;break;}
+                if(step.getY()<n.pos.getY())for(int y=step.getY()+2;y<=n.pos.getY()+1;y++)if(!clearance.test(new BlockPos(step.getX(),y,step.getZ()))){corridor=false;break;}
                 if(!corridor)continue;
                 double cost=n.cost+(diagonal?Math.sqrt(2):1)+(step.getY()!=n.pos.getY()?.35:0);
                 if(cost>=costs.getOrDefault(step,Double.POSITIVE_INFINITY))continue;

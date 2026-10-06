@@ -5,6 +5,22 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Latest, 19:10: user specifically requests faster decisions. The d678 native549
+replay reached568, but repeatedly reclaimed/climbed capacity and stopped making
+schematic progress for minutes; it was stopped deliberately. Homes had disabled
+the otherwise checked passage/ceiling/floor planners. Those registered, dry,
+attachment-safe routes now remain available after ordinary walking/home/column
+checks fail. The native mining guard permits only registered access jobs and
+preserves liquid boundaries and above-source liquid entry. Passage and floor
+search state is also owned per ViewSearch, avoiding cursor resets between work.
+BuilderWalk now caches standing, clearance and footing-point queries within a
+single search; no geometry result is reused by a later search.
+Focused native home run1 passed in1m15s with the access change, and run2's new
+enclosed room completed native opening, missing glass and all wall repairs in
+479 ticks with full health/zero supports (that run had no pickaxe). The fixture
+now supplies a pickaxe for normal mining speed. Run2's remaining head/crouch
+checks and the new real549 replay/final710/fresh/CI checks still need confirmation.
+
 Latest, 18:57: fresh6 reached549/710, then stayed at the same finished roof
 footing69 while four targets alternated. The captured server scene has548
 exact states and549 compatible states,127 owned posts, safe/clear storage home1,

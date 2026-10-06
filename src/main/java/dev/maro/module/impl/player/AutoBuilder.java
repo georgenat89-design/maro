@@ -277,9 +277,20 @@ public final class AutoBuilder extends Module {
         List<BlockPos> posts=List.of(),views=List.of(),hatchViews=List.of();
         boolean hatchesReady;
     }
+    private static final class PassageSearch {
+        BlockPos feet;
+        int work=-2,cursor,retryAt;
+    }
+    private static final class FloorSearch {
+        BlockPos feet,view;
+        int work=-2,cursor;
+        final Map<BlockPos,FloorProbe> probes=new HashMap<>();
+    }
     private static final class ViewSearch {
         final EntrySearch entry=new EntrySearch();
         final DescentSearch descent=new DescentSearch();
+        final PassageSearch passage=new PassageSearch();
+        final FloorSearch floor=new FloorSearch();
         int expires,cursor,routeCursor,stepCursor,temporaryCursor,ceilingCursor,columnCursor,recoveryStage;
         List<BlockPos> ceilingViews;
         List<BlockPos> temporaryViews;
@@ -1277,18 +1288,18 @@ public final class AutoBuilder extends Module {
             }
             if(search.recoveryStage==3){
                 boolean cleaning=target.equals(cleanupTarget)&&supports.contains(target);
-                if(!useHomes.get()&&wanted!=null&&(!wanted.isAir()||cleaning)&&states[cell]!=CORRECT&&preparePassage(options,cell))return true;
+                if(wanted!=null&&(!wanted.isAir()||cleaning)&&states[cell]!=CORRECT&&preparePassage(options,cell,search))return true;
                 search.recoveryStage=4;
             }
             if(search.recoveryStage==4){
                 boolean cleaning=target.equals(cleanupTarget)&&supports.contains(target);
-                if(!useHomes.get()&&(cleaning||wanted!=null&&!wanted.isAir())&&prepareCeilingEntry(options,cell,search))return true;
+                if((cleaning||wanted!=null&&!wanted.isAir())&&prepareCeilingEntry(options,cell,search))return true;
                 if(wanted!=null&&temporaryView(target,wanted,cell,tried,search))return true;
                 search.recoveryStage=5;
             }
             if(search.recoveryStage==5){
                 boolean cleaning=target.equals(cleanupTarget)&&supports.contains(target);
-                if(!useHomes.get()&&(cleaning||wanted!=null&&!wanted.isAir()&&states[cell]!=CORRECT)&&prepareFloorOpening(options,cell))return true;
+                if((cleaning||wanted!=null&&!wanted.isAir()&&states[cell]!=CORRECT)&&prepareFloorOpening(options,cell,search))return true;
                 search.recoveryStage=6;
             }
             if(search.recoveryStage==6){if(prepareSupportDescent(options,true,search))return true;search.recoveryStage=7;search.expires=ticks+40;}
@@ -2229,6 +2240,12 @@ public final class AutoBuilder extends Module {
         return (pos.equals(routeOpening)||passageBlocks.contains(pos))&&cell>=0&&!desired(cell).isAir()&&matchesBuildState(mc.world.getBlockState(pos),desired(cell));
     }
     /** Reopen only our finished, noninteractive wall cells after proving a useful route. */
+    private boolean preparePassage(List<BlockPos> views,int work,ViewSearch owner){
+        var search=owner.passage;
+        passageSearchFeet=search.feet;passageSearchWork=search.work;passageSearchCursor=search.cursor;passageRetryAt=search.retryAt;
+        try{return preparePassage(views,work);}
+        finally{search.feet=passageSearchFeet;search.work=passageSearchWork;search.cursor=passageSearchCursor;search.retryAt=passageRetryAt;}
+    }
     private boolean preparePassage(List<BlockPos> views,int work){
         if(!unstuck.get()||views.isEmpty()||work<0||ticks<passageRetryAt)return false;
         var feet=BlockPos.ofFloored(mc.player.getEntityPos().add(0,.4,0));
@@ -2289,6 +2306,16 @@ public final class AutoBuilder extends Module {
         status="Walking through verified placement passage";return true;
     }
     /** Open a safe schematic floor above our own landing post when a closed build has no exit. */
+    private boolean prepareFloorOpening(List<BlockPos> views,int work,ViewSearch owner){
+        var search=owner.floor;
+        floorSearchFeet=search.feet;floorSearchView=search.view;floorSearchWork=search.work;floorSearchCursor=search.cursor;
+        floorProbes.clear();floorProbes.putAll(search.probes);
+        try{return prepareFloorOpening(views,work);}
+        finally{
+            search.feet=floorSearchFeet;search.view=floorSearchView;search.work=floorSearchWork;search.cursor=floorSearchCursor;
+            search.probes.clear();search.probes.putAll(floorProbes);
+        }
+    }
     private boolean prepareFloorOpening(List<BlockPos> views,int work){
         if(!unstuck.get())return false;
         var lowerView=views.stream().filter(pos->walker.standingPoint(pos).y<mc.player.getY()-.5)
@@ -2550,9 +2577,11 @@ public final class AutoBuilder extends Module {
         if(useHomes.get()&&homes.ready()&&!supports.contains(mining)&&!state.isAir()
             &&(opened<0||matchesBuildState(state,desired(opened)))){
             var work=floorAccessWork.get(mining);
-            boolean upperLiquidAccess=work!=null&&work>=0&&work<states.length&&desired(work).getBlock() instanceof FluidBlock
-                &&mining.getY()>position(work).getY()&&!liquidBoundary(mining);
-            if(!upperLiquidAccess){mining=routeMining=null;digging=false;mc.interactionManager.cancelBlockBreaking();status="Keeping finished blocks — use checked home access";return;}
+            boolean registeredAccess=work!=null&&(mining.equals(routeOpening)||passageBlocks.contains(mining)||ceilingBlocks.contains(mining))
+                &&opened>=0&&!desired(opened).isAir()&&!state.hasBlockEntity()&&state.getFluidState().isEmpty()
+                &&!liquidBoundary(mining)&&safeToRecycle(mining)
+                &&(work<0||work>=states.length||!(desired(work).getBlock() instanceof FluidBlock)||mining.getY()>position(work).getY());
+            if(!registeredAccess){mining=routeMining=null;digging=false;mc.interactionManager.cancelBlockBreaking();status="Keeping finished blocks outside verified access";return;}
         }
         if(opened>=0&&!desired(opened).isAir()&&matchesBuildState(state,desired(opened))&&!supports.contains(mining)){
             floorAccessWork.putIfAbsent(mining,navigatingCell);openingRepairDepth.putIfAbsent(mining,-mining.getY());

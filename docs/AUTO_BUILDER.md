@@ -25,8 +25,12 @@ return metadata survives pause and saved-placement reload; a rejected return
 keeps home 2 for retry. Travel stays still through warmup and checks actual
 arrival and safe footing. Servers without these commands can disable Builder Homes.
 
-With homes enabled, completed base and wall blocks stay protected. Checked liquid
-access can open the roof above its source, and retaining floors/walls stay intact.
+With homes enabled, ordinary walking and confirmed home routes are checked first.
+When those routes and short columns cannot reach unfinished work, a proved dry
+passage or floor/ceiling opening can temporarily reopen completed blocks. Mining
+requires a registered access job and rechecks attachments, fluids and footing;
+unrelated finished blocks stay protected. Checked liquid access opens only above
+its source, and retaining floors/walls stay intact.
 Completed access jobs restore their openings as soon as the body clears and the
 active route releases them. Deeper repairs precede outer faces. The repair list
 survives pause and saved-placement reload.
@@ -153,6 +157,12 @@ If the elevated view is inside a sealed room, entry also checks a safe two-block
 Final route openings stay deferred until their remaining temporary access posts are cleaned, so restoration cannot seal the player away from those posts. Completion waits for the actual opened schematic cells to be restored, even when a large scan still holds an earlier zero-task result.
 
 A checked exterior column and its onward walking route are considered before speculative side stairs or reclaiming capacity for those stairs. A short access column reserves enough free support slots before climbing, so it does not need a separate descent/recycling trip for each new piece. Recycling searches retain their post, view and route cursors in three-millisecond passes and prefer nearby safe column tips. Existing committed steps are used when returning from a capacity trip. The route has a progress timeout and an overall bound; confirmed capacity reclamation and closer grounded positions count as progress.
+
+Each placement view retains its entry, descent, dry-passage and floor-opening
+search cursors when nearby work alternates. Within one walking search, standing
+clearance and footing positions are resolved once per cell, so neighbouring
+nodes reuse collision checks. These caches expire with that search; later server
+block updates are always checked against current geometry.
 
 Temporary dirt cannot occupy either selected chest lid or the two blocks of standing clearance above it. Planning, queued jobs and future access columns all enforce this reservation. If old saved builder-owned dirt already blocks a lid, ordinary verified mining clears it before opening the chest. Unowned blocks remain untouched and pause the build for the user.
 

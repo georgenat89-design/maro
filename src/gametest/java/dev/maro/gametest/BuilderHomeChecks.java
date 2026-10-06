@@ -97,6 +97,7 @@ final class BuilderHomeChecks {
         temporaryFootingReturn(context,world,builder,home2,chest);
         teleport(world,start);context.waitTicks(12);
         promptRepair(context,world,builder,start);
+        checkedRoomAccess(context,world,builder,start);
         crouchedMining(context,world,builder,start);
         columnEdgeMining(context,world,builder,start);
         teleport(world,start);context.waitTicks(12);
@@ -150,6 +151,27 @@ final class BuilderHomeChecks {
         require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(post).isOf(Blocks.DIRT)),"Fixture did not repair before cleanup");
         context.runOnClient(client->{require(client.player.getHealth()==20&&client.currentScreen==null,"Repair caused damage or left menu");BuilderPacketChecks.verify(1);builder.pause("rotation test");});
         System.out.println("[builder-home] Access restored in "+repaired+" ticks with other temporary posts still present");
+    }
+    private static void checkedRoomAccess(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-home] Reach enclosed unfinished work through a verified dry opening with homes enabled");
+        var origin=start.add(-2,-1,10);var cells=new BlockState[100];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());
+        for(int y=0;y<4;y++)for(int z=0;z<5;z++)for(int x=0;x<5;x++){
+            if(y==0||y==3||x==0||x==4||z==0||z==4){cells[(y*5+z)*5+x]=Blocks.STONE.getDefaultState();command(world,"setblock",origin.add(x,y,z),"stone");}
+            else command(world,"setblock",origin.add(x,y,z),"air");
+        }
+        int target=(1*5+2)*5+2;cells[target]=Blocks.GLASS.getDefaultState();
+        world.getServer().runCommand("give @a glass 1");world.getServer().runCommand("give @a stone 16");world.getServer().runCommand("give @a diamond_pickaxe");
+        teleport(world,origin.add(2,1,-2));context.waitTicks(12);
+        context.runOnClient(client->{setting(builder,"Temporary Supports",false);setting(builder,"Prepare Whole Build",false);builder.install(new Schematic("home-enclosed-access.nbt","test",5,4,5,BlockPos.ORIGIN,cells));builder.setOrigin(origin);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();});
+        boolean opened=false;int elapsed=0;
+        for(;elapsed<1000&&context.computeOnClient(client->builder.building());elapsed++){
+            opened|=context.computeOnClient(client->!((Map<?,?>)field(builder,"floorAccessWork")).isEmpty());context.waitTick();
+        }
+        require(opened,"Homes-enabled room never registered native access mining");
+        require(world.getServer().computeOnServer(server->{for(int i=0;i<cells.length;i++)if(!cells[i].isOf(Blocks.STRUCTURE_VOID)&&!AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(origin.add(i%5,i/25,i/5%5)),cells[i]))return false;return true;}),"Enclosed home access failed to finish work and replace its openings");
+        context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Enclosed home access left active work, scaffold, damage or menu");BuilderPacketChecks.verify(1);builder.pause("enclosed home access checked");setting(builder,"Temporary Supports",true);});
+        teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+(origin.getY()+1)+" "+origin.getZ()+" "+(origin.getX()+4)+" "+(origin.getY()+3)+" "+(origin.getZ()+4)+" air");context.waitTicks(4);
+        System.out.println("[builder-home] Enclosed dry access and every broken wall restored in "+elapsed+" ticks; homes enabled; full health; zero supports");
     }
     private static void restockRoundTrip(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work,BlockPos chest){
         var target=work.south(2);command(world,"setblock",target,"air");world.getServer().runCommand("clear @a stone");
