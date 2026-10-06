@@ -5,6 +5,20 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Latest, 19:18: d5 native549 replay reached579 and was stopped deliberately to
+test a confirmed code defect: prepareElevatedEntry proved masked wall removal
+but discarded that opening when committing its exterior column. The column now
+retains its top, onward destination, work owner and checked blocks. After actual
+arrival it rechecks the full route and registers/mines the opening, then repairs
+it through the normal prompt queue. Pause/home interruption drops unexecuted
+intent. Native home run in Maro-column-cleanup, log
+builder-entry-handoff-home-native-1.log, PASSED in1m55s: ground-level enclosed
+access187 ticks; the new raised room538 ticks, with its retained exterior-column
+opening observed, all83 planned blocks exact-compatible, zero supports, full
+health and normal rotation/action packets. Crouch/visible camera/home order also
+passed. Main has no native client; the next final-production test is from zero.
+No full710/fresh pass yet; CI410 on d5 remains pending (job112547150301).
+
 Latest, 19:10: user specifically requests faster decisions. The d678 native549
 replay reached568, but repeatedly reclaimed/climbed capacity and stopped making
 schematic progress for minutes; it was stopped deliberately. Homes had disabled

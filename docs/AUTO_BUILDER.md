@@ -163,6 +163,11 @@ search cursors when nearby work alternates. Within one walking search, standing
 clearance and footing positions are resolved once per cell, so neighbouring
 nodes reuse collision checks. These caches expire with that search; later server
 block updates are always checked against current geometry.
+When an exterior column requires a short wall opening for its onward route,
+that exact opening travels with the column plan. After reaching the top, the
+builder rechecks and mines it before walking inside, then restores its blocks
+through the normal access-repair queue. Interrupted climbs drop the unused
+opening intent.
 
 Temporary dirt cannot occupy either selected chest lid or the two blocks of standing clearance above it. Planning, queued jobs and future access columns all enforce this reservation. If old saved builder-owned dirt already blocks a lid, ordinary verified mining clears it before opening the chest. Unowned blocks remain untouched and pause the build for the user.
 

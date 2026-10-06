@@ -303,6 +303,9 @@ public final class AutoBuilder extends Module {
     private long viewPlanningDeadline;
     private long floorPlanningDeadline;
     private BlockPos ceilingBase,ceilingTop;
+    private BlockPos entryPassageTop,entryPassageDestination;
+    private int entryPassageWork=-1;
+    private Set<BlockPos> entryPassageBlocks=Set.of();
     private Set<BlockPos> accessColumn=Set.of();
     private final Set<BlockPos> ceilingBlocks=new LinkedHashSet<>();
     private int ceilingStarted,ceilingProgressAt;
@@ -647,6 +650,7 @@ public final class AutoBuilder extends Module {
         queuedLookAction=null;
         lookWaitStarted=-1;queuedAimPoint=aimPoint=null;
         bridgeTarget=null;
+        clearEntryPassage();
         supportPickup=null;supportPickupUntil=supportRecycleAt=0;
         walker.resetLook();cameraLocked=false;
         placementAttemptTarget=null;failedPlacementUntil.clear();unexpectedBuildHandler=null;resetChestJourney();
@@ -730,6 +734,7 @@ public final class AutoBuilder extends Module {
         if(placement!=null){placeTick();return;}
         if(mining!=null){mineTick();return;}
         if(followStandGoal())return;
+        if(continueEntryPassage())return;
         if(continueAccess())return;
         if(liquidTopTick())return;
         if(autoTools.get()&&!mc.player.getAbilities().creativeMode&&(!hasTool(false)||!hasTool(true))){
@@ -1392,6 +1397,31 @@ public final class AutoBuilder extends Module {
         passageBlocks.removeAll(ceilingBlocks);ceilingBase=ceilingTop=null;ceilingBlocks.clear();
         accessStand=accessBase=null;accessFloor=false;accessSupports.clear();accessStairs=Set.of();walker.stop();
     }
+    /** Carry the opening used by an exterior-column proof through the actual climb. */
+    private boolean continueEntryPassage(){
+        if(entryPassageTop==null)return false;
+        if(entryPassageWork<0||states[entryPassageWork]==CORRECT||states[entryPassageWork]==IGNORED){clearEntryPassage();return false;}
+        if(accessStand!=null){
+            if(!accessStand.equals(entryPassageTop))clearEntryPassage();
+            return false;
+        }
+        var top=entryPassageTop;var destination=entryPassageDestination;var removed=entryPassageBlocks;int work=entryPassageWork;
+        // A failed or interrupted climb must never open a passage from another location.
+        if(mc.player.getEntityPos().squaredDistanceTo(walker.standingPoint(top))>.4*.4
+            ||!mc.player.isOnGround()||!safeToRecycle(removed)
+            ||removed.stream().anyMatch(pos->!mc.world.getBlockState(pos).isAir()&&!passageCell(pos)
+                &&!(supports.contains(pos)&&mc.world.getBlockState(pos).isOf(Blocks.DIRT)))
+            ||removed.stream().noneMatch(pos->visibleHit(pos)!=null)
+            ||!walker.canReachAfterClearing(top,destination,removed)){
+            clearEntryPassage();return false;
+        }
+        passageBlocks.addAll(removed);passageStand=destination;
+        for(var opening:removed)if(passageCell(opening)){
+            floorAccessWork.put(opening,work);openingRepairDepth.put(opening,opening.getManhattanDistance(top));
+        }
+        clearEntryPassage();walker.stop();status="Opening proved exterior-column passage";return true;
+    }
+    private void clearEntryPassage(){entryPassageTop=entryPassageDestination=null;entryPassageWork=-1;entryPassageBlocks=Set.of();}
     /** Add a real, acknowledged floor when an otherwise usable placement view has none. */
     private boolean temporaryView(BlockPos target,BlockState wanted,int cell,Map<BlockPos,Integer> tried,ViewSearch search){
         if(!support.get()||wanted.isAir()||Schematic.material(wanted)==Items.AIR)return false;
@@ -1587,7 +1617,7 @@ public final class AutoBuilder extends Module {
             }
             if(!base.equals(entryProbeBase)){entryProbeBase=null;entryDoorCursor=0;}
             if(!clear||entryProbeBase==null&&!walker.canReachStand(base))continue;
-            boolean reachable;
+            boolean reachable;Set<BlockPos> opening=Set.of();
             if(entryProbeBase==null){
                 reachable=walker.canClimbAfterClearing(base,top,destination,Set.of());
                 if(!reachable){entryProbeBase=base;entryDoorCursor=0;}
@@ -1598,12 +1628,14 @@ public final class AutoBuilder extends Module {
                     int sample=entryDoorCursor++;var side=ESCAPE_SIDES[sample%ESCAPE_SIDES.length];
                     var removed=checkedPassage(top.offset(side),side,sample/ESCAPE_SIDES.length+1,work);
                     if(removed==null||!safeToRecycle(removed)||removed.stream().noneMatch(p->visibleHit(p,eye)!=null))continue;
-                    if(walker.canClimbAfterClearing(base,top,destination,removed)){reachable=true;break;}
+                    if(walker.canClimbAfterClearing(base,top,destination,removed)){reachable=true;opening=Set.copyOf(removed);break;}
                 }
                 if(!reachable&&entryDoorCursor<ESCAPE_SIDES.length*3){entrySearchCursor--;walker.release();status="Checking elevated passage entry";return true;}
             }
             entryProbeBase=null;entryDoorCursor=0;
             if(!reachable||!walker.canReachStand(base))continue;
+            clearEntryPassage();
+            if(!opening.isEmpty()){entryPassageTop=top;entryPassageDestination=destination;entryPassageWork=work;entryPassageBlocks=opening;}
             commitColumnAccess(base,top);accessBase=base;standGoal=base;standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();status="Walking to checked exterior access column";return true;
         }
         if(entrySearchCursor<total){walker.release();status="Checking elevated floor entry";return true;}
@@ -2769,6 +2801,7 @@ public final class AutoBuilder extends Module {
         cameraMouseTick=ticks;cameraYawVelocity=cameraPitchVelocity=0;return true;
     }
     private void resetAfterHome(){
+        clearEntryPassage();
         queuedLookAction=null;queuedAimPoint=aimPoint=null;lookWaitStarted=-1;
         endRecovery();
         walker.resetLook();standGoal=null;accessStand=accessBase=null;accessFloor=false;
