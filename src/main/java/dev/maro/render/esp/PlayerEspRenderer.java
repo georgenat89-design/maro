@@ -59,21 +59,36 @@ public final class PlayerEspRenderer {
 
     /** Players whose contour and glow are sized individually; matches MAX_PLAYERS in player_esp.fsh. */
     private static final int MAX_PLAYERS = 16;
-    /** EspData in player_esp.fsh: eight vec4s of settings, a rect per player, a scale per player. */
-    private static final int UNIFORM_BYTES = (8 + MAX_PLAYERS + MAX_PLAYERS / 4) * 16;
+    /**
+     * EspData in player_esp.fsh: eight vec4s of settings, a rect per player, a scale per player,
+     * then a line (x0, y0, x1, y1 in pixels) and a colour per tracer.
+     */
+    private static final int UNIFORM_BYTES = (8 + MAX_PLAYERS + MAX_PLAYERS / 4 + MAX_PLAYERS * 2) * 16;
+    private static final int RECTS_AT = 8 * 16, SCALES_AT = RECTS_AT + MAX_PLAYERS * 16,
+        LINES_AT = SCALES_AT + MAX_PLAYERS / 4 * 16, LINE_COLORS_AT = LINES_AT + MAX_PLAYERS * 16;
+    /** One quad for the silhouettes' rectangle, then one per tracer. */
+    private static final int MAX_QUADS = 1 + MAX_PLAYERS;
     /** On-screen player height, as a share of the screen, below which contour and glow start to thin. */
     private static final float FULL_SIZE_HEIGHT = 0.2f;
     private static final float MIN_SIZE_SCALE = 0.3f;
 
     private static final SilhouetteBuffers.Provider PROVIDER = new SilhouetteBuffers.Provider();
 
-    private static final ByteBuffer VERTICES = BufferUtils.createByteBuffer(4 * 3 * Float.BYTES);
-    private static final ByteBuffer INDICES = BufferUtils.createByteBuffer(6 * Integer.BYTES);
+    // Vertex z is not a depth: 0 marks the silhouette quad, n marks the quad of tracer n - 1.
+    private static final ByteBuffer VERTICES = BufferUtils.createByteBuffer(MAX_QUADS * 4 * 3 * Float.BYTES);
+    private static final ByteBuffer INDICES = BufferUtils.createByteBuffer(MAX_QUADS * 6 * Integer.BYTES);
 
     static {
         int[] quad = {0, 1, 2, 0, 2, 3};
-        for (int i = 0; i < quad.length; i++) INDICES.putInt(i * Integer.BYTES, quad[i]);
+        for (int q = 0; q < MAX_QUADS; q++) {
+            for (int i = 0; i < quad.length; i++) INDICES.putInt((q * 6 + i) * Integer.BYTES, q * 4 + quad[i]);
+        }
     }
+
+    /** This frame's tracers: target in NDC (pointing off screen for players behind you), and ARGB. */
+    private static final float[] tracerTargets = new float[MAX_PLAYERS * 2];
+    private static final int[] tracerColors = new int[MAX_PLAYERS];
+    private static int tracerCount;
 
     private static SimpleFramebuffer mask;
     private static GpuBuffer uniforms;
@@ -113,6 +128,7 @@ public final class PlayerEspRenderer {
     /** Start of world rendering: clear last frame's silhouettes and remember the matrices. */
     public static void beginFrame(Matrix4f positionMatrix, Matrix4f projectionMatrix) {
         pending = false;
+        tracerCount = 0;
         if (!active()) return;
 
         int width = mc.getWindow().getFramebufferWidth();
@@ -163,8 +179,10 @@ public final class PlayerEspRenderer {
             return;
         }
 
+        // The hitbox shrinks to 0.6 blocks when gliding, swimming or crawling while the model still
+        // stretches out a body length and more (elytra wings), so cover any pose around the player.
         Box body = entity.getBoundingBox().offset(x - entity.getX(), y - entity.getY(), z - entity.getZ());
-        Box box = body.expand(0.7, 0.4, 0.7);
+        Box box = body.expand(0.7, 0.4, 0.7).union(new Box(x - 1.6, y - 0.8, z - 1.6, x + 1.6, y + 2.6, z + 1.6));
         float x0 = Float.POSITIVE_INFINITY, y0 = Float.POSITIVE_INFINITY;
         float x1 = Float.NEGATIVE_INFINITY, y1 = Float.NEGATIVE_INFINITY;
         boolean behind = false;
@@ -199,8 +217,9 @@ public final class PlayerEspRenderer {
             minY = Math.min(minY, y0);
             maxX = Math.max(maxX, x1);
             maxY = Math.max(maxY, y1);
-            // NDC spans 2 per screen; the padded box is about 1.45x the body's height.
-            float share = (y1 - y0) / 2f * (float) (body.getLengthY() / box.getLengthY());
+            // NDC spans 2 per screen; scaled from the padded box to a standing player's 1.8 blocks,
+            // so the size does not jump when the pose changes.
+            float share = (y1 - y0) / 2f * (float) (1.8 / box.getLengthY());
             scale = Math.max(MIN_SIZE_SCALE, Math.min(1f, share / FULL_SIZE_HEIGHT));
         }
 
@@ -212,6 +231,35 @@ public final class PlayerEspRenderer {
             playerRects[at + 3] = y1;
             playerScales[playerCount++] = scale;
         }
+    }
+
+    /** Queues a tracer to {@code entity}, standing at the interpolated {@code (x, y, z)}. */
+    public static void addTracer(Entity entity, double x, double y, double z, Vec3d camera) {
+        PlayerESP m = module();
+        if (!haveMatrices || tracerCount >= MAX_PLAYERS || entity == mc.player || !m.tracersOn()) return;
+        Vector4f p = new Vector4f((float) (x - camera.x), (float) (y + entity.getHeight() / 2 - camera.y), (float) (z - camera.z), 1f);
+        viewProjection.transform(p);
+        float nx, ny;
+        if (p.w > 0.05f) {
+            nx = p.x / p.w;
+            ny = p.y / p.w;
+        } else {
+            // Behind the camera: point off the screen edge on the side they are on.
+            float len = (float) Math.hypot(p.x, p.y);
+            nx = len < 1e-4f ? 0f : p.x / len;
+            ny = len < 1e-4f ? -1f : p.y / len;
+            nx *= 3f;
+            ny *= 3f;
+        }
+        // Far off-screen targets only need their direction; keep the numbers small.
+        float far = Math.max(Math.abs(nx), Math.abs(ny));
+        if (far > 3f) {
+            nx *= 3f / far;
+            ny *= 3f / far;
+        }
+        tracerTargets[tracerCount * 2] = nx;
+        tracerTargets[tracerCount * 2 + 1] = ny;
+        tracerColors[tracerCount++] = m.tracerColor(entity);
     }
 
     /** Whether a point in the world is in front of the camera and roughly on screen this frame. */
@@ -235,18 +283,23 @@ public final class PlayerEspRenderer {
 
     /** Paints the effect over the frame. Called after the world and hand, before the GUI. */
     public static void composite() {
-        if (!pending || mask == null || !active()) return;
+        if ((!pending && tracerCount == 0) || mask == null || !active()) return;
+        boolean silhouettes = pending;
         pending = false;
 
         Framebuffer target = mc.getFramebuffer();
         if (target == null || target.getColorAttachmentView() == null) return;
 
-        float[] rect = rect(target.textureWidth, target.textureHeight);
-        if (rect == null) return;
+        float[] rect = silhouettes ? rect(target.textureWidth, target.textureHeight) : null;
+        if (rect == null && tracerCount == 0) return;
 
         try {
-            writeQuad(rect);
-            GpuBufferSlice data = writeUniforms();
+            // A zero-size silhouette quad draws nothing, which is what we want with only tracers.
+            writeQuad(0, rect != null ? rect : new float[4], 0f);
+            float[][] lines = tracerLines(target.textureWidth, target.textureHeight);
+            for (int i = 0; i < tracerCount; i++) writeTracerQuad(i, lines[i], target.textureWidth, target.textureHeight);
+            GpuBufferSlice data = writeUniforms(lines);
+            int indexCount = 6 * (1 + tracerCount);
 
             GpuBuffer vertices = VertexFormats.POSITION.uploadImmediateVertexBuffer(VERTICES);
             GpuBuffer indices = VertexFormats.POSITION.uploadImmediateIndexBuffer(INDICES);
@@ -259,7 +312,7 @@ public final class PlayerEspRenderer {
                 pass.bindTexture("u_Mask", mask.getColorAttachmentView(), RenderSystem.getSamplerCache().get(FilterMode.LINEAR));
                 pass.setVertexBuffer(0, vertices);
                 pass.setIndexBuffer(indices, VertexFormat.IndexType.INT);
-                pass.drawIndexed(0, 0, 6, 1);
+                pass.drawIndexed(0, 0, indexCount, 1);
             } finally {
                 pass.close();
             }
@@ -282,17 +335,54 @@ public final class PlayerEspRenderer {
         return new float[] {x0, y0, x1, y1};
     }
 
-    private static void writeQuad(float[] r) {
-        float[] xy = {r[0], r[1], r[0], r[3], r[2], r[3], r[2], r[1]};
+    /** Quad {@code q} as an NDC rect {x0, y0, x1, y1}, tagged with {@code tag} in z. */
+    private static void writeQuad(int q, float[] r, float tag) {
+        writeCorners(q, new float[] {r[0], r[1], r[0], r[3], r[2], r[3], r[2], r[1]}, tag);
+    }
+
+    private static void writeCorners(int q, float[] xy, float tag) {
         for (int i = 0; i < 4; i++) {
-            int at = i * 3 * Float.BYTES;
+            int at = (q * 4 + i) * 3 * Float.BYTES;
             VERTICES.putFloat(at, xy[i * 2]);
             VERTICES.putFloat(at + Float.BYTES, xy[i * 2 + 1]);
-            VERTICES.putFloat(at + 2 * Float.BYTES, 0f);
+            VERTICES.putFloat(at + 2 * Float.BYTES, tag);
         }
     }
 
-    private static GpuBufferSlice writeUniforms() {
+    /** Each tracer as {x0, y0, x1, y1} in framebuffer pixels, from the start point to the player. */
+    private static float[][] tracerLines(int width, int height) {
+        float halfW = width / 2f, halfH = height / 2f;
+        float startX = halfW, startY = module().tracersFromBottom() ? 0f : halfH;
+        float[][] lines = new float[tracerCount][];
+        for (int i = 0; i < tracerCount; i++) {
+            lines[i] = new float[] {startX, startY, (tracerTargets[i * 2] + 1) * halfW, (tracerTargets[i * 2 + 1] + 1) * halfH};
+        }
+        return lines;
+    }
+
+    /** A thin quad around tracer {@code i}, padded for its anti-aliased edges; the shader does the rest. */
+    private static void writeTracerQuad(int i, float[] line, int width, int height) {
+        float dx = line[2] - line[0], dy = line[3] - line[1];
+        float length = (float) Math.hypot(dx, dy);
+        if (length < 1f) {
+            writeQuad(i + 1, new float[4], i + 1);
+            return;
+        }
+        float ux = dx / length, uy = dy / length, pad = module().tracerWidthPx() / 2f + 1.5f;
+        float nx = -uy * pad, ny = ux * pad, ex = ux * pad, ey = uy * pad;
+        float[] px = {
+            line[0] - ex + nx, line[1] - ey + ny,
+            line[0] - ex - nx, line[1] - ey - ny,
+            line[2] + ex - nx, line[3] + ey - ny,
+            line[2] + ex + nx, line[3] + ey + ny};
+        for (int k = 0; k < 8; k += 2) {
+            px[k] = px[k] / width * 2f - 1f;
+            px[k + 1] = px[k + 1] / height * 2f - 1f;
+        }
+        writeCorners(i + 1, px, i + 1);
+    }
+
+    private static GpuBufferSlice writeUniforms(float[][] lines) {
         if (uniforms == null) {
             uniforms = RenderSystem.getDevice().createBuffer(() -> "maro player esp uniforms",
                 GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST, UNIFORM_BYTES);
@@ -305,17 +395,28 @@ public final class PlayerEspRenderer {
             values[values.length - 1] = mask.textureHeight / (float) target.textureHeight;
             for (int i = 0; i < values.length; i++) data.putFloat(i * Float.BYTES, values[i]);
 
-            // PlayerInfo, then a pixel rect per player, then the scales packed four to a vec4.
-            int info = 7 * 16, rects = info + 16, scales = rects + MAX_PLAYERS * 16;
+            // PlayerInfo, a pixel rect per player, the scales packed four to a vec4, then tracers.
+            int info = 7 * 16;
             data.putFloat(info, playerCount);
+            data.putFloat(info + 4, module().tracerWidthPx());
+            data.putFloat(info + 8, module().rainbowTracers() ? 1f : 0f);
+            data.putFloat(info + 12, tracerCount);
             float halfW = target.textureWidth / 2f, halfH = target.textureHeight / 2f;
             for (int i = 0; i < playerCount; i++) {
-                int at = rects + i * 16;
+                int at = RECTS_AT + i * 16;
                 data.putFloat(at, (playerRects[i * 4] + 1) * halfW - 4);
                 data.putFloat(at + 4, (playerRects[i * 4 + 1] + 1) * halfH - 4);
                 data.putFloat(at + 8, (playerRects[i * 4 + 2] + 1) * halfW + 4);
                 data.putFloat(at + 12, (playerRects[i * 4 + 3] + 1) * halfH + 4);
-                data.putFloat(scales + i * 4, playerScales[i]);
+                data.putFloat(SCALES_AT + i * 4, playerScales[i]);
+            }
+            for (int i = 0; i < tracerCount; i++) {
+                for (int k = 0; k < 4; k++) data.putFloat(LINES_AT + i * 16 + k * 4, lines[i][k]);
+                int c = tracerColors[i];
+                data.putFloat(LINE_COLORS_AT + i * 16, (c >> 16 & 0xFF) / 255f);
+                data.putFloat(LINE_COLORS_AT + i * 16 + 4, (c >> 8 & 0xFF) / 255f);
+                data.putFloat(LINE_COLORS_AT + i * 16 + 8, (c & 0xFF) / 255f);
+                data.putFloat(LINE_COLORS_AT + i * 16 + 12, (c >>> 24) / 255f);
             }
             RenderSystem.getDevice().createCommandEncoder().writeToBuffer(uniforms.slice(0, UNIFORM_BYTES), data);
         } finally {

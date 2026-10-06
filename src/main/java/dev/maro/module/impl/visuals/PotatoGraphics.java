@@ -43,11 +43,6 @@ import java.util.function.UnaryOperator;
  * setting yourself while it is on is left alone.
  */
 public class PotatoGraphics extends Module {
-    private static final String[] LEVELS = {"Light", "Potato", "Ultra Potato"};
-
-    private final ModeSetting level = add(new ModeSetting("Level", "How far to turn things down; sets the options below", "Potato", LEVELS)
-            .onChange(this::applyLevel));
-
     // distance
     private final BooleanSetting limitRender = add(new BooleanSetting("Limit Render Distance", "Draw fewer chunks around you", true));
     private final NumberSetting renderCap = add(new NumberSetting("Render Distance", "Most chunks to draw; lower is faster", 6, 2, 16, 1)
@@ -144,31 +139,11 @@ public class PotatoGraphics extends Module {
 
     @Override
     public List<SettingSection> getSettingSections() {
-        return List.of(SettingSection.of("Level", level, textures, notify),
+        return List.of(SettingSection.of("Look", textures, notify),
                 SettingSection.of("Distance", limitRender, renderCap, limitSim, simCap, entityRange, clouds),
                 SettingSection.of("World", particles, smoothLighting, fastLeaves, biomeBlend, shadows, transparency, weather, chunkFade),
                 SettingSection.of("Screen", mipmaps, vsync, unlockFps, menuBlur, vignette),
                 SettingSection.of("Extra", hideFarEntities, entityCap, noParticles));
-    }
-
-    private void applyLevel(String name) {
-        boolean light = name.equals("Light");
-        boolean ultra = name.equals("Ultra Potato");
-        renderCap.set(switch (name) {
-            case "Light" -> 10.0;
-            case "Ultra Potato" -> 3.0;
-            default -> 6.0;
-        });
-        simCap.set(light ? 8.0 : 5.0);
-        for (BooleanSetting b : new BooleanSetting[]{limitRender, limitSim, entityRange, clouds, particles, biomeBlend, shadows,
-                weather, chunkFade, vsync, unlockFps, menuBlur, vignette, mipmaps, hideFarEntities}) b.set(true);
-        // Light keeps the look mostly intact.
-        smoothLighting.set(!light);
-        fastLeaves.set(!light);
-        transparency.set(!light);
-        entityCap.set(light ? 48.0 : ultra ? 16.0 : 32.0);
-        noParticles.set(ultra);
-        textures.set(light ? TEXTURES_NORMAL : TEXTURES_FLAT);
     }
 
     // ---- flat textures ------------------------------------------------------------------------
@@ -289,7 +264,7 @@ public class PotatoGraphics extends Module {
 
     private int signature() {
         List<Object> values = new ArrayList<>();
-        for (Setting<?> s : getSettings()) if (s != notify && s != level) values.add(s.get());
+        for (Setting<?> s : getSettings()) if (s != notify) values.add(s.get());
         return values.hashCode();
     }
 

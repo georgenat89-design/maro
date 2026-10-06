@@ -139,6 +139,33 @@ final class PlayerEspChecks {
             context.waitTicks(5);
             context.takeScreenshot("maro-player-esp-through-wall");
             context.runOnClient(c -> c.world.removeEntity(nearId, Entity.RemovalReason.DISCARDED));
+
+            // Tracers on their own: a magenta line from the crosshair out to a player off to the right.
+            world.getServer().runCommand("fill -8 100 4 8 106 4 minecraft:air");
+            context.runOnClient(c -> {
+                esp.getSettings().forEach(Setting::reset);
+                ((BooleanSetting) setting(esp, "Fill")).set(false);
+                ((BooleanSetting) setting(esp, "Outline")).set(false);
+                ((BooleanSetting) setting(esp, "Glow")).set(false);
+                ((BooleanSetting) setting(esp, "Tracers")).set(true);
+                ((ModeSetting) setting(esp, "Tracer Color")).set("Custom");
+                ((ColorSetting) setting(esp, "Tracer Custom")).set(0xFFFF00FF);
+                ((NumberSetting) setting(esp, "Tracer Opacity")).set(100.0);
+                ((NumberSetting) setting(esp, "Tracer Width")).set(2.0);
+                esp.setEnabled(true);
+            });
+            // Facing south (+Z), west (-X) is on the right of the screen.
+            int sideId = context.computeOnClient(c -> spawnPlayer(c, -5.5, 100, 12.5));
+            context.waitTicks(5);
+            Path tracer = context.takeScreenshot("maro-player-esp-tracer");
+            int[] line = magenta(tracer);
+            System.out.println("PLAYER ESP tracer magenta=" + line[0] + " centre=" + line[1] + "/" + line[3]);
+            require(line[0] > 120, "Tracer was not drawn: " + line[0]);
+            require(line[1] > line[2] / 2, "Tracer does not run from the crosshair towards the player on the right: x " + line[1]);
+            context.runOnClient(c -> ((ModeSetting) setting(esp, "Tracer Color")).set("Rainbow"));
+            context.waitTicks(3);
+            context.takeScreenshot("maro-player-esp-tracer-rainbow");
+            context.runOnClient(c -> c.world.removeEntity(sideId, Entity.RemovalReason.DISCARDED));
         } finally {
             context.runOnClient(c -> {
                 esp.setEnabled(false);

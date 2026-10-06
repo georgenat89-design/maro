@@ -28,6 +28,8 @@ public class PlayerESP extends Module {
     private static final String[] FILL_STYLES = {"Solid", "Player", "Gradient", "Rainbow", "Galaxy", "Aurora", "Plasma", "Lava", "Hologram"};
     /** Order matches the contour colour modes in player_esp.fsh. */
     private static final String[] LINE_COLORS = {"Custom", "Player", "Rainbow", "Fill"};
+    /** Rainbow is painted in player_esp.fsh; the others are worked out per player here. */
+    private static final String[] TRACER_COLORS = {"Player", "Distance", "Rainbow", "Custom"};
 
     private final ButtonSetting preview = add(new ButtonSetting("Preview", "See the ESP on yourself and flip through styles live", "Open",
             () -> mc.setScreen(new EspPreviewScreen(mc.currentScreen, this))));
@@ -84,12 +86,26 @@ public class PlayerESP extends Module {
     private final NumberSetting glowStrength = add(new NumberSetting("Glow Strength", "How bright the glow is", 60, 0, 150, 1)
             .suffix("%").visible(glow::get));
 
+    // ---- tracers
+    private final BooleanSetting tracers = add(new BooleanSetting("Tracers", "Smooth lines from your crosshair to each player", true));
+    private final ModeSetting tracerStart = add(new ModeSetting("Tracer Start", "Where the lines start", "Crosshair", "Crosshair", "Bottom")
+            .visible(tracers::get));
+    private final ModeSetting tracerColor = add(new ModeSetting("Tracer Color", "Player matches the ESP, Distance goes red as they get close",
+            "Player", TRACER_COLORS).visible(tracers::get));
+    private final ColorSetting tracerCustom = add(new ColorSetting("Tracer Custom", "Line color in Custom mode", 0xFFFFFFFF)
+            .visible(() -> tracers.get() && tracerColor.is("Custom")));
+    private final NumberSetting tracerWidth = add(new NumberSetting("Tracer Width", "Line thickness at 1080p (scales with resolution)", 1.5, 0.5, 5, 0.25)
+            .suffix("px").visible(tracers::get));
+    private final NumberSetting tracerOpacity = add(new NumberSetting("Tracer Opacity", "How solid the lines are", 80, 10, 100, 1)
+            .suffix("%").visible(tracers::get));
+
     private final List<SettingSection> sections = List.of(
             SettingSection.of("Preview", preview),
             SettingSection.of("Targets", range, self, friends, friendColor, friendTint, healthColors, spectators),
             SettingSection.of("Fill", fill, fillStyle, colorA, colorB, fillOpacity, edgeFade, stars, scale, speed),
             SettingSection.of("Outline", outline, outlineColorMode, outlineColor, outlineWidth, outlineOpacity),
-            SettingSection.of("Glow", glow, glowRadius, glowStrength));
+            SettingSection.of("Glow", glow, glowRadius, glowStrength),
+            SettingSection.of("Tracers", tracers, tracerStart, tracerColor, tracerCustom, tracerWidth, tracerOpacity));
 
     private final long start = System.nanoTime();
 
@@ -166,6 +182,39 @@ public class PlayerESP extends Module {
         float reach = outline.get() ? widthPx() : 0;
         if (glow.get()) reach = Math.max(reach, glowPx());
         return reach + 2;
+    }
+
+    // ---- tracers ----------------------------------------------------------------------------
+
+    public boolean tracersOn() {
+        return tracers.get();
+    }
+
+    public boolean tracersFromBottom() {
+        return tracerStart.is("Bottom");
+    }
+
+    public boolean rainbowTracers() {
+        return tracerColor.is("Rainbow");
+    }
+
+    public float tracerWidthPx() {
+        return tracerWidth.getFloat() * pixelScale();
+    }
+
+    /** ARGB for this player's tracer; alpha carries the opacity. Unused in Rainbow mode. */
+    public int tracerColor(Entity entity) {
+        int rgb;
+        if (tracerColor.is("Custom")) {
+            rgb = tracerCustom.get();
+        } else if (tracerColor.is("Distance") && mc.player != null) {
+            float near = Math.max(0f, Math.min(1f, mc.player.distanceTo(entity) / 64f));
+            rgb = ColorUtil.hsv(near / 3f, 0.85f, 1f);
+        } else {
+            rgb = playerColor(entity);
+        }
+        int alpha = Math.round(tracerOpacity.getFloat() / 100f * 255f);
+        return alpha << 24 | (rgb & 0xFFFFFF);
     }
 
     /** The EspData block of player_esp.fsh, as 28 floats in order; the renderer fills in the last (mask scale). */
