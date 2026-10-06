@@ -5,6 +5,29 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Upper replay 49 passed both prior stalls and built the structure to 704/710.
+Checked exits and bucket restocking worked, but it then churned small steps
+outside the sealed interior at 703/710 (two deferred route openings). A read-only
+collision query proved three combined column/door routes to real fluid placement
+views. Ordinary nearby-column routes proved none. The working change retains a
+bounded four-direction door cursor for each validated column, permits entry only
+after safe adjacent noninteractive two-cell doorway/onward-route proof, and uses
+ordinary passage recovery after native climbing. It preserves the target's
+required attachment face. A raised sealed-room regression requires both masks,
+checks they never alter real blocks, and requires exact direction, restored walls,
+no dirt, health 20, closed menus and native sequencing. Column-door entry run 1
+completed all 83 blocks but closed the exit before removing four outside posts.
+Run 2 passed in 2m57s after retaining final openings through support cleanup:
+exact target, restored walls, no remaining dirt, health 20, closed menus and
+native packet checks. The latest completion gate retains un-restored opening
+bindings and prevents a stale zero-task scan from completing early. The raised
+case now uses a 524,288-cell sparse schematic with the same physical room.
+Run 3 passed latest production in 3m15s: all three floor entries plus the
+524,288-cell raised sealed room, exact 83-block server structure and direction,
+fully restored walls, raw/owned dirt zero, health 20, closed menu and native
+packet checks. The next complete upper replay is run 50;
+full upper/fresh/core gates remain required. No release or live-profile edits.
+
 Upper replay 48 passed the old 469 stall and reached 617/710, then stopped
 outside the roof after restocking. A read-only nearby-column query proved 14
 valid entry/view pairs, including a column beside the actor and ordinary walking

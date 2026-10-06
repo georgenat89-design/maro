@@ -185,6 +185,8 @@ public final class AutoBuilder extends Module {
     private BlockPos accessStand,accessBase;
     private BlockPos entrySearchFeet;
     private int entrySearchWork=-2,entrySearchHash,entrySearchCursor,entryRetryAt;
+    private BlockPos entryProbeBase;
+    private int entryDoorCursor,entryProbeCursor=-1;
     private record EntryCandidate(BlockPos top,BlockPos destination){}
     private List<EntryCandidate> entryCandidates=List.of();
     private int accessStarted;
@@ -848,7 +850,22 @@ public final class AutoBuilder extends Module {
     private double effectiveReach(){return Math.min(reach.get(),mc.player.getBlockInteractionRange()-.1);}
     private boolean floorDeferred(BlockPos pos){
         var work=floorAccessWork.get(pos);if(work==null)return false;
-        if(work<0||work>=states.length||states[work]==CORRECT||states[work]==IGNORED){floorAccessWork.remove(pos);return false;}
+        if(work<0||work>=states.length||states[work]==CORRECT||states[work]==IGNORED){
+            // The final wall must not close behind us while our access column
+            // still needs cleanup. Once those posts are gone, restore normally.
+            if(cleanup.get()&&!supports.isEmpty()){
+                int openings=0;
+                for(var opening:floorAccessWork.keySet()){
+                    int cell=schematic.indexAt(opening.subtract(anchor()),turns(),mirror.get());
+                    if(cell>=0&&!desired(cell).isAir()&&states[cell]!=IGNORED&&mc.world.isChunkLoaded(opening)
+                        &&!matchesBuildState(mc.world.getBlockState(opening),desired(cell)))openings++;
+                }
+                if(openings>0&&solid-correct-ignoredSolid<=openings)return true;
+            }
+            int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());
+            if(cell<0||states[cell]==IGNORED||mc.world.isChunkLoaded(pos)&&matchesBuildState(mc.world.getBlockState(pos),desired(cell)))floorAccessWork.remove(pos);
+            return false;
+        }
         return true;
     }
     /** A block's nearest face can be reachable even when its centre is not. */
@@ -879,6 +896,11 @@ public final class AutoBuilder extends Module {
                     else status="Cleanup needs a clear path — move off / around the support";return;
                 }
                 mining=pos;mineTick();return;
+            }
+            // A large scan may still carry the previous zero-task result after
+            // cleanup unblocks its final doorway. Wait for actual restoration.
+            if(floorAccessWork.keySet().stream().anyMatch(pos->{int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());return cell>=0&&states[cell]!=IGNORED&&(!mc.world.isChunkLoaded(pos)||!matchesBuildState(mc.world.getBlockState(pos),desired(cell)));})){
+                status="Checking final route restoration";return;
             }
             checkpoint();pause("Build complete");notify("Build complete: "+solid+" blocks");if(depositWhen.is("After Build"))depositAll();return;
         }
@@ -1164,7 +1186,7 @@ public final class AutoBuilder extends Module {
         if(!support.get()||work<0||views.isEmpty())return false;
         var feet=mc.player.getBlockPos();int hash=views.hashCode();
         if(!feet.equals(entrySearchFeet)||entrySearchWork!=work||entrySearchHash!=hash){
-            entrySearchFeet=feet.toImmutable();entrySearchWork=work;entrySearchHash=hash;entrySearchCursor=entryRetryAt=0;
+            entrySearchFeet=feet.toImmutable();entrySearchWork=work;entrySearchHash=hash;entrySearchCursor=entryRetryAt=entryDoorCursor=0;entryProbeBase=null;
             var destinations=views.stream().filter(p->p.getY()>mc.player.getY()+.5&&p.getY()<=mc.player.getY()+7)
                 .sorted(Comparator.comparingDouble(p->p.getSquaredDistance(feet))).limit(8).toList();
             var unique=new LinkedHashSet<EntryCandidate>();
@@ -1182,6 +1204,7 @@ public final class AutoBuilder extends Module {
         if(ticks<entryRetryAt)return false;
         int total=entryCandidates.size();long deadline=System.nanoTime()+3_000_000;
         while(entrySearchCursor<total&&System.nanoTime()<deadline){
+            if(entryProbeCursor!=entrySearchCursor){entryProbeCursor=entrySearchCursor;entryProbeBase=null;entryDoorCursor=0;}
             var candidate=entryCandidates.get(entrySearchCursor++);var top=candidate.top;var destination=candidate.destination;
             var tried=triedStands.get(work);if(tried!=null&&tried.getOrDefault(top,0)>ticks)continue;
             if(!walker.hasStandingClearance(top)||!mc.world.getBlockState(top.down()).isReplaceable()||plannedSolid(top.down()))continue;
@@ -1196,7 +1219,25 @@ public final class AutoBuilder extends Module {
                 var post=new BlockPos(top.getX(),y,top.getZ());
                 if(plannedSolid(post)||routeSupportExclusions.getOrDefault(post,0)>ticks||!mc.world.getBlockState(post).isReplaceable()||!mc.world.getFluidState(post).isEmpty()){clear=false;break;}
             }
-            if(!clear||!walker.canReachFromPillar(top,destination)||!walker.canReachStand(base))continue;
+            if(!base.equals(entryProbeBase)){entryProbeBase=null;entryDoorCursor=0;}
+            if(!clear||entryProbeBase==null&&!walker.canReachStand(base))continue;
+            boolean reachable;
+            if(entryProbeBase==null){
+                reachable=walker.canReachFromPillar(top,destination);
+                if(!reachable){entryProbeBase=base;entryDoorCursor=0;}
+            }else reachable=false;
+            if(!reachable&&unstuck.get()&&states[work]!=CORRECT){
+                var eye=Vec3d.ofBottomCenter(top).add(0,mc.player.getStandingEyeHeight(),0);
+                while(entryDoorCursor<ESCAPE_SIDES.length&&System.nanoTime()<deadline){
+                    var bottom=top.offset(ESCAPE_SIDES[entryDoorCursor++]);var upper=bottom.up();var removed=Set.of(bottom,upper);
+                    var attachment=attachmentSide(desired(work));if(attachment!=null&&removed.contains(position(work).offset(attachment)))continue;
+                    if(!passageCell(bottom)||!passageCell(upper)||!safeToRecycle(removed)||visibleHit(bottom,eye)==null&&visibleHit(upper,eye)==null)continue;
+                    if(walker.canReachFromPillarAfterClearing(top,destination,removed)){reachable=true;break;}
+                }
+                if(!reachable&&entryDoorCursor<ESCAPE_SIDES.length){entrySearchCursor--;walker.release();status="Checking elevated passage entry";return true;}
+            }
+            entryProbeBase=null;entryDoorCursor=0;
+            if(!reachable||!walker.canReachStand(base))continue;
             commitAccess(top,true);accessBase=base;standGoal=base;standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();status="Walking to checked exterior access column";return true;
         }
         if(entrySearchCursor<total){walker.release();status="Checking elevated floor entry";return true;}
@@ -1655,6 +1696,7 @@ public final class AutoBuilder extends Module {
             var bottom=feet.add(candidate/15-2,candidate%3-1,candidate/3%5-2);var top=bottom.up();
             if(bottom.getY()<mc.player.getY()-.2||new Box(bottom).intersects(mc.player.getBoundingBox())||new Box(top).intersects(mc.player.getBoundingBox()))continue;
             var removed=Set.of(bottom,top);
+            var attachment=attachmentSide(desired(work));if(attachment!=null&&removed.contains(position(work).offset(attachment)))continue;
             if(!passageCell(bottom)||!passageCell(top)||visibleHit(bottom)==null&&visibleHit(top)==null||!safeToRecycle(removed))continue;
             var destination=destinations.get(sample%destinations.size());
             if(!walker.canReachAfterClearing(feet,destination,removed))continue;

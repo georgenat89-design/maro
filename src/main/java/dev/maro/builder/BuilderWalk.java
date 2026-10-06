@@ -52,6 +52,11 @@ public final class BuilderWalk {
         var previous=pillarForSearch;pillarForSearch=top.down();
         try{return canReachStandFrom(top,to);}finally{pillarForSearch=previous;}
     }
+    /** Combined column/door feasibility, still without changing real blocks. */
+    public boolean canReachFromPillarAfterClearing(BlockPos top,BlockPos to,Set<BlockPos> removed){
+        var previous=clearedForSearch;clearedForSearch=removed;
+        try{return canReachFromPillar(top,to);}finally{clearedForSearch=previous;}
+    }
     public BlockPos descentLanding(BlockPos removed){
         if(!canDescendThrough(removed))return null;
         for(int drop=1;drop<=3;drop++)if(footingHeight(removed.down(drop))>=.625)return removed.down(drop).up();
