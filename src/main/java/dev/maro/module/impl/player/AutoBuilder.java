@@ -183,6 +183,9 @@ public final class AutoBuilder extends Module {
     private final Map<BlockPos,Map<BlockPos,Integer>> cleanupStands=new HashMap<>();
     // Cleanup still needs a route after every schematic work cell is finished.
     private BlockPos cleanupTarget;
+    private BlockPos cleanupExit,cleanupExitSearchFeet;
+    private List<BlockPos> cleanupExits=List.of();
+    private int cleanupExitCursor,cleanupExitRetryAt;
     private Set<BlockPos> accessStairs=Set.of();
     private BlockPos stairSearchStand,stairSearchFeet;
     private int stairSearchCursor;
@@ -388,6 +391,7 @@ public final class AutoBuilder extends Module {
     public static void serverBlockUpdate(BlockPos pos,BlockState state){
         var builder=ModuleManager.get(AutoBuilder.class);
         if(builder==null||builder.world!=mc.world)return;
+        if(builder.cleanupTarget!=null&&(pos.equals(builder.mining)||builder.supports.contains(pos)))builder.cleanupExitSearchFeet=null;
         if(builder.accessStairs.stream().anyMatch(piece->piece.getSquaredDistance(pos)<=25))builder.stairPlacementPlan=Set.of();
         if(state.isAir()&&builder.supports.contains(pos)&&builder.accessStand!=null)builder.accessProgressAt=builder.ticks;
         if(!state.isOf(Blocks.DIRT)){builder.escapeSupports.remove(pos);builder.escapeSupportWork.remove(pos);}
@@ -571,6 +575,7 @@ public final class AutoBuilder extends Module {
     }
     @Override protected void onDisable(){pause("Disabled");staffStopAt=0;captureStates=null;if(mc.player!=null&&originalSlot>=0)select(originalSlot);originalSlot=-1;}
     public void pause(String reason){
+        cleanupExit=cleanupExitSearchFeet=null;cleanupExits=List.of();cleanupExitCursor=cleanupExitRetryAt=0;
         stairPlacementPlan=Set.of();stairPlacementFeet=null;stairPlacementViews=List.of();stairPlacementCursor=0;
         stairSearchStand=stairSearchFeet=null;stairSearchCursor=0;
         buildEta.tick(System.nanoTime()/1_000_000,false);
@@ -924,6 +929,7 @@ public final class AutoBuilder extends Module {
                     if(autoMove.get()&&repositionTarget(pos,cleanupStands.computeIfAbsent(pos,p->new HashMap<>())))status="Moving to clean temporary support";
                     else status="Cleanup needs a clear path — move off / around the support";return;
                 }
+                if(preserveCleanupExit(pos))return;
                 mining=pos;mineTick();return;
             }
             // A large scan may still carry the previous zero-task result after
@@ -1922,6 +1928,34 @@ public final class AutoBuilder extends Module {
         if(side==null)return false;
         var neighbour=target.offset(side);
         return plannedSolid(neighbour)&&mc.world.getBlockState(neighbour).isReplaceable();
+    }
+    /** Leave a higher ledge before deleting its only ordinary return bridge. */
+    private boolean preserveCleanupExit(BlockPos removed){
+        if(!autoMove.get()||supports.stream().noneMatch(p->p.getY()+1<mc.player.getY()-.5))return false;
+        var feet=BlockPos.ofFloored(mc.player.getEntityPos().add(0,.4,0));
+        if(cleanupExit!=null&&(!walker.canStand(cleanupExit)||supports.contains(cleanupExit.down())
+            ||walker.standingPoint(cleanupExit).y>=mc.player.getY()-.5||!walker.canReachStand(cleanupExit)))cleanupExit=null;
+        if(cleanupExit==null){
+            if(!feet.equals(cleanupExitSearchFeet)||ticks>=cleanupExitRetryAt&&cleanupExitCursor>=cleanupExits.size()){
+                cleanupExitSearchFeet=feet.toImmutable();cleanupExitCursor=0;cleanupExitRetryAt=ticks+40;
+                var candidates=new ArrayList<BlockPos>();
+                for(int dy=-6;dy<=-1;dy++)for(int dx=-6;dx<=6;dx++)for(int dz=-6;dz<=6;dz++)candidates.add(feet.add(dx,dy,dz));
+                cleanupExits=candidates.stream().sorted(Comparator.<BlockPos>comparingInt(BlockPos::getY).thenComparingDouble(p->p.getSquaredDistance(feet))).toList();
+            }
+            long deadline=System.nanoTime()+3_000_000;
+            while(cleanupExitCursor<cleanupExits.size()&&System.nanoTime()<deadline){
+                var candidate=cleanupExits.get(cleanupExitCursor++);
+                if(supports.contains(candidate.down())||!walker.canStand(candidate)||!walker.canReachStand(candidate))continue;
+                cleanupExit=candidate;break;
+            }
+            if(cleanupExit==null){
+                if(cleanupExitCursor<cleanupExits.size()){walker.release();status="Checking cleanup return footing";return true;}
+                return false;
+            }
+        }
+        if(walker.canReachAfterClearing(feet,cleanupExit,Set.of(removed)))return false;
+        standGoal=cleanupExit;standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();
+        status="Leaving ledge before clearing its return bridge";return true;
     }
     /** Free an obsolete attachment base when the bounded scaffold pool is full. */
     private boolean servesActiveScaffold(BlockPos pos){

@@ -4,6 +4,7 @@ import dev.maro.mixin.ClientPlayerLookAccessor;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.network.packet.Packet;
 import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
+import net.minecraft.network.packet.c2s.play.PlayerInteractItemC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.util.math.MathHelper;
 
@@ -26,6 +27,13 @@ public final class BuilderPacketChecks {
             var player=MinecraftClient.getInstance().player;var sent=(ClientPlayerLookAccessor)player;
             if(Math.abs(MathHelper.wrapDegrees(player.getYaw()-sent.maro$lastSentYaw()))>.01f
                 ||Math.abs(player.getPitch()-sent.maro$lastSentPitch())>.01f)unpublishedLook++;
+        }
+        if(packet instanceof PlayerInteractItemC2SPacket item){
+            interactions++;if(item.getSequence()<=lastSequence)invalidSequence++;lastSequence=item.getSequence();
+            // Bucket/food use carries its own orientation in the native packet.
+            var player=MinecraftClient.getInstance().player;
+            if(Math.abs(MathHelper.wrapDegrees(player.getYaw()-item.getYaw()))>.01f
+                ||Math.abs(player.getPitch()-item.getPitch())>.01f)unpublishedLook++;
         }
     }
     public static void verify(){

@@ -6,6 +6,14 @@ walks to a checked placement face before resuming the same stair. This staging
 uses ordinary movement and adds no temporary blocks of its own.
 At a staged position, available stair pieces are placed before climbing an
 existing higher step, preventing that climb from undoing the placement trip.
+Walking checks the standing player's actual collision volume under partial
+blocks. An open trapdoor may permit headroom while its vertical panel blocks
+one entry edge; the pathfinder checks that corridor and approaches another side.
+Closed low panels remain blocked. Future scaffold queries use the same body
+checks against read-only collision masks.
+Final cleanup checks whether removing a reachable support would cut the route
+to permanent lower footing. It walks down before clearing that return bridge,
+then resumes removing its own temporary blocks from a safe position.
 
 ## Start the build
 

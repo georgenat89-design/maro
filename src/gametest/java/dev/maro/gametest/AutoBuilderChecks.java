@@ -79,7 +79,8 @@ final class AutoBuilderChecks {
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")){stashBuild(context,singleplayer,builder,start);return;}
-            if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){stairPlacementPriority(context,singleplayer,builder,start);stairPlacementStaging(context,singleplayer,builder,start);blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){partialHeadroom(context,singleplayer,builder,start);stairPlacementPriority(context,singleplayer,builder,start);stairPlacementStaging(context,singleplayer,builder,start);blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderStagingOnly")){fixture(context,singleplayer,builder,start);sameLevelStaging(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderCleanupOnly")){ownedChestCover(context,singleplayer,builder,start);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){compactAccessStep(context,singleplayer,builder,start);ownedChestCover(context,singleplayer,builder,start);elevatedFloorEntry(context,singleplayer,builder,start);sealedDirectionalAccess(context,singleplayer,builder,start,3);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")){sealedDirectionalAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);raisedChestReturn(context,singleplayer,builder,start);sealedChestReturn(context,singleplayer,builder,start);return;}
@@ -88,6 +89,7 @@ final class AutoBuilderChecks {
             fixture(context,singleplayer,builder,start);
             raisedTurn(context,singleplayer,start);
             shapedArrival(context,singleplayer,builder,start);
+            partialHeadroom(context,singleplayer,builder,start);
             stairPlacementStaging(context,singleplayer,builder,start);
             stairPlacementPriority(context,singleplayer,builder,start);
             blockedAccessStep(context,singleplayer,builder,start);
@@ -993,6 +995,7 @@ final class AutoBuilderChecks {
         });
         try{
             await(context,builder,2400);verify(world,target,1,1,1,y->Blocks.STONE);
+            require(world.getServer().computeOnServer(server->{for(int y=0;y<4;y++)if(!server.getOverworld().getBlockState(start.add(1,y,3)).isOf(Blocks.STONE))return false;return true;}),"Cleanup removed the unrelated stone obstacle");
             require(world.getServer().computeOnServer(server->{for(var pos:BlockPos.iterate(start.add(-7,0,-4),start.add(7,7,10)))if(server.getOverworld().getBlockState(pos).isOf(Blocks.DIRT))return false;return true;}),"Distant scaffold left temporary dirt behind");
             context.runOnClient(client->{require(builder.temporarySupports().isEmpty()&&client.player.getHealth()==20,"Distant scaffold did not finish safely");BuilderPacketChecks.verify();});
         }finally{context.runOnClient(client->BuilderPacketChecks.recording=false);}
@@ -1046,6 +1049,30 @@ final class AutoBuilderChecks {
                 require(!walker.needsRecovery()&&!walker.routeUnavailable(),"Successful walking route retained a stale pillar request");
             }catch(ReflectiveOperationException error){throw new AssertionError(error);}finally{walker.stop();}
         });
+    }
+    private static void partialHeadroom(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        for(String facing:List.of("north","south","east","west")){
+            System.out.println("[builder-check] Native standing body and entry edge beneath open trapdoor "+facing);
+            fixture(context,world,builder,start);var goal=start.south(3);var panel=goal.up();
+            command(world,"setblock",panel,"warped_trapdoor[facing="+facing+",half=bottom,open=false]");context.waitTicks(6);
+            context.runOnClient(client->require(!new BuilderWalk().canStand(goal),"Closed low trapdoor admitted a standing body"));
+            command(world,"setblock",panel,"warped_trapdoor[facing="+facing+",half=bottom,open=true]");context.waitTicks(6);
+            var walk=context.computeOnClient(client->{var w=new BuilderWalk();var point=w.standingPoint(goal);require(client.world.isSpaceEmpty(client.player,client.player.getBoundingBox().offset(point.subtract(client.player.getEntityPos())))&&w.canStand(goal)&&w.canReachStand(goal),"Open trapdoor rejected real standing-body clearance");w.turning(true,45);return w;});
+            try{
+                boolean arrived=false;for(int tick=0;tick<240&&!arrived;tick++){arrived=context.computeOnClient(client->walk.standAt(goal));context.waitTick();}
+                require(arrived,"Native walking did not route around the open panel for "+facing);
+                context.runOnClient(client->require(client.player.getHealth()==20&&client.world.isSpaceEmpty(client.player,client.player.getBoundingBox()),"Partial headroom walk intersected the panel or caused damage"));
+            }finally{context.runOnClient(client->walk.stop());}
+            if(facing.equals("west")){
+                world.getServer().runCommand("give @a water_bucket");context.waitTicks(6);
+                try{
+                    context.runOnClient(client->{builder.install(new Schematic("partial-headroom-fluid.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.WATER.getDefaultState()}));builder.setOrigin(goal);BuilderPacketChecks.begin();builder.startBuild();});
+                    await(context,builder,300);
+                    require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(goal).equals(Blocks.WATER.getDefaultState())&&server.getOverworld().getBlockState(panel).get(Properties.OPEN)),"Fluid under the open trapdoor stayed predicted or changed its panel");
+                    context.runOnClient(client->{require(client.player.getHealth()==20&&client.currentScreen==null,"Partial-headroom bucket placement damaged player or left a menu");BuilderPacketChecks.verify(1);});
+                }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
+            }
+        }
     }
     private static void stairPlacementPriority(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-check] Place the available stair piece before undoing staging with another climb");

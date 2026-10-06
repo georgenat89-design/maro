@@ -5,6 +5,50 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+At05:13, isolated sameLevelStaging PASSED59s with the cleanup return bridge
+guard. The unchanged case previously FAILED2m19s on the body fix alone.
+Read-only cleanup trace1 proves the failure: actor at(4.5358,-26,1.5585),
+mining owned dirt(5,-27,2), normal route to permanent ground(4,-30,-2)=true;
+the same route with only that dirt masked absent=false. Subsequent removal
+left it on the unrelated stone obstacle with seven low owned posts remaining.
+Working cleanup checks this future deletion, searches bounded permanent lower
+footing, and walks down before removing the bridge. No unrelated block or
+extra temporary block is used. Passing isolate2 asserts native completion,
+zero world/owned dirt, full health, closed menus and packet sequencing.
+An explicit unchanged stone-obstacle assertion was added for the next full run.
+Cleanup-guard1 PASSED1m2s for owned/unowned chest covers and two scaffold
+capacities. Body/bridge production is ready for a checkpoint; upper/fresh/
+full-core gates remain pending.
+
+Upper57 was stopped at705/710 after more than six minutes without a placement:
+three water sources, one lava source and an observer remained. Read-only fluid
+body proof shows all three water positions have native isSpaceEmpty=true and
+a valid native bucket job, while walker.canStand=false. Each source has an open
+trapdoor in its head cell; whole-cell clear() rejected valid standing bodies.
+Working BuilderWalk now checks actual standing-body collision volume against
+real or future masked block shapes, with the existing cheap empty/full-floor
+case. Same-height edges involving partial shapes also prove body clearance
+across the corridor, avoiding entry through an open panel's blocked edge.
+No real geometry is changed by feasibility queries. Surface-body1 is running:
+four open/closed trapdoor orientations, native walking around panel edges,
+server-confirmed water under the panel, plus prior stair/rim regressions.
+Surface-body2 PASSED45s: four native open-panel arrivals, closed-panel rejection,
+server-confirmed source water, all stair/rim cases, health and native packet
+checks. Packet observer now includes normal item-use sequence/look fields as
+well as block-use publication, so bucket actions are actually checked. Body1
+had passed its world/walking checks but failed the old block-only packet count.
+Native isolated staging/CI failure is next on this uncommitted production.
+No full upper/fresh/core pass, merge or artifact handoff.
+
+At04:54, Upper57 was running unchanged356621d production (at639/710).
+GitHub run330 on356621d built and passed its general in-game test, but full
+builder/auction failed in sameLevelStaging during final cleanup: actor stood
+on the existing four-high stone obstacle with no inventory and seven owned
+low posts remaining. The failure is a real pending gate. No production change
+has been made from that snapshot. Test-only builderStagingTestOnly isolates
+the unchanged case for native diagnosis after Upper57. Logs were retrieved
+from job112183416498. A full core pass remains required before handoff.
+
 Upper56 stopped at512/710. Its read-only trace A shows a retained staircase
 arrived at its two-block step at tick3151, staged down to a real ground
 placement view at3155, then chose the same higher step again at3191 before

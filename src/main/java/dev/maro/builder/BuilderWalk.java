@@ -217,6 +217,11 @@ public final class BuilderWalk {
                 double rise=standingPoint(step).y-(n.parent==null?initialHeight:standingPoint(n.pos).y);
                 if(rise>1.2||rise< -3)continue;
                 if(diagonal&&step.getY()!=n.pos.getY())continue;
+                // An open trapdoor can leave room for the body at a cell's
+                // centre while blocking entry across one edge. Check that edge,
+                // otherwise prefer another side instead of walking into its panel.
+                if(Math.abs(rise)<.01&&(!clear(n.pos)||!clear(n.pos.up())||!clear(step)||!clear(step.up()))
+                    &&!bodyCorridor(standingPoint(n.pos),standingPoint(step)))continue;
                 if(step.getY()>n.pos.getY()&&!clear(n.pos.up(2)))continue;
                 // Check the whole falling corridor, including the headroom at
                 // the ledge. An ordinary three-block drop is safe when actual
@@ -251,7 +256,32 @@ public final class BuilderWalk {
             if(box.maxX>.2&&box.minX<.8&&box.maxZ>.2&&box.minZ<.8)height=Math.max(height,box.maxY);
         return height;
     }
-    private boolean walkable(BlockPos p){return clear(p)&&clear(p.up())&&safe(p.down())&&footingHeight(p.down())>=.625;}
+    private boolean walkable(BlockPos p){
+        if(!mc.world.isChunkLoaded(p)||!safe(p)||!safe(p.up())||!safe(p.down()))return false;
+        double height=footingHeight(p.down());if(height<.625)return false;
+        if(height==1&&clear(p)&&clear(p.up()))return true;
+        return bodyClear(standingPoint(p));
+    }
+    private boolean bodyCorridor(Vec3d from,Vec3d to){
+        int samples=Math.max(1,(int)Math.ceil(from.distanceTo(to)/.2));
+        for(int i=1;i<=samples;i++)if(!bodyClear(from.lerp(to,(double)i/samples)))return false;
+        return true;
+    }
+    /** Actual standing-body volume, including partial blocks in the head cell.
+     * Future route masks are collision-only; no client or server state changes. */
+    private boolean bodyClear(Vec3d feet){
+        var dimensions=mc.player.getDimensions(net.minecraft.entity.EntityPose.STANDING);
+        double half=dimensions.width()/2;
+        var body=new Box(feet.x-half,feet.y,feet.z-half,feet.x+half,feet.y+dimensions.height(),feet.z+half).contract(.000001);
+        for(var cell:BlockPos.iterate(BlockPos.ofFloored(body.minX,body.minY,body.minZ),BlockPos.ofFloored(body.maxX,body.maxY,body.maxZ))){
+            if(!mc.world.isChunkLoaded(cell)||!safe(cell))return false;
+            if(clearedForSearch.contains(cell))continue;
+            var shape=stairsForSearch.contains(cell)||cell.equals(pillarForSearch)?net.minecraft.util.shape.VoxelShapes.fullCube()
+                :mc.world.getBlockState(cell).getCollisionShape(mc.world,cell,net.minecraft.block.ShapeContext.of(mc.player));
+            for(var bounds:shape.getBoundingBoxes())if(bounds.offset(cell).intersects(body))return false;
+        }
+        return true;
+    }
     private boolean safe(BlockPos p){
         var state=mc.world.getBlockState(p);
         return state.getFluidState().isEmpty()&&!state.isOf(Blocks.FIRE)&&!state.isOf(Blocks.SOUL_FIRE)&&!state.isOf(Blocks.MAGMA_BLOCK)&&!state.isOf(Blocks.CACTUS)&&!state.isOf(Blocks.SWEET_BERRY_BUSH)&&!state.isOf(Blocks.POWDER_SNOW)&&!state.isOf(Blocks.CAMPFIRE)&&!state.isOf(Blocks.SOUL_CAMPFIRE);
