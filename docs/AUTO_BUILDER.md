@@ -10,12 +10,17 @@ reserved for storage and is replaced automatically.** No homes are deleted
 before reaching storage. A rejected or unconfirmed command pauses setup without
 issuing another save. Set Storage Home also explicitly refreshes this slot.
 
-Homes 2 and 3 are optional: the builder checks for an empty slot before saving
-dry interior and upper access positions. Existing homes 2/3 are kept, and an
-occupied or unreadable optional slot does not block building or loop menu checks.
-Travel waits through warmup and checks actual arrival and safe footing. Work
-homes must prove an onward route. Servers without these home commands can turn
-Builder Homes off.
+Home 2 is a temporary return point for each restock trip. At the current work
+area, the builder stops on dry, stable footing, sends `/delhome 2`, confirms it,
+then sends `/sethome` and verifies that slot 2 was saved. It goes to `/home 1`,
+withdraws the needed supplies, returns through `/home 2`, and deletes home 2
+only after actual grounded arrival. It then plans its next needed block from
+the returned work area. Existing home 2 is replaced for this trip. Home 3 is
+never created, used or deleted. Already being beside storage needs no round trip.
+Temporary dirt beneath the return point stays protected while away. Confirmed
+return metadata survives pause and saved-placement reload; a rejected return
+keeps home 2 for retry. Travel stays still through warmup and checks actual
+arrival and safe footing. Servers without these commands can disable Builder Homes.
 
 With homes enabled, completed base and wall blocks stay protected. Checked liquid
 access can open the roof above its source, and retaining floors/walls stay intact.
@@ -25,6 +30,8 @@ survives pause and saved-placement reload.
 
 Head Spoofing keeps the first-person camera independent while normal movement
 packets publish smooth, correctly aimed head rotations before interactions.
+Walking and action aim share one rotation controller, capped at 12 degrees of
+yaw and 8 degrees of pitch per tick, with acceleration and braking through turns.
 Mouse look still moves the camera. Placement confirmation, action delays, walking
 and home travel retain that independent view, preventing a snap back to the aimed
 block between jobs. Menus, pause, Free Look and Free Cam release camera control.
@@ -71,7 +78,7 @@ restoration fills deeper wall cells before the outer face to preserve access.
 1. Right-click **Player → Auto Builder** to open the control panel. Click **Choose Schematic**. Use **Open Folder** in the library to put files in the game's `schematics` folder.
 2. Choose **Origin: Here** or **Origin: Target** and adjust X/Y/Z with the small nudge buttons. **Options → Placement** contains rotation and mirroring. **Materials** shows total, remaining, owned and missing quantities.
 3. Close the panel, look at each double chest you want to use and press **R** to add it. **Shift + R** removes the chest you are looking at. Selections are remembered for this world/dimension; adding an already selected chest refreshes cached contents. Either half of a double chest refers to the same selection. The panel shows how many chests are selected.
-4. Set an auction **Budget**, select **Mode: Automatic**, and click **Start Build**. With Builder Homes enabled, Start automatically approaches marked storage and replaces **home 1** when setup is needed; homes **2/3** can already be occupied. **Set Storage Home** refreshes home 1 explicitly. Semi Auto is available for holding right mouse. **Pause / Cancel Buy** releases movement/mining input.
+4. Set an auction **Budget**, select **Mode: Automatic**, and click **Start Build**. With Builder Homes enabled, Start automatically approaches marked storage and replaces **home 1** when setup is needed. **Home 2** is replaced for each restock return and cleared after returning; **home 3** stays untouched. **Set Storage Home** refreshes home 1 explicitly. Semi Auto is available for holding right mouse. **Pause / Cancel Buy** releases movement/mining input.
 
 Automatic is the default for new configurations. Existing configurations retain their chosen mode; change it with the panel's mode button. Show/Hide Preview controls ghosts independently of building. Protocol words and individual rendering constants are internal defaults, reducing the settings list.
 

@@ -5,6 +5,42 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Latest, 16:54: builder-restock-return-native-7 PASSED in 1m19 with Meteor.
+It verifies actual native chest withdrawal (one stone, seven retained in chest)
+then placement after exactly delhome 2 -> sethome 2 -> home 1 -> home 2 ->
+delhome 2. Deletion follows real grounded native arrival; no home-3 command is
+accepted. The transient return survives saved metadata reload and a rejected
+teleport, protects its dirt floor while away, and resumes/clears through Start.
+Storage replacement/error bounds, access repair in 13 ticks, crouch-only mining,
+three-block vertical column edging, three placements with walking and stable
+actual camera, and 12/8 native packet turn bounds all passed together. The full
+fresh homes-enabled 710-block replay is next; completion is not yet claimed.
+
+Latest, 16:47: the user clarified that home 2 must be a transient restock
+return point and home 3 must not be used. BuilderHomes now has only two local
+slots: verified storage home 1, and the current confirmed restock return.
+Restock stops at the work area, deletes/replaces home 2, travels to storage,
+gets native chest supplies, returns to home 2, confirms safe grounded arrival,
+then deletes it and plans the next needed job. Home 3 stays untouched. A work
+return may use temporary dirt; that floor is protected while away. Confirmed
+return metadata survives cancel/pause and saved placement reload.
+
+The first native integrated restock cases reached the exact command order and
+resumed placement with the exact quantity withdrawn from a real double chest.
+The test packet observer was corrected to recognize Minecraft's native teleport
+acknowledgement, as proven by mapped ClientPlayNetworkHandler bytecode. It still
+rejects extra builder movement packets outside the native tick/teleport handler.
+The raised-dirt test fixture needed its new floor delivered before fixture TP;
+the focused suite is being rerun. Full fresh completion is still outstanding.
+
+The second fresh replay was stopped at 30/710 on the user's actual-head rotation
+report. Shared walking/aim rotation now caps yaw at 12 and pitch at 8 degrees
+per tick, with acceleration/braking of 2 degrees per tick and retained momentum
+through changes of action. Native natural-rotation and packet-rate suites both
+PASSED before the new home-2 clarification, including three placements/walking,
+stable actual camera, repairs and crouched 3/3 column cleanup. These changes
+and the new restock semantics still need the fresh 710-block replay together.
+
 Latest, 16:26: the first fresh homes-enabled replay was stopped at 79/710,
 47 supports after the user reported snapping onto placed blocks. A read-only
 native camera trace caught 161.49, 144.48 and 121.44 degree view changes in a

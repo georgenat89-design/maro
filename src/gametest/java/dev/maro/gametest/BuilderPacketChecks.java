@@ -13,11 +13,18 @@ import net.minecraft.util.math.MathHelper;
 
 /** Observe actual outbound packets while a selected-chest restock and build run. */
 public final class BuilderPacketChecks {
-    public static boolean recording,vanillaMovement;
+    public static boolean recording,vanillaMovement,vanillaTeleport;
     private static int extraMovement,interactions,lastSequence,invalidSequence,unpublishedLook,repeatedMovement,lastMovementAge;
     private static Set<BlockPos> crouchTargets=Set.of();
     private static int crouchMining,crouchFailures;
-    public static void begin(){recording=true;extraMovement=interactions=lastSequence=invalidSequence=unpublishedLook=repeatedMovement=crouchMining=crouchFailures=0;lastMovementAge=-1;crouchTargets=Set.of();}
+    private static float lookYaw,lookPitch,maxYaw,maxPitch;
+    private static int abruptLooks;
+    private static dev.maro.builder.BuilderHomes checkedHomes;
+    public static void begin(){recording=true;extraMovement=interactions=lastSequence=invalidSequence=unpublishedLook=repeatedMovement=crouchMining=crouchFailures=abruptLooks=0;lastMovementAge=-1;crouchTargets=Set.of();checkedHomes=null;}
+    public static void expectLookLimits(float yaw,float pitch){
+        var player=MinecraftClient.getInstance().player;lookYaw=player.getYaw();lookPitch=player.getPitch();maxYaw=yaw;maxPitch=pitch;
+        try{var field=dev.maro.module.impl.player.AutoBuilder.class.getDeclaredField("homes");field.setAccessible(true);checkedHomes=(dev.maro.builder.BuilderHomes)field.get(dev.maro.module.ModuleManager.get(dev.maro.module.impl.player.AutoBuilder.class));}catch(ReflectiveOperationException e){throw new AssertionError(e);}
+    }
     public static void expectCrouchedMining(Set<BlockPos> targets){crouchTargets=Set.copyOf(targets);}
     public static void movementStart(){
         vanillaMovement=true;if(!recording)return;
@@ -27,12 +34,18 @@ public final class BuilderPacketChecks {
     }
     public static void outbound(Packet<?> packet){
         if(!recording)return;
+        if(packet instanceof PlayerMoveC2SPacket move&&checkedHomes!=null){
+            float yaw=move.getYaw(lookYaw),pitch=move.getPitch(lookPitch);
+            float dy=Math.abs(MathHelper.wrapDegrees(yaw-lookYaw)),dp=Math.abs(pitch-lookPitch);
+            if(!checkedHomes.busy()&&(dy>maxYaw+.02||dp>maxPitch+.02)){if(abruptLooks++==0)System.out.println("[builder-look] Packet exceeded rate: yaw="+dy+" pitch="+dp);}
+            lookYaw=yaw;lookPitch=pitch;
+        }
         if(packet instanceof PlayerActionC2SPacket mine&&crouchTargets.contains(mine.getPos())
             &&(mine.getAction()==PlayerActionC2SPacket.Action.START_DESTROY_BLOCK||mine.getAction()==PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK)){
             crouchMining++;var player=MinecraftClient.getInstance().player;
             if(!player.isSneaking()||!player.isOnGround()||player.getHealth()!=20)crouchFailures++;
         }
-        if(packet instanceof PlayerMoveC2SPacket&&!vanillaMovement)extraMovement++;
+        if(packet instanceof PlayerMoveC2SPacket&&!vanillaMovement&&!vanillaTeleport)extraMovement++;
         if(packet instanceof PlayerInteractBlockC2SPacket block){
             interactions++;if(block.getSequence()<=lastSequence)invalidSequence++;lastSequence=block.getSequence();
             var player=MinecraftClient.getInstance().player;var sent=(ClientPlayerLookAccessor)player;
@@ -52,6 +65,7 @@ public final class BuilderPacketChecks {
     }
     public static void verify(int minimumInteractions){
         recording=false;
+        if(abruptLooks>0)throw new AssertionError("Native head movement exceeded yaw/pitch limits: "+abruptLooks);
         if(!crouchTargets.isEmpty()&&(crouchMining==0||crouchFailures>0))throw new AssertionError("Native crouch mining: actions="+crouchMining+" invalid pose="+crouchFailures);
         if(interactions<minimumInteractions||extraMovement!=0||invalidSequence!=0||unpublishedLook!=0||repeatedMovement!=0)
             throw new AssertionError("Builder packet order: interactions="+interactions+" extraMovement="+extraMovement+" invalidSequence="+invalidSequence+" unpublishedLook="+unpublishedLook+" repeatedMovement="+repeatedMovement);

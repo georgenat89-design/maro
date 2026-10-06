@@ -63,7 +63,7 @@ public final class AutoBuilder extends Module {
     private final ModeSetting supplyMode=mode("Materials","Material Supply","Nearby Sections finishes compact areas with inventory-sized material batches","Nearby Sections","Nearby Sections","Layer by Layer","Whole Schematic").onChange(v->replan());
     private final BooleanSetting prebuyWhole=bool("Materials","Prepare Whole Build","Buy missing supplies for the whole build, store them in selected chests, then fetch each work batch",true);
     private final BooleanSetting autoMove=bool("Build","Auto Move","Walk safe ground routes toward out-of-reach blocks",true);
-    private final BooleanSetting useHomes=bool("Travel","Builder Homes","Replace home 1 at marked storage; use empty optional homes 2–3 for checked build access",true);
+    private final BooleanSetting useHomes=bool("Travel","Builder Homes","Home 1 is storage; replace home 2 for each restock return and delete it after arrival",true);
     private boolean homeSetupResume;
     private final BooleanSetting unstuck=bool("Build","Auto Unstuck","Jump onto a temporary dirt step when a walking route is stuck, then remove it",true);
     private final BooleanSetting autoEat=bool("Food","Auto Eat","Pause movement and building to eat steak when hungry",true);
@@ -78,7 +78,6 @@ public final class AutoBuilder extends Module {
     private final NumberSetting timingVariation=number("Build","Timing Variation","Extra random ticks added to action delay",1,0,6,1);
     private final BooleanSetting smoothTurning=bool("Build","Head Smoothing","Ease visible turns into and out of the target angle",true);
     private final BooleanSetting headSpoofing=bool("Build","Head Spoofing","Keep the first-person camera independent while smooth, correctly aimed rotations reach the server",true);
-    private float yawVelocity,pitchVelocity;
     private float cameraYaw,cameraPitch;
     private int cameraAimTick=-100;
     private boolean cameraLocked;
@@ -86,7 +85,7 @@ public final class AutoBuilder extends Module {
     private int peekStarted;
     private final Map<BlockPos,Integer> peekRetryAt=new HashMap<>();
     private final NumberSetting reach=fixedNumber("Reach","Maximum vanilla interaction distance; also clamped to player reach",4.4,2,5, .1);
-    private final NumberSetting turnSpeed=fixedNumber("Turn Speed","Maximum view rotation per tick",45,5,180,1);
+    private final NumberSetting turnSpeed=fixedNumber("Turn Speed","Maximum view rotation per tick, capped at 12 yaw and 8 pitch",12,5,180,1);
     private final BooleanSetting support=bool("Build","Temporary Supports","Place dirt under floating targets when an adjacent face is reachable",true);
     private final NumberSetting tempDirt=fixedNumber("Temporary Dirt Limit","Maximum temporary supports placed during this build",128,0,512,1);
     private final BooleanSetting cleanup=bool("Build","Clean Temporary Supports","Break this builder's temporary dirt after the schematic is complete",true);
@@ -378,7 +377,7 @@ public final class AutoBuilder extends Module {
         button("Start","Cancel Schematic","Stop all actions and unload the schematic; placed blocks remain","Cancel",this::cancelSchematic);
         button("Snapshot","Capture Snapshot","Save the configured area from the placement origin to a vanilla .nbt file","Capture",this::startCapture);
         button("Materials","Mark Restock Container","R adds or refreshes the double chest you are looking at; Shift + R removes it","Add",this::markContainer);
-        button("Travel","Set Storage Home","Walk to marked storage, replace home 1 and confirm the save; keep existing homes 2–3","Set Home 1",()->setupHomes(false));
+        button("Travel","Set Storage Home","Walk to marked storage, replace home 1 and confirm the save","Set Home 1",()->setupHomes(false));
         button("Materials","Clear Restock Marks","Clear this world's selected supply chests","Clear",()->{pause("Supply chests cleared");preparationReady=false;containers.clear();triedContainers.clear();emptyChestItems.clear();chestStocks.clear();preparedStock.clear();});
         button("Materials","Buy Materials","Buy missing materials within your configured budget","Buy",()->startBuying(false));
         button("Materials","Estimate Cost","Read current auction listings without buying","Estimate",()->startBuying(true));
@@ -569,6 +568,7 @@ public final class AutoBuilder extends Module {
         if(origin==null||world!=mc.world)setOrigin(mc.player.getBlockPos().offset(mc.player.getHorizontalFacing(),3));
         var miner=ModuleManager.get(AutoMine.class);if(miner!=null&&miner.isEnabled())miner.setEnabled(false);
         if(useHomes.get()&&!mc.player.getAbilities().creativeMode&&!homes.readyFor(selectedSupplyChest())){setupHomes(true);return;}
+        if(useHomes.get()&&homes.returnToWork()){setEnabled(true);building=false;homeSetupResume=true;resetAfterHome();return;}
         checkpoint();
         if(prebuyWhole.get()&&!preparationReady&&!mc.player.getAbilities().creativeMode){startPreparation();return;}
         buildEta.reset();setEnabled(true);building=true;preview=true;staffStopAt=0;checkpoint();triedContainers.clear();retryAt.clear();status=mode.is("Semi Auto")?"Hold right mouse to build":"Building";mc.setScreen(null);
@@ -622,7 +622,7 @@ public final class AutoBuilder extends Module {
         lookWaitStarted=-1;queuedAimPoint=aimPoint=null;
         bridgeTarget=null;
         supportPickup=null;supportPickupUntil=supportRecycleAt=0;
-        yawVelocity=pitchVelocity=0;cameraLocked=false;
+        walker.resetLook();cameraLocked=false;
         placementAttemptTarget=null;failedPlacementUntil.clear();unexpectedBuildHandler=null;resetChestJourney();
         stopEating();navigatingCell=-1;foodRestock=foodShopping=supportRestock=supportShopping=false;
         preparationStage=0;depositQueue.clear();
@@ -671,6 +671,7 @@ public final class AutoBuilder extends Module {
         failedPlacementUntil.values().removeIf(until->until<=ticks);
         routeSupportExclusions.values().removeIf(until->until<=ticks);
         walker.turning(smoothTurning.get(),turnSpeed.getFloat());
+        walker.beginLookTick(ticks);
         if(!inGame()||world!=mc.world){pause("World changed — set the origin again");world=null;return;}
         if(!mc.player.isAlive()||mc.player.isSpectator()){pause("Player is not able to build");return;}
         buildEta.tick(System.nanoTime()/1_000_000,building&&(!mode.is("Semi Auto")||mc.options.useKey.isPressed()));
@@ -682,11 +683,6 @@ public final class AutoBuilder extends Module {
         if((building||buying||pasting||depositing||homes.busy())&&mc.player.getHealth()<minHealth.get()*2){walker.release();status="Paused — low health";return;}
         if(useHomes.get()&&homes.tick(value->status=value,this::pause))return;
         if(homeSetupResume&&homes.ready()){homeSetupResume=false;startBuild();return;}
-        if(useHomes.get()&&building&&!buying&&!depositing&&restockTarget==null&&placement==null&&mining==null&&mc.currentScreen==null&&schematic!=null){
-            var feet=mc.player.getBlockPos();var local=feet.subtract(anchor());
-            boolean inside=local.getX()>0&&local.getX()<schematic.rotatedWidth(turns())-1&&local.getZ()>0&&local.getZ()<schematic.rotatedLength(turns())-1&&local.getY()>0&&plannedSolid(feet.down());
-            if(homes.capture(inside,local.getY()>=schematic.height-1)){status="Saving checked build access home";return;}
-        }
         if(building&&!buying&&!depositing&&recoverUnexpectedBuildMenu())return;
         if(mc.currentScreen==null&&(building||depositing)&&clearPassageTick())return;
         if(mc.currentScreen==null&&(building||depositing)&&clearRouteSupportTick())return;
@@ -1909,7 +1905,7 @@ public final class AutoBuilder extends Module {
         });
     }
     private void deferPlacement(Place job,String reason){
-        placement=null;placementAttemptTarget=null;releaseSneak();yawVelocity=pitchVelocity=0;
+        placement=null;placementAttemptTarget=null;releaseSneak();
         failedPlacementUntil.put(job.target,ticks+20);
         if(job.index>=0){
             retryAt.put(job.index,ticks+20);triedStands.computeIfAbsent(job.index,i->new HashMap<>()).put(mc.player.getBlockPos().toImmutable(),ticks+600);
@@ -2451,7 +2447,7 @@ public final class AutoBuilder extends Module {
         });
     }
     private boolean safeToRecycle(Set<BlockPos> removed){
-        if(removed.stream().anyMatch(this::liquidBoundary))return false;
+        if(removed.stream().anyMatch(pos->liquidBoundary(pos)||homes.protectsFooting(pos)))return false;
         var view=clearedView(removed);
         for(var cell:removed)for(var side:Direction.values()){
             var neighbour=cell.offset(side);if(removed.contains(neighbour))continue;var state=mc.world.getBlockState(neighbour);
@@ -2609,22 +2605,7 @@ public final class AutoBuilder extends Module {
             cameraAimTick=ticks;
         }
         aimPoint=point;
-        float[] goal=angles(point);float yaw=MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()),pitch=goal[1]-mc.player.getPitch();
-        float speed=turnSpeed.getFloat();
-        if(smoothTurning.get()){
-            float acceleration=speed*.2f;
-            if(Math.signum(yawVelocity)!=Math.signum(yaw))yawVelocity=0;
-            if(Math.signum(pitchVelocity)!=Math.signum(pitch))pitchVelocity=0;
-            yawVelocity+=MathHelper.clamp(MathHelper.clamp(yaw*.35f,-speed,speed)-yawVelocity,-acceleration,acceleration);
-            pitchVelocity+=MathHelper.clamp(MathHelper.clamp(pitch*.35f,-speed,speed)-pitchVelocity,-acceleration,acceleration);
-            mc.player.setYaw(mc.player.getYaw()+Math.copySign(Math.min(Math.abs(yaw),Math.abs(yawVelocity)),yaw));
-            mc.player.setPitch(MathHelper.clamp(mc.player.getPitch()+Math.copySign(Math.min(Math.abs(pitch),Math.abs(pitchVelocity)),pitch),-90,90));
-        }else{
-            mc.player.setYaw(mc.player.getYaw()+MathHelper.clamp(yaw,-speed,speed));mc.player.setPitch(MathHelper.clamp(mc.player.getPitch()+MathHelper.clamp(pitch,-speed,speed),-90,90));
-        }
-        if(Math.abs(MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()))<.75&&Math.abs(goal[1]-mc.player.getPitch())<.75){
-            mc.player.setYaw(mc.player.getYaw()+MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()));mc.player.setPitch(goal[1]);yawVelocity=pitchVelocity=0;return true;
-        }return false;
+        float[] goal=angles(point);return walker.lookAt(goal[0],goal[1]);
     }
     private boolean buildLookReady(){
         // Wait for the next ordinary player tick. Publishing movement here creates a second
@@ -2648,7 +2629,7 @@ public final class AutoBuilder extends Module {
         // aiming from the earlier position while the player is settling at a chest.
         var goal=angles(queuedAimPoint);
         if(Math.abs(MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()))>2||Math.abs(goal[1]-mc.player.getPitch())>2)return;
-        mc.player.setYaw(mc.player.getYaw()+MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()));mc.player.setPitch(goal[1]);
+        if(!walker.finishLook(goal[0],goal[1])){queuedLookAction=null;return;}
         queuedLookYaw=mc.player.getYaw();queuedLookPitch=mc.player.getPitch();
     }
     private boolean builderCameraActive(){return building||buying||depositing||pasting||homes.busy();}
@@ -2662,7 +2643,7 @@ public final class AutoBuilder extends Module {
     }
     private void resetAfterHome(){
         queuedLookAction=null;queuedAimPoint=aimPoint=null;lookWaitStarted=-1;
-        yawVelocity=pitchVelocity=0;standGoal=null;accessStand=accessBase=null;accessFloor=false;
+        walker.resetLook();standGoal=null;accessStand=accessBase=null;accessFloor=false;
         accessSupports.clear();accessStairs=Set.of();descentPost=descentView=null;descentLanding=false;
         viewSearches.clear();triedStands.clear();cleanupStands.clear();retryAt.clear();
         chestStand=null;chestTriedStands.clear();releaseSneak();
@@ -2764,7 +2745,7 @@ public final class AutoBuilder extends Module {
         mc.player.swingHand(Hand.MAIN_HAND);return true;
     }
     private BlockHitResult approachChest(BlockPos chest){
-        if(useHomes.get()&&homes.storage(chest)){resetAfterHome();status="Returning to storage through /home 1";return null;}
+        if(useHomes.get()&&(restockTarget!=null&&!depositing?homes.restock(chest):homes.storage(chest))){resetAfterHome();status=restockTarget!=null&&!depositing?"Saving work return before restocking through /home 1":"Returning to storage through /home 1";return null;}
         if(standGoal!=null){followStandGoal();chestProgressAt=ticks;chestJourneyFailed=false;return null;}
         if(chestProgressPosition==null||mc.player.getEntityPos().squaredDistanceTo(chestProgressPosition)>.04){chestProgressPosition=mc.player.getEntityPos();chestProgressAt=ticks;}
         if(chestStand!=null){
@@ -2842,6 +2823,7 @@ public final class AutoBuilder extends Module {
         }
         ownedHandler=null;restockTarget=null;restockBatch=Map.of();partialSource=-1;partialItem=null;restockWait=0;
         resetChestJourney();walker.stop();delay=6;status=reason;
+        if(useHomes.get()&&homes.returnToWork()){resetAfterHome();status="Returning to saved work area through /home 2";}
     }
     private void restockTick(){
         if(ownedHandler==null&&ticks-chestSessionStarted>1200){finishRestock("Chest access timed out - continuing supply search");return;}

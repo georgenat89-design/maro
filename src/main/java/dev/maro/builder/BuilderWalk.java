@@ -29,11 +29,15 @@ public final class BuilderWalk {
     private int waterExitSearchTicks;
     private double waterExitReach;
     private boolean strictDrySearch;
-    private float yawVelocity,turnLimit=45;
-    public void turning(boolean smooth,float speed){this.smooth=smooth;turnLimit=speed;}
+    private final BuilderRotation rotation=new BuilderRotation();
+    public void turning(boolean smooth,float speed){this.smooth=smooth;rotation.configure(smooth,speed);}
+    public void beginLookTick(int tick){rotation.begin(tick);}
+    public boolean lookAt(float yaw,float pitch){return rotation.turn(yaw,pitch);}
+    public boolean finishLook(float yaw,float pitch){return rotation.finish(yaw,pitch);}
+    public void resetLook(){rotation.reset();}
     public String status="";
     public void stop(){
-        release();path=List.of();goal=waterExitGoal=null;cursor=retry=stuck=failedRoutes=0;last=null;recoveryRequested=movementStalled=false;yawVelocity=0;
+        release();path=List.of();goal=waterExitGoal=null;cursor=retry=stuck=failedRoutes=0;last=null;recoveryRequested=movementStalled=false;
         waterDepartureCells=Set.of();waterExitRejected.clear();waterExitSearchTicks=0;waterExitHint=null;
     }
     public void release(){
@@ -52,8 +56,7 @@ public final class BuilderWalk {
         if(!mc.world.isSpaceEmpty(mc.player,mc.player.getBoundingBox().offset(goal.subtract(mc.player.getEntityPos()))))return false;
         var delta=goal.subtract(mc.player.getEntityPos());if(delta.horizontalLengthSquared()<.0016){release();return true;}
         float heading=(float)(Math.toDegrees(Math.atan2(delta.z,delta.x))-90),error=MathHelper.wrapDegrees(heading-mc.player.getYaw());
-        if(smooth){if(Math.signum(yawVelocity)!=Math.signum(error))yawVelocity=0;yawVelocity+=MathHelper.clamp(MathHelper.clamp(error*.28f,-turnLimit,turnLimit)-yawVelocity,-turnLimit*.15f,turnLimit*.15f);mc.player.setYaw(mc.player.getYaw()+Math.copySign(Math.min(Math.abs(error),Math.abs(yawVelocity)),error));}
-        else mc.player.setYaw(mc.player.getYaw()+MathHelper.clamp(error,-turnLimit,turnLimit));
+        lookAt(heading,mc.player.getPitch());
         if(Math.abs(error)<12){forward=true;mc.options.forwardKey.setPressed(true);}else release();return true;
     }
     public boolean hasPeekFooting(BlockPos floor){
@@ -252,16 +255,10 @@ public final class BuilderWalk {
         if(!walkable(node)||!safe(mc.player.getBlockPos())){path=List.of();release();return false;}
         float yaw=(float)(Math.toDegrees(Math.atan2(dz,dx))-90);
         float error=MathHelper.wrapDegrees(yaw-mc.player.getYaw());
-        float speed=smooth?Math.min(turnLimit,24):turnLimit;
-        if(smooth){
-            if(Math.signum(yawVelocity)!=Math.signum(error))yawVelocity=0;
-            yawVelocity+=MathHelper.clamp(MathHelper.clamp(error*.28f,-speed,speed)-yawVelocity,-speed*.15f,speed*.15f);
-            mc.player.setYaw(mc.player.getYaw()+Math.copySign(Math.min(Math.abs(error),Math.abs(yawVelocity)),error));
-        }else mc.player.setYaw(mc.player.getYaw()+MathHelper.clamp(error,-turnLimit,turnLimit));
         // A placement may leave the view pointing at the ground. Bring it back toward
         // the walking corridor gradually instead of carrying that pitch along the route.
         float walkingPitch=point.y>mc.player.getY()+.4?-12:12;
-        mc.player.setPitch(mc.player.getPitch()+MathHelper.clamp((walkingPitch-mc.player.getPitch())*.2f,-6,6));
+        lookAt(yaw,walkingPitch);
         float headingError=Math.abs(MathHelper.wrapDegrees(yaw-mc.player.getYaw()));
         // At the final viewpoint, let each short movement settle before the
         // next input. Full walking speed otherwise overshoots a small target

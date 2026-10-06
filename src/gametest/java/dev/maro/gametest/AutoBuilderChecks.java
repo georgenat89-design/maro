@@ -439,7 +439,7 @@ final class AutoBuilderChecks {
                 set(builder,"Temporary Supports",true);set(builder,"Clean Temporary Supports",true);set(builder,"Support Dirt Reserve",64);set(builder,"Auto Buy Tools",true);
                 set(builder,"Material Supply",homeTest?"Nearby Sections":"Layer by Layer");set(builder,"Prepare Whole Build",!upper);set(builder,"Stockpile In Chests",true);set(builder,"Auto Eat",true);builder.auctionBudget(1000);
                 if(homeTest){set(builder,"Builder Homes",true);set(builder,"Head Spoofing",true);((BuilderHomes)field(builder,"homes")).reset();}
-                builder.install(stash);builder.setOrigin(origin);((Set<BlockPos>)field(builder,"supports")).addAll(priorSupports);client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();BuilderPacketChecks.begin();builder.startBuild();
+                builder.install(stash);builder.setOrigin(origin);((Set<BlockPos>)field(builder,"supports")).addAll(priorSupports);client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();BuilderPacketChecks.begin();if(homeTest)BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
                 if(upper)try{var attempts=AutoBuilder.class.getDeclaredField("recoveryAttempts");attempts.setAccessible(true);attempts.setInt(builder,3);}catch(ReflectiveOperationException error){throw new AssertionError(error);}
             });
             // This survival replay includes material trips, enclosed access,
@@ -452,9 +452,10 @@ final class AutoBuilderChecks {
             require(dirt.isEmpty(),"Stash left a temporary block on the server at "+dirt);
             if(homeTest){
                 require(world.getServer().computeOnServer(server->{for(var pos:BlockPos.iterate(start.add(-24,0,-24),start.add(24,12,24)))if(!server.getOverworld().getFluidState(pos).isEmpty()){int cell=stash.indexAt(pos.subtract(origin),0,"None");if(cell<0||stash.state(cell).getFluidState().isEmpty())return false;}return true;}),"Fresh schematic leaked water/lava or waterlogged a dry block");
-                BuilderHomeChecks.verifyCommands();System.out.println("[builder-stash] PASS: fresh 710/710 native server blocks; zero temporary dirt; all openings restored; liquids contained");context.takeScreenshot("maro-stash-fresh-homes-complete");
+                BuilderHomeChecks.verifyCommands();
             }
             context.runOnClient(client->{BuilderPacketChecks.verify();require(builder.temporarySupports().isEmpty(),"Stash left temporary supports");require(client.currentScreen==null,"Stash left its supply menu open");require(client.player.getHealth()==client.player.getMaxHealth(),"Stash survival replay lost health");});
+            if(homeTest){System.out.println("[builder-stash] PASS: fresh 710/710 native server blocks; zero temporary dirt; openings restored; liquids contained; bounded head packets; full health");context.takeScreenshot("maro-stash-fresh-homes-complete");}
         }finally{
             context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});world.getServer().runCommand("gamemode creative @a");world.getServer().runCommand("tp @a "+coords(original));context.waitTicks(30);
         }
