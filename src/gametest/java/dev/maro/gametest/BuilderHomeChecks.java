@@ -35,9 +35,8 @@ final class BuilderHomeChecks {
         var player=waiting;waiting=null;
         player.teleport(server.getOverworld(),arrival.pos.x,arrival.pos.y,arrival.pos.z,Set.of(),arrival.yaw,arrival.pitch,true);
     });}
-    static void run(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
-        System.out.println("[builder-check] Automatic storage home replacement, warmup, native arrival, prompt repair and independent camera aim");
-        storage=start.east(2);
+    static void installCommands(TestSingleplayerContext world,BlockPos storageChest){
+        storage=storageChest;
         world.getServer().runOnServer(server->{
             Arrays.fill(saved,null);saveCommands=travelCommands=deleteCommands=0;waiting=null;movedDuringWarmup=rejectTravel=rejectDelete=silentDelete=commandsAwayFromStorage=false;
             server.getCommandManager().getDispatcher().register(CommandManager.literal("home")
@@ -65,7 +64,11 @@ final class BuilderHomeChecks {
                 })));
             server.getPlayerManager().getPlayerList().forEach(server.getCommandManager()::sendCommandTree);
         });
-        var chest=storage;
+    }
+    static void verifyCommands(){require(!movedDuringWarmup&&!commandsAwayFromStorage,"Home commands moved during warmup or saved away from storage");require(deleteCommands==1&&saveCommands>=1,"Fresh build did not confirm storage home setup");System.out.println("[builder-home] Fresh run: saves="+saveCommands+" native travels="+travelCommands+" storage deletes="+deleteCommands);}
+    static void run(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Automatic storage home replacement, warmup, native arrival, prompt repair and independent camera aim");
+        installCommands(world,start.east(2));var chest=storage;
         command(world,"setblock",chest,"chest[facing=west,type=right]");command(world,"setblock",chest.south(),"chest[facing=west,type=left]");
         var home2=start.east(12);var home3=home2.up(4);command(world,"setblock",home3.down(),"stone");context.waitTicks(10);
         context.runOnClient(client->{
@@ -104,6 +107,7 @@ final class BuilderHomeChecks {
         columnEdgeMining(context,world,builder,start);
         teleport(world,start);context.waitTicks(12);
         rotations(context,builder,start);
+        cameraContinuity(context,world,builder,start);
         context.runOnClient(client->{builder.setEnabled(false);setting(builder,"Builder Homes",false);setting(builder,"Head Spoofing",false);});
         System.out.println("[builder-home] PASS: home 1 replaced at storage; homes 2/3 kept; Start resumed; absent/rejected/missing receipts bounded; 3 confirmed homes; 2 native arrivals; cooldown bounded; repair before cleanup; crouch mining; smooth independent camera");
     }
@@ -172,6 +176,28 @@ final class BuilderHomeChecks {
         }
         require(settled,"Smooth rotation did not settle promptly");
         context.runOnClient(client->{require(Math.abs(MathHelper.wrapDegrees(client.gameRenderer.getCamera().getYaw()-178))<.1,"Rendered camera followed spoofed head");builder.pause("head spoof complete");require(builder.builderCameraLook()==null,"Pause retained head lock");});
+    }
+    private static void cameraContinuity(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        var origin=start.west(5).south(3);var blocks=List.of(origin,origin.east(5),origin.east(10));
+        for(var pos:blocks)command(world,"setblock",pos,"air");world.getServer().runCommand("give @a stone 3");context.waitTicks(6);
+        context.runOnClient(client->{
+            setting(builder,"Builder Homes",false);var states=new BlockState[11];Arrays.fill(states,Blocks.STRUCTURE_VOID.getDefaultState());for(int i:List.of(0,5,10))states[i]=Blocks.STONE.getDefaultState();
+            builder.install(new Schematic("camera-placement-walk.nbt","test",11,1,1,BlockPos.ORIGIN,states));builder.setOrigin(origin);BuilderPacketChecks.begin();builder.startBuild();
+        });
+        float[] held={Float.NaN,Float.NaN};boolean[] walking={false};int placed=0;
+        for(int tick=0;tick<300;tick++){
+            context.runOnClient(client->{
+                var look=builder.builderCameraLook();if(look!=null&&Float.isNaN(held[0])){held[0]=look[0];held[1]=look[1];}
+                if(!Float.isNaN(held[0])&&builder.building()&&client.currentScreen==null){
+                    require(look!=null,"Camera lock dropped between placements");require(Math.abs(MathHelper.wrapDegrees(look[0]-held[0]))<.01&&Math.abs(look[1]-held[1])<.01,"Placement/walking changed independent view");
+                    require(Math.abs(MathHelper.wrapDegrees(client.gameRenderer.getCamera().getYaw()-held[0]))<.1,"Rendered camera snapped after placement");walking[0]|=((BuilderWalk)field(builder,"walker")).moving();
+                }
+            });
+            placed=world.getServer().computeOnServer(server->(int)blocks.stream().filter(pos->server.getOverworld().getBlockState(pos).isOf(Blocks.STONE)).count());if(placed==3)break;context.waitTick();
+        }
+        require(placed==3&&walking[0],"Camera continuity fixture did not place all three blocks and walk between them");
+        context.runOnClient(client->{BuilderPacketChecks.verify(3);builder.pause("camera continuity checked");setting(builder,"Builder Homes",true);});
+        System.out.println("[builder-camera] PASS: three native placements plus walking; independent view retained without post-placement snapping");
     }
     private static void crouchedMining(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         var target=start.south(2);var beam=start.south().up();command(world,"setblock",target,"dirt");command(world,"setblock",beam,"stone");world.getServer().runCommand("give @a diamond_shovel");context.waitTicks(8);

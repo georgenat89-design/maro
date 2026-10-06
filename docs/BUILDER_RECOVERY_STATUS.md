@@ -5,6 +5,20 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Latest, 16:26: the first fresh homes-enabled replay was stopped at 79/710,
+47 supports after the user reported snapping onto placed blocks. A read-only
+native camera trace caught 161.49, 144.48 and 121.44 degree view changes in a
+single tick immediately after placement confirmation. Entity aim was already
+smoothed; releasing the independent camera after two idle ticks exposed it.
+Camera ownership now persists through placements, delays, walking and home
+travel while builder work is active. Menus/pause/Free Look/Free Cam still yield.
+
+Native builder-camera-continuity-1 PASSED in 1m13 with Meteor: the entire storage,
+homes, head, repair and crouch suite plus three native placements with walking
+between them. The actual rendered view and mouse-independent camera remain
+stable after each placement and during walking. Fresh replay is being restarted
+with these changes. No full 710-block pass is claimed yet.
+
 Latest, 16:17: storage home setup now replaces home 1 automatically. Start no
 longer requires three empty slots or the player already standing at storage.
 It walks to a checked dry view of the marked chest, or uses an already verified

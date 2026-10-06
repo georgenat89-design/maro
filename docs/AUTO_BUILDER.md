@@ -25,8 +25,10 @@ survives pause and saved-placement reload.
 
 Head Spoofing keeps the first-person camera independent while normal movement
 packets publish smooth, correctly aimed head rotations before interactions.
-Mouse look still moves the camera. Walking, menus, pause, Free Look and Free Cam
-release the builder camera control. For vertical temporary columns, it removes
+Mouse look still moves the camera. Placement confirmation, action delays, walking
+and home travel retain that independent view, preventing a snap back to the aimed
+block between jobs. Menus, pause, Free Look and Free Cam release camera control.
+For vertical temporary columns, it removes
 the reachable upper blocks, then stays crouched and eases over the ledge to mine
 a hidden lower block. The original full-cube ledge must keep supporting part of
 the body; its footing is never the peek's mining target. Each actual mining

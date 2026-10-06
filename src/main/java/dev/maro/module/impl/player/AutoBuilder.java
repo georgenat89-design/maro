@@ -666,7 +666,7 @@ public final class AutoBuilder extends Module {
     private void tickWork(){
         ticks++;supportChainStarts.clear();viewPlanningDeadline=floorPlanningDeadline=0;if(delay>0)delay--;
         if(peekTarget!=null&&!peekTarget.equals(mining)){releaseSneak();walker.release();}
-        if(cameraLocked&&(ticks-cameraAimTick>2||walker.moving()||homes.busy()||mc.currentScreen!=null))cameraLocked=false;
+        if(cameraLocked&&(!headSpoofing.get()||!builderCameraActive()&&ticks-cameraAimTick>2||mc.currentScreen!=null||dev.maro.nathan.modules.FreeCam.active()||dev.maro.nathan.modules.FreeLook.active()))cameraLocked=false;
         latePlacements.values().removeIf(receipt->receipt.expires<=ticks);
         failedPlacementUntil.values().removeIf(until->until<=ticks);
         routeSupportExclusions.values().removeIf(until->until<=ticks);
@@ -2604,7 +2604,7 @@ public final class AutoBuilder extends Module {
     private float[] angles(Vec3d point){return angles(mc.player.getEyePos(),point);}
     private float[] angles(Vec3d eye,Vec3d point){var delta=point.subtract(eye);return new float[]{(float)(Math.toDegrees(Math.atan2(delta.z,delta.x))-90),(float)-Math.toDegrees(Math.atan2(delta.y,Math.sqrt(delta.x*delta.x+delta.z*delta.z)))};}
     private boolean aim(Vec3d point){
-        if(headSpoofing.get()&&!dev.maro.nathan.modules.FreeCam.active()&&!dev.maro.nathan.modules.FreeLook.active()&&!walker.moving()){
+        if(headSpoofing.get()&&!dev.maro.nathan.modules.FreeCam.active()&&!dev.maro.nathan.modules.FreeLook.active()){
             if(!cameraLocked){cameraYaw=mc.player.getYaw();cameraPitch=mc.player.getPitch();cameraLocked=true;}
             cameraAimTick=ticks;
         }
@@ -2651,16 +2651,17 @@ public final class AutoBuilder extends Module {
         mc.player.setYaw(mc.player.getYaw()+MathHelper.wrapDegrees(goal[0]-mc.player.getYaw()));mc.player.setPitch(goal[1]);
         queuedLookYaw=mc.player.getYaw();queuedLookPitch=mc.player.getPitch();
     }
+    private boolean builderCameraActive(){return building||buying||depositing||pasting||homes.busy();}
     public float[] builderCameraLook(){
-        return cameraLocked&&headSpoofing.get()&&isEnabled()&&inGame()&&mc.options.getPerspective().isFirstPerson()&&mc.currentScreen==null&&!walker.moving()&&!homes.busy()
-            &&ticks-cameraAimTick<=2&&!dev.maro.nathan.modules.FreeCam.active()&&!dev.maro.nathan.modules.FreeLook.active()?new float[]{cameraYaw,cameraPitch}:null;
+        return cameraLocked&&headSpoofing.get()&&isEnabled()&&inGame()&&mc.options.getPerspective().isFirstPerson()&&mc.currentScreen==null
+            &&(builderCameraActive()||ticks-cameraAimTick<=2)&&!dev.maro.nathan.modules.FreeCam.active()&&!dev.maro.nathan.modules.FreeLook.active()?new float[]{cameraYaw,cameraPitch}:null;
     }
     public boolean turnBuilderCamera(double x,double y){
         if(builderCameraLook()==null)return false;
         cameraYaw+=(float)(x*.15);cameraPitch=MathHelper.clamp(cameraPitch+(float)(y*.15),-90,90);return true;
     }
     private void resetAfterHome(){
-        cameraLocked=false;queuedLookAction=null;queuedAimPoint=aimPoint=null;lookWaitStarted=-1;
+        queuedLookAction=null;queuedAimPoint=aimPoint=null;lookWaitStarted=-1;
         yawVelocity=pitchVelocity=0;standGoal=null;accessStand=accessBase=null;accessFloor=false;
         accessSupports.clear();accessStairs=Set.of();descentPost=descentView=null;descentLanding=false;
         viewSearches.clear();triedStands.clear();cleanupStands.clear();retryAt.clear();
