@@ -18,7 +18,7 @@ public abstract class BuilderCameraMixin {
     @Inject(method="update",at=@At("RETURN"))
     private void maro$builderCamera(World world,Entity entity,boolean thirdPerson,boolean mirrored,float partialTick,CallbackInfo info){
         if(thirdPerson||entity!=MinecraftClient.getInstance().player)return;
-        var builder=ModuleManager.get(AutoBuilder.class);var look=builder==null?null:builder.builderCameraLook();
+        var builder=ModuleManager.get(AutoBuilder.class);var look=builder==null?null:builder.builderCameraLook(partialTick);
         if(look!=null)setRotation(look[0],look[1]);
     }
 }

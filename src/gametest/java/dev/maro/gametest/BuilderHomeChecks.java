@@ -158,7 +158,7 @@ final class BuilderHomeChecks {
             builder.install(new Schematic("restock-return.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
         });
         boolean placed=false;for(int tick=0;tick<500;tick++){placed=world.getServer().computeOnServer(server->server.getOverworld().getBlockState(target).isOf(Blocks.STONE));if(placed)break;context.waitTick();}
-        require(placed,"Restock round trip did not resume native placement: "+context.computeOnClient(client->builder.status()));
+        require(placed,"Restock round trip did not resume native placement: "+context.computeOnClient(client->builder.status()+" pos="+client.player.getEntityPos()+" health="+client.player.getHealth()+" grounded="+client.player.isOnGround()+" velocity="+client.player.getVelocity()+" homes="+((BuilderHomes)field(builder,"homes")).saveData()+" stage="+field(field(builder,"homes"),"stage")+" clock="+field(field(builder,"homes"),"clock")+" started="+field(field(builder,"homes"),"started")));
         require(commands.subList(first,commands.size()).equals(List.of("delhome 2","sethome 2","home 1","home 2","delhome 2")),"Incorrect restock command order: "+commands.subList(first,commands.size()));
         require(saved[1]==null&&saved[2]==third&&!movedDuringWarmup,"Home 2 was retained, home 3 changed or warmup moved");
         require(world.getServer().computeOnServer(server->((net.minecraft.block.entity.ChestBlockEntity)server.getOverworld().getBlockEntity(chest)).getStack(0).getCount()==7),"Native chest restock took an incorrect quantity");
@@ -188,20 +188,22 @@ final class BuilderHomeChecks {
     }
     private static void rotations(ClientGameTestContext context,AutoBuilder builder,BlockPos start){
         context.runOnClient(client->{client.player.setYaw(178);client.player.setPitch(0);});
-        float[] previous={178,0};boolean settled=false;
-        for(int tick=0;tick<35;tick++){
+        float[] previous={178,0},previousView={178,0};boolean settled=false,visibleTurn=false;
+        for(int tick=0;tick<65;tick++){
             final int turn=tick;
             settled=context.computeOnClient(client->{
                 var point=Vec3d.ofCenter(start.east(3));boolean ready=(boolean)call(builder,"aim",new Class<?>[]{Vec3d.class},point);
                 float delta=Math.abs(MathHelper.wrapDegrees(client.player.getYaw()-previous[0]));require(delta<=12.01,"Aim exceeded natural yaw limit");require(Math.abs(client.player.getPitch()-previous[1])<=8.01,"Aim exceeded natural pitch limit");
                 previous[0]=client.player.getYaw();previous[1]=client.player.getPitch();
-                var camera=builder.builderCameraLook();require(camera!=null&&Math.abs(MathHelper.wrapDegrees(camera[0]-178))<.01,"Head aim changed independent camera");
-                if(turn==0){float yaw=client.player.getYaw();client.player.changeLookDirection(20,0);require(client.player.getYaw()==yaw&&Math.abs(builder.builderCameraLook()[0]-181)<.01,"Mouse look changed server aim");client.player.changeLookDirection(-20,0);}
+                var camera=builder.builderCameraLook();require(camera!=null,"Visible head view was not active");
+                client.player.changeLookDirection(0,0);
+                require(Math.abs(MathHelper.wrapDegrees(camera[0]-previousView[0]))<=12.01&&Math.abs(camera[1]-previousView[1])<=8.01,"Visible head turn exceeded the eased rate");previousView[0]=camera[0];previousView[1]=camera[1];
+                if(turn==0){float yaw=client.player.getYaw(),view=camera[0];client.player.changeLookDirection(20,0);require(client.player.getYaw()==yaw&&Math.abs(builder.builderCameraLook()[0]-view-3)<.01,"Mouse look changed server aim");client.player.changeLookDirection(-20,0);}
                 return ready;
-            });context.waitTick();if(settled)break;
+            });visibleTurn|=Math.abs(MathHelper.wrapDegrees(previousView[0]-178))>10;context.waitTick();if(settled)break;
         }
-        require(settled,"Smooth rotation did not settle promptly");
-        context.runOnClient(client->{require(Math.abs(MathHelper.wrapDegrees(client.gameRenderer.getCamera().getYaw()-178))<.1,"Rendered camera followed spoofed head");builder.pause("head spoof complete");require(builder.builderCameraLook()==null,"Pause retained head lock");});
+        require(settled&&visibleTurn,"Visible head rotation stayed frozen or failed to settle");
+        context.runOnClient(client->{require(Math.abs(MathHelper.wrapDegrees(client.gameRenderer.getCamera().getYaw()-178))>10,"Rendered head view did not visibly turn");require(Math.abs(MathHelper.wrapDegrees(builder.builderCameraLook()[0]-client.player.getYaw()))<1.5,"Visible view did not face the action before aim completed");builder.pause("visible head turn complete");require(builder.builderCameraLook()==null,"Pause retained head lock");});
     }
     private static void cameraContinuity(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         var origin=start.west(5).south(3);var blocks=List.of(origin,origin.east(5),origin.east(10));
@@ -210,20 +212,21 @@ final class BuilderHomeChecks {
             setting(builder,"Builder Homes",false);var states=new BlockState[11];Arrays.fill(states,Blocks.STRUCTURE_VOID.getDefaultState());for(int i:List.of(0,5,10))states[i]=Blocks.STONE.getDefaultState();
             builder.install(new Schematic("camera-placement-walk.nbt","test",11,1,1,BlockPos.ORIGIN,states));builder.setOrigin(origin);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
         });
-        float[] held={Float.NaN,Float.NaN};boolean[] walking={false};int placed=0;
+        float[] previous={Float.NaN,Float.NaN};float[] total={0,0};boolean[] walking={false};int placed=0;
         for(int tick=0;tick<500;tick++){
             context.runOnClient(client->{
-                var look=builder.builderCameraLook();if(look!=null&&Float.isNaN(held[0])){held[0]=look[0];held[1]=look[1];}
-                if(!Float.isNaN(held[0])&&builder.building()&&client.currentScreen==null){
-                    require(look!=null,"Camera lock dropped between placements");require(Math.abs(MathHelper.wrapDegrees(look[0]-held[0]))<.01&&Math.abs(look[1]-held[1])<.01,"Placement/walking changed independent view");
-                    require(Math.abs(MathHelper.wrapDegrees(client.gameRenderer.getCamera().getYaw()-held[0]))<.1,"Rendered camera snapped after placement");walking[0]|=((BuilderWalk)field(builder,"walker")).moving();
+                var look=builder.builderCameraLook();
+                if(look!=null&&builder.building()&&client.currentScreen==null){
+                    if(!Float.isNaN(previous[0])){float yaw=Math.abs(MathHelper.wrapDegrees(look[0]-previous[0])),pitch=Math.abs(look[1]-previous[1]);require(yaw<=12.01&&pitch<=8.01,"Visible placement/walking head snapped");total[0]+=yaw;total[1]+=pitch;}
+                    previous[0]=look[0];previous[1]=look[1];
+                    require(Math.abs(MathHelper.wrapDegrees(client.gameRenderer.getCamera().getYaw()-look[0]))<=24.01,"Rendered view snapped away from eased head");walking[0]|=((BuilderWalk)field(builder,"walker")).moving();
                 }
             });
             placed=world.getServer().computeOnServer(server->(int)blocks.stream().filter(pos->server.getOverworld().getBlockState(pos).isOf(Blocks.STONE)).count());if(placed==3)break;context.waitTick();
         }
-        require(placed==3&&walking[0],"Camera continuity fixture did not place all three blocks and walk between them");
+        require(placed==3&&walking[0]&&total[0]>30&&total[1]>10,"Visible head fixture did not turn, walk and place all three blocks");
         context.runOnClient(client->{BuilderPacketChecks.verify(3);builder.pause("camera continuity checked");setting(builder,"Builder Homes",true);});
-        System.out.println("[builder-camera] PASS: three native placements plus walking; independent view retained without post-placement snapping");
+        System.out.println("[builder-camera] PASS: visible eased yaw/pitch plus walking and three native placements; frame interpolation; no frozen view or post-placement snapping");
     }
     private static void crouchedMining(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         var target=start.south(2);var beam=start.south().up();command(world,"setblock",target,"dirt");command(world,"setblock",beam,"stone");world.getServer().runCommand("give @a diamond_shovel");context.waitTicks(8);

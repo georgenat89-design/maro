@@ -28,13 +28,16 @@ Completed access jobs restore their openings as soon as the body clears and the
 active route releases them. Deeper repairs precede outer faces. The repair list
 survives pause and saved-placement reload.
 
-Head Spoofing keeps the first-person camera independent while normal movement
-packets publish smooth, correctly aimed head rotations before interactions.
+Head Spoofing eases the visible first-person view toward walking and action aim
+while normal movement packets publish correctly aimed head rotations.
 Walking and action aim share one rotation controller, capped at 12 degrees of
 yaw and 8 degrees of pitch per tick, with acceleration and braking through turns.
-Mouse look still moves the camera. Placement confirmation, action delays, walking
-and home travel retain that independent view, preventing a snap back to the aimed
-block between jobs. Menus, pause, Free Look and Free Cam release camera control.
+The visible view uses the same limits and easing, with interpolation between
+frames. It visibly looks toward its route and target; placement waits until the
+view faces the block. Mouse look still moves the camera independently and gets
+a short manual-look hold before following resumes. Camera control stays active
+through placements, delays, walking and home travel so it never snaps back after
+placement. Menus, pause, Free Look and Free Cam release camera control.
 For vertical temporary columns, it removes
 the reachable upper blocks, then stays crouched and eases over the ledge to mine
 a hidden lower block. The original full-cube ledge must keep supporting part of

@@ -77,9 +77,10 @@ public final class AutoBuilder extends Module {
     private final NumberSetting spacing=number("Build","Action Delay","Ticks between placements and inventory operations; server confirmation is still required",2,0,20,1);
     private final NumberSetting timingVariation=number("Build","Timing Variation","Extra random ticks added to action delay",1,0,6,1);
     private final BooleanSetting smoothTurning=bool("Build","Head Smoothing","Ease visible turns into and out of the target angle",true);
-    private final BooleanSetting headSpoofing=bool("Build","Head Spoofing","Keep the first-person camera independent while smooth, correctly aimed rotations reach the server",true);
-    private float cameraYaw,cameraPitch;
+    private final BooleanSetting headSpoofing=bool("Build","Head Spoofing","Ease the visible view toward walking and action aim while precise native head rotations reach the server",true);
+    private float cameraYaw,cameraPitch,previousCameraYaw,previousCameraPitch,cameraYawVelocity,cameraPitchVelocity;
     private int cameraAimTick=-100;
+    private int cameraMouseTick=-100;
     private boolean cameraLocked;
     private BlockPos peekTarget,peekFloor;
     private int peekStarted;
@@ -384,6 +385,7 @@ public final class AutoBuilder extends Module {
         button("Materials","Cancel Buying","Stop the shopping session","Cancel",()->finishBuying("Buying cancelled"));
         button("Materials","Deposit All","Move inventory and hotbar items into your selected double chests","Deposit",this::depositAll);
         ClientTickEvents.START_CLIENT_TICK.register(client->{digging=false;queuedLookAction=null;if(isEnabled())tickWork();});
+        ClientTickEvents.END_CLIENT_TICK.register(client->{if(builderCameraLook()!=null)followBuilderCamera();});
         ClientPlayConnectionEvents.DISCONNECT.register((handler,client)->{
             checkpoint();pause("Build saved — reconnect and press Resume");world=null;
         });
@@ -667,6 +669,7 @@ public final class AutoBuilder extends Module {
         ticks++;supportChainStarts.clear();viewPlanningDeadline=floorPlanningDeadline=0;if(delay>0)delay--;
         if(peekTarget!=null&&!peekTarget.equals(mining)){releaseSneak();walker.release();}
         if(cameraLocked&&(!headSpoofing.get()||!builderCameraActive()&&ticks-cameraAimTick>2||mc.currentScreen!=null||dev.maro.nathan.modules.FreeCam.active()||dev.maro.nathan.modules.FreeLook.active()))cameraLocked=false;
+        if(headSpoofing.get()&&builderCameraActive()&&inGame()&&mc.currentScreen==null&&!dev.maro.nathan.modules.FreeCam.active()&&!dev.maro.nathan.modules.FreeLook.active())claimBuilderCamera();
         latePlacements.values().removeIf(receipt->receipt.expires<=ticks);
         failedPlacementUntil.values().removeIf(until->until<=ticks);
         routeSupportExclusions.values().removeIf(until->until<=ticks);
@@ -2601,11 +2604,12 @@ public final class AutoBuilder extends Module {
     private float[] angles(Vec3d eye,Vec3d point){var delta=point.subtract(eye);return new float[]{(float)(Math.toDegrees(Math.atan2(delta.z,delta.x))-90),(float)-Math.toDegrees(Math.atan2(delta.y,Math.sqrt(delta.x*delta.x+delta.z*delta.z)))};}
     private boolean aim(Vec3d point){
         if(headSpoofing.get()&&!dev.maro.nathan.modules.FreeCam.active()&&!dev.maro.nathan.modules.FreeLook.active()){
-            if(!cameraLocked){cameraYaw=mc.player.getYaw();cameraPitch=mc.player.getPitch();cameraLocked=true;}
+            claimBuilderCamera();
             cameraAimTick=ticks;
         }
         aimPoint=point;
-        float[] goal=angles(point);return walker.lookAt(goal[0],goal[1]);
+        float[] goal=angles(point);boolean ready=walker.lookAt(goal[0],goal[1]);
+        return ready&&(builderCameraLook()==null||Math.abs(MathHelper.wrapDegrees(cameraYaw-goal[0]))<=1.5&&Math.abs(cameraPitch-goal[1])<=1.5);
     }
     private boolean buildLookReady(){
         // Wait for the next ordinary player tick. Publishing movement here creates a second
@@ -2633,13 +2637,37 @@ public final class AutoBuilder extends Module {
         queuedLookYaw=mc.player.getYaw();queuedLookPitch=mc.player.getPitch();
     }
     private boolean builderCameraActive(){return building||buying||depositing||pasting||homes.busy();}
+    private void claimBuilderCamera(){
+        if(cameraLocked)return;
+        previousCameraYaw=cameraYaw=mc.player.getYaw();previousCameraPitch=cameraPitch=mc.player.getPitch();cameraYawVelocity=cameraPitchVelocity=0;cameraMouseTick=-100;cameraLocked=true;
+    }
+    private float cameraVelocity(float velocity,float error,float limit){
+        float desired=Math.copySign(Math.min(limit,Math.min((float)Math.sqrt(2*Math.abs(error)),Math.abs(error)*.45f)),error);
+        return MathHelper.clamp(velocity+MathHelper.clamp(desired-velocity,-2,2),-limit,limit);
+    }
+    private void followBuilderCamera(){
+        previousCameraYaw=cameraYaw;previousCameraPitch=cameraPitch;
+        if(ticks-cameraMouseTick<10)return;
+        float yawError=MathHelper.wrapDegrees(mc.player.getYaw()-cameraYaw),pitchError=mc.player.getPitch()-cameraPitch;
+        cameraYawVelocity=cameraVelocity(cameraYawVelocity,yawError,12);cameraPitchVelocity=cameraVelocity(cameraPitchVelocity,pitchError,8);
+        cameraYaw+=cameraYawVelocity;cameraPitch=MathHelper.clamp(cameraPitch+cameraPitchVelocity,-90,90);
+        if(Math.abs(MathHelper.wrapDegrees(mc.player.getYaw()-cameraYaw))<.35&&Math.abs(cameraYawVelocity)<.75){cameraYaw+=MathHelper.wrapDegrees(mc.player.getYaw()-cameraYaw);cameraYawVelocity=0;}
+        if(Math.abs(mc.player.getPitch()-cameraPitch)<.35&&Math.abs(cameraPitchVelocity)<.75){cameraPitch=mc.player.getPitch();cameraPitchVelocity=0;}
+    }
     public float[] builderCameraLook(){
         return cameraLocked&&headSpoofing.get()&&isEnabled()&&inGame()&&mc.options.getPerspective().isFirstPerson()&&mc.currentScreen==null
             &&(builderCameraActive()||ticks-cameraAimTick<=2)&&!dev.maro.nathan.modules.FreeCam.active()&&!dev.maro.nathan.modules.FreeLook.active()?new float[]{cameraYaw,cameraPitch}:null;
     }
+    public float[] builderCameraLook(float partialTick){
+        if(builderCameraLook()==null)return null;float fraction=MathHelper.clamp(partialTick,0,1);
+        return new float[]{MathHelper.lerp(fraction,previousCameraYaw,cameraYaw),MathHelper.lerp(fraction,previousCameraPitch,cameraPitch)};
+    }
     public boolean turnBuilderCamera(double x,double y){
         if(builderCameraLook()==null)return false;
-        cameraYaw+=(float)(x*.15);cameraPitch=MathHelper.clamp(cameraPitch+(float)(y*.15),-90,90);return true;
+        if(Math.abs(x)<.000001&&Math.abs(y)<.000001)return true;
+        float yaw=(float)(x*.15),pitch=MathHelper.clamp(cameraPitch+(float)(y*.15),-90,90)-cameraPitch;
+        previousCameraYaw+=yaw;cameraYaw+=yaw;previousCameraPitch+=pitch;cameraPitch+=pitch;
+        cameraMouseTick=ticks;cameraYawVelocity=cameraPitchVelocity=0;return true;
     }
     private void resetAfterHome(){
         queuedLookAction=null;queuedAimPoint=aimPoint=null;lookWaitStarted=-1;

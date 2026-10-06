@@ -5,6 +5,22 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Latest, 17:02: the user reported that the visible head did not turn. The retained
+independent camera had intentionally stayed fixed, hiding native head motion.
+It now visibly eases toward walking/action aim with 12-degree yaw / 8-degree
+pitch limits, acceleration/braking and frame interpolation. Action aim waits
+for the visible view to face the target. Actual mouse input still controls the
+view briefly; zero mouse deltas do not restart the hold and freeze following.
+
+builder-visible-head-native-2 PASSED in 1m27 with Meteor: visible yaw/pitch must
+actually move during a target turn and three native placements plus walking;
+camera rate bounds, actual rendered view, native packet limits and mouse/native
+aim separation all passed. The storage/restock/pause-return suite, protected
+dirt footing, rejected return, repair in 14 ticks and crouched 3/3 column cleanup
+also passed with the moving camera. Fresh-restock-homes-3 was stopped at 20/710,
+21 supports for this user steering; it was not a completion pass. Restart the
+full fresh replay with the visible-camera changes. PR stays draft until gates pass.
+
 Latest, 16:54: builder-restock-return-native-7 PASSED in 1m19 with Meteor.
 It verifies actual native chest withdrawal (one stone, seven retained in chest)
 then placement after exactly delhome 2 -> sethome 2 -> home 1 -> home 2 ->
