@@ -5,6 +5,19 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+At 09:36, Upper64 on889b114 FAILED its30-minute fixture deadline during
+cleanup. All original water/lava/observer targets were placed; the ceiling
+placement route worked, and owned-support cleanup selected ceiling entry,
+reclaimed posts, opened further registered access and advanced to new targets.
+Final progress697/710 with104supports; native health stayed20. It is not a
+pass. A capacity trip abandoned one ceiling base, but restoring its five mined
+posts in collision-only proof did not recover the route from the current actor;
+the original-source route was still valid without them. No speculative routing
+patch. The complete survival fixture now allows72000ticks (60minutes) for
+placement, selected-storage trips,128legacy posts and final repairs, retaining
+all completion/server/zero-dirt/packet/menu assertions and adding final full
+health. Production code is unchanged. Full Upper/Fresh/latest CI remain pending.
+
 At 09:05, ceiling-entry-2 PASSED 3m17s: retained staging/thick-wall regressions,
 ceiling placement, and owned AIR-cell cleanup from an owned base beneath a low
 ceiling. The cleanup case starts with four posts and a five-post limit, reserves

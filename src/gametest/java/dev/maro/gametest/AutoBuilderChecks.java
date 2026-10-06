@@ -424,12 +424,15 @@ final class AutoBuilderChecks {
                 builder.install(stash);builder.setOrigin(origin);((Set<BlockPos>)field(builder,"supports")).addAll(priorSupports);client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();BuilderPacketChecks.begin();builder.startBuild();
                 if(upper)try{var attempts=AutoBuilder.class.getDeclaredField("recoveryAttempts");attempts.setAccessible(true);attempts.setInt(builder,3);}catch(ReflectiveOperationException error){throw new AssertionError(error);}
             });
-            await(context,builder,36000);
+            // This survival replay includes material trips, enclosed access,
+            // removal of 128 captured posts and restoration of every opening.
+            // The 30-minute run reached cleanup while still making progress.
+            await(context,builder,72000);
             String mismatch=world.getServer().computeOnServer(server->{for(int i=0;i<stash.size();i++)if(!stash.state(i).isAir()&&!AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(origin.add(stash.local(i))),stash.state(i)))return origin.add(stash.local(i)).toShortString();return "";});
             require(mismatch.isEmpty(),"Stash server mismatch at "+mismatch);
             String dirt=world.getServer().computeOnServer(server->{for(int x=-24;x<=24;x++)for(int y=0;y<=12;y++)for(int z=-24;z<=24;z++)if(server.getOverworld().getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return start.add(x,y,z).toShortString();return "";});
             require(dirt.isEmpty(),"Stash left a temporary block on the server at "+dirt);
-            context.runOnClient(client->{BuilderPacketChecks.verify();require(builder.temporarySupports().isEmpty(),"Stash left temporary supports");require(client.currentScreen==null,"Stash left its supply menu open");});
+            context.runOnClient(client->{BuilderPacketChecks.verify();require(builder.temporarySupports().isEmpty(),"Stash left temporary supports");require(client.currentScreen==null,"Stash left its supply menu open");require(client.player.getHealth()==client.player.getMaxHealth(),"Stash survival replay lost health");});
         }finally{
             context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});world.getServer().runCommand("gamemode creative @a");world.getServer().runCommand("tp @a "+coords(original));context.waitTicks(30);
         }
