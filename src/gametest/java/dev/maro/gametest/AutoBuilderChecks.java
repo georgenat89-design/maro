@@ -79,7 +79,7 @@ final class AutoBuilderChecks {
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")){stashBuild(context,singleplayer,builder,start);return;}
-            if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")){raisedChestReturn(context,singleplayer,builder,start);sealedChestReturn(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")){sealedBuildEscape(context,singleplayer,builder,start);raisedChestReturn(context,singleplayer,builder,start);sealedChestReturn(context,singleplayer,builder,start);return;}
             fixture(context,singleplayer,builder,start);
             raisedTurn(context,singleplayer,start);
             fixture(context,singleplayer,builder,start);
@@ -88,6 +88,8 @@ final class AutoBuilderChecks {
             scaffoldReach(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             offsetRecovery(context,singleplayer,builder,start);
+            fixture(context,singleplayer,builder,start);
+            activeStepProtection(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             if(Boolean.getBoolean("maro.gametest.builderTurnOnly"))return;
             layerTail(context,singleplayer,builder,start);
@@ -105,6 +107,7 @@ final class AutoBuilderChecks {
             distantChest(context,singleplayer,builder,start);
             raisedChestReturn(context,singleplayer,builder,start);
             sealedChestReturn(context,singleplayer,builder,start);
+            sealedBuildEscape(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             if(Boolean.getBoolean("maro.gametest.builderNavigationOnly")){cancellation(context,builder,context.computeOnClient(client->builder.schematic()));return;}
             if(Boolean.getBoolean("maro.gametest.builderAuctionOnly")){BuilderAuctionChecks.run(context,singleplayer,builder);return;}
@@ -679,6 +682,7 @@ final class AutoBuilderChecks {
             });
             for(int tick=0;tick<2400&&context.computeOnClient(client->builder.building());tick++){
                 context.runOnClient(client->require(!builder.buying(),"Sealed build bought materials before reading selected storage"));context.waitTick();
+                if(tick%200==0){String progress=context.computeOnClient(client->"[room-progress] "+field(builder,"correct")+"/82 "+builder.status()+" player="+client.player.getEntityPos()+" nav="+field(builder,"navigatingCell")+" openings="+field(builder,"floorAccessWork"));System.out.println(progress);}
             }
             context.runOnClient(client->{
                 require(builder.status().equals("Build complete"),"Sealed build did not return from storage: "+builder.status());
@@ -686,6 +690,27 @@ final class AutoBuilderChecks {
                 require(client.player.getHealth()==20&&client.currentScreen==null&&builder.temporarySupports().isEmpty(),"Sealed build damaged player or left a menu/support");BuilderPacketChecks.verify();
             });
             require(world.getServer().computeOnServer(server->{var level=server.getOverworld();for(int i=0;i<room.size();i++)if(!room.state(i).isAir()&&!level.getBlockState(origin.add(room.local(i))).isOf(Blocks.STONE))return false;for(int x=-5;x<=8;x++)for(int y=0;y<=10;y++)for(int z=-5;z<=5;z++)if(level.getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Sealed build left its access opening or temporary blocks behind");
+        }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
+    }
+    private static void sealedBuildEscape(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Sealed build escape without a restock trip, three-block landing");
+        fixture(context,world,builder,start);
+        world.getServer().runCommand("fill "+coords(start.add(-5,0,-5))+" "+coords(start.add(8,10,5))+" air");
+        var origin=start.add(-2,4,-2);var cells=new BlockState[100];
+        for(int y=0;y<4;y++)for(int z=0;z<5;z++)for(int x=0;x<5;x++)cells[x+z*5+y*25]=(y==0||y==3||x==0||x==4||z==0||z==4)?Blocks.STONE.getDefaultState():Blocks.AIR.getDefaultState();
+        var room=new Schematic("sealed-build-escape.nbt","test",5,4,5,BlockPos.ORIGIN,cells);
+        world.getServer().runOnServer(server->{for(int i=0;i<room.size();i++)if(i!=75&&!room.state(i).isAir())server.getOverworld().setBlockState(origin.add(room.local(i)),room.state(i),net.minecraft.block.Block.NOTIFY_ALL);});
+        var posts=Set.of(start,start.up());for(var post:posts)command(world,"setblock",post,"dirt");
+        for(String item:List.of("stone 64","dirt 64","diamond_pickaxe","diamond_shovel"))world.getServer().runCommand("give @a "+item);
+        world.getServer().runCommand("gamemode creative @a");world.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+(start.getY()+5)+" "+(start.getZ()+.5));context.waitTicks(12);world.getServer().runCommand("gamemode survival @a");context.waitTicks(6);
+        try{
+            context.runOnClient(client->{
+                set(builder,"Temporary Supports",true);set(builder,"Auto Buy When Missing",false);set(builder,"Material Supply","Nearby Sections");builder.install(room);builder.setOrigin(origin);
+                @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.addAll(posts);BuilderPacketChecks.begin();builder.startBuild();
+            });
+            await(context,builder,2400);
+            context.runOnClient(client->{require(client.player.getHealth()==20&&client.currentScreen==null&&builder.temporarySupports().isEmpty(),"Sealed build escape left damage/menu/supports");BuilderPacketChecks.verify();});
+            require(world.getServer().computeOnServer(server->{var level=server.getOverworld();for(int i=0;i<room.size();i++)if(!room.state(i).isAir()&&!level.getBlockState(origin.add(room.local(i))).isOf(Blocks.STONE))return false;for(int x=-5;x<=8;x++)for(int y=0;y<=10;y++)for(int z=-5;z<=5;z++)if(level.getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Sealed build escape did not restore its floor or clear temporary dirt");
         }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
     }
     private static void stalledInteractions(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
@@ -930,6 +955,38 @@ final class AutoBuilderChecks {
             context.runOnClient(client->{require(builder.temporarySupports().isEmpty()&&client.player.getHealth()==20,"Offset escape did not complete safely");BuilderPacketChecks.verify();});
         }finally{context.runOnClient(client->BuilderPacketChecks.recording=false);}
     }
+    private static void activeStepProtection(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Keep active stair / escape dirt, clear obsolete route obstruction");
+        var obstruction=start.south().up();var target=start.south(4);
+        command(world,"setblock",obstruction,"dirt");world.getServer().runCommand("give @a stone 1");world.getServer().runCommand("give @a diamond_shovel 1");context.waitTicks(6);
+        context.runOnClient(client->{
+            builder.install(new Schematic("protected-route-step.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);builder.startBuild();
+            @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.add(obstruction);
+            @SuppressWarnings("unchecked")var stairs=(Set<BlockPos>)field(builder,"accessSupports");
+            @SuppressWarnings("unchecked")var escapes=(Set<BlockPos>)field(builder,"escapeSupports");
+            var walker=(BuilderWalk)field(builder,"walker");walker.approach(target,1.5);
+            try{
+                var stalled=BuilderWalk.class.getDeclaredField("movementStalled");stalled.setAccessible(true);stalled.setBoolean(walker,true);
+                require(obstruction.equals(walker.blockingSupport(owned)),"Protection fixture did not expose the obstruction");
+                var clear=AutoBuilder.class.getDeclaredMethod("clearRouteSupportTick");clear.setAccessible(true);
+                stairs.add(obstruction);require(!(boolean)clear.invoke(builder)&&field(builder,"mining")==null,"Recovery mined its committed stair");stairs.clear();
+                escapes.add(obstruction);require(!(boolean)clear.invoke(builder)&&field(builder,"mining")==null,"Recovery mined its escape step");escapes.clear();
+                require((boolean)clear.invoke(builder),"Obsolete obstruction was never considered for removal");
+            }catch(ReflectiveOperationException error){throw new AssertionError(error);}
+        });
+        await(context,builder,500);
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(obstruction).isAir()&&server.getOverworld().getBlockState(target).isOf(Blocks.STONE)),"Obsolete dirt removal did not resume the real build");
+        context.runOnClient(client->{
+            var walker=new BuilderWalk();var destination=start.north(6);walker.standAt(destination);walker.release();
+            try{
+                var path=BuilderWalk.class.getDeclaredField("path");path.setAccessible(true);path.set(walker,List.of());
+                var retry=BuilderWalk.class.getDeclaredField("retry");retry.setAccessible(true);retry.setInt(walker,0);
+                var failures=BuilderWalk.class.getDeclaredField("failedRoutes");failures.setAccessible(true);failures.setInt(walker,2);
+                walker.requestRecovery();walker.standAt(destination);
+                require(!walker.needsRecovery()&&!walker.routeUnavailable(),"Successful walking route retained a stale pillar request");
+            }catch(ReflectiveOperationException error){throw new AssertionError(error);}finally{walker.stop();}
+        });
+    }
     private static void layerTail(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         // Only diagonal standing cells are safe. A wall blocks the initial placement ray,
         // and the old cardinal-only search leaves this final layer block idle indefinitely.
@@ -994,10 +1051,10 @@ final class AutoBuilderChecks {
         }finally{context.runOnClient(client->BuilderChestDelay.end());}
     }
     private static void fixture(ClientGameTestContext context,TestSingleplayerContext singleplayer,AutoBuilder builder,BlockPos start){
-        context.runOnClient(client->{builder.setEnabled(false);client.setScreen(null);set(builder,"Save Build Progress",false);set(builder,"Build Mode","Automatic");set(builder,"Auto Move",true);set(builder,"Auto Unstuck",true);set(builder,"Mine Out Schematic",false);set(builder,"Auto Eat",false);set(builder,"Prepare Whole Build",false);set(builder,"Buy Steak",true);set(builder,"Auto Buy Tools",false);set(builder,"Stop On Staff Nearby",false);set(builder,"Auto Buy When Missing",false);set(builder,"Support Dirt Reserve",0);set(builder,"Temporary Supports",false);set(builder,"Rotation","0");set(builder,"Mirror","None");button(builder,"Clear Restock Marks").press();});
+        context.runOnClient(client->{builder.setEnabled(false);client.setScreen(null);set(builder,"Save Build Progress",false);set(builder,"Build Mode","Automatic");set(builder,"Material Supply","Layer by Layer");set(builder,"Auto Move",true);set(builder,"Auto Unstuck",true);set(builder,"Mine Out Schematic",false);set(builder,"Auto Eat",false);set(builder,"Prepare Whole Build",false);set(builder,"Buy Steak",true);set(builder,"Auto Buy Tools",false);set(builder,"Stop On Staff Nearby",false);set(builder,"Auto Buy When Missing",false);set(builder,"Support Dirt Reserve",0);set(builder,"Temporary Supports",false);set(builder,"Rotation","0");set(builder,"Mirror","None");button(builder,"Clear Restock Marks").press();});
         singleplayer.getServer().runOnServer(server->{var player=server.getPlayerManager().getPlayerList().getFirst();player.getHungerManager().setFoodLevel(20);player.getHungerManager().setSaturationLevel(5);});
         singleplayer.getServer().runCommand("gamemode creative @a");singleplayer.getServer().runCommand("fill "+coords(start.add(-16,-1,-16))+" "+coords(start.add(16,-1,16))+" stone");
-        singleplayer.getServer().runCommand("fill "+coords(start.add(-16,0,-16))+" "+coords(start.add(16,6,16))+" air");
+        singleplayer.getServer().runCommand("fill "+coords(start.add(-16,0,-16))+" "+coords(start.add(16,12,16))+" air");
         singleplayer.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+start.getY()+" "+(start.getZ()+.5)+" 0 0");singleplayer.getServer().runCommand("clear @a");
         if(start.getX()<-20000){
             // Let the far-away teleport and its new floor reach the client before enabling
@@ -1011,6 +1068,7 @@ final class AutoBuilderChecks {
     private static void await(ClientGameTestContext context,AutoBuilder builder,int limit){
         for(int i=0;i<limit;i++){
             if(context.computeOnClient(client->!builder.building()&&!builder.buying()&&!builder.depositing()))break;
+            if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")&&limit>=2400&&(i%200==0||i<200&&i%20==0)){String progress=context.computeOnClient(client->"[room-progress] "+field(builder,"correct")+"/82 "+builder.status()+" player="+client.player.getEntityPos()+" nav="+field(builder,"navigatingCell")+" openings="+field(builder,"floorAccessWork")+" goal="+field(builder,"standGoal")+" descent="+field(builder,"descentView")+" recovery="+field(builder,"recoveryPhase"));System.out.println(progress);}
             if(limit>=18000&&i%200==0){String progress=context.computeOnClient(client->{int complete=0;for(int cell=0;cell<builder.schematic().size();cell++)if(!builder.desired(cell).isAir()&&builder.state(cell)==AutoBuilder.CORRECT)complete++;return "[stash-progress] "+complete+"/710 supports="+builder.temporarySupports().size()+" "+builder.status()+" player="+client.player.getEntityPos()+" view="+client.player.getYaw()+","+client.player.getPitch()+" placement="+field(builder,"placement")+" goal="+field(builder,"standGoal")+" needed="+field(builder,"needed");});System.out.println(progress);}
             context.waitTick();
         }

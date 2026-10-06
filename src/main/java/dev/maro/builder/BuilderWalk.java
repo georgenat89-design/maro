@@ -39,6 +39,7 @@ public final class BuilderWalk {
     public boolean hasStandingClearance(BlockPos pos){return clear(pos)&&clear(pos.up());}
     public Vec3d standingPoint(BlockPos pos){return Vec3d.ofBottomCenter(pos).add(0,footingHeight(pos.down())-1,0);}
     public boolean canReachStand(BlockPos pos){return walkable(pos)&&(walkingCell().equals(pos)||mc.player.getEntityPos().squaredDistanceTo(standingPoint(pos))<=.22*.22||!find(walkingCell(),pos,.22,true).isEmpty());}
+    public boolean canReachStandFrom(BlockPos from,BlockPos to){return walkable(from)&&walkable(to)&&(from.equals(to)||!find(from,to,.22,true).isEmpty());}
     private BlockPos walkingCell(){return BlockPos.ofFloored(mc.player.getEntityPos().add(0,.4,0));}
     public boolean needsRecovery(){return recoveryRequested;}
     public BlockPos destination(){return goal;}
@@ -74,7 +75,7 @@ public final class BuilderWalk {
         if(mc.player==null||mc.world==null)return false;
         if(!target.equals(goal)||exact!=stand){stop();goal=target;exact=stand;}
         if((exact?mc.player.getEntityPos().squaredDistanceTo(standingPoint(target)):mc.player.getEyePos().squaredDistanceTo(Vec3d.ofCenter(target)))<=distance*distance){
-            release();if(!exact||mc.player.isOnGround()&&mc.player.getVelocity().horizontalLengthSquared()<.0004)return true;
+            release();if(!exact||mc.player.isOnGround()&&mc.player.getVelocity().horizontalLengthSquared()<.0004){failedRoutes=0;recoveryRequested=movementStalled=false;return true;}
             status="Settling at build position";return false;
         }
         if(retry>0)retry--;
@@ -82,6 +83,9 @@ public final class BuilderWalk {
             if(retry>0){release();return false;}
             path=exact&&walkingCell().equals(target)&&walkable(target)?List.of(target):find(walkingCell(),target,distance,exact,true);cursor=0;retry=20;
             if(path.isEmpty()){if(++failedRoutes>=2)recoveryRequested=true;release();status="No safe walking route — move closer or add stairs";return false;}
+            // A previous failed search must not keep requesting underfoot steps
+            // once ordinary walking has a verified route again.
+            failedRoutes=0;recoveryRequested=movementStalled=false;
         }
         var node=path.get(cursor);var point=standingPoint(node);
         double dx=point.x-mc.player.getX(),dz=point.z-mc.player.getZ();
@@ -141,6 +145,7 @@ public final class BuilderWalk {
         Map<BlockPos,Double> costs=new HashMap<>();Set<BlockPos> closed=new HashSet<>();
         open.add(new Node(start,0,heuristic(start,target),null));costs.put(start,0.0);
         Node frontier=null;double initialDistance=heuristic(start,target),frontierDistance=initialDistance;
+        double initialHeight=start.equals(walkingCell())?mc.player.getY():standingPoint(start).y;
         long deadline=System.nanoTime()+3_000_000;int visited=0;
         while(!open.isEmpty()&&visited++<2048&&System.nanoTime()<deadline){
             Node n=open.poll();if(!closed.add(n.pos))continue;
@@ -160,7 +165,7 @@ public final class BuilderWalk {
                 var adjacent=n.pos.add(dx,0,dz);BlockPos step=null;
                 for(int dy:sameColumn?new int[]{-1,-2}:new int[]{0,1,-1,-2}){var p=adjacent.up(dy);if(walkable(p)){step=p;break;}}
                 if(step==null||closed.contains(step)||step.getManhattanDistance(start)>64)continue;
-                double rise=standingPoint(step).y-(n.parent==null?mc.player.getY():standingPoint(n.pos).y);
+                double rise=standingPoint(step).y-(n.parent==null?initialHeight:standingPoint(n.pos).y);
                 if(rise>1.2||rise< -2)continue;
                 if(diagonal&&step.getY()!=n.pos.getY())continue;
                 if(step.getY()>n.pos.getY()&&!clear(n.pos.up(2)))continue;
