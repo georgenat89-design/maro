@@ -2334,6 +2334,9 @@ public final class AutoBuilder extends Module {
         if(useHomes.get()||!autoMove.get()||!supports.contains(removed.down())||plannedSolid(removed))return false;
         var geometry=descentGeometry(removed);
         if(geometry==null||walker.standingPoint(geometry.landing).y>=mc.player.getY()-.5||!safeToRecycle(geometry.removed))return false;
+        var lowest=geometry.removed.stream().min(Comparator.comparingInt(BlockPos::getY)).orElse(removed);
+        var crouchedEye=mc.player.getEntityPos().add(0,mc.player.getDimensions(net.minecraft.entity.EntityPose.CROUCHING).eyeHeight(),0);
+        if(withinReach(lowest,crouchedEye))return false;
         var feet=BlockPos.ofFloored(mc.player.getEntityPos().add(0,.4,0));
         if(walker.canReachAfterClearing(feet,geometry.landing,Set.of(removed)))return false;
         return descentReaches(removed,geometry.landing)&&beginSupportDescent(removed,geometry.landing);
