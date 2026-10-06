@@ -156,7 +156,9 @@ public final class BuilderWalk {
         else if(forward){mc.options.forwardKey.setPressed(false);forward=false;}
         // Turn toward a raised waypoint before starting the jump. An early
         // jump while turning spends its height without reaching the ledge.
-        if(forward&&headingError<12&&dx*dx+dz*dz<1.3*1.3&&point.y>mc.player.getY()+.4&&mc.player.isOnGround()){jump=true;mc.options.jumpKey.setPressed(true);}
+        boolean leavingWater=mc.player.isTouchingWater();
+        if(forward&&headingError<12&&dx*dx+dz*dz<1.3*1.3&&point.y>mc.player.getY()+(leavingWater?.05:.4)
+            &&(mc.player.isOnGround()||leavingWater)){jump=true;mc.options.jumpKey.setPressed(true);}
         else if(jump){mc.options.jumpKey.setPressed(false);jump=false;}
         Vec3d now=mc.player.getEntityPos();
         if(last==null||now.subtract(last).horizontalLengthSquared()>.04||mc.player.isOnGround()&&Math.abs(now.y-last.y)>.2){last=now;stuck=0;movementStalled=false;}else if(forward)stuck++;
@@ -309,6 +311,11 @@ public final class BuilderWalk {
     }
     private boolean safe(BlockPos p){
         var state=mc.world.getBlockState(p);
-        return state.getFluidState().isEmpty()&&!state.isOf(Blocks.FIRE)&&!state.isOf(Blocks.SOUL_FIRE)&&!state.isOf(Blocks.MAGMA_BLOCK)&&!state.isOf(Blocks.CACTUS)&&!state.isOf(Blocks.SWEET_BERRY_BUSH)&&!state.isOf(Blocks.POWDER_SNOW)&&!state.isOf(Blocks.CAMPFIRE)&&!state.isOf(Blocks.SOUL_CAMPFIRE);
+        // A bucket can fill the cell already occupied by the player. Permit
+        // departure through that existing water volume; do not plan entry into
+        // another wet cell, accept a fluid footing, or relax lava hazards.
+        boolean departingWater=state.getFluidState().isIn(net.minecraft.registry.tag.FluidTags.WATER)
+            &&new Box(p).intersects(mc.player.getBoundingBox());
+        return (state.getFluidState().isEmpty()||departingWater)&&!state.isOf(Blocks.FIRE)&&!state.isOf(Blocks.SOUL_FIRE)&&!state.isOf(Blocks.MAGMA_BLOCK)&&!state.isOf(Blocks.CACTUS)&&!state.isOf(Blocks.SWEET_BERRY_BUSH)&&!state.isOf(Blocks.POWDER_SNOW)&&!state.isOf(Blocks.CAMPFIRE)&&!state.isOf(Blocks.SOUL_CAMPFIRE);
     }
 }

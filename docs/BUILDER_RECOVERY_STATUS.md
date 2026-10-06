@@ -5,6 +5,21 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+At 07:19, water-exit-surface-5 PASSED 1m9s. Upper60 on e42f8e7
+advanced beyond the old 475/512/545 stalls to 704/710, then stopped making
+progress after placing a water source intersecting its native body. Read-only
+fluid-body proof showed valid dry-cell bucket views, but the player's current
+cell held water and every route from it failed. Own test PID44948 was verified
+and stopped unfinished; no full upper pass. The new walker permits departure
+through only water cells already intersecting the actual player body, still
+rejects entry into other water cells and all lava, and holds native jump input
+while swimming up toward a checked dry ledge. Lava bucket jobs reject body
+intersection. The native contained-source/open-trapdoor test now leaves the
+source for a dry ledge without mining, preserves the source, rejects dry-side
+re-entry and retains full health. Prior doors, stairs, capacity, pit, hopper
+crossing and rim checks pass. Latest fullUpper is next; fresh and full core/AH
+gates still pending. PR37 remains draft/unmerged; final handoff pending.
+
 At06:50, full-capacity-surface1 PASSED1m9s: full pool retains native hypothetical
 scaffold proof, real queue guard adds no block and does not mine protected posts,
 and two remaining ground blocks still finish. Prior hopper crossing, native pit,

@@ -1095,12 +1095,20 @@ final class AutoBuilderChecks {
                 context.runOnClient(client->require(client.player.getHealth()==20&&client.world.isSpaceEmpty(client.player,client.player.getBoundingBox()),"Partial headroom walk intersected the panel or caused damage"));
             }finally{context.runOnClient(client->walk.stop());}
             if(facing.equals("west")){
+                var dryExit=goal.north().up();for(var side:Direction.Type.HORIZONTAL)command(world,"setblock",goal.offset(side),"stone");context.waitTicks(6);
                 world.getServer().runCommand("give @a water_bucket");context.waitTicks(6);
                 try{
                     context.runOnClient(client->{builder.install(new Schematic("partial-headroom-fluid.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.WATER.getDefaultState()}));builder.setOrigin(goal);BuilderPacketChecks.begin();builder.startBuild();});
                     await(context,builder,300);
                     require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(goal).equals(Blocks.WATER.getDefaultState())&&server.getOverworld().getBlockState(panel).get(Properties.OPEN)),"Fluid under the open trapdoor stayed predicted or changed its panel");
                     context.runOnClient(client->{require(client.player.getHealth()==20&&client.currentScreen==null,"Partial-headroom bucket placement damaged player or left a menu");BuilderPacketChecks.verify(1);});
+                    System.out.println("[builder-check] Leave the bucket source beneath an open panel without mining or adding dirt");
+                    var exit=context.computeOnClient(client->{var w=new BuilderWalk();w.turning(true,45);return w;});
+                    try{
+                        boolean escaped=false;for(int tick=0;tick<360&&!escaped;tick++){escaped=context.computeOnClient(client->exit.standAt(dryExit));if(tick%40==0)context.runOnClient(client->System.out.println("[water-exit] pos="+client.player.getEntityPos()+" wet="+client.player.isTouchingWater()+" goalReach="+exit.canReachStand(dryExit)+" status="+exit.status));context.waitTick();}
+                        require(escaped,"Bucket source stranded the native player beneath the open panel");
+                        context.runOnClient(client->{require(client.player.getHealth()==20&&client.world.getBlockState(goal).isOf(Blocks.WATER)&&!exit.canStand(goal),"Water departure damaged the player, removed the source, or allowed re-entry");});
+                    }finally{context.runOnClient(client->exit.stop());}
                 }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
             }
         }

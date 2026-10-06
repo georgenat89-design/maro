@@ -1462,6 +1462,7 @@ public final class AutoBuilder extends Module {
             return placement(target,Blocks.FLOWER_POT.getDefaultState(),Items.FLOWER_POT,index,temporary,eye,body);
         }
         if(item==Items.WATER_BUCKET||item==Items.LAVA_BUCKET){
+            if(item==Items.LAVA_BUCKET&&new Box(target).intersects(body))return null;
             for(var side:Direction.values()){
                 var neighbor=target.offset(side.getOpposite());var hit=visibleHit(neighbor,eye);if(hit!=null&&hit.getSide()==side&&mc.world.getBlockState(target).isReplaceable())return new Place(target,wanted,hit,item,index,false);
             }return null;
