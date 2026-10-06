@@ -12,6 +12,17 @@ Home route searches retain cursors under a per-tick budget and run before
 scaffold fallback. Finished base/wall mining is rejected with homes enabled;
 only registered roof openings above a liquid source are eligible.
 
+Latest, 15:58: the user's clarified vertical-column sneak action is implemented.
+Native builder-column-edge-4 PASSED in 48s: a three-block temporary column loses
+its upper blocks, then its hidden lower block is mined after actual sneak edging.
+Outbound native mining packets verify crouch, ground and full health at the
+action; the retained permanent ledge survives and all three owned posts disappear.
+Native builder-homes-crouch-cleanup-1 PASSED in 4m08 on 79c4751: both 82-block
+sealed/AIR-roof cases, spare/full capacity and supply lids restore with zero owned
+dirt, full health and normal movement packets. The clarified edge extension is
+newer than that cleanup run. Teleports now settle before command submission and
+discard stale passage/ceiling movement plans while preserving access repairs.
+
 Native builder-homes-crouch-2 PASSED in 43s with Meteor: three normal sethome
 receipts, native storage/interior arrivals, stationary teleport warmup, occupied
 slot protection, bounded cooldown handling, pause/save/reload repair retention,

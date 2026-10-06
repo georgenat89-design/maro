@@ -17,9 +17,12 @@ survives pause and saved-placement reload.
 Head Spoofing keeps the first-person camera independent while normal movement
 packets publish smooth, correctly aimed head rotations before interactions.
 Mouse look still moves the camera. Walking, menus, pause, Free Look and Free Cam
-release the builder camera control. An obstructed mining view first tries native
-crouching and a small step over the current full-cube footing; unsuccessful peeks
-expire quickly instead of holding sneak or repeating every tick.
+release the builder camera control. For vertical temporary columns, it removes
+the reachable upper blocks, then stays crouched and eases over the ledge to mine
+a hidden lower block. The original full-cube ledge must keep supporting part of
+the body; its footing is never the peek's mining target. Each actual mining
+action rechecks footing and its native ray. Unsuccessful peeks expire quickly;
+native crouching also helps a mining view obstructed by a low overhead block.
 
 With Builder Homes disabled, temporary cleanup uses actual reachable mining views. It can reopen a checked
 floor to descend its owned dirt column, including for supports in schematic air

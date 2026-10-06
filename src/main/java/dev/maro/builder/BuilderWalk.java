@@ -42,19 +42,37 @@ public final class BuilderWalk {
         forward=jump=false;
     }
     public boolean moving(){return forward||jump;}
-    /** A short native crouch step stays wholly over the current full-cube footing. */
-    public boolean peekToward(BlockPos target){
+    /** Native sneak edging keeps part of the body over the original solid footing. */
+    public boolean peekToward(BlockPos target,BlockPos floor){
         if(!mc.player.isOnGround()||!mc.player.isSneaking()||mc.player.isTouchingWater()||mc.player.isInLava())return false;
-        var floor=mc.player.getBlockPos().down();var state=mc.world.getBlockState(floor);
+        if(floor==null||!hasPeekFooting(floor))return false;var state=mc.world.getBlockState(floor);
         if(!state.getFluidState().isEmpty()||!net.minecraft.block.Block.isShapeFullCube(state.getCollisionShape(mc.world,floor)))return false;
         var offset=Vec3d.ofCenter(target).subtract(Vec3d.ofCenter(floor));double length=Math.hypot(offset.x,offset.z);if(length<.001)return false;
-        var goal=new Vec3d(floor.getX()+.5+offset.x/length*.18,mc.player.getY(),floor.getZ()+.5+offset.z/length*.18);
+        var goal=new Vec3d(floor.getX()+.5+offset.x/length*.58,mc.player.getY(),floor.getZ()+.5+offset.z/length*.58);
         if(!mc.world.isSpaceEmpty(mc.player,mc.player.getBoundingBox().offset(goal.subtract(mc.player.getEntityPos()))))return false;
         var delta=goal.subtract(mc.player.getEntityPos());if(delta.horizontalLengthSquared()<.0016){release();return true;}
         float heading=(float)(Math.toDegrees(Math.atan2(delta.z,delta.x))-90),error=MathHelper.wrapDegrees(heading-mc.player.getYaw());
         if(smooth){if(Math.signum(yawVelocity)!=Math.signum(error))yawVelocity=0;yawVelocity+=MathHelper.clamp(MathHelper.clamp(error*.28f,-turnLimit,turnLimit)-yawVelocity,-turnLimit*.15f,turnLimit*.15f);mc.player.setYaw(mc.player.getYaw()+Math.copySign(Math.min(Math.abs(error),Math.abs(yawVelocity)),error));}
         else mc.player.setYaw(mc.player.getYaw()+MathHelper.clamp(error,-turnLimit,turnLimit));
         if(Math.abs(error)<12){forward=true;mc.options.forwardKey.setPressed(true);}else release();return true;
+    }
+    public boolean hasPeekFooting(BlockPos floor){
+        if(floor==null||mc.player==null||mc.world==null||!mc.player.isOnGround())return false;
+        var state=mc.world.getBlockState(floor);if(!state.getFluidState().isEmpty()||!net.minecraft.block.Block.isShapeFullCube(state.getCollisionShape(mc.world,floor)))return false;
+        var body=mc.player.getBoundingBox();return Math.abs(body.minY-floor.getY()-1)<.05
+            &&Math.min(body.maxX,floor.getX()+1)-Math.max(body.minX,floor.getX())>.1
+            &&Math.min(body.maxZ,floor.getZ()+1)-Math.max(body.minZ,floor.getZ())>.1
+            &&new Box(body.minX,body.minY-.02,body.minZ,body.maxX,body.minY,body.maxZ).intersects(new Box(floor));
+    }
+    public BlockPos peekFooting(BlockPos excluded){
+        var feet=mc.player.getBlockPos();for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++){
+            var floor=new BlockPos(feet.getX()+dx,(int)Math.floor(mc.player.getY()-.01),feet.getZ()+dz);
+            if(!floor.equals(excluded)&&hasPeekFooting(floor))return floor;
+        }return null;
+    }
+    public boolean atPeekEdge(BlockPos target,BlockPos floor){
+        if(floor==null)return false;var direction=Vec3d.ofCenter(target).subtract(Vec3d.ofCenter(floor));double length=Math.hypot(direction.x,direction.z);if(length<.001)return true;
+        var position=mc.player.getEntityPos().subtract(Vec3d.ofCenter(floor));return (position.x*direction.x+position.z*direction.z)/length>=.5;
     }
     public boolean approach(BlockPos target,double distance){
         return approach(target,distance,false);

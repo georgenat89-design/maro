@@ -82,7 +82,7 @@ public final class AutoBuilder extends Module {
     private float cameraYaw,cameraPitch;
     private int cameraAimTick=-100;
     private boolean cameraLocked;
-    private BlockPos peekTarget;
+    private BlockPos peekTarget,peekFloor;
     private int peekStarted;
     private final Map<BlockPos,Integer> peekRetryAt=new HashMap<>();
     private final NumberSetting reach=fixedNumber("Reach","Maximum vanilla interaction distance; also clamped to player reach",4.4,2,5, .1);
@@ -1041,6 +1041,8 @@ public final class AutoBuilder extends Module {
                 int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());
                 if(cell>=0&&desired(cell).isOf(Blocks.DIRT)){supports.remove(pos);return;}
                 if(!withinReach(pos,mc.player.getEyePos())){
+                    if(preserveCleanupExit(pos))return;
+                    if(beginPeek(pos)){mining=pos;mineTick();return;}
                     if(autoMove.get()){
                         if(walker.routeUnavailable()||walker.movementStalled()){
                             if(!repositionTarget(pos,cleanupStands.computeIfAbsent(pos,p->new HashMap<>())))status="Cleanup needs a checked access route";
@@ -1048,7 +1050,8 @@ public final class AutoBuilder extends Module {
                     }else status="Move closer to clean temporary supports";return;
                 }
                 if(new Box(pos).intersects(mc.player.getBoundingBox().offset(0,-1,0))||visibleHit(pos)==null){
-                    if(!new Box(pos).intersects(mc.player.getBoundingBox().offset(0,-1,0))&&beginPeek(pos)){mining=pos;mineTick();return;}
+                    if(preserveCleanupExit(pos))return;
+                    if(beginPeek(pos)){mining=pos;mineTick();return;}
                     if(autoMove.get()&&repositionTarget(pos,cleanupStands.computeIfAbsent(pos,p->new HashMap<>())))status="Moving to clean temporary support";
                     else status="Cleanup needs a clear path — move off / around the support";return;
                 }
@@ -2327,6 +2330,7 @@ public final class AutoBuilder extends Module {
     }
     /** Leave a higher ledge before deleting its only ordinary return bridge. */
     private boolean preserveCleanupExit(BlockPos removed){
+        if(useHomes.get()&&homes.hasSafeReturn())return false;
         if(!autoMove.get()||supports.stream().noneMatch(p->p.getY()+1<mc.player.getY()-.5))return false;
         var feet=BlockPos.ofFloored(mc.player.getEntityPos().add(0,.4,0));
         if(cleanupExit!=null&&(!walker.canStand(cleanupExit)||supports.contains(cleanupExit.down())
@@ -2464,6 +2468,7 @@ public final class AutoBuilder extends Module {
             if(job.temporary){supports.add(job.target);if(accessFloor&&accessStand!=null&&job.target.getX()==accessStand.getX()&&job.target.getZ()==accessStand.getZ()&&job.target.getY()<accessStand.getY())accessSupports.add(job.target);if(recoveryPhase==2&&job.target.equals(recoveryBase)){protectEscapeSupport(job.target);mc.options.jumpKey.setPressed(false);recoveryJump=false;recoveryPhase=3;}}
             else{recoveryAttempts=0;accessStand=accessBase=null;accessSupports.clear();accessStairs=Set.of();}
             if(job.index>=0)updateState(job.index);status="Placement confirmed";
+            if(job.state.getBlock() instanceof FluidBlock){liquidTopStand=null;liquidTopBlocks.clear();}
         }else{
             // A refused prediction must not remain as collision geometry or as a face for
             // the next placement. Only reconcile this builder's own predicted block.
@@ -2499,10 +2504,16 @@ public final class AutoBuilder extends Module {
             if(restock.get()&&beginRestock()){mining=null;return;}
             if(maxSpend.get()>0){startBuying(false);if(buying)resumeAfterMarket=true;}else status="Set AH budget to buy the missing "+(shovel?"shovel":"pickaxe");return;
         }
-        if(new Box(mining).intersects(mc.player.getBoundingBox().offset(0,-1,0))&&!(mining.equals(routeMining)&&descendingOwnedSupport(mining))){status="Move off the block before clearing it";mining=null;return;}
+        if(new Box(mining).intersects(mc.player.getBoundingBox().offset(0,-1,0))&&!(mining.equals(routeMining)&&descendingOwnedSupport(mining))&&!safePeekMining(mining)){
+            if(beginPeek(mining)){status="Sneaking over retained footing to clear column";return;}status="Move off the block before clearing it";mining=null;return;
+        }
         var visibleHit=visibleHit(mining);
         if(visibleHit==null){if(beginPeek(mining)){status="Crouching for a clearer edge view";return;}status="Mining target is obstructed";mining=null;return;}
         if(peekTarget!=null&&ticks-peekStarted<3){status="Waiting for crouched eye position";return;}
+        if(peekTarget!=null&&supports.contains(mining)&&mining.getY()<peekFloor.getY()&&!walker.atPeekEdge(mining,peekFloor)){
+            if(ticks-peekStarted<=24&&walker.peekToward(mining,peekFloor)){status="Sneaking over the edge to remove the lower column";return;}
+        }
+        if(peekTarget!=null&&(!safePeekMining(mining)||mc.player.getVelocity().horizontalLengthSquared()>=.0004)){walker.release();status="Settling on retained ledge footing";return;}
         if(!aim(visibleHit.getPos())){status="Aiming to mine";return;}
         var hit=(BlockHitResult)mc.player.raycast(effectiveReach(),1,false);
         if(hit.getType()!=HitResult.Type.BLOCK||!hit.getBlockPos().equals(mining)){status="Mining target is obstructed";mining=null;return;}
@@ -2511,6 +2522,7 @@ public final class AutoBuilder extends Module {
         if(!selectInventorySlot(best))return;
         digging=true;var target=mining;
         withPublishedLook(()->{
+            if(peekTarget!=null&&!safePeekMining(target)){digging=false;return;}
             var actual=(BlockHitResult)mc.player.raycast(effectiveReach(),1,false);
             if(actual.getType()!=HitResult.Type.BLOCK||!actual.getBlockPos().equals(target)){digging=false;return;}
             mc.interactionManager.updateBlockBreakingProgress(target,actual.getSide());mc.player.swingHand(Hand.MAIN_HAND);lastAction=ticks;
@@ -2651,6 +2663,8 @@ public final class AutoBuilder extends Module {
         accessSupports.clear();accessStairs=Set.of();descentPost=descentView=null;descentLanding=false;
         viewSearches.clear();triedStands.clear();cleanupStands.clear();retryAt.clear();
         chestStand=null;chestTriedStands.clear();releaseSneak();
+        routeMining=mining=null;passageBlocks.clear();passageStand=null;ceilingBase=ceilingTop=null;ceilingBlocks.clear();
+        liquidTopStand=null;liquidTopBlocks.clear();accessColumn=Set.of();floorProbes.clear();
     }
     public void afterNormalMovement(){
         var action=queuedLookAction;queuedLookAction=null;
@@ -2792,13 +2806,16 @@ public final class AutoBuilder extends Module {
     }
     private static boolean clickable(Block block){return block instanceof BlockWithEntity||block instanceof NoteBlock||block instanceof AbstractRedstoneGateBlock||block instanceof ComposterBlock||block instanceof CakeBlock||block instanceof FlowerPotBlock||dev.maro.runtime.utils.world.BlockUtils.isClickable(block);}
     private boolean beginPeek(BlockPos target){
-        if(!mc.player.isOnGround()||mc.player.isTouchingWater()||mc.player.isInLava()||mc.currentScreen!=null||!withinReach(target,mc.player.getEyePos())||peekRetryAt.getOrDefault(target,0)>ticks)return false;
+        var crouchedEye=mc.player.getEntityPos().add(0,mc.player.getDimensions(net.minecraft.entity.EntityPose.CROUCHING).eyeHeight(),0);
+        if(!mc.player.isOnGround()||mc.player.isTouchingWater()||mc.player.isInLava()||mc.currentScreen!=null||!withinReach(target,crouchedEye)||peekRetryAt.getOrDefault(target,0)>ticks)return false;
         var state=mc.world.getBlockState(target);if(state.hasBlockEntity()||!state.getFluidState().isEmpty()||state.getHardness(mc.world,target)<0)return false;
-        if(!target.equals(peekTarget)){if(peekTarget!=null)releaseSneak();peekTarget=target.toImmutable();peekStarted=ticks;if(!mc.options.sneakKey.isPressed())ownsSneak=true;mc.options.sneakKey.setPressed(true);walker.release();}
+        if(supports.contains(target)&&(!safeToRecycle(target)||servesActiveScaffold(target)))return false;
+        if(!target.equals(peekTarget)){if(peekTarget!=null)releaseSneak();var footing=walker.peekFooting(target);if(footing==null)return false;peekFloor=footing.toImmutable();peekTarget=target.toImmutable();peekStarted=ticks;if(!mc.options.sneakKey.isPressed())ownsSneak=true;mc.options.sneakKey.setPressed(true);walker.release();}
         if(ticks-peekStarted>16){peekRetryAt.put(target,ticks+120);releaseSneak();walker.release();return false;}
-        if(ticks-peekStarted>=3)walker.peekToward(target);return true;
+        if(ticks-peekStarted>=3)walker.peekToward(target,peekFloor);return true;
     }
-    private void releaseSneak(){peekTarget=null;if(ownsSneak){mc.options.sneakKey.setPressed(false);ownsSneak=false;}}
+    private boolean safePeekMining(BlockPos target){return target.equals(peekTarget)&&peekFloor!=null&&!target.equals(peekFloor)&&mc.player.isSneaking()&&walker.hasPeekFooting(peekFloor);}
+    private void releaseSneak(){peekTarget=peekFloor=null;if(ownsSneak){mc.options.sneakKey.setPressed(false);ownsSneak=false;}}
     private boolean beginRestock(){
         chestAccessRetryAt.values().removeIf(until->until<=ticks);
         if(needed!=restockAttemptItem){triedContainers.clear();restockAttemptItem=needed;}

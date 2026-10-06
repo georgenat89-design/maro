@@ -31,6 +31,7 @@ public final class BuilderHomes {
     private String failure="";
     public BuilderHomes(BuilderWalk walker){this.walker=walker;}
     public boolean ready(){return points[0]!=null;}
+    public boolean hasSafeReturn(){return ready()&&safe(points[0]);}
     public boolean busy(){return stage!=Stage.IDLE;}
     public void cancel(){
         if(stage==Stage.CHECK&&mc.player!=null&&mc.currentScreen instanceof HandledScreen<?> menu
@@ -133,6 +134,7 @@ public final class BuilderHomes {
             if(walker.canReachStandFrom(point.feet(),view)){
                 // Avoid bouncing between homes when normal walking already serves this view.
                 if(target.getSquaredDistance(point.feet())+16>=target.getSquaredDistance(feet)&&walker.canReachStand(view)){checkingRoutes=false;routeRetryAt=clock+40;return false;}
+                if(!settledToTravel()){routeViewCursor--;walker.release();return false;}
                 return travel(index);
             }
             if(System.nanoTime()>=deadline)return false;
@@ -140,8 +142,10 @@ public final class BuilderHomes {
         checkingRoutes=false;routeRetryAt=clock+40;return false;
     }
     public boolean storage(BlockPos chest){
-        return ready()&&!busy()&&clock>=retryAt&&mc.currentScreen==null&&safe(points[0])&&chest.getSquaredDistance(points[0].feet())<=25&&mc.player.getEntityPos().squaredDistanceTo(points[0].position)>64&&travel(0);
+        if(!ready()||busy()||clock<retryAt||mc.currentScreen!=null||!safe(points[0])||chest.getSquaredDistance(points[0].feet())>25||mc.player.getEntityPos().squaredDistanceTo(points[0].position)<=64)return false;
+        if(!settledToTravel()){walker.release();return true;}return travel(0);
     }
+    private boolean settledToTravel(){return mc.player.isOnGround()&&mc.player.getVelocity().horizontalLengthSquared()<.0004&&!mc.player.isTouchingWater()&&!mc.player.isInLava()&&!mc.player.isUsingItem();}
     private boolean travel(int index){
         slot=index;pending=points[index];begin(Stage.TRAVEL);mc.getNetworkHandler().sendChatCommand("home "+(slot+1));return true;
     }
