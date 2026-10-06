@@ -5,6 +5,24 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Upper replay 46 was stopped at 469/710 after a static committed climb. Its
+read-only diagnostic had no escape markers left, confirming lifetime release,
+but the 128-support pool was full and no safe recycling view was reachable.
+The reservation method returned false for both sufficient capacity and an
+exhausted recycling search. The caller then requested the impossible climb
+repeatedly. The latest change calculates capacity separately and yields an
+exhausted view/target to other work and checked descent, with view/target
+cooldowns and stale recovery cleared. Native capacity-yield run 6 passed in
+4m9s. Its two reachable ground blocks were confirmed in about two seconds,
+within the six-second limit, while all four protected posts stayed intact and
+native packet order passed. Both reservation variants, original native jump,
+completed-post reclamation/new scaffolding, ground cleanup and height-3/6 entry
+also passed. The fixture explicitly asserts decoded positions and native views
+(x, then z, then y); earlier new-fixture failures were corrected without lowering
+server-state, protected-post, packet, health or cleanup gates. Upper replay 47
+now tests this production. Latest complete upper/fresh/core gates remain required;
+the core pass below covers the preceding a2a18bd production only.
+
 Upper replay 45 was stopped on unchanged 74659b2 production, at 699/710 after
 four minutes with unchanged position and capacity status. A read-only snapshot
 found 33 protected posts and mostly hidden remaining candidates. Its repeated

@@ -82,6 +82,8 @@ final class AutoBuilderChecks {
             if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){elevatedFloorEntry(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")){sealedDirectionalAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);raisedChestReturn(context,singleplayer,builder,start);sealedChestReturn(context,singleplayer,builder,start);return;}
             fixture(context,singleplayer,builder,start);
+            exhaustedAccessCapacity(context,singleplayer,builder,start);
+            fixture(context,singleplayer,builder,start);
             raisedTurn(context,singleplayer,start);
             fixture(context,singleplayer,builder,start);
             faceReach(context,singleplayer,builder,start);
@@ -1081,7 +1083,7 @@ final class AutoBuilderChecks {
         for(int x=5;x<=6;x++)for(int z=-3;z<=0;z++){var post=start.add(x,0,z);posts.add(post);command(world,"setblock",post,"dirt");}
         world.getServer().runCommand("fill "+coords(start.add(1,0,3))+" "+coords(start.add(1,6,3))+" stone");
         for(String item:List.of("stone 1","dirt 16","diamond_shovel"))world.getServer().runCommand("give @a "+item);context.waitTicks(6);
-        boolean jumped=false;
+        boolean jumped=false;var reclaimedCompleted=new java.util.concurrent.atomic.AtomicBoolean();var addedSupport=new java.util.concurrent.atomic.AtomicBoolean();
         try{
             context.runOnClient(client->{
                 set(builder,"Temporary Supports",true);((dev.maro.setting.NumberSetting)field(builder,"tempDirt")).set(8d);
@@ -1108,15 +1110,55 @@ final class AutoBuilderChecks {
                     if(retired&&builder.state(0)!=AutoBuilder.CORRECT){
                         @SuppressWarnings("unchecked")var escape=(Set<BlockPos>)field(builder,"escapeSupports");
                         require(posts.stream().filter(p->p.getX()==start.getX()+5).allMatch(p->builder.temporarySupports().contains(p)&&escape.contains(p)),"Capacity reclaimed escape footing for unfinished work");
+                        if(posts.stream().filter(p->p.getX()==start.getX()+6).anyMatch(p->!builder.temporarySupports().contains(p)))reclaimedCompleted.set(true);
+                        if(builder.temporarySupports().stream().anyMatch(p->!posts.contains(p)))addedSupport.set(true);
                     }
                     if((int)field(builder,"recoveryPhase")!=2)return false;
                     require(posts.stream().filter(builder.temporarySupports()::contains).count()<=4,"Access jumped before freeing the complete column budget");return true;
                 });
                 jumped|=inJump;context.waitTick();
             }
-            await(context,builder,100);verify(world,target,1,1,1,y->Blocks.STONE);require(jumped,"Capacity fixture did not exercise native column climbing");
+            await(context,builder,100);verify(world,target,1,1,1,y->Blocks.STONE);
             require(world.getServer().computeOnServer(server->{for(var pos:BlockPos.iterate(start.add(-7,0,-7),start.add(7,8,10)))if(server.getOverworld().getBlockState(pos).isOf(Blocks.DIRT))return false;return true;}),"Reserved column left temporary dirt behind");
             context.runOnClient(client->{require(builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Reserved access did not complete safely");BuilderPacketChecks.verify();});
+            // The original column case must exercise its actual jump budget.
+            // Protected-work capacity may instead use a valid alternative view.
+            // Require real reclamation and new scaffolding for that variant.
+            require(retired?reclaimedCompleted.get()&&addedSupport.get():jumped,"Capacity fixture did not exercise its required native support work");
+            System.out.println("[builder-check] Capacity completed; retired="+retired+" jump="+jumped+" completed-post-reclaimed="+reclaimedCompleted.get()+" new-support="+addedSupport.get());
+        }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);((dev.maro.setting.NumberSetting)field(builder,"tempDirt")).set(128d);});}
+    }
+    private static void exhaustedAccessCapacity(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Exhausted capacity must yield to reachable work without mining protected posts");
+        var origin=start.south(3);var ground=origin.east(2);var posts=new HashSet<BlockPos>();
+        for(int x=5;x<=6;x++)for(int z=-1;z<=0;z++){var post=start.add(x,0,z);posts.add(post);command(world,"setblock",post,"dirt");}
+        world.getServer().runCommand("fill "+coords(origin.east())+" "+coords(origin.east().up(6))+" stone");
+        world.getServer().runCommand("give @a stone 3");world.getServer().runCommand("give @a dirt 4");world.getServer().runCommand("give @a diamond_shovel 1");context.waitTicks(6);
+        var cells=new BlockState[42];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());cells[2]=cells[36]=cells[3]=Blocks.STONE.getDefaultState();
+        try{
+            context.runOnClient(client->{
+                set(builder,"Temporary Supports",true);((dev.maro.setting.NumberSetting)field(builder,"tempDirt")).set(4d);
+                builder.install(new Schematic("exhausted-access-capacity.nbt","test",3,7,2,BlockPos.ORIGIN,cells));builder.setOrigin(origin);
+                require(builder.position(36).equals(origin.up(6))&&builder.position(2).equals(ground)&&builder.position(3).equals(origin.south()),"Exhausted fixture's schematic coordinates do not match its native targets");
+                @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.addAll(posts);
+                @SuppressWarnings("unchecked")var escape=(Set<BlockPos>)field(builder,"escapeSupports");escape.addAll(posts);
+                BuilderPacketChecks.begin();builder.startBuild();
+                try{
+                    var stand=start.up(4);var eye=Vec3d.ofBottomCenter(stand).add(0,client.player.getStandingEyeHeight(),0);var body=client.player.getBoundingBox().offset(eye.subtract(client.player.getEyePos()));
+                    var plan=AutoBuilder.class.getDeclaredMethod("placement",BlockPos.class,BlockState.class,Item.class,int.class,boolean.class,Vec3d.class,Box.class);plan.setAccessible(true);
+                    require(plan.invoke(builder,origin.up(6),Blocks.STONE.getDefaultState(),Items.STONE,36,false,client.player.getEyePos(),client.player.getBoundingBox())==null,"Exhausted fixture's high target was already reachable");
+                    require(plan.invoke(builder,origin.up(6),Blocks.STONE.getDefaultState(),Items.STONE,36,false,eye,body)!=null,"Exhausted fixture has no valid future elevated view");
+                    require(plan.invoke(builder,ground,Blocks.STONE.getDefaultState(),Items.STONE,2,false,client.player.getEyePos(),client.player.getBoundingBox())!=null&&plan.invoke(builder,origin.south(),Blocks.STONE.getDefaultState(),Items.STONE,3,false,client.player.getEyePos(),client.player.getBoundingBox())!=null,"Exhausted fixture's ground work is not natively reachable");
+                    var nav=AutoBuilder.class.getDeclaredField("navigatingCell");nav.setAccessible(true);nav.setInt(builder,36);
+                    var commit=AutoBuilder.class.getDeclaredMethod("commitAccess",BlockPos.class,boolean.class);commit.setAccessible(true);commit.invoke(builder,stand,true);
+                    ((BuilderWalk)field(builder,"walker")).requestRecovery();
+                }catch(ReflectiveOperationException error){throw new AssertionError(error);}
+            });
+            for(int tick=0;tick<120&&world.getServer().computeOnServer(server->!server.getOverworld().getBlockState(ground).isOf(Blocks.STONE)||!server.getOverworld().getBlockState(origin.south()).isOf(Blocks.STONE));tick++)context.waitTick();
+            System.out.println((String)context.computeOnClient(client->"[capacity-yield-progress] "+builder.status()+" player="+client.player.getEntityPos()+" nav="+field(builder,"navigatingCell")+" access="+field(builder,"accessStand")+" goal="+field(builder,"standGoal")+" ground="+client.world.getBlockState(ground)+" second="+client.world.getBlockState(origin.south())+" supports="+builder.temporarySupports().size()));
+            verify(world,ground,1,1,1,y->Blocks.STONE);verify(world,origin.south(),1,1,1,y->Blocks.STONE);
+            require(world.getServer().computeOnServer(server->posts.stream().allMatch(p->server.getOverworld().getBlockState(p).isOf(Blocks.DIRT))),"Exhausted access mined protected escape posts");
+            context.runOnClient(client->{require(builder.temporarySupports().equals(posts)&&client.player.getHealth()==20&&client.currentScreen==null,"Exhausted access changed supports or player safety");BuilderPacketChecks.verify();});
         }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);((dev.maro.setting.NumberSetting)field(builder,"tempDirt")).set(128d);});}
     }
     private static void layerTail(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){

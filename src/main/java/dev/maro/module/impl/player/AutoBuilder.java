@@ -1110,7 +1110,17 @@ public final class AutoBuilder extends Module {
         if(direct!=null){
             accessStand=accessBase=null;accessFloor=false;accessSupports.clear();placement=direct;placeTick();return true;
         }
-        if(reserveAccessCapacity())return true;
+        int required=requiredAccessCapacity();
+        if(required>0&&required>tempDirt.getInt()-supports.size()){
+            if(recycleSupport())return true;
+            // A finished recycling search can have no reachable safe candidate.
+            // Do not request a jump that the full pool cannot supply each tick.
+            // Let ordinary alternatives, other work and checked descents run.
+            triedStands.computeIfAbsent(navigatingCell,i->new HashMap<>()).put(accessStand,ticks+600);
+            retryAt.put(navigatingCell,ticks+40);navigatingCell=-1;
+            accessStand=accessBase=null;accessFloor=false;accessSupports.clear();walker.stop();
+            status="Access capacity unavailable — checking alternatives";return false;
+        }
         if(accessBase!=null){
             var feet=mc.player.getBlockPos();
             if(feet.getX()==accessBase.getX()&&feet.getZ()==accessBase.getZ()&&mc.player.getY()>=accessBase.getY()-.2)accessBase=null;
@@ -1187,10 +1197,13 @@ public final class AutoBuilder extends Module {
     }
     /** Free a complete short access budget before climbing, instead of descending for every new piece. */
     private boolean reserveAccessCapacity(){
-        if(!accessFloor||accessStand==null||walker.canReachStand(accessStand))return false;
-        int reserve=Math.min(tempDirt.getInt(),Math.min(6,Math.max(1,accessStand.getY()-mc.player.getBlockY())));
-        if(supports.size()+reserve<=tempDirt.getInt())return false;
+        int reserve=requiredAccessCapacity();
+        if(reserve==0||supports.size()+reserve<=tempDirt.getInt())return false;
         return recycleSupport();
+    }
+    private int requiredAccessCapacity(){
+        if(!accessFloor||accessStand==null||walker.canReachStand(accessStand))return 0;
+        return Math.min(tempDirt.getInt(),Math.min(6,Math.max(1,accessStand.getY()-mc.player.getBlockY())));
     }
     private Place viewFloorJob(BlockPos stand){
         var floor=stand.down();
