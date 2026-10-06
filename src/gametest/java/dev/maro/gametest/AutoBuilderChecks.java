@@ -81,13 +81,14 @@ final class AutoBuilderChecks {
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")){stashBuild(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){shapedArrival(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderCleanupOnly")){ownedChestCover(context,singleplayer,builder,start);cleanupAccess(context,singleplayer,builder,start);return;}
-            if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){ownedChestCover(context,singleplayer,builder,start);elevatedFloorEntry(context,singleplayer,builder,start);sealedDirectionalAccess(context,singleplayer,builder,start,3);cleanupAccess(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){compactAccessStep(context,singleplayer,builder,start);ownedChestCover(context,singleplayer,builder,start);elevatedFloorEntry(context,singleplayer,builder,start);sealedDirectionalAccess(context,singleplayer,builder,start,3);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")){sealedDirectionalAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);raisedChestReturn(context,singleplayer,builder,start);sealedChestReturn(context,singleplayer,builder,start);return;}
             fixture(context,singleplayer,builder,start);
             exhaustedAccessCapacity(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             raisedTurn(context,singleplayer,start);
             shapedArrival(context,singleplayer,builder,start);
+            compactAccessStep(context,singleplayer,builder,start);
             ownedChestCover(context,singleplayer,builder,start);
             cleanupAccess(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
@@ -1042,6 +1043,34 @@ final class AutoBuilderChecks {
                 require(!walker.needsRecovery()&&!walker.routeUnavailable(),"Successful walking route retained a stale pillar request");
             }catch(ReflectiveOperationException error){throw new AssertionError(error);}finally{walker.stop();}
         });
+    }
+    private static void compactAccessStep(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Use an attachable upper step without a ground column; retain it on arrival");
+        fixture(context,world,builder,start);var stand=start.up(5).south(4);var step=start.up(2).south(2);
+        for(var p:List.of(start,start.up(),stand.down()))command(world,"setblock",p,"dirt");
+        command(world,"setblock",start.up().south(),"stone");command(world,"setblock",start.up(2).south(3),"stone");
+        world.getServer().runCommand("give @a dirt 16");world.getServer().runCommand("give @a stone 1");world.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+(start.getY()+2)+" "+(start.getZ()+.5));context.waitTicks(12);
+        try{
+            context.runOnClient(client->{
+                builder.install(new Schematic("compact-upper-step.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(stand);set(builder,"Temporary Supports",true);
+                @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.addAll(List.of(start,start.up(),stand.down()));BuilderPacketChecks.begin();builder.startBuild();
+                try{
+                    var plan=AutoBuilder.class.getDeclaredMethod("buildAccessStep",BlockPos.class);plan.setAccessible(true);require((boolean)plan.invoke(builder,stand),"Upper step planner found no native placement");
+                    var job=field(builder,"placement");var target=job.getClass().getDeclaredMethod("target");target.setAccessible(true);require(target.invoke(job).equals(step),"Planner added a needless lower column instead of the attachable upper step");
+                }catch(ReflectiveOperationException failure){throw new AssertionError(failure);}
+            });
+            for(int tick=0;tick<200&&!context.computeOnClient(client->builder.temporarySupports().contains(step));tick++)context.waitTick();
+            context.runOnClient(client->{
+                require(builder.temporarySupports().contains(step),"Upper step was not confirmed");
+                try{
+                    for(String n:List.of("standGoal","standProgressPos")){var f=AutoBuilder.class.getDeclaredField(n);f.setAccessible(true);f.set(builder,n.equals("standGoal")?step.up():client.player.getEntityPos());}
+                    for(String n:List.of("standStarted","standProgressAt")){var f=AutoBuilder.class.getDeclaredField(n);f.setAccessible(true);f.setInt(builder,(int)field(builder,"ticks"));}
+                }catch(ReflectiveOperationException failure){throw new AssertionError(failure);}
+            });
+            for(int tick=0;tick<200&&context.computeOnClient(client->field(builder,"standGoal")!=null);tick++)context.waitTick();
+            context.runOnClient(client->{require(field(builder,"standGoal")==null&&client.player.getY()>=step.getY()+.9&&((Set<?>)field(builder,"accessSupports")).contains(step),"Intermediate arrival released a still-needed access step");require(client.player.getHealth()==20,"Compact stair caused damage");BuilderPacketChecks.verify(1);builder.setEnabled(false);});
+            require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(step).isOf(Blocks.DIRT)&&server.getOverworld().getBlockState(step.down()).isAir()&&server.getOverworld().getBlockState(step.down(2)).isAir()),"Compact step added unnecessary dirt below its native attachment");
+        }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
     }
     private static void ownedChestCover(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         for(boolean owned:List.of(true,false)){

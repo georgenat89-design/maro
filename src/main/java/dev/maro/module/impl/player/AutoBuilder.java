@@ -677,7 +677,8 @@ public final class AutoBuilder extends Module {
                     }
                 }
                 if(standGoal.equals(accessStand)){accessStand=accessBase=null;accessFloor=false;accessSupports.clear();}
-                else accessSupports.removeIf(pos->pos.getY()<mc.player.getY());
+                // Lower pieces still belong to the committed route. Reclaiming
+                // them during an intermediate climb forces us to rebuild them.
                 standGoal=null;navigationStarted=ticks;walker.stop();
             }
             else if(ticks-standProgressAt>50||ticks-standStarted>240||walker.routeUnavailable()){
@@ -1082,7 +1083,9 @@ public final class AutoBuilder extends Module {
             if(search.recoveryStage==2){
                 // Prove an exterior column and its onward walking route before
                 // trying speculative side stairs or reclaiming capacity for them.
-                if(prepareElevatedEntry(options.stream().filter(directStands::contains).toList(),cell))return true;
+                // Scaffold views are valid destinations too: they expose the
+                // next attachment even when the final block is not in reach.
+                if(prepareElevatedEntry(options,cell))return true;
                 long stepDeadline=System.nanoTime()+3_000_000;
                 while(search.stepCursor<options.size()&&System.nanoTime()<stepDeadline){
                     var option=options.get(search.stepCursor++);
@@ -1580,7 +1583,9 @@ public final class AutoBuilder extends Module {
             // Keep the walking clearance outside future solid cells, so the next layer
             // cannot immediately bury the access stair beneath the player's head.
             if(plannedSolid(top.up())||plannedSolid(top.up(2)))continue;
-            for(int depth=2;depth>=0;depth--){
+            // Use the highest attachable piece first. Full dirt does not need
+            // a ground column when a side face already supports the next step.
+            for(int depth=0;depth<=2;depth++){
                 var pos=top.down(depth);
                 if(routeSupportExclusions.getOrDefault(pos,0)>ticks||plannedSolid(pos)||!mc.world.isChunkLoaded(pos)||!mc.world.getBlockState(pos).isReplaceable()||!mc.world.getFluidState(pos).isEmpty())continue;
                 var job=placement(pos,Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true);

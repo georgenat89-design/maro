@@ -29,8 +29,11 @@ public final class BuilderPacketChecks {
         }
     }
     public static void verify(){
+        verify(2);
+    }
+    public static void verify(int minimumInteractions){
         recording=false;
-        if(interactions<2||extraMovement!=0||invalidSequence!=0||unpublishedLook!=0||repeatedMovement!=0)
+        if(interactions<minimumInteractions||extraMovement!=0||invalidSequence!=0||unpublishedLook!=0||repeatedMovement!=0)
             throw new AssertionError("Builder packet order: interactions="+interactions+" extraMovement="+extraMovement+" invalidSequence="+invalidSequence+" unpublishedLook="+unpublishedLook+" repeatedMovement="+repeatedMovement);
     }
 }

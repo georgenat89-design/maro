@@ -5,6 +5,23 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Upper replay 53 was stopped after reaching 513/710: it spent roughly three
+minutes at 512, repeatedly building/recycling lower access stairs before a
+checked column finally completed the work. Read-only access snapshots retain
+work 1239 (waxed oxidized copper at -26211,68,-150582), a side-stair view at
+(-26208,66,-150583) and repeated low pieces on its route. No full pass is claimed.
+Working changes retain lower access pieces through intermediate arrivals,
+check exterior entry for scaffold views as well as direct placement views,
+and try the highest attachable stair piece before lower bases. A new native
+regression offers a valid high side attachment plus an unnecessary reachable
+ground base; it requires the high piece, empty lower cells, protection after
+native arrival, health and native packet ordering. Entry/room/cleanup run 4
+PASSED in 4m53s, including that native compact-step regression, both lid cases,
+four entries/isolated descent, raised sealed room/restoration and both cleanup
+budgets. The completed-build cases preserved their floors/walls, removed all
+owned dirt, kept health and menus correct and passed native packets. Upper
+replay 54 is next. Complete upper/fresh/core remain mandatory.
+
 Upper replay 52 failed at 545/710 after a prolonged full-pool side-stair trip
 at 542. The saved native server world (New World 285) contains newly placed
 dirt at (-26207,62,-150577), directly above the selected chest, plus dirt above
