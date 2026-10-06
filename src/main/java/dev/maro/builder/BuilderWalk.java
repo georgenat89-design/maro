@@ -168,11 +168,16 @@ public final class BuilderWalk {
         // At the final viewpoint, let each short movement settle before the
         // next input. Full walking speed otherwise overshoots a small target
         // and spends repeated turns chasing it around the standing cell.
-        boolean close=exact&&node.equals(target)&&dx*dx+dz*dz<.75*.75&&Math.abs(point.y-mc.player.getY())<.2;
+        boolean lower=point.y<mc.player.getY()-.2;
+        boolean close=dx*dx+dz*dz<.75*.75&&(exact&&node.equals(target)&&Math.abs(point.y-mc.player.getY())<.2
+            ||lower&&mc.player.isOnGround());
         // Brake over the centre of a lower landing while gravity catches up.
         // Continuing forward at the old height can carry us past a one-block
         // post, even though the planned three-block drop itself is safe.
-        boolean landing=point.y<mc.player.getY()-.2&&dx*dx+dz*dz<.4*.4;
+        // A grounded body can still overlap the upper ledge while its centre
+        // is above the lower cell. Use short centring inputs until that overlap
+        // clears; otherwise an early brake parks permanently on the ledge.
+        boolean landing=lower&&dx*dx+dz*dz<.4*.4&&(!mc.player.isOnGround()||dx*dx+dz*dz<.12*.12);
         boolean move=!landing&&headingError<(close?8:24)&&(!close||mc.player.getVelocity().horizontalLengthSquared()<.0004);
         if(move){forward=true;mc.options.forwardKey.setPressed(true);}
         else if(forward){mc.options.forwardKey.setPressed(false);forward=false;}

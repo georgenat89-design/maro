@@ -1010,19 +1010,21 @@ final class AutoBuilderChecks {
     }
     private static void narrowDropLanding(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-check] Brake over a narrow lower landing before cleanup can replan");
-        for(var side:Direction.Type.HORIZONTAL)for(boolean exact:List.of(false,true)){
+        for(var side:Direction.Type.HORIZONTAL)for(boolean exact:List.of(false,true))for(boolean edge:List.of(true,false)){
             fixture(context,world,builder,start);
             var high=start.up(6);var landing=start.offset(side).up(3);
             command(world,"setblock",high.down(),"stone");command(world,"setblock",landing.down(),"stone");
             double yaw=Math.toDegrees(Math.atan2(side.getOffsetZ(),side.getOffsetX()))-90;
-            world.getServer().runCommand("tp @a "+(high.getX()+.63)+" "+high.getY()+" "+(high.getZ()+.55)+" "+yaw+" 0");context.waitTicks(10);
+            double x=edge?landing.getX()+.5-side.getOffsetX()*.218:high.getX()+.63;
+            double z=edge?landing.getZ()+.5-side.getOffsetZ()*.218:high.getZ()+.55;
+            world.getServer().runCommand("tp @a "+x+" "+high.getY()+" "+z+" "+yaw+" 0");context.waitTicks(10);
             var walker=context.computeOnClient(client->new BuilderWalk());boolean arrived=false;
             try{
-                context.runOnClient(client->require(walker.canReachStand(landing),"Narrow three-block landing lacks a checked route"));
+                context.runOnClient(client->{require(client.player.isOnGround()&&Math.abs(client.player.getY()-high.getY())<.01,"Narrow drop fixture lacks upper footing");require(walker.canReachStand(landing),"Narrow three-block landing lacks a checked route");});
                 for(int tick=0;tick<180&&!arrived;tick++){
                     arrived=context.computeOnClient(client->{require(client.player.getHealth()==20,"Narrow landing caused fall damage");return exact?walker.standAt(landing):walker.approach(landing.down(),client.player.getBlockInteractionRange()-.85);});context.waitTick();
                 }
-                require(arrived,"Walker did not arrive over its narrow landing: "+side+" exact="+exact);
+                require(arrived,"Walker did not arrive over its narrow landing: "+side+" exact="+exact+" edge="+edge);
                 context.runOnClient(client->walker.release());context.waitTicks(20);
                 context.runOnClient(client->require(client.player.isOnGround()&&Math.abs(client.player.getY()-landing.getY())<.01&&client.player.getHealth()==20,"Native drop overshot its lower post: "+side+" exact="+exact));
             }finally{context.runOnClient(client->walker.stop());}

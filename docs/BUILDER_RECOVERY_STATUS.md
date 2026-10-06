@@ -5,6 +5,19 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+At 12:45, work resumed after the user's pause. Upper67 on2c6f3f5 ended
+unfinished704/710 with128supports and fullhealth; it had stopped over a lower
+waypoint while the body's toe still overlapped the upper ledge. A native
+edge-start regression reproduced the stall on2c6 (north, cleanup approach).
+Lower grounded waypoints now use short centring inputs until the body clears
+the ledge; the landing brake has a.12radius while still grounded and.4radius
+when airborne. Grounded waypoint advancement and settled cleanup remain.
+Edge-landing-surface-2 PASSED1m53s: all four directions, exact and cleanup
+approaches, normal starts plus.218offset edge starts with18mm toe overlap,
+all native landings/fullhealth, plus retained complete surface checks.
+Staging/cleanup and full latestUpper/Fresh remain pending. CI364 on prior2c6
+completedSUCCESS, including fullbuilder/AH45m38s, but does not cover this fix.
+
 At 10:33, the user's observed final cleanup loop has a native movement fix and
 a direct access-repair queue. Upper66 on a7da639 was stopped unfinished at
 698/710 with 16 supports after cleanup repeatedly overshot narrow lower posts,
