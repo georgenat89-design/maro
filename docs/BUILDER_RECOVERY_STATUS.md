@@ -5,6 +5,18 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Upper56 stopped at512/710. Its read-only trace A shows a retained staircase
+arrived at its two-block step at tick3151, staged down to a real ground
+placement view at3155, then chose the same higher step again at3191 before
+placing the remaining piece. The plan expired at3252. Working correction
+tries currently available native stair placements before another climb, so a
+successful staging trip is not immediately undone. Surface2 adds a competing
+reachable upper step versus an available lower piece and requires the lower
+piece's native confirmation before any climb. Surface2 PASSED in36s, including
+both staging cases, blocked-route/no-fragment proof, compact step/protection
+and four hopper-rim arrivals. Native block/health/packet assertions passed.
+Upper57 is next. Full gates still pending.
+
 Upper replay55 was stopped at539/710 after extended plateaus at512 and539.
 Read-only access trace B records a complete nine-piece stair at tick18348,
 capacity reclamation moving the actor to another footing, and the entire plan

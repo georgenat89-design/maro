@@ -79,7 +79,7 @@ final class AutoBuilderChecks {
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")){stashBuild(context,singleplayer,builder,start);return;}
-            if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){stairPlacementStaging(context,singleplayer,builder,start);blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderSurfaceOnly")){stairPlacementPriority(context,singleplayer,builder,start);stairPlacementStaging(context,singleplayer,builder,start);blockedAccessStep(context,singleplayer,builder,start);compactAccessStep(context,singleplayer,builder,start);shapedArrival(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderCleanupOnly")){ownedChestCover(context,singleplayer,builder,start);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){compactAccessStep(context,singleplayer,builder,start);ownedChestCover(context,singleplayer,builder,start);elevatedFloorEntry(context,singleplayer,builder,start);sealedDirectionalAccess(context,singleplayer,builder,start,3);cleanupAccess(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")){sealedDirectionalAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);raisedChestReturn(context,singleplayer,builder,start);sealedChestReturn(context,singleplayer,builder,start);return;}
@@ -89,6 +89,7 @@ final class AutoBuilderChecks {
             raisedTurn(context,singleplayer,start);
             shapedArrival(context,singleplayer,builder,start);
             stairPlacementStaging(context,singleplayer,builder,start);
+            stairPlacementPriority(context,singleplayer,builder,start);
             blockedAccessStep(context,singleplayer,builder,start);
             compactAccessStep(context,singleplayer,builder,start);
             ownedChestCover(context,singleplayer,builder,start);
@@ -1045,6 +1046,27 @@ final class AutoBuilderChecks {
                 require(!walker.needsRecovery()&&!walker.routeUnavailable(),"Successful walking route retained a stale pillar request");
             }catch(ReflectiveOperationException error){throw new AssertionError(error);}finally{walker.stop();}
         });
+    }
+    private static void stairPlacementPriority(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Place the available stair piece before undoing staging with another climb");
+        fixture(context,world,builder,start);var first=start.south();var existing=start.east();var stand=start.up(3).south(3);
+        command(world,"setblock",existing,"dirt");command(world,"setblock",stand.down(),"dirt");world.getServer().runCommand("give @a dirt 16");context.waitTicks(8);
+        try{
+            context.runOnClient(client->{
+                builder.install(new Schematic("stair-placement-priority.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(stand);set(builder,"Temporary Supports",true);BuilderPacketChecks.begin();builder.startBuild();
+                try{
+                    for(String name:List.of("accessStand","accessStairs")){var f=AutoBuilder.class.getDeclaredField(name);f.setAccessible(true);f.set(builder,name.equals("accessStand")?stand:Collections.unmodifiableSet(new LinkedHashSet<>(List.of(first,existing))));}
+                    var nav=AutoBuilder.class.getDeclaredField("navigatingCell");nav.setAccessible(true);nav.setInt(builder,0);
+                    require(new BuilderWalk().canReachStand(existing.up()),"Priority fixture has no competing reachable upper step");
+                    var method=AutoBuilder.class.getDeclaredMethod("accessStep",BlockPos.class);method.setAccessible(true);require((boolean)method.invoke(builder,stand),"Available stair piece was not scheduled");
+                    var job=field(builder,"placement");require(job!=null&&field(builder,"standGoal")==null,"Climbing preempted a native placement at the staged view");
+                    var target=job.getClass().getDeclaredMethod("target");target.setAccessible(true);require(target.invoke(job).equals(first),"Staging chose another piece instead of its available next face");
+                }catch(ReflectiveOperationException failure){throw new AssertionError(failure);}
+            });
+            for(int tick=0;tick<180&&!context.computeOnClient(client->builder.temporarySupports().contains(first));tick++)context.waitTick();
+            context.runOnClient(client->{require(builder.temporarySupports().contains(first)&&client.player.getHealth()==20,"Priority placement was not natively confirmed");BuilderPacketChecks.verify(1);builder.setEnabled(false);});
+            require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(first).isOf(Blocks.DIRT)&&server.getOverworld().getBlockState(existing).isOf(Blocks.DIRT)),"Priority placement altered the existing step or stayed predicted");
+        }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
     }
     private static void stairPlacementStaging(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-check] Resume retained stairs after a capacity trip beyond placement reach");

@@ -4,6 +4,8 @@ Committed stairs survive trips to reclaim temporary block capacity. When the
 next piece is out of reach, the builder searches real standing positions and
 walks to a checked placement face before resuming the same stair. This staging
 uses ordinary movement and adds no temporary blocks of its own.
+At a staged position, available stair pieces are placed before climbing an
+existing higher step, preventing that climb from undoing the placement trip.
 
 ## Start the build
 

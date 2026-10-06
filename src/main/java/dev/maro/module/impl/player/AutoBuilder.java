@@ -1568,10 +1568,8 @@ public final class AutoBuilder extends Module {
     /** Connect an existing raised build surface with normal one-block stair steps. */
     private boolean accessStep(BlockPos stand){
         if(stand.equals(accessStand)&&!accessStairs.isEmpty()){
-            var next=accessStairs.stream().map(BlockPos::up).filter(pos->walker.standingPoint(pos).y>mc.player.getY()+.5)
-                .filter(walker::canStand).filter(walker::canReachStand)
-                .max(Comparator.comparingInt(BlockPos::getY)).orElse(null);
-            if(next!=null){standGoal=next;standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();status="Climbing checked stair";return true;}
+            // Use the face we walked here for before taking an already-built
+            // higher step. Climbing first can immediately undo staging and loop.
             for(var pos:accessStairs){
                 if(!mc.world.getBlockState(pos).isReplaceable())continue;
                 if(!stairCell(pos))return false;
@@ -1581,6 +1579,10 @@ public final class AutoBuilder extends Module {
                 if(inventoryCount(Items.DIRT)==0){ensureSupportDirt();return true;}
                 placement=job;placeTick();return true;
             }
+            var next=accessStairs.stream().map(BlockPos::up).filter(pos->walker.standingPoint(pos).y>mc.player.getY()+.5)
+                .filter(walker::canStand).filter(walker::canReachStand)
+                .max(Comparator.comparingInt(BlockPos::getY)).orElse(null);
+            if(next!=null){standGoal=next;standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();status="Climbing checked stair";return true;}
             return stageStairPlacement();
         }
         if(stand.equals(accessStand)){
