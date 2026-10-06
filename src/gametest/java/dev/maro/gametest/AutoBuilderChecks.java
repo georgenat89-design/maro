@@ -79,7 +79,7 @@ final class AutoBuilderChecks {
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
             if(Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")){stashBuild(context,singleplayer,builder,start);return;}
-            if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")){sealedBuildEscape(context,singleplayer,builder,start);raisedChestReturn(context,singleplayer,builder,start);sealedChestReturn(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")){sealedDirectionalAccess(context,singleplayer,builder,start);sealedBuildEscape(context,singleplayer,builder,start);raisedChestReturn(context,singleplayer,builder,start);sealedChestReturn(context,singleplayer,builder,start);return;}
             fixture(context,singleplayer,builder,start);
             raisedTurn(context,singleplayer,start);
             fixture(context,singleplayer,builder,start);
@@ -108,6 +108,7 @@ final class AutoBuilderChecks {
             raisedChestReturn(context,singleplayer,builder,start);
             sealedChestReturn(context,singleplayer,builder,start);
             sealedBuildEscape(context,singleplayer,builder,start);
+            sealedDirectionalAccess(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             if(Boolean.getBoolean("maro.gametest.builderNavigationOnly")){cancellation(context,builder,context.computeOnClient(client->builder.schematic()));return;}
             if(Boolean.getBoolean("maro.gametest.builderAuctionOnly")){BuilderAuctionChecks.run(context,singleplayer,builder);return;}
@@ -690,6 +691,29 @@ final class AutoBuilderChecks {
                 require(client.player.getHealth()==20&&client.currentScreen==null&&builder.temporarySupports().isEmpty(),"Sealed build damaged player or left a menu/support");BuilderPacketChecks.verify();
             });
             require(world.getServer().computeOnServer(server->{var level=server.getOverworld();for(int i=0;i<room.size();i++)if(!room.state(i).isAir()&&!level.getBlockState(origin.add(room.local(i))).isOf(Blocks.STONE))return false;for(int x=-5;x<=8;x++)for(int y=0;y<=10;y++)for(int z=-5;z<=5;z++)if(level.getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Sealed build left its access opening or temporary blocks behind");
+        }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
+    }
+    private static void sealedDirectionalAccess(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-check] Directional shulker inside sealed wall, checked passage and restoration");
+        fixture(context,world,builder,start);
+        var origin=start.add(-2,0,-2);var cells=new BlockState[100];
+        for(int y=0;y<4;y++)for(int z=0;z<5;z++)for(int x=0;x<5;x++)cells[x+z*5+y*25]=(y==0||y==3||x==0||x==4||z==0||z==4)?Blocks.STONE.getDefaultState():Blocks.AIR.getDefaultState();
+        int missing=3+2*5+25;cells[missing]=Blocks.CYAN_SHULKER_BOX.getDefaultState().with(net.minecraft.block.ShulkerBoxBlock.FACING,Direction.WEST);
+        var room=new Schematic("sealed-directional-access.nbt","test",5,4,5,BlockPos.ORIGIN,cells);
+        world.getServer().runOnServer(server->{for(int i=0;i<room.size();i++)if(i!=missing&&!room.state(i).isAir())server.getOverworld().setBlockState(origin.add(room.local(i)),room.state(i),net.minecraft.block.Block.NOTIFY_ALL);});
+        for(String item:List.of("stone 16","cyan_shulker_box","diamond_pickaxe","diamond_shovel"))world.getServer().runCommand("give @a "+item);
+        world.getServer().runCommand("tp @a "+(start.getX()+3.5)+" "+start.getY()+" "+(start.getZ()+.5));context.waitTicks(12);
+        try{
+            context.runOnClient(client->{
+                var walk=new dev.maro.builder.BuilderWalk();var from=client.player.getBlockPos();var inside=start.up();var hole=Set.of(start.east(2).up(),start.east(2).up(2));
+                require(!walk.canReachStandFrom(from,inside),"Sealed fixture already has an ordinary route");
+                require(walk.canReachAfterClearing(from,inside,hole),"Checked wall passage did not expose its route");
+                require(!walk.canReachStandFrom(from,inside)&&hole.stream().allMatch(p->client.world.getBlockState(p).isOf(Blocks.STONE)),"Feasibility query modified blocks or retained its collision mask");
+                set(builder,"Material Supply","Nearby Sections");builder.install(room);builder.setOrigin(origin);BuilderPacketChecks.begin();builder.startBuild();
+            });
+            await(context,builder,2400);
+            context.runOnClient(client->{require(client.player.getHealth()==20&&client.currentScreen==null&&builder.temporarySupports().isEmpty(),"Sealed directional build left damage/menu/supports");BuilderPacketChecks.verify();});
+            require(world.getServer().computeOnServer(server->{var level=server.getOverworld();for(int i=0;i<room.size();i++)if(!room.state(i).isAir()&&!level.getBlockState(origin.add(room.local(i))).equals(room.state(i)))return false;return true;}),"Directional shulker or passage wall was not restored on the server");
         }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
     }
     private static void sealedBuildEscape(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){

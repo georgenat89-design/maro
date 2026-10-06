@@ -187,6 +187,9 @@ public final class AutoBuilder extends Module {
     private boolean accessFloor;
     private BlockPos recycleTarget;
     private BlockPos routeOpening;
+    private final Set<BlockPos> passageBlocks=new LinkedHashSet<>();
+    private BlockPos passageStand,passageSearchFeet;
+    private int passageSearchWork=-2,passageSearchCursor,passageRetryAt;
     private boolean descentLanding;
     private BlockPos descentPost,descentView;
     private final Set<BlockPos> accessSupports=new HashSet<>();
@@ -549,6 +552,7 @@ public final class AutoBuilder extends Module {
         if(ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler&&ownedHandler.getCursorStack().isEmpty())mc.player.closeHandledScreen();
         ownedHandler=null;restockTarget=null;routeOpening=null;restockBatch=Map.of();chestAccessRetryAt.clear();buying=false;pendingOffer=null;shopping.clear();status=reason;
         floorSearchFeet=null;floorSearchCursor=0;
+        passageBlocks.clear();passageStand=passageSearchFeet=null;passageSearchWork=-2;passageSearchCursor=passageRetryAt=0;
         floorAccessWork.clear();
     }
     private void notify(String message){Notifications.push("Auto Builder",message,Notifications.Type.INFO,5000);if(mc.player!=null)mc.player.sendMessage(Text.literal("[Auto Builder] "+message),false);}
@@ -577,6 +581,7 @@ public final class AutoBuilder extends Module {
         if((building||buying||pasting||depositing)&&unsafe()){walker.release();return;}
         if(building&&!buying&&!depositing&&recoverUnexpectedBuildMenu())return;
         if(pendingPlacement!=null){placementReceiptTick();return;}
+        if(mc.currentScreen==null&&(building||depositing)&&clearPassageTick())return;
         if(mc.currentScreen==null&&(building||depositing)&&clearRouteSupportTick())return;
         if(building&&!buying&&mc.currentScreen==null&&restockTarget==null&&eatTick())return;
         if(mc.currentScreen==null&&(depositing||building&&(!mode.is("Semi Auto")||mc.options.useKey.isPressed()))&&recoveryTick())return;
@@ -624,7 +629,7 @@ public final class AutoBuilder extends Module {
                     if(mc.player.getVelocity().horizontalLengthSquared()>=.0001){status="Settling before scaffold descent";return true;}
                     var post=descentPost;var lower=descentView;descentPost=descentView=null;
                     if(lower!=null&&walker.standingPoint(lower).y<mc.player.getY()-.5&&post.equals(mc.player.getBlockPos().down())&&removableRouteFloor(post)
-                        &&walker.canDescendThrough(post)&&safeToRecycle(post)){
+                        &&descentReaches(post,lower)&&safeToRecycle(post)){
                         standGoal=lower;descentLanding=true;routeMining=mining=post;walker.stop();status="Descending temporary scaffold";return true;
                     }
                 }
@@ -991,6 +996,7 @@ public final class AutoBuilder extends Module {
             // trying those views, allow a connected bridge from another side.
             if(supportFallback&&!bridge&&repositionTarget(target,tried,true)){bridgeTarget=target;return true;}
             if(prepareSupportDescent(options))return true;
+            if(wanted!=null&&!wanted.isAir()&&states[cell]!=CORRECT&&preparePassage(options,cell))return true;
             if(wanted!=null&&temporaryView(target,wanted,cell,tried))return true;
             if(wanted!=null&&!wanted.isAir()&&states[cell]!=CORRECT&&prepareFloorOpening(options,cell))return true;
             return false;
@@ -1374,15 +1380,19 @@ public final class AutoBuilder extends Module {
     private boolean plannedSolid(BlockPos pos){int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());return cell>=0&&!desired(cell).isAir()&&!desired(cell).isOf(Blocks.STRUCTURE_VOID);}
     private BlockPos recoveryDestination(){return standGoal!=null?standGoal:restockTarget!=null?restockTarget:depositTarget!=null?depositTarget:accessStand!=null?accessStand:navigatingCell>=0?position(navigatingCell):walker.destination();}
     private boolean prepareSupportDescent(List<BlockPos> views){
-        var lower=views.stream().filter(pos->walker.standingPoint(pos).y<mc.player.getY()-.5)
-            .min(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).orElse(null);
-        if(lower==null)return false;
+        var lowerViews=views.stream().filter(pos->walker.standingPoint(pos).y<mc.player.getY()-.5)
+            .sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).limit(8).toList();
+        if(lowerViews.isEmpty())return false;
         // An isolated finished ledge may first require a safe two-block drop
         // onto a reachable owned post, then normal post-by-post descent.
         var candidates=supports.stream().filter(pos->pos.getY()>=mc.player.getY()-3.1&&pos.getY()<mc.player.getY()+.1)
             .filter(pos->mc.world.getBlockState(pos).isOf(Blocks.DIRT)&&!plannedSolid(pos)&&walker.canDescendThrough(pos)&&safeToRecycle(pos))
             .sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).limit(12).toList();
+        long deadline=System.nanoTime()+3_000_000;
         for(var pos:candidates){
+            BlockPos lower=null;
+            for(var view:lowerViews){if(descentReaches(pos,view)){lower=view;break;}if(System.nanoTime()>=deadline)return false;}
+            if(lower==null)continue;
             if(pos.equals(mc.player.getBlockPos().down())&&mc.player.isOnGround()&&mc.player.getVelocity().horizontalLengthSquared()<.0001){
                 descentPost=descentView=null;
                 standGoal=lower;descentLanding=true;routeMining=mining=pos;walker.stop();status="Descending temporary scaffold";mineTick();return true;
@@ -1392,17 +1402,72 @@ public final class AutoBuilder extends Module {
         }
         return false;
     }
+    private boolean descentReaches(BlockPos removed,BlockPos destination){
+        var landing=walker.descentLanding(removed);
+        if(landing==null)return false;
+        var cleared=new HashSet<BlockPos>();cleared.add(removed);
+        if(walker.canReachAfterClearing(landing,destination,cleared))return true;
+        // A tall owned column is descended one acknowledged step at a time.
+        // Prove its eventual exit without treating the whole column as one fall.
+        for(int steps=0;steps<128;steps++){
+            var post=landing.down();
+            if(!supports.contains(post)||plannedSolid(post)||!mc.world.getBlockState(post).isOf(Blocks.DIRT))break;
+            cleared.add(post);var next=walker.descentLandingAfterClearing(post,cleared);
+            if(next==null)return false;landing=next;
+        }
+        return cleared.size()>1&&safeToRecycle(cleared)&&walker.canReachAfterClearing(landing,destination,cleared);
+    }
     private boolean descendingOwnedSupport(BlockPos pos){
         var destination=recoveryDestination();
         return destination!=null&&destination.getY()<mc.player.getY()&&(pos.equals(routeMining)||walker.routeUnavailable()||walker.movementStalled())
             &&pos.equals(mc.player.getBlockPos().down())&&removableRouteFloor(pos)
             &&mc.player.isOnGround()&&mc.player.getVelocity().horizontalLengthSquared()<.0001
-            &&walker.canDescendThrough(pos)&&safeToRecycle(pos);
+            &&descentReaches(pos,destination)&&safeToRecycle(pos);
     }
     private boolean removableRouteFloor(BlockPos pos){
         if(supports.contains(pos)&&!plannedSolid(pos)&&mc.world.getBlockState(pos).isOf(Blocks.DIRT))return true;
         int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());
-        return pos.equals(routeOpening)&&cell>=0&&!desired(cell).isAir()&&matchesBuildState(mc.world.getBlockState(pos),desired(cell));
+        return (pos.equals(routeOpening)||passageBlocks.contains(pos))&&cell>=0&&!desired(cell).isAir()&&matchesBuildState(mc.world.getBlockState(pos),desired(cell));
+    }
+    /** Reopen only our finished, noninteractive wall cells after proving a useful route. */
+    private boolean preparePassage(List<BlockPos> views,int work){
+        if(!unstuck.get()||views.isEmpty()||work<0||ticks<passageRetryAt)return false;
+        var feet=BlockPos.ofFloored(mc.player.getEntityPos().add(0,.4,0));
+        if(!feet.equals(passageSearchFeet)||work!=passageSearchWork){passageSearchFeet=feet;passageSearchWork=work;passageSearchCursor=0;}
+        var destinations=views.stream().sorted(Comparator.comparingDouble(p->p.getSquaredDistance(feet))).limit(8).toList();
+        int total=75*destinations.size();long deadline=System.nanoTime()+3_000_000;
+        while(passageSearchCursor<total&&System.nanoTime()<deadline){
+            int sample=passageSearchCursor++,candidate=sample/destinations.size();
+            var bottom=feet.add(candidate/15-2,candidate%3-1,candidate/3%5-2);var top=bottom.up();
+            if(bottom.getY()<mc.player.getY()-.2||new Box(bottom).intersects(mc.player.getBoundingBox())||new Box(top).intersects(mc.player.getBoundingBox()))continue;
+            var removed=Set.of(bottom,top);
+            if(!passageCell(bottom)||!passageCell(top)||visibleHit(bottom)==null&&visibleHit(top)==null||!safeToRecycle(removed))continue;
+            var destination=destinations.get(sample%destinations.size());
+            if(!walker.canReachAfterClearing(feet,destination,removed))continue;
+            passageBlocks.addAll(removed);passageStand=destination;
+            floorAccessWork.put(bottom,work);floorAccessWork.put(top,work);
+            placement=null;accessStand=null;accessFloor=false;accessSupports.clear();descentPost=descentView=null;standGoal=null;
+            walker.stop();status="Opening verified placement passage";return true;
+        }
+        if(passageSearchCursor<total){walker.release();status="Checking enclosed placement route";return true;}
+        passageSearchCursor=0;passageRetryAt=ticks+40;return false;
+    }
+    private boolean passageCell(BlockPos pos){
+        int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());var state=mc.world.getBlockState(pos);
+        return cell>=0&&states[cell]==CORRECT&&!floorDeferred(pos)&&!state.hasBlockEntity()&&state.getFluidState().isEmpty()
+            &&state.getHardness(mc.world,pos)>=0&&state.isFullCube(mc.world,pos)&&!state.getBlock().equals(Blocks.BEDROCK);
+    }
+    private boolean clearPassageTick(){
+        if(passageStand==null)return false;
+        if(routeMining!=null){clearRouteSupportTick();return true;}
+        passageBlocks.removeIf(pos->mc.world.getBlockState(pos).isAir());
+        if(!passageBlocks.isEmpty()){
+            var next=passageBlocks.stream().filter(pos->removableRouteFloor(pos)&&visibleHit(pos)!=null).findFirst().orElse(null);
+            if(next==null){passageBlocks.clear();passageStand=null;passageRetryAt=ticks+100;walker.stop();status="Replanning changed passage";return true;}
+            routeMining=mining=next;walker.release();mineTick();return true;
+        }
+        standGoal=passageStand;passageStand=null;standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();
+        status="Walking through verified placement passage";return true;
     }
     /** Open a safe schematic floor above our own landing post when a closed build has no exit. */
     private boolean prepareFloorOpening(List<BlockPos> views,int work){
@@ -1439,7 +1504,7 @@ public final class AutoBuilder extends Module {
                     break;
                 }
             }
-            if(lower==null)continue;
+            if(lower==null||!descentReaches(cover,lower))continue;
             int pendingWork=work;
             // A storage trip can start before a placement target is selected.
             // Keep its exit open for the pending build work as well, rather than
@@ -1523,19 +1588,22 @@ public final class AutoBuilder extends Module {
         routeSupportExclusions.put(candidate,ticks+600);routeMining=candidate;mining=candidate;walker.release();status="Reusing temporary support capacity";mineTick();return true;
     }
     private boolean safeToRecycle(BlockPos removed){
+        return safeToRecycle(Set.of(removed));
+    }
+    private boolean safeToRecycle(Set<BlockPos> removed){
         // Query vanilla support rules through a read-only view with this one cell
         // absent. Full blocks can remain floating; attached blocks and gravity
         // blocks must retain their support. No real world state is changed here.
         var view=(net.minecraft.world.WorldView)java.lang.reflect.Proxy.newProxyInstance(net.minecraft.world.WorldView.class.getClassLoader(),new Class<?>[]{net.minecraft.world.WorldView.class},(proxy,method,args)->{
-            if(args!=null&&args.length==1&&removed.equals(args[0])){
+            if(args!=null&&args.length==1&&removed.contains(args[0])){
                 if(method.getReturnType()==BlockState.class)return Blocks.AIR.getDefaultState();
                 if(method.getReturnType()==net.minecraft.fluid.FluidState.class)return net.minecraft.fluid.Fluids.EMPTY.getDefaultState();
             }
             if(method.isDefault())return java.lang.reflect.InvocationHandler.invokeDefault(proxy,method,args);
             try{return method.invoke(mc.world,args);}catch(java.lang.reflect.InvocationTargetException failure){throw failure.getCause();}
         });
-        for(var side:Direction.values()){
-            var neighbour=removed.offset(side);var state=mc.world.getBlockState(neighbour);
+        for(var cell:removed)for(var side:Direction.values()){
+            var neighbour=cell.offset(side);if(removed.contains(neighbour))continue;var state=mc.world.getBlockState(neighbour);
             if(!state.getFluidState().isEmpty()||side==Direction.UP&&state.getBlock() instanceof FallingBlock)return false;
             if(!state.isAir()&&!state.canPlaceAt(view,neighbour))return false;
         }

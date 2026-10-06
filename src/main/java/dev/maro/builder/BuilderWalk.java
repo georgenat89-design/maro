@@ -19,6 +19,7 @@ public final class BuilderWalk {
     private boolean recoveryRequested;
     private boolean movementStalled;
     private boolean smooth=true;
+    private Set<BlockPos> clearedForSearch=Set.of();
     private float yawVelocity,turnLimit=45;
     public void turning(boolean smooth,float speed){this.smooth=smooth;turnLimit=speed;}
     public String status="";
@@ -40,6 +41,20 @@ public final class BuilderWalk {
     public Vec3d standingPoint(BlockPos pos){return Vec3d.ofBottomCenter(pos).add(0,footingHeight(pos.down())-1,0);}
     public boolean canReachStand(BlockPos pos){return walkable(pos)&&(walkingCell().equals(pos)||mc.player.getEntityPos().squaredDistanceTo(standingPoint(pos))<=.22*.22||!find(walkingCell(),pos,.22,true).isEmpty());}
     public boolean canReachStandFrom(BlockPos from,BlockPos to){return walkable(from)&&walkable(to)&&(from.equals(to)||!find(from,to,.22,true).isEmpty());}
+    /** Collision-only feasibility query; never changes client or server blocks. */
+    public boolean canReachAfterClearing(BlockPos from,BlockPos to,Set<BlockPos> removed){
+        var previous=clearedForSearch;clearedForSearch=removed;
+        try{return canReachStandFrom(from,to);}finally{clearedForSearch=previous;}
+    }
+    public BlockPos descentLanding(BlockPos removed){
+        if(!canDescendThrough(removed))return null;
+        for(int drop=1;drop<=3;drop++)if(footingHeight(removed.down(drop))>=.625)return removed.down(drop).up();
+        return null;
+    }
+    public BlockPos descentLandingAfterClearing(BlockPos removed,Set<BlockPos> cleared){
+        var previous=clearedForSearch;clearedForSearch=cleared;
+        try{return descentLanding(removed);}finally{clearedForSearch=previous;}
+    }
     private BlockPos walkingCell(){return BlockPos.ofFloored(mc.player.getEntityPos().add(0,.4,0));}
     public boolean needsRecovery(){return recoveryRequested;}
     public BlockPos destination(){return goal;}
@@ -145,7 +160,7 @@ public final class BuilderWalk {
         Map<BlockPos,Double> costs=new HashMap<>();Set<BlockPos> closed=new HashSet<>();
         open.add(new Node(start,0,heuristic(start,target),null));costs.put(start,0.0);
         Node frontier=null;double initialDistance=heuristic(start,target),frontierDistance=initialDistance;
-        double initialHeight=start.equals(walkingCell())?mc.player.getY():standingPoint(start).y;
+        double initialHeight=clearedForSearch.isEmpty()&&start.equals(walkingCell())?mc.player.getY():standingPoint(start).y;
         long deadline=System.nanoTime()+3_000_000;int visited=0;
         while(!open.isEmpty()&&visited++<2048&&System.nanoTime()<deadline){
             Node n=open.poll();if(!closed.add(n.pos))continue;
@@ -187,8 +202,9 @@ public final class BuilderWalk {
         return List.of();
     }
     private static double heuristic(BlockPos a,BlockPos b){int x=Math.abs(a.getX()-b.getX()),z=Math.abs(a.getZ()-b.getZ());return Math.max(x,z)+(Math.sqrt(2)-1)*Math.min(x,z)+Math.abs(a.getY()-b.getY())*.6;}
-    private boolean clear(BlockPos p){return mc.world.isChunkLoaded(p)&&mc.world.getBlockState(p).getCollisionShape(mc.world,p).isEmpty()&&safe(p);}
+    private boolean clear(BlockPos p){return mc.world.isChunkLoaded(p)&&(clearedForSearch.contains(p)||mc.world.getBlockState(p).getCollisionShape(mc.world,p).isEmpty())&&safe(p);}
     private double footingHeight(BlockPos p){
+        if(clearedForSearch.contains(p))return 0;
         var state=mc.world.getBlockState(p);
         if(state.isSideSolidFullSquare(mc.world,p,Direction.UP))return 1;
         double height=0;

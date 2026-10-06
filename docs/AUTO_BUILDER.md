@@ -71,9 +71,13 @@ Reach prechecks use the nearest face of a block, not its centre. Every actual ac
 
 When a chosen scaffold view can reach only the first support, arrival places that support even if the final schematic block is still farther away. It commits to climbing the new post, building native intermediate stairs for a rise of up to six blocks, before extending more supports. The focused regression builds a target six levels above the initial pose and checks server completion, full temporary-dirt cleanup, unchanged health and native packet ordering.
 
-Recycling preserves the short attachment column serving the active target. A stranded finished ledge can use a reachable owned post up to two blocks lower, followed by safe incremental descent through that post. Completed schematic blocks remain intact.
+Recycling preserves the short attachment column serving the active target. A stranded finished ledge can use a reachable owned post up to two blocks lower, followed by safe incremental descent through that post.
 
 The selected post and lower view remain paired while walking to a descent. Arrival waits for a settled pose and rechecks ownership, footing, landing and neighbouring support rules before mining that post.
+
+A safe landing alone is insufficient: recovery also checks a route from that landing to its intended view. Tall owned columns may descend through several checked steps, but each actual removal still waits for the native landing. A closed wall cannot be solved by repeatedly removing and rebuilding dirt on the same side.
+
+For an enclosed placement view, recovery can temporarily reopen two completed full wall blocks only after a collision-only query proves a walkable route. It excludes block entities, fluids, unbreakable blocks and neighbours that would lose required support. Clearing and walking retain one intent; those wall cells are deferred until their associated target finishes, then restored through normal confirmed placement. The native regression places a west-facing shulker inside a sealed room, restores the wall, and checks server states, packet ordering, health and closed menus.
 
 Access stair construction commits to its selected standing view and climbs onto each completed intermediate step before constructing higher pieces. New pieces are protected during construction; older pieces can be reclaimed after that climb while the player's current footing remains protected.
 
