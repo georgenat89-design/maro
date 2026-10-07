@@ -30,6 +30,7 @@ final class SkyChecks {
     static void run(ClientGameTestContext context, TestSingleplayerContext world) {
         CustomSky sky = ModuleManager.get(CustomSky.class);
         require(sky != null, "Custom Sky was not registered");
+        var original = context.computeOnClient(c -> c.player.getEntityPos());
         // High up on a little platform, facing south and looking 20 degrees up.
         world.getServer().runCommand("fill -2 140 -2 2 140 2 minecraft:stone");
         world.getServer().runCommand("time set noon");
@@ -56,6 +57,9 @@ final class SkyChecks {
             }
         } finally {
             context.runOnClient(c -> sky.setEnabled(false));
+            // Back down before the platform goes, or a survival player falls to their death.
+            world.getServer().runCommand("tp @a " + original.x + " " + original.y + " " + original.z);
+            context.waitTicks(2);
             world.getServer().runCommand("fill -2 140 -2 2 140 2 minecraft:air");
         }
     }
