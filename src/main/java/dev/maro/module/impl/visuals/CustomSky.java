@@ -156,6 +156,14 @@ public class CustomSky extends Module {
         };
     }
 
+    /** The graphics driver would not compile the sky shader; the game's own sky stays. */
+    public static void shaderFailed() {
+        Maro.LOGGER.error("Custom Sky: the graphics driver could not compile the custom_sky shader (its errors are logged above)");
+        if (instance == null || !instance.isEnabled()) return;
+        Notifications.push(instance.getName(), "Your graphics driver could not build the sky - see the log. Turned off.", Notifications.Type.ERROR);
+        instance.setEnabled(false);
+    }
+
     public static void renderFailed(RuntimeException e) {
         Maro.LOGGER.error("Custom Sky could not render", e);
         if (instance == null) return;

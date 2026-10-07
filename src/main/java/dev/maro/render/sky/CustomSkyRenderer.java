@@ -97,7 +97,7 @@ public final class CustomSkyRenderer {
 
     /** Paints the sky over the whole frame. Returns false if it could not, so the game's sky is kept. */
     public static boolean draw() {
-        if (!haveMatrices) return false;
+        if (!haveMatrices || !shaderBuilt()) return false;
         Framebuffer target = mc.getFramebuffer();
         if (target == null || target.getColorAttachmentView() == null || target.textureHeight <= 0) return false;
 
@@ -124,6 +124,16 @@ public final class CustomSkyRenderer {
             CustomSky.renderFailed(e);
             return false;
         }
+    }
+
+    /**
+     * Whether the graphics driver compiled the sky shader. If it did not, the draw would silently do
+     * nothing and leave the cleared sky showing, so keep the game's sky and switch the module off.
+     */
+    private static boolean shaderBuilt() {
+        if (RenderSystem.getDevice().precompilePipeline(PIPELINE).isValid()) return true;
+        CustomSky.shaderFailed();
+        return false;
     }
 
     private static GpuBufferSlice writeUniforms(float pixelAngle) {

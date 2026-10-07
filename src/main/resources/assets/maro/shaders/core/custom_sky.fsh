@@ -42,7 +42,7 @@ vec3 hash33(vec3 p3) {
     return fract((p3.xxy + p3.yxx) * p3.zyx);
 }
 
-float noise2(vec2 p) {
+float valueNoise2(vec2 p) {
     vec2 i = floor(p);
     vec2 f = fract(p);
     vec2 u = f * f * (3.0 - 2.0 * f);
@@ -53,7 +53,7 @@ float noise2(vec2 p) {
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
-float noise3(vec3 p) {
+float valueNoise3(vec3 p) {
     vec3 i = floor(p);
     vec3 f = fract(p);
     vec3 u = f * f * (3.0 - 2.0 * f);
@@ -74,7 +74,7 @@ float fbm2(vec2 p) {
     float sum = 0.0;
     float amp = 0.5;
     for (int i = 0; i < 5; i++) {
-        sum += amp * noise2(p);
+        sum += amp * valueNoise2(p);
         p = p * 2.03 + vec2(17.1, 9.2);
         amp *= 0.5;
     }
@@ -85,7 +85,7 @@ float fbm3(vec3 p) {
     float sum = 0.0;
     float amp = 0.5;
     for (int i = 0; i < 5; i++) {
-        sum += amp * noise3(p);
+        sum += amp * valueNoise3(p);
         p = p * 2.02 + vec3(17.1, 9.2, 4.7);
         amp *= 0.5;
     }
@@ -94,9 +94,9 @@ float fbm3(vec3 p) {
 
 // Cheaper, three octaves.
 float fbm3lo(vec3 p) {
-    float sum = 0.5 * noise3(p);
-    sum += 0.25 * noise3(p * 2.02 + vec3(17.1, 9.2, 4.7));
-    sum += 0.125 * noise3(p * 4.07 + vec3(3.3, 21.4, 11.8));
+    float sum = 0.5 * valueNoise3(p);
+    sum += 0.25 * valueNoise3(p * 2.02 + vec3(17.1, 9.2, 4.7));
+    sum += 0.125 * valueNoise3(p * 4.07 + vec3(3.3, 21.4, 11.8));
     return sum / 0.875;
 }
 
@@ -178,7 +178,7 @@ vec2 drifters(vec3 d, float columns, float rise, float density, float t) {
 vec3 neonWaves(vec3 d, float t) {
     vec3 col = mix(vec3(0.05, 0.0, 0.1), vec3(0.008, 0.0, 0.02), smoothstep(-0.05, 0.7, d.y));
     vec3 q = d * 1.1 + vec3(t * 0.025, t * 0.018, -t * 0.02);
-    vec3 warp = vec3(noise3(q * 1.6 + 3.1), noise3(q * 1.6 + 7.3), noise3(q * 1.6 + 11.9));
+    vec3 warp = vec3(valueNoise3(q * 1.6 + 3.1), valueNoise3(q * 1.6 + 7.3), valueNoise3(q * 1.6 + 11.9));
     float v = fbm3lo(q + warp * 1.1) * 6.0;
     float off = abs(fract(v) - 0.5);
     float px = off / max(fwidth(v), 1e-4);       // how far from a line, in pixels
@@ -203,10 +203,10 @@ vec3 aurora(vec3 d, float t) {
             // each layer is a little higher; the same wavy ridge seen through them makes curtains
             vec2 p = d.xz / (h + 0.08) * (0.55 + fi * 0.03);
             p += vec2(t * 0.012, -t * 0.006);
-            float wave = noise2(p * 2.6 + vec2(noise2(p * 0.7 + t * 0.03) * 3.0, 0.0));
+            float wave = valueNoise2(p * 2.6 + vec2(valueNoise2(p * 0.7 + t * 0.03) * 3.0, 0.0));
             float ridge = 1.0 - abs(wave * 2.0 - 1.0);
             float band = pow(ridge, 12.0);
-            float rays = 0.35 + 0.65 * noise2(vec2(p.x * 14.0 + p.y * 7.0, t * 0.5));
+            float rays = 0.35 + 0.65 * valueNoise2(vec2(p.x * 14.0 + p.y * 7.0, t * 0.5));
             vec3 tint = mix(vec3(0.1, 1.0, 0.45), vec3(0.65, 0.25, 1.0), smoothstep(3.0, 14.0, fi));
             acc += tint * band * rays * exp(-fi * 0.11);
         }
@@ -484,7 +484,7 @@ vec3 deepOcean(vec3 d, float t) {
     }
     col += vec3(0.4, 0.8, 0.9) * window * 0.35;
     float az = atan(d.z, d.x);
-    float shafts = noise2(vec2(az * 14.0, t * 0.25)) * noise2(vec2(az * 31.0 + 4.0, t * 0.4));
+    float shafts = valueNoise2(vec2(az * 14.0, t * 0.25)) * valueNoise2(vec2(az * 31.0 + 4.0, t * 0.4));
     col += vec3(0.35, 0.75, 0.85) * smoothstep(0.15, 0.6, shafts) * smoothstep(-0.4, 0.8, h) * 0.35;
     vec2 b = drifters(d, 120.0, 1.2, 0.07, t);
     float cell = View.y * 120.0 / TAU;
@@ -559,7 +559,7 @@ vec3 prism(vec3 d, float t) {
 // The bolt of a lightning strike, seen on the plane around where it strikes.
 float bolt(vec2 p, float seed) {
     if (p.y > 0.55 || p.y < -0.25) return 0.0;
-    float wiggle = (noise2(vec2(p.y * 7.0, seed)) - 0.5) * 0.16 + (noise2(vec2(p.y * 31.0, seed + 5.0)) - 0.5) * 0.04;
+    float wiggle = (valueNoise2(vec2(p.y * 7.0, seed)) - 0.5) * 0.16 + (valueNoise2(vec2(p.y * 31.0, seed + 5.0)) - 0.5) * 0.04;
     float off = abs(p.x - wiggle) / View.y;
     float ends = sstep(0.55, 0.45, p.y) * smoothstep(-0.25, -0.15, p.y);
     return (exp(-off * 0.9) + exp(-off * 0.08) * 0.25) * ends;

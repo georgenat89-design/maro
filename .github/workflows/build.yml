@@ -21,6 +21,18 @@ jobs:
       - name: Build
         run: ./gradlew build --no-daemon
 
+      # The in-game test runs on Mesa's software renderer, which accepts shaders that NVIDIA, AMD
+      # and Intel drivers refuse to compile. Hold every shader to the GLSL spec as well.
+      - name: Check shaders against the GLSL spec
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq glslang-tools > /dev/null
+          status=0
+          for f in $(find src/main/resources -name '*.fsh' -o -name '*.vsh'); do
+            case "$f" in *.vsh) stage=vert ;; *) stage=frag ;; esac
+            glslangValidator -S "$stage" "$f" || status=1
+          done
+          exit $status
+
       # Launch the real 1.21.11 client with the production jar and drive the GUI.
       # Any mixin failure, crash or render exception fails the build.
       - name: In-game test
