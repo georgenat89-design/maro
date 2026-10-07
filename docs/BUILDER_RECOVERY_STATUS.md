@@ -5,6 +5,21 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Latest, 21:47: native704 replay1 placed the previously blocked lava source and
+advanced to observer phase after removing its single owned dirt obstruction.
+Read-only native masks proved exactly(-26220,66,-150578) was required: its
+removal exposes two dry foot66 views with a native source-floor UP hit, and
+safeToRecycle is true. It is not an escape support. New bounded recovery scans
+one-post masks, routes to a checked mining view, mines normally and rechecks
+the bucket target. Every finished passage for this task stays above the source.
+The actual704 fixture contains all three water sources and unchanged supplies.
+The source also now counts advancing entry queries as section progress, and
+lets a checked advancing walk/climb or immediately valid placement finish
+before applying its accumulated unproductive-work timeout. The running native
+704 replay does not include this last timeout grace; all710/cleanup/health/
+fluid/packet/home gates, latest focused home test, full CI and final fresh0
+remain pending. Native13904 belongs to checkpoint704 in the isolated worktree.
+
 Latest, 21:38: actual698 replay2 reached702 and then repeated the same entry
 search without moving. Read-only traces proved the 360-tick work timeout reset
 its view search around candidate807, before the elevated-entry stage finished.

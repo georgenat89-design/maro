@@ -294,6 +294,8 @@ public final class AutoBuilder extends Module {
         final PassageSearch passage=new PassageSearch();
         final FloorSearch floor=new FloorSearch();
         int expires,cursor,routeCursor,stepCursor,temporaryCursor,ceilingCursor,columnCursor,recoveryStage;
+        int liquidSupportCursor;
+        List<BlockPos> liquidSupports;
         List<BlockPos> ceilingViews;
         List<BlockPos> temporaryViews;
         final List<BlockPos> options=new ArrayList<>();
@@ -334,6 +336,8 @@ public final class AutoBuilder extends Module {
     private BlockPos waterWorkTarget;
     private BlockPos liquidTopStand;
     private final Set<BlockPos> liquidTopBlocks=new LinkedHashSet<>();
+    private BlockPos liquidSupportTarget;
+    private int liquidSupportWork=-1;
     private final Map<BlockPos,Integer> openingRepairDepth=new HashMap<>();
     private BlockPos mining,restockTarget;
     private BlockPos tuningTarget,tuningSession;
@@ -652,6 +656,7 @@ public final class AutoBuilder extends Module {
         homes.cancel();homeSetupResume=false;
         peekRetryAt.clear();
         waterDeparture=false;waterWorkTarget=null;liquidTopStand=null;liquidTopBlocks.clear();
+        liquidSupportTarget=null;liquidSupportWork=-1;
         cleanupExit=cleanupExitSearchFeet=null;cleanupExits=List.of();cleanupExitCursor=cleanupExitRetryAt=0;
         stairPlacementPlan=Set.of();stairPlacementFeet=null;stairPlacementViews=List.of();stairPlacementCursor=0;
         stairSearchStand=stairSearchFeet=null;stairSearchCursor=0;
@@ -749,6 +754,7 @@ public final class AutoBuilder extends Module {
         if(followStandGoal())return;
         if(continueEntryPassage())return;
         if(continueAccess())return;
+        if(liquidSupportTick())return;
         if(liquidTopTick())return;
         if(autoTools.get()&&!mc.player.getAbilities().creativeMode&&(!hasTool(false)||!hasTool(true))){
             needed=!hasTool(false)?Items.DIAMOND_PICKAXE:Items.DIAMOND_SHOVEL;
@@ -1056,6 +1062,14 @@ public final class AutoBuilder extends Module {
         // Count active work, including its scaffolding, but finish any native
         // placement/mining receipt and settle before changing the route.
         if(spent<360||!mc.player.isOnGround()||placement!=null||pendingPlacement!=null||mining!=null)return false;
+        // Finish a checked climb or walk that is still advancing. Keep the
+        // accumulated budget so a failed arrival cannot start another cycle.
+        if(standGoal!=null&&ticks-standProgressAt<=50||accessStand!=null&&ticks-accessProgressAt<=50)return false;
+        if(liquidSupportTarget!=null&&visibleHit(liquidSupportTarget)!=null
+            &&!new Box(liquidSupportTarget).intersects(mc.player.getBoundingBox().offset(0,-1,0))&&safeToRecycle(liquidSupportTarget))return false;
+        var wanted=desired(cell);var item=Schematic.material(wanted);
+        if(!wanted.isAir()&&mc.world.getBlockState(position(cell)).isReplaceable()&&inventoryCount(item)>0
+            &&placement(position(cell),wanted,item,cell,false)!=null)return false;
         var retries=new HashMap<>(retryAt);
         // Switching jobs does not change geometry. Keep the bounded search
         // cursors so a large exterior-entry pass can reach later recovery
@@ -1235,6 +1249,8 @@ public final class AutoBuilder extends Module {
         tried.values().removeIf(until->until<=ticks);
         int cell=schematic.indexAt(target.subtract(anchor()),turns(),mirror.get());
         var wanted=cell<0?null:desired(cell);
+        boolean clearingLiquidSupport=target.equals(liquidSupportTarget)&&liquidSupportWork>=0;
+        int routingWork=clearingLiquidSupport?liquidSupportWork:cell;
         boolean liquid=wanted!=null&&wanted.getBlock() instanceof FluidBlock;
         boolean topWork=liquid||wanted!=null&&liquidBoundary(target);
         // Mining and cleanup need a reachable hit on the existing block.
@@ -1259,6 +1275,7 @@ public final class AutoBuilder extends Module {
         while(search.cursor<total&&System.nanoTime()<viewPlanningDeadline){
             int sample=search.cursor++;int dy=sample%heights-below,dx=sample/heights/7-3,dz=sample/heights%7-3;
             var stand=target.add(dx,dy,dz);
+            if(clearingLiquidSupport&&stand.getY()<=position(liquidSupportWork).getY())continue;
             if(topWork&&stand.getY()<=target.getY())continue;
             // A hotbar transfer can defer the next stair piece without changing
             // geometry. Keep the committed view eligible during its retry window.
@@ -1306,12 +1323,12 @@ public final class AutoBuilder extends Module {
             }
             if(search.recoveryStage==1){if(prepareSupportDescent(options,false,search))return true;search.recoveryStage=2;}
             if(search.recoveryStage==2){
-                if(prepareDirectColumn(options,cell,search))return true;
+                if(prepareDirectColumn(options,routingWork,search))return true;
                 // Prove an exterior column and its onward walking route before
                 // trying speculative side stairs or reclaiming capacity for them.
                 // Scaffold views are valid destinations too: they expose the
                 // next attachment even when the final block is not in reach.
-                if(prepareElevatedEntry(options,cell,search))return true;
+                if(prepareElevatedEntry(options,routingWork,search))return true;
                 long stepDeadline=System.nanoTime()+3_000_000;
                 while(search.stepCursor<options.size()&&System.nanoTime()<stepDeadline){
                     var option=options.get(search.stepCursor++);
@@ -1324,19 +1341,20 @@ public final class AutoBuilder extends Module {
             }
             if(search.recoveryStage==3){
                 boolean cleaning=target.equals(cleanupTarget)&&supports.contains(target);
+                if(liquid&&prepareLiquidSupportAccess(target,cell,search))return true;
                 if(wanted!=null&&prepareBuriedBlockAccess(target,wanted,cell))return true;
-                if((cleaning||wanted!=null&&!wanted.isAir()&&states[cell]!=CORRECT)&&preparePassage(options,cell,search))return true;
+                if((cleaning||wanted!=null&&!wanted.isAir()&&states[cell]!=CORRECT)&&preparePassage(options,routingWork,search))return true;
                 search.recoveryStage=4;
             }
             if(search.recoveryStage==4){
                 boolean cleaning=target.equals(cleanupTarget)&&supports.contains(target);
-                if((cleaning||wanted!=null&&!wanted.isAir())&&prepareCeilingEntry(options,cell,search))return true;
+                if((cleaning||wanted!=null&&!wanted.isAir())&&prepareCeilingEntry(options,routingWork,search))return true;
                 if(wanted!=null&&temporaryView(target,wanted,cell,tried,search))return true;
                 search.recoveryStage=5;
             }
             if(search.recoveryStage==5){
                 boolean cleaning=target.equals(cleanupTarget)&&supports.contains(target);
-                if((cleaning||wanted!=null&&!wanted.isAir()&&states[cell]!=CORRECT)&&prepareFloorOpening(options,cell,search))return true;
+                if((cleaning||wanted!=null&&!wanted.isAir()&&states[cell]!=CORRECT)&&prepareFloorOpening(options,routingWork,search))return true;
                 search.recoveryStage=6;
             }
             if(search.recoveryStage==6){if(prepareSupportDescent(options,true,search))return true;search.recoveryStage=7;search.expires=ticks+40;}
@@ -1599,6 +1617,7 @@ public final class AutoBuilder extends Module {
     /** Each placement view keeps its own search when nearby work targets alternate. */
     private boolean prepareElevatedEntry(List<BlockPos> views,int work,ViewSearch search){
         var entry=search.entry;
+        int previousCursor=entry.cursor,previousDoor=entry.doorCursor;
         entrySearchFeet=entry.feet;entrySearchWork=entry.work;entrySearchHash=entry.hash;
         entrySearchCursor=entry.cursor;entryRetryAt=entry.retryAt;entryDoorCursor=entry.doorCursor;
         entryProbeCursor=entry.probeCursor;entryProbeBase=entry.probeBase;entryCandidates=entry.candidates;
@@ -1607,6 +1626,9 @@ public final class AutoBuilder extends Module {
             entry.feet=entrySearchFeet;entry.work=entrySearchWork;entry.hash=entrySearchHash;
             entry.cursor=entrySearchCursor;entry.retryAt=entryRetryAt;entry.doorCursor=entryDoorCursor;
             entry.probeCursor=entryProbeCursor;entry.probeBase=entryProbeBase;entry.candidates=entryCandidates;
+            // The section timeout must not insert idle restock/target pauses
+            // while a bounded route query is still making measurable progress.
+            if(entry.cursor!=previousCursor||entry.doorCursor!=previousDoor)sectionProgressAt=ticks;
         }
     }
     /** Reach a finished elevated floor by climbing outside it, rather than mining or pillaring underneath it. */
@@ -1816,6 +1838,44 @@ public final class AutoBuilder extends Module {
                     &&FlowableFluidAccessor.maro$canFill(mc.world,pos,actual,fluid))return false;
             }
         }
+        return true;
+    }
+    /** Prove that one obsolete owned post blocks an otherwise usable dry source view. */
+    private boolean prepareLiquidSupportAccess(BlockPos target,int work,ViewSearch search){
+        if(!unstuck.get()||!fluidContained(target,desired(work)))return false;
+        if(search.liquidSupports==null)search.liquidSupports=supports.stream()
+            .filter(pos->pos.getY()>target.getY()&&pos.getY()<=target.getY()+3&&Math.abs(pos.getX()-target.getX())<=3&&Math.abs(pos.getZ()-target.getZ())<=3)
+            .filter(pos->mc.world.isChunkLoaded(pos)&&mc.world.getBlockState(pos).isOf(Blocks.DIRT)&&!plannedSolid(pos)&&!servesActiveScaffold(pos)&&safeToRecycle(pos))
+            .sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(target))).toList();
+        long deadline=System.nanoTime()+3_000_000;int samples=49*3,total=search.liquidSupports.size()*samples;
+        while(search.liquidSupportCursor<total&&System.nanoTime()<deadline){
+            int sample=search.liquidSupportCursor++;var post=search.liquidSupports.get(sample/samples);
+            if(!supports.contains(post)||!mc.world.getBlockState(post).isOf(Blocks.DIRT)||servesActiveScaffold(post)||!safeToRecycle(post))continue;
+            int viewSample=sample%samples;var stand=target.add(viewSample/21-3,viewSample%3+1,viewSample/3%7-3);
+            var removed=Set.of(post);
+            if(!walker.canReachAfterClearing(stand,stand,removed))continue;
+            var eye=walker.standingPoint(stand).add(0,mc.player.getStandingEyeHeight(),0);
+            var hit=visibleHit(target.down(),eye,Direction.UP,clearedView(removed));
+            if(hit==null||!bucketTarget(Schematic.material(desired(work)),hit).equals(target))continue;
+            liquidSupportTarget=cleanupTarget=post;liquidSupportWork=work;navigatingCell=work;
+            walker.stop();status="Clearing obsolete support from the liquid's upper view";return true;
+        }
+        if(search.liquidSupportCursor<total){walker.release();status="Checking temporary obstructions above the liquid";return true;}
+        return false;
+    }
+    /** Remove only the owned post proved to obstruct a dry source view. */
+    private boolean liquidSupportTick(){
+        if(liquidSupportTarget==null)return false;
+        var post=liquidSupportTarget;int work=liquidSupportWork;
+        if(work<0||work>=states.length||states[work]==CORRECT||!supports.contains(post)||!mc.world.getBlockState(post).isOf(Blocks.DIRT)
+            ||post.getY()<=position(work).getY()||plannedSolid(post)||servesActiveScaffold(post)||!safeToRecycle(post)){
+            if(post.equals(cleanupTarget))cleanupTarget=null;
+            liquidSupportTarget=null;liquidSupportWork=-1;return false;
+        }
+        if(visibleHit(post)!=null&&!new Box(post).intersects(mc.player.getBoundingBox().offset(0,-1,0))){routeMining=mining=post;mineTick();return true;}
+        if(beginPeek(post)){routeMining=mining=post;mineTick();return true;}
+        cleanupTarget=post;navigatingCell=work;
+        if(!repositionTarget(post,cleanupStands.computeIfAbsent(post,p->new HashMap<>()))){walker.release();status="Checking access to the obsolete liquid-view support";}
         return true;
     }
     /** Open only the roof above the source; retain the dry viewing ledge and every basin wall. */
@@ -2348,6 +2408,7 @@ public final class AutoBuilder extends Module {
         var removed=new LinkedHashSet<BlockPos>();var attachment=attachmentSide(wanted);
         for(int along=0;along<depth;along++)for(int up=0;up<2;up++){
             var pos=first.offset(direction,along).up(up);var state=mc.world.getBlockState(pos);
+            if(liquidSupportTarget!=null&&liquidSupportWork>=0&&pos.getY()<=position(liquidSupportWork).getY())return null;
             if(wanted!=null&&wanted.getBlock() instanceof FluidBlock&&pos.getY()<=workTarget.getY())return null;
             if(state.isAir())continue;
             if(pos.equals(workTarget)||attachment!=null&&pos.equals(workTarget.offset(attachment)))return null;
@@ -2358,6 +2419,7 @@ public final class AutoBuilder extends Module {
     }
     private boolean passageCell(BlockPos pos){
         int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());var state=mc.world.getBlockState(pos);
+        if(liquidSupportTarget!=null&&liquidSupportWork>=0&&pos.getY()<=position(liquidSupportWork).getY())return false;
         return cell>=0&&states[cell]==CORRECT&&!liquidBoundary(pos)&&!floorDeferred(pos)&&!state.hasBlockEntity()&&state.getFluidState().isEmpty()
             &&state.getHardness(mc.world,pos)>=0&&state.isFullCube(mc.world,pos)&&!state.getBlock().equals(Blocks.BEDROCK);
     }
@@ -2870,6 +2932,8 @@ public final class AutoBuilder extends Module {
         chestStand=null;chestTriedStands.clear();releaseSneak();
         routeMining=mining=null;passageBlocks.clear();passageStand=null;ceilingBase=ceilingTop=null;ceilingBlocks.clear();
         liquidTopStand=null;liquidTopBlocks.clear();accessColumn=Set.of();floorProbes.clear();
+        if(liquidSupportTarget!=null&&liquidSupportTarget.equals(cleanupTarget))cleanupTarget=null;
+        liquidSupportTarget=null;liquidSupportWork=-1;
     }
     public void afterNormalMovement(){
         var action=queuedLookAction;queuedLookAction=null;
