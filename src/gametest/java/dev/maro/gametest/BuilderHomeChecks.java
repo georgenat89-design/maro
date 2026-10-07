@@ -197,12 +197,12 @@ final class BuilderHomeChecks {
     }
     private static void restockRoundTrip(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work,BlockPos chest){
         String previousSupply=builder.sectionSupply()?"Nearby Sections":builder.layerSupply()?"Layer by Layer":"Whole Schematic";
-        var target=work.south(2);command(world,"setblock",target,"air");world.getServer().runCommand("clear @a stone");
+        var target=work.south(2);command(world,"setblock",target,"air");world.getServer().runCommand("clear @a stone");world.getServer().runCommand("clear @a water_bucket");world.getServer().runCommand("give @a water_bucket 1");
         world.getServer().runOnServer(server->{((net.minecraft.block.entity.ChestBlockEntity)server.getOverworld().getBlockEntity(chest)).setStack(0,new ItemStack(Items.STONE,8));saved[1]=new Home(Vec3d.ofBottomCenter(work.west(10)),0,0);});
         teleport(world,work);context.waitTicks(12);int first=commands.size();var third=saved[2];
         context.runOnClient(client->{
             setting(builder,"Prepare Whole Build",false);setting(builder,"Restock When Empty",true);setting(builder,"Auto Buy Tools",false);setting(builder,"Temporary Supports",false);setting(builder,"Material Supply","Nearby Sections");
-            builder.install(new Schematic("restock-return.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
+            builder.install(new Schematic("restock-return.nbt","test",3,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState(),Blocks.STRUCTURE_VOID.getDefaultState(),Blocks.WATER.getDefaultState()}));builder.setOrigin(target);setting(builder,"Stockpile In Chests",true);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
             // The requested work survives an exhausted/refreshed section. Its
             // real chest pickup must still happen on this first home trip.
             try{var needed=builder.getClass().getDeclaredField("needed");needed.setAccessible(true);needed.set(builder,Items.STONE);}
@@ -214,8 +214,9 @@ final class BuilderHomeChecks {
         require(commands.subList(first,commands.size()).equals(List.of("delhome 2","sethome 2","home 1","home 2","delhome 2")),"Incorrect restock command order: "+commands.subList(first,commands.size()));
         require(saved[1]==null&&saved[2]==third&&!movedDuringWarmup,"Home 2 was retained, home 3 changed or warmup moved");
         require(world.getServer().computeOnServer(server->((net.minecraft.block.entity.ChestBlockEntity)server.getOverworld().getBlockEntity(chest)).getStack(0).getCount()==7),"Native chest restock took an incorrect quantity");
-        context.runOnClient(client->{require(client.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(work))<9&&client.player.getHealth()==20&&client.currentScreen==null,"Restock did not return safely to the work area");BuilderPacketChecks.verify(1);builder.pause("restock order checked");setting(builder,"Temporary Supports",true);setting(builder,"Material Supply",previousSupply);});
-        System.out.println("[builder-home] Requested material survives empty section: exact native pickup and placement; delhome 2 -> sethome 2 -> home 1 -> home 2 -> delhome 2; home 3 untouched");
+        context.runOnClient(client->{require(client.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(work))<9&&client.player.getHealth()==20&&client.currentScreen==null,"Restock did not return safely to the work area");require(builder.inventoryCount(Items.WATER_BUCKET)==1,"Restock returned an unfinished source bucket while repairing another section");BuilderPacketChecks.verify(1);builder.pause("restock order checked");setting(builder,"Temporary Supports",true);setting(builder,"Material Supply",previousSupply);});
+        world.getServer().runCommand("clear @a water_bucket");
+        System.out.println("[builder-home] Requested material survives empty section: exact native pickup/placement, unfinished bucket retained; delhome 2 -> sethome 2 -> home 1 -> home 2 -> delhome 2; home 3 untouched");
     }
     private static void temporaryFootingReturn(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work,BlockPos chest){
         var platform=work.up(2);for(int x=-1;x<=1;x++)for(int z=-1;z<=1;z++)command(world,"setblock",platform.add(x,0,z),"dirt");context.waitTicks(24);

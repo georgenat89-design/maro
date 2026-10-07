@@ -271,6 +271,7 @@ public final class AutoBuilder extends Module {
         BlockPos feet,probeBase;
         int work=-2,hash,cursor,retryAt,doorCursor,probeCursor=-1;
         List<EntryCandidate> candidates=List.of();
+        final Map<BlockPos,Boolean> reachableBases=new HashMap<>();
     }
     private static final class DescentSearch {
         BlockPos feet,destination;
@@ -1056,7 +1057,11 @@ public final class AutoBuilder extends Module {
         // placement/mining receipt and settle before changing the route.
         if(spent<360||!mc.player.isOnGround()||placement!=null||pendingPlacement!=null||mining!=null)return false;
         var retries=new HashMap<>(retryAt);
-        resetAccessRouting();retryAt.putAll(retries);retryAt.put(cell,ticks+200);
+        // Switching jobs does not change geometry. Keep the bounded search
+        // cursors so a large exterior-entry pass can reach later recovery
+        // methods instead of examining its first candidates forever.
+        var searches=new LinkedHashMap<>(viewSearches);
+        resetAccessRouting();viewSearches.putAll(searches);retryAt.putAll(retries);retryAt.put(cell,ticks+40);
         navigationWorkTicks.remove(cell);navigatingCell=-1;walker.stop();
         status="Trying another schematic target after an unproductive access route";return true;
     }
@@ -1597,7 +1602,7 @@ public final class AutoBuilder extends Module {
         entrySearchFeet=entry.feet;entrySearchWork=entry.work;entrySearchHash=entry.hash;
         entrySearchCursor=entry.cursor;entryRetryAt=entry.retryAt;entryDoorCursor=entry.doorCursor;
         entryProbeCursor=entry.probeCursor;entryProbeBase=entry.probeBase;entryCandidates=entry.candidates;
-        try{return prepareElevatedEntry(views,work);}
+        try{return prepareElevatedEntry(views,work,entry);}
         finally{
             entry.feet=entrySearchFeet;entry.work=entrySearchWork;entry.hash=entrySearchHash;
             entry.cursor=entrySearchCursor;entry.retryAt=entryRetryAt;entry.doorCursor=entryDoorCursor;
@@ -1605,11 +1610,12 @@ public final class AutoBuilder extends Module {
         }
     }
     /** Reach a finished elevated floor by climbing outside it, rather than mining or pillaring underneath it. */
-    private boolean prepareElevatedEntry(List<BlockPos> views,int work){
+    private boolean prepareElevatedEntry(List<BlockPos> views,int work,EntrySearch search){
         if(!support.get()||work<0&&cleanupTarget==null||views.isEmpty())return false;
         var feet=mc.player.getBlockPos();int hash=views.hashCode();
         if(!feet.equals(entrySearchFeet)||entrySearchWork!=work||entrySearchHash!=hash){
             entrySearchFeet=feet.toImmutable();entrySearchWork=work;entrySearchHash=hash;entrySearchCursor=entryRetryAt=entryDoorCursor=0;entryProbeBase=null;
+            search.reachableBases.clear();
             var destinations=views.stream().filter(p->p.getY()>mc.player.getY()+.5&&p.getY()<=mc.player.getY()+7)
                 .sorted(Comparator.comparingDouble(p->p.getSquaredDistance(feet))).limit(8).toList();
             var unique=new LinkedHashSet<EntryCandidate>();
@@ -1643,7 +1649,9 @@ public final class AutoBuilder extends Module {
                 if(reservedSupplyAccess(post)||plannedSolid(post)||routeSupportExclusions.getOrDefault(post,0)>ticks||!mc.world.getBlockState(post).isReplaceable()||!mc.world.getFluidState(post).isEmpty()){clear=false;break;}
             }
             if(!base.equals(entryProbeBase)){entryProbeBase=null;entryDoorCursor=0;}
-            if(!clear||entryProbeBase==null&&!walker.canReachStand(base))continue;
+            // Several views share the same column base. Its walking route is
+            // independent of the destination and stays valid for this geometry.
+            if(!clear||entryProbeBase==null&&!search.reachableBases.computeIfAbsent(base,walker::canReachStand))continue;
             boolean reachable;Set<BlockPos> opening=Set.of();
             if(entryProbeBase==null){
                 reachable=walker.canClimbAfterClearing(base,top,destination,Set.of());
@@ -3090,7 +3098,7 @@ public final class AutoBuilder extends Module {
                 var stack=slot.getStack();if(slot.inventory!=mc.player.getInventory()||stack.isEmpty()||restockTriedSlots.contains(slot.id)||!schematic.materials().containsKey(stack.getItem()))continue;
                 // Retain small batches for unfinished sections. Returning each
                 // single item makes adjacent repair sections restock forever.
-                if(stack.getCount()<stack.getMaxCount()&&remaining.getOrDefault(stack.getItem(),0)>0)continue;
+                if((stack.getCount()<stack.getMaxCount()||stack.getMaxCount()==1)&&remaining.getOrDefault(stack.getItem(),0)>0)continue;
                 if(inventoryCount(stack.getItem())-stack.getCount()>=required.getOrDefault(stack.getItem(),0)){
                     mc.interactionManager.clickSlot(ownedHandler.syncId,slot.id,0,SlotActionType.QUICK_MOVE,mc.player);restockTriedSlots.add(slot.id);inventoryWait=8;return;
                 }

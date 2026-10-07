@@ -257,7 +257,9 @@ Walking uses short centring inputs to clear an upper ledge, brakes above narrow 
 
 Nearby-section restocking includes ready registered repairs outside the current section. It counts each work cell once, so a chest trip collects repair materials even when ordinary section work is exhausted.
 
-The material that triggered restocking remains in the requested batch if a section refresh changes the queue. Stockpiling retains partial material stacks that still serve unfinished work, preventing adjacent sections from repeatedly collecting and returning the same small supplies. Home trips pause the active-work timeout without resetting it.
+The material that triggered restocking remains in the requested batch if a section refresh changes the queue. Stockpiling retains partial material stacks and nonstackable source buckets that still serve unfinished work, preventing adjacent sections from repeatedly collecting and returning the same small supplies. Home trips pause the active-work timeout without resetting it.
+
+Changing targets after an unproductive route retains the placement search cursor while geometry is unchanged. This lets a large exterior-entry search finish and reach its later recovery methods. Repeated destinations share the same cached walking proof for each column base; native block receipts invalidate those queries. The captured `-PbuilderStashCheckpointStage=702` replay preserves the actual stalled scene with 127 owned posts and three outstanding access repairs.
 
 A surrounded plain full-cube target can have no current placement view. Recovery can open one adjacent finished dry cube after proving a reachable upper view, a safe one-block descent onto existing footing and a native hit on the target's base. The removed neighbour is tracked for restoration. Containers, fluid boundaries, unsafe footing and dependent attachments remain protected. The captured `-PbuilderStashCheckpointStage=698` replay covers this buried-block stall with its original supplies and owned supports.
 

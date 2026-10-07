@@ -5,6 +5,20 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Latest, 21:38: actual698 replay2 reached702 and then repeated the same entry
+search without moving. Read-only traces proved the 360-tick work timeout reset
+its view search around candidate807, before the elevated-entry stage finished.
+The working fix preserves geometry query cursors across a target switch and
+caches each shared column base's walking proof. Deferral is40 ticks. Native
+block receipts still invalidate the views. The actual702 server scene is saved
+in stash-fresh-702.json with127 posts, three openings, compatible702, idle homes
+and empty server home2. Native planner702 replay1 is running this fix; its full
+710/cleanup/fluid/health/packet/home checks and a final fresh0 run are pending.
+Stockpile retention now includes unfinished max-count1 source buckets. The
+native requested-item restock regression also checks that a future water
+bucket stays in inventory during an unrelated repair section's home trip.
+That focused regression and full CI on the newest code remain pending.
+
 Latest, 21:25: native698 replay immediately passed the buried349 stall and
 reached700. Both ordinary and wider radius5 read-only placement probes found
 zero views of349; liquidBoundary was false, so no fluid safety rule changed.
