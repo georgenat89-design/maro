@@ -5,6 +5,36 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Latest, 21:25: native698 replay immediately passed the buried349 stall and
+reached700. Both ordinary and wider radius5 read-only placement probes found
+zero views of349; liquidBoundary was false, so no fluid safety rule changed.
+A native masked proof identified its north neighbour as a safe removable cube
+with a valid target-base hit and walking route. Recovery now checks adjacent
+finished dry cubes for a reachable upper view and a safe one-block descent onto
+existing footing. It applies only to plain full-cube work without properties,
+uses the existing acknowledged descent, and registers the removed wall for
+restoration. The actual698 scene with125 posts and unchanged supplies is saved
+in stash-fresh-698.json. Native log builder-buried698-recovery-native-1.log is
+running; full710, dirt/liquid/health/packet/home checks remain pending, as do
+the new requested-item home regression, current full CI and final fresh0 run.
+The previous695run3 was deliberately stopped after stable698 capture. Latest
+source still includes the requested-material/partial-stack/home-budget fixes.
+
+Latest, 21:14: readonly native restock tracing disproved chest obstruction.
+The six-row handler received real contents and collected warped trapdoor/sign
+from slots2/3. A later polished-brick section then deposited those same small
+unfinished stacks (player slots87/88), repeating693 and home trips. Stockpiling
+now retains partial stacks while their material still has unfinished work.
+Each restock also preserves at least one of the requested item if refreshing
+the section drops it from the batch. Home transitions retain per-target work
+budgets; home/menu time was already excluded from those active-work clocks.
+Native695 run3 is now testing these changes against the unchanged captured
+world/supplies. The home regression now tests an initially empty section's
+requested stone through actual first-trip pickup, exact quantity and placement.
+These latest edits are uncommitted; primary7d/PR6b/CI416 do not include them.
+Runs1/2 were deliberately stopped without a710 pass. Native run3 log:
+builder-repair695-recovery-native-3.log. Final fresh9 is still unstarted.
+
 Latest, 21:04: the actual556 replay passed the old559 ceiling and reached695.
 It then stalled on a prompt repair outside its current section. The native
 snapshot proves storage still had the exact remaining materials: blackstone2,

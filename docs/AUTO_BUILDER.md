@@ -257,6 +257,10 @@ Walking uses short centring inputs to clear an upper ledge, brakes above narrow 
 
 Nearby-section restocking includes ready registered repairs outside the current section. It counts each work cell once, so a chest trip collects repair materials even when ordinary section work is exhausted.
 
+The material that triggered restocking remains in the requested batch if a section refresh changes the queue. Stockpiling retains partial material stacks that still serve unfinished work, preventing adjacent sections from repeatedly collecting and returning the same small supplies. Home trips pause the active-work timeout without resetting it.
+
+A surrounded plain full-cube target can have no current placement view. Recovery can open one adjacent finished dry cube after proving a reachable upper view, a safe one-block descent onto existing footing and a native hit on the target's base. The removed neighbour is tracked for restoration. Containers, fluid boundaries, unsafe footing and dependent attachments remain protected. The captured `-PbuilderStashCheckpointStage=698` replay covers this buried-block stall with its original supplies and owned supports.
+
 Full supplied-stash build: `./gradlew runProductionClientGameTest -PbuilderTestOnly=true -PbuilderStashTestOnly=true`. This opt-in longer test builds all 710 blocks of the supplied Litematic in survival at the reported placement coordinates, using a selected double chest, tools, food and layer-based restocking. It compares every final block with the server, checks that no temporary dirt remains, and verifies that the supply screen closed.
 
 The upper-layer replay (`-PbuilderStashUpperTestOnly=true`) starts at the captured 411-block stall, with its 128 owned supports, exhausted escape attempts and the next layer's material batch. It checks recovery and the remaining structure, fluids, observers and cleanup against the server. The smaller bounded-support case also checks that recovery never exceeds a three-support pool.

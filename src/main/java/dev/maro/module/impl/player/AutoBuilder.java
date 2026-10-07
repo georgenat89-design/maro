@@ -1319,6 +1319,7 @@ public final class AutoBuilder extends Module {
             }
             if(search.recoveryStage==3){
                 boolean cleaning=target.equals(cleanupTarget)&&supports.contains(target);
+                if(wanted!=null&&prepareBuriedBlockAccess(target,wanted,cell))return true;
                 if((cleaning||wanted!=null&&!wanted.isAir()&&states[cell]!=CORRECT)&&preparePassage(options,cell,search))return true;
                 search.recoveryStage=4;
             }
@@ -2364,6 +2365,27 @@ public final class AutoBuilder extends Module {
         standGoal=passageStand;passageStand=null;standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();
         status="Walking through verified placement passage";return true;
     }
+    /** Prove a one-block descent beside hidden plain-cube work and register its repair. */
+    private boolean prepareBuriedBlockAccess(BlockPos target,BlockState wanted,int work){
+        // A surrounded ordinary cube can have no visible placement views at all.
+        // Open one adjacent dry cube, descend one block, then place from inside.
+        if(!unstuck.get()||work<0||!wanted.getProperties().isEmpty()||!wanted.isFullCube(mc.world,target)
+            ||!mc.world.getBlockState(target).isReplaceable())return false;
+        for(var side:ESCAPE_SIDES){
+            var cover=target.offset(side);
+            if(!passageCell(cover)||!safeToRecycle(cover)||!walker.canDescendThrough(cover)||!walker.canReachStand(cover.up()))continue;
+            var lower=walker.descentLanding(cover);
+            if(lower==null||!lower.equals(cover)||!descentReaches(cover,lower))continue;
+            var view=clearedView(Set.of(cover));
+            var eye=Vec3d.ofBottomCenter(lower).add(0,mc.player.getStandingEyeHeight(),0);
+            if(visibleHit(target.down(),eye,Direction.UP,view)==null)continue;
+            floorAccessWork.put(cover,work);openingRepairDepth.put(cover,1);
+            routeOpening=cover;descentPost=cover;descentView=lower;standGoal=cover.up();
+            standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();
+            status="Opening checked side access to buried block";return true;
+        }
+        return false;
+    }
     /** Open a safe schematic floor above our own landing post when a closed build has no exit. */
     private boolean prepareFloorOpening(List<BlockPos> views,int work,ViewSearch owner){
         var search=owner.floor;
@@ -2828,7 +2850,7 @@ public final class AutoBuilder extends Module {
         cameraMouseTick=ticks;cameraYawVelocity=cameraPitchVelocity=0;return true;
     }
     private void resetAfterHome(){
-        navigationWorkTicks.clear();resetAccessRouting();
+        resetAccessRouting();
     }
     private void resetAccessRouting(){
         clearEntryPassage();
@@ -3004,7 +3026,11 @@ public final class AutoBuilder extends Module {
             if(selected.stream().anyMatch(chest->!excluded.contains(chest)&&chestAccessRetryAt.containsKey(chest))){walker.release();status="Retrying access to selected chest — contents not checked";return true;}
             return false;
         }
-        restockBatch=Map.copyOf(requiredMaterials());foodRestock=supportRestock=false;restockWait=inventoryWait=0;partialSource=-1;partialItem=null;restockTriedSlots.clear();restockSlotRetries.clear();resetChestJourney();walker.stop();status="Restocking";
+        var requested=new HashMap<>(requiredMaterials());
+        // Access/defer state may change while a section is refreshed. The
+        // material that triggered this trip must survive that batch change.
+        if(needed!=null)requested.merge(needed,1,Math::max);
+        restockBatch=Map.copyOf(requested);foodRestock=supportRestock=false;restockWait=inventoryWait=0;partialSource=-1;partialItem=null;restockTriedSlots.clear();restockSlotRetries.clear();resetChestJourney();walker.stop();status="Restocking";
         if(useHomes.get()&&homes.restock(restockTarget)){resetAfterHome();status="Saving work return before restocking through /home 1";}
         return true;
     }
@@ -3062,6 +3088,9 @@ public final class AutoBuilder extends Module {
             }
             if(stockpile.get())for(var slot:ownedHandler.slots){
                 var stack=slot.getStack();if(slot.inventory!=mc.player.getInventory()||stack.isEmpty()||restockTriedSlots.contains(slot.id)||!schematic.materials().containsKey(stack.getItem()))continue;
+                // Retain small batches for unfinished sections. Returning each
+                // single item makes adjacent repair sections restock forever.
+                if(stack.getCount()<stack.getMaxCount()&&remaining.getOrDefault(stack.getItem(),0)>0)continue;
                 if(inventoryCount(stack.getItem())-stack.getCount()>=required.getOrDefault(stack.getItem(),0)){
                     mc.interactionManager.clickSlot(ownedHandler.syncId,slot.id,0,SlotActionType.QUICK_MOVE,mc.player);restockTriedSlots.add(slot.id);inventoryWait=8;return;
                 }
