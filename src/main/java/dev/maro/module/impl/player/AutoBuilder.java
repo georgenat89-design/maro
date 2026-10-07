@@ -817,7 +817,7 @@ public final class AutoBuilder extends Module {
                 if(standGoal.equals(accessStand)){accessStand=accessBase=null;accessFloor=false;accessSupports.clear();accessStairs=Set.of();}
                 // Lower pieces still belong to the committed route. Reclaiming
                 // them during an intermediate climb forces us to rebuild them.
-                standGoal=null;navigationStarted=ticks;walker.stop();
+                standGoal=null;navigationStarted=sectionProgressAt=ticks;walker.stop();
             }
             else if(ticks-standProgressAt>50||ticks-standStarted>240||walker.routeUnavailable()){
                 if(navigatingCell>=0){retryAt.put(navigatingCell,ticks+10);triedStands.computeIfAbsent(navigatingCell,i->new HashMap<>()).put(standGoal,ticks+600);}
