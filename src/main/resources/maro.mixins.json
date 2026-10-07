@@ -39,6 +39,9 @@
     "EntityRenderManagerMixin",
     "OrderedRenderCommandQueueImplAccessor",
     "PlayerEspWorldRendererMixin",
+    "CustomSkyMixins$Sky",
+    "CustomSkyMixins$World",
+    "CustomSkyMixins$Fog",
     "PotatoTexturesMixin"
   ],
   "injectors": {

@@ -65,6 +65,10 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 BaseEspChecks.run(context, singleplayer);
                 return;
             }
+            if (Boolean.getBoolean("maro.gametest.skyOnly")) {
+                SkyChecks.run(context, singleplayer);
+                return;
+            }
             if (Boolean.getBoolean("maro.gametest.petOnly")) {
                 PetChecks.run(context, singleplayer);
                 return;
@@ -87,6 +91,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             PetChecks.run(context, singleplayer);
             PlayerEspChecks.run(context, singleplayer);
             BaseEspChecks.run(context, singleplayer);
+            SkyChecks.run(context, singleplayer);
             StaffNotifierChecks.run(context);
             HudReadabilityChecks.run(context);
             AntiVanishChecks.run(context);
