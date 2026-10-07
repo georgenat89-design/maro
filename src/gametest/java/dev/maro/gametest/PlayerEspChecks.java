@@ -83,6 +83,11 @@ final class PlayerEspChecks {
             context.runOnClient(c -> ((ModeSetting) setting(esp, "Fill Style")).set("Galaxy"));
             context.waitTicks(3);
             context.takeScreenshot("maro-player-esp-preview-galaxy");
+            context.runOnClient(c -> esp.applyNeonGlow());
+            context.waitTicks(3);
+            int neon = pink(context.takeScreenshot("maro-player-esp-preview-neon"));
+            System.out.println("PLAYER ESP neon pink=" + neon);
+            require(neon > 80, "Neon Glow did not draw its pink edge: " + neon);
             context.runOnClient(c -> c.currentScreen.close());
             context.waitTicks(3);
             require(context.computeOnClient(c -> c.currentScreen == null && c.options.getPerspective() == Perspective.FIRST_PERSON && !PlayerESP.previewing()),
@@ -190,6 +195,24 @@ final class PlayerEspChecks {
         other.setHeadYaw(180f);
         client.world.addEntity(other);
         return other.getId();
+    }
+
+    /** Pixels in Neon Glow's pink edge colour. */
+    private static int pink(Path screenshot) {
+        try {
+            var image = ImageIO.read(screenshot.toFile());
+            int count = 0;
+            for (int y = 0; y < image.getHeight(); y++) {
+                for (int x = 0; x < image.getWidth(); x++) {
+                    int rgb = image.getRGB(x, y);
+                    int r = rgb >> 16 & 0xFF, g = rgb >> 8 & 0xFF, b = rgb & 0xFF;
+                    if (r > 200 && g < 160 && b > 150) count++;
+                }
+            }
+            return count;
+        } catch (IOException e) {
+            throw new AssertionError("Cannot read " + screenshot, e);
+        }
     }
 
     /** {count, centre x, image width, centre y} of strongly magenta pixels. */

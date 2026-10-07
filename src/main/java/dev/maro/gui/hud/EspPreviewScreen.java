@@ -53,7 +53,7 @@ public final class EspPreviewScreen extends Screen {
         // Two panels at the sides, so the middle of the screen - where you stand - stays clear.
         int gap = 4, rowH = 20, pad = 8;
         panelW = Math.max(110, Math.min(170, (width - 150) / 2));
-        panelH = pad * 2 + rowH * 3 + gap * 2;
+        panelH = pad * 2 + rowH * 4 + gap * 3;
         panelY = (height - panelH) / 2;
         leftX = 10;
         rightX = width - 10 - panelW;
@@ -66,11 +66,13 @@ public final class EspPreviewScreen extends Screen {
         button(() -> "▶", b -> mode("Fill Style").cycle(1), lx + arrow + gap * 2 + styleW, rows, arrow, rowH);
         button(() -> "Fill " + onOff("Fill"), b -> flip("Fill"), lx, rows + rowH + gap, inner, rowH);
         button(() -> "Glow " + onOff("Glow"), b -> flip("Glow"), lx, rows + (rowH + gap) * 2, inner, rowH);
+        button(() -> "Neon Glow look", b -> module.applyNeonGlow(), lx, rows + (rowH + gap) * 3, inner, rowH);
 
         int rx = rightX + pad;
         button(() -> "Outline " + onOff("Outline"), b -> flip("Outline"), rx, rows, inner, rowH);
         button(() -> "Outline: " + mode("Outline Color").get(), b -> mode("Outline Color").cycle(1), rx, rows + rowH + gap, inner, rowH);
-        button(() -> "Done", b -> close(), rx, rows + (rowH + gap) * 2, inner, rowH);
+        button(() -> "Glow color: " + mode("Glow Color").get(), b -> mode("Glow Color").cycle(1), rx, rows + (rowH + gap) * 2, inner, rowH);
+        button(() -> "Done", b -> close(), rx, rows + (rowH + gap) * 3, inner, rowH);
     }
 
     private String onOff(String name) {
