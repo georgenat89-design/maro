@@ -242,10 +242,15 @@ vec3 synthwave(vec3 d, float t) {
     col = mix(col, vec3(0.05, 0.01, 0.14), smoothstep(0.18, 0.65, h));
     col += stars(d, 0.15, t) * smoothstep(0.25, 0.55, h);
 
+    // derivatives are only reliable outside branches, so take them first
     vec3 s = around(d, normalize(vec3(0.0, 0.1, 1.0)));
+    float r = length(s.xy);
+    float aa = fwidth(r);
+    vec2 g = d.xz / max(-h, 1e-3);
+    g.y -= t * 1.6;
+    vec2 fw = fwidth(g * 0.5);
     if (s.z > 0.0) {
         float radius = 0.3;
-        float r = length(s.xy);
         float y = s.y / radius;
         vec3 sun = mix(vec3(1.0, 0.12, 0.55), vec3(1.0, 0.86, 0.3), smoothstep(-0.9, 0.9, y));
         float cut = 0.0;
@@ -253,17 +258,13 @@ vec3 synthwave(vec3 d, float t) {
             float depth = (0.35 - y) / 1.35;
             cut = step(fract(y * 6.0 + t * 0.35), min(depth * 1.2, 0.8));
         }
-        float aa = fwidth(r);
         float disc = sstep(radius + aa, radius - aa, r) * (1.0 - cut);
         col += sun * exp(-max(r - radius, 0.0) * 5.0) * 0.45 * step(0.0, h + 0.02);
         col = mix(col, sun * 1.25, disc * step(0.0, h));
     }
 
     if (h < 0.0) {
-        vec2 g = d.xz / max(-h, 1e-3);
-        g.y -= t * 1.6;
         vec2 cell = abs(fract(g * 0.5) - 0.5);
-        vec2 fw = fwidth(g * 0.5);
         vec2 lines = 1.0 - smoothstep(fw * 0.8, fw * 2.2, cell);
         float grid = max(lines.x, lines.y) * smoothstep(0.004, 0.06, -h);
         vec3 ground = vec3(0.04, 0.0, 0.07) + vec3(1.0, 0.2, 0.85) * grid;
@@ -319,10 +320,10 @@ vec3 bloodMoon(vec3 d, float t) {
     vec3 col = mix(vec3(0.34, 0.03, 0.03), vec3(0.04, 0.0, 0.01), smoothstep(0.0, 0.6, h));
     col += stars(d, 0.1, t) * vec3(1.0, 0.6, 0.55) * smoothstep(0.1, 0.5, h);
     vec3 m = around(d, normalize(vec3(-0.35, 0.42, 1.0)));
+    float r = length(m.xy);
+    float aa = fwidth(r);
     if (m.z > 0.0) {
         float radius = 0.22;
-        float r = length(m.xy);
-        float aa = fwidth(r);
         vec2 uv = m.xy / radius;
         float craters = fbm2(uv * 2.5 + 3.0);
         float spots = smoothstep(0.55, 0.7, fbm2(uv * 6.0 + 11.0));
