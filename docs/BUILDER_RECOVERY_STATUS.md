@@ -5,6 +5,21 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Latest, 21:04: the actual556 replay passed the old559 ceiling and reached695.
+It then stalled on a prompt repair outside its current section. The native
+snapshot proves storage still had the exact remaining materials: blackstone2,
+cracked bricks1 and polished bricks4, with another polished brick held. The
+section supply batch excluded registered repairs even though findWork selected
+them; the chest was marked checked without collecting the needed repair stock.
+Section requirements now include ready registered openings, deduplicated with
+ordinary section cells and subject to the same phase/layer/defer rules.
+The real695 server world, inventories,126 owned posts and7 openings are saved
+in stash-fresh-695.json. Native695 replay is running in the isolated checkout,
+log builder-repair695-recovery-native-1.log; the original556 replay was stopped
+deliberately after capture. This latest repair-supply fix is uncommitted.
+Primary/PR/CI414 remain7d9677b; its full replay/fresh acceptance is incomplete.
+Prepared fresh9 must use the final commit after the repair-supply test passes.
+
 Latest, 20:46: isolated native sealed-cleanup run5 PASSED in1m47s. Both the
 actual four-post outside-column scene and the original room sequence complete
 with every wall restored, zero dirt, full health and normal action packets.

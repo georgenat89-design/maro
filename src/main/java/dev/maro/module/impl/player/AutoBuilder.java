@@ -532,7 +532,14 @@ public final class AutoBuilder extends Module {
     private Map<Item,Integer> requiredMaterials(){
         if(!sectionSupply())return layerSupply()?remainingByLayer.getOrDefault(supplyLayer(),Map.of()):remaining;
         var result=new HashMap<Item,Integer>();
-        for(int i:sectionCells)if(states[i]!=CORRECT&&states[i]!=IGNORED&&!floorDeferred(position(i))&&layerAllows(i)&&!materialIgnored(desired(i))){
+        var batch=new LinkedHashSet<>(sectionCells);
+        // Prompt repairs can be selected outside the current section. Their
+        // supplies must follow the same ready-opening queue as findWork.
+        if(schematic!=null)for(var pos:floorAccessWork.keySet()){
+            int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());
+            if(cell>=0&&taskPhase(cell)==activePhase)batch.add(cell);
+        }
+        for(int i:batch)if(states[i]!=CORRECT&&states[i]!=IGNORED&&!floorDeferred(position(i))&&layerAllows(i)&&!materialIgnored(desired(i))){
             var item=Schematic.material(desired(i));if(item!=Items.AIR)result.merge(item,(int)unitsLeft[i],Integer::sum);
             if(potted(desired(i))&&potUnitsLeft.getOrDefault(i,1)>0)result.merge(Items.FLOWER_POT,1,Integer::sum);
         }
