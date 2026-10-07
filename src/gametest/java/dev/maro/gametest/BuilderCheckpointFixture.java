@@ -20,11 +20,13 @@ final class BuilderCheckpointFixture {
     final int progress;
     BuilderCheckpointFixture(){
         var stage=System.getProperty("maro.gametest.builderStashCheckpointStage","423");
-        if(!List.of("423","549").contains(stage))throw new AssertionError("Unsupported captured stall: "+stage);
+        if(!List.of("423","549","556").contains(stage))throw new AssertionError("Unsupported captured stall: "+stage);
         progress=Integer.parseInt(stage);
         try(var stream=getClass().getResourceAsStream("/fixtures/stash-fresh-"+stage+".json")){
             if(stream==null)throw new AssertionError("Missing real server checkpoint");
             data=JsonParser.parseReader(new InputStreamReader(stream,StandardCharsets.UTF_8)).getAsJsonObject();
+            if(data.has("homeBusy")&&(data.get("homeBusy").getAsBoolean()||data.get("returnTrip").getAsBoolean()||!data.get("serverHome2Empty").getAsBoolean()))throw new AssertionError("Checkpoint interrupted a transient home transaction");
+            if(data.has("compatibleBlocks")&&data.get("compatibleBlocks").getAsInt()!=progress)throw new AssertionError("Checkpoint progress differs from captured compatible server states");
         }catch(IOException error){throw new AssertionError(error);}
     }
     private static BlockPos pos(JsonArray row){return new BlockPos(row.get(0).getAsInt(),row.get(1).getAsInt(),row.get(2).getAsInt());}
@@ -64,5 +66,12 @@ final class BuilderCheckpointFixture {
         for(var element:data.getAsJsonArray("escapeSupports"))escape.add(pos(element.getAsJsonArray()));
         var work=(Map<BlockPos,Integer>)AutoBuilderChecks.field(builder,"escapeSupportWork");
         for(var element:data.getAsJsonArray("escapeSupportWork")){var row=element.getAsJsonArray();work.put(pos(row.get(0).getAsJsonArray()),row.get(1).getAsInt());}
+        if(data.has("accessOpenings")){
+            var openings=(Map<BlockPos,Integer>)AutoBuilderChecks.field(builder,"floorAccessWork");
+            var depths=(Map<BlockPos,Integer>)AutoBuilderChecks.field(builder,"openingRepairDepth");
+            for(var element:data.getAsJsonArray("accessOpenings")){var row=element.getAsJsonArray();var opening=pos(row.get(0).getAsJsonArray());openings.put(opening,row.get(1).getAsInt());depths.put(opening,row.get(2).getAsInt());}
+            try{var restoration=builder.getClass().getDeclaredField("openingRestoration");restoration.setAccessible(true);restoration.setBoolean(builder,data.get("openingRestoration").getAsBoolean());}
+            catch(ReflectiveOperationException error){throw new AssertionError(error);}
+        }
     }
 }

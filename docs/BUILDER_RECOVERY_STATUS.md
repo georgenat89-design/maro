@@ -5,6 +5,30 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Latest, 20:46: isolated native sealed-cleanup run5 PASSED in1m47s. Both the
+actual four-post outside-column scene and the original room sequence complete
+with every wall restored, zero dirt, full health and normal action packets.
+The failing CI412 scene was outside the schematic footprint: its owned dirt
+target has work index -1, which prevented the checked passage planner from
+opening a doorway. Cleanup now permits that checked route for owned supports,
+retaining the existing wall/fluid/attachment/footing guards and repair queue.
+The first captured-room reproduction used incorrect relative coordinates;
+run5 corrects them to start.west(3).north() for the column.
+
+Fresh8 on d3 reached559, then repeated556..559 for over11 minutes; it was
+stopped deliberately after capturing the actual compatible556 server scene,
+126 owned posts and9 registered openings. A new per-cell360-active-tick work
+budget includes helper scaffolding, pauses for native actions/home transactions,
+and defers an unproductive route without losing support/opening ownership.
+Temporary placement receipts no longer erase deferred-target cooldowns.
+Block geometry receipts also clear stale descent/hatch query state. The
+actual556 checkpoint replay is now running in Maro-column-cleanup, log
+builder-fresh556-recovery-native-1.log. It is not a fresh710 pass. Current
+changes are uncommitted; primary/PR remain d3. CI410 on parent d5 passed;
+CI412's first d3 attempt failed the now-fixed outside-column cleanup case.
+Full current regression, checkpoint710 and a fresh zero-block710 remain
+required. No live Minecraft profile was modified.
+
 Latest, 19:18: d5 native549 replay reached579 and was stopped deliberately to
 test a confirmed code defect: prepareElevatedEntry proved masked wall removal
 but discarded that opening when committing its exterior column. The column now

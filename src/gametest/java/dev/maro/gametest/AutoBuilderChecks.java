@@ -78,6 +78,7 @@ final class AutoBuilderChecks {
         AutoBuilder builder=ModuleManager.get(AutoBuilder.class);
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
+            if(Boolean.getBoolean("maro.gametest.builderSealedEscapeOnly")){sealedBuildEscape(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderHomeOnly")){fixture(context,singleplayer,builder,start);BuilderHomeChecks.run(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderStashHomesOnly")||Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")||Boolean.getBoolean("maro.gametest.builderStashFinalOnly")){stashBuild(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderWaterOnly")){lowBucketSource(context,singleplayer,builder,start);containedTopLiquids(context,singleplayer,builder,start);roofStashLiquids(context,singleplayer,builder,start);floodedAccessDeparture(context,singleplayer,builder,start);return;}
@@ -778,23 +779,30 @@ final class AutoBuilderChecks {
         }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
     }
     private static void sealedBuildEscape(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
-        System.out.println("[builder-check] Sealed build escape without a restock trip, three-block landing");
+        sealedBuildEscape(context,world,builder,start,true);
+        sealedBuildEscape(context,world,builder,start,false);
+    }
+    private static void sealedBuildEscape(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,boolean cleanupOnly){
+        System.out.println("[builder-check] Sealed build escape without a restock trip, three-block landing; cleanup-only="+cleanupOnly);
         fixture(context,world,builder,start);
         world.getServer().runCommand("fill "+coords(start.add(-5,0,-5))+" "+coords(start.add(8,10,5))+" air");
         var origin=start.add(-2,4,-2);var cells=new BlockState[100];
         for(int y=0;y<4;y++)for(int z=0;z<5;z++)for(int x=0;x<5;x++)cells[x+z*5+y*25]=(y==0||y==3||x==0||x==4||z==0||z==4)?Blocks.STONE.getDefaultState():Blocks.AIR.getDefaultState();
         var room=new Schematic("sealed-build-escape.nbt","test",5,4,5,BlockPos.ORIGIN,cells);
-        world.getServer().runOnServer(server->{for(int i=0;i<room.size();i++)if(i!=75&&!room.state(i).isAir())server.getOverworld().setBlockState(origin.add(room.local(i)),room.state(i),net.minecraft.block.Block.NOTIFY_ALL);});
-        var posts=Set.of(start,start.up());for(var post:posts)command(world,"setblock",post,"dirt");
+        world.getServer().runOnServer(server->{for(int i=0;i<room.size();i++)if((cleanupOnly||i!=75)&&!room.state(i).isAir())server.getOverworld().setBlockState(origin.add(room.local(i)),room.state(i),net.minecraft.block.Block.NOTIFY_ALL);});
+        // CI 412 finished every room cell, then stranded this four-post column
+        // below the closed floor. Reproduce that actual final geometry directly.
+        var postBase=start.west(3).north();
+        var posts=cleanupOnly?Set.of(postBase,postBase.up(),postBase.up(2),postBase.up(3)):Set.of(start,start.up());for(var post:posts)command(world,"setblock",post,"dirt");
         for(String item:List.of("stone 64","dirt 64","diamond_pickaxe","diamond_shovel"))world.getServer().runCommand("give @a "+item);
-        world.getServer().runCommand("gamemode creative @a");world.getServer().runCommand("tp @a "+(start.getX()+.5)+" "+(start.getY()+5)+" "+(start.getZ()+.5));context.waitTicks(12);world.getServer().runCommand("gamemode survival @a");context.waitTicks(6);
+        world.getServer().runCommand("gamemode creative @a");world.getServer().runCommand("tp @a "+(start.getX()+(cleanupOnly?-.580728838180052:.5))+" "+(start.getY()+5)+" "+(start.getZ()+(cleanupOnly?-.458279088022074:.5)));context.waitTicks(12);world.getServer().runCommand("gamemode survival @a");context.waitTicks(6);
         try{
             context.runOnClient(client->{
                 set(builder,"Temporary Supports",true);set(builder,"Auto Buy When Missing",false);set(builder,"Material Supply","Nearby Sections");builder.install(room);builder.setOrigin(origin);
                 @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.addAll(posts);BuilderPacketChecks.begin();builder.startBuild();
             });
             await(context,builder,2400);
-            context.runOnClient(client->{require(client.player.getHealth()==20&&client.currentScreen==null&&builder.temporarySupports().isEmpty(),"Sealed build escape left damage/menu/supports");BuilderPacketChecks.verify();});
+            context.runOnClient(client->{require(client.player.getHealth()==20&&client.currentScreen==null&&builder.temporarySupports().isEmpty(),"Sealed build escape left damage/menu/supports");BuilderPacketChecks.verify(cleanupOnly?1:2);});
             require(world.getServer().computeOnServer(server->{var level=server.getOverworld();for(int i=0;i<room.size();i++)if(!room.state(i).isAir()&&!level.getBlockState(origin.add(room.local(i))).isOf(Blocks.STONE))return false;for(int x=-5;x<=8;x++)for(int y=0;y<=10;y++)for(int z=-5;z<=5;z++)if(level.getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Sealed build escape did not restore its floor or clear temporary dirt");
         }finally{context.runOnClient(client->{BuilderPacketChecks.recording=false;builder.setEnabled(false);});}
     }
@@ -1860,7 +1868,8 @@ final class AutoBuilderChecks {
     private static void await(ClientGameTestContext context,AutoBuilder builder,int limit){
         for(int i=0;i<limit;i++){
             if(context.computeOnClient(client->!active(builder)))break;
-            if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")&&limit>=2400&&(i%200==0||i<200&&i%20==0)){String progress=context.computeOnClient(client->"[room-progress] "+field(builder,"correct")+"/82 "+builder.status()+" player="+client.player.getEntityPos()+" nav="+field(builder,"navigatingCell")+" openings="+field(builder,"floorAccessWork")+" goal="+field(builder,"standGoal")+" descent="+field(builder,"descentView")+" recovery="+field(builder,"recoveryPhase"));System.out.println(progress);}
+            if((Boolean.getBoolean("maro.gametest.builderChestReturnOnly")||Boolean.getBoolean("maro.gametest.builderCleanupOnly")||Boolean.getBoolean("maro.gametest.builderSealedEscapeOnly"))&&limit>=2400&&(i%200==0||i<200&&i%20==0)){String progress=context.computeOnClient(client->"[room-progress] "+field(builder,"correct")+"/82 "+builder.status()+" player="+client.player.getEntityPos()+" nav="+field(builder,"navigatingCell")+" openings="+field(builder,"floorAccessWork")+" goal="+field(builder,"standGoal")+" descent="+field(builder,"descentView")+" recovery="+field(builder,"recoveryPhase")+" floorCursor="+field(builder,"floorSearchCursor")+" restoration="+field(builder,"openingRestoration"));System.out.println(progress);}
+            if(Boolean.getBoolean("maro.gametest.builderSealedEscapeOnly")&&i%200==0)context.runOnClient(client->reportCleanupProof(builder));
             if(Boolean.getBoolean("maro.gametest.builderChestReturnOnly")&&limit>=2400&&i%100==0)System.out.println((String)context.computeOnClient(client->"[passage-progress] mining="+field(builder,"mining")+" routeMining="+field(builder,"routeMining")+" passage="+field(builder,"passageBlocks")+" destination="+field(builder,"passageStand")+" yaw/pitch="+client.player.getYaw()+","+client.player.getPitch()));
             if(limit>=18000&&i%200==0){String progress=context.computeOnClient(client->{int complete=0;for(int cell=0;cell<builder.schematic().size();cell++)if(!builder.desired(cell).isAir()&&builder.state(cell)==AutoBuilder.CORRECT)complete++;return "[stash-progress] "+complete+"/710 supports="+builder.temporarySupports().size()+" "+builder.status()+" player="+client.player.getEntityPos()+" view="+client.player.getYaw()+","+client.player.getPitch()+" placement="+field(builder,"placement")+" goal="+field(builder,"standGoal")+" needed="+field(builder,"needed");});System.out.println(progress);}
             context.waitTick();
@@ -1872,6 +1881,27 @@ final class AutoBuilderChecks {
             throw new AssertionError("Builder did not finish: "+status+details);
         }
         require(status.equals("Build complete"),"Builder stopped: "+status);
+    }
+    private static void reportCleanupProof(AutoBuilder builder){
+        if(!builder.status().contains("Cleanup")&&!builder.status().contains("clean temporary"))return;
+        try{
+            var walk=(dev.maro.builder.BuilderWalk)field(builder,"walker");
+            var safe=builder.getClass().getDeclaredMethod("safeToRecycle",BlockPos.class);safe.setAccessible(true);
+            var geometry=builder.getClass().getDeclaredMethod("descentGeometry",BlockPos.class);geometry.setAccessible(true);
+            var supports=builder.temporarySupports();
+            System.out.println("[cleanup-proof] target="+field(builder,"cleanupTarget")+" supports="+supports+" peek="+field(builder,"peekTarget")+" floor="+field(builder,"floorSearchFeet")+" view="+field(builder,"floorSearchView")+" work="+field(builder,"floorSearchWork"));
+            for(var cover:supports.stream().flatMap(p->java.util.stream.IntStream.rangeClosed(1,3).mapToObj(p::up)).distinct().toList()){
+                int cell=builder.schematic().indexAt(cover.subtract(builder.position(0)),0,"None");
+                if(cell<0||builder.desired(cell).isAir())continue;
+                System.out.println("[cleanup-proof] cover="+cover+" cell="+cell+" state="+builder.state(cell)+" descend="+walk.canDescendThrough(cover)+" safe="+safe.invoke(builder,cover)+" approach="+walk.canReachStand(cover.up())+" geometry="+geometry.invoke(builder,cover));
+            }
+            var searches=(Map<?,?>)field(builder,"viewSearches");
+            for(var entry:searches.entrySet()){
+                var line=new StringBuilder("[cleanup-proof] search="+entry.getKey());
+                for(String name:new String[]{"recoveryStage","cursor","options"}){var member=entry.getValue().getClass().getDeclaredField(name);member.setAccessible(true);line.append(' ').append(name).append('=').append(member.get(entry.getValue()));}
+                System.out.println(line);
+            }
+        }catch(ReflectiveOperationException error){System.out.println("[cleanup-proof] diagnostics failed: "+error);}
     }
     private static void awaitSupport(ClientGameTestContext context,AutoBuilder builder){
         for(int i=0;i<500;i++){if(context.computeOnClient(client->builder.state(0)==AutoBuilder.CORRECT&&!builder.temporarySupports().isEmpty()))return;context.waitTick();}

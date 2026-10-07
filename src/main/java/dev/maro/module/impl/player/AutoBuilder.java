@@ -189,6 +189,7 @@ public final class AutoBuilder extends Module {
     private final Set<Integer> restockTriedSlots=new HashSet<>();
     private final Map<Integer,Integer> restockSlotRetries=new HashMap<>();
     private final Map<Integer,Integer> retryAt=new HashMap<>();
+    private final Map<Integer,Integer> navigationWorkTicks=new HashMap<>();
     private final Map<Integer,Map<BlockPos,Integer>> triedStands=new HashMap<>();
     private final Map<BlockPos,Map<BlockPos,Integer>> cleanupStands=new HashMap<>();
     // Cleanup still needs a route after every schematic work cell is finished.
@@ -455,12 +456,14 @@ public final class AutoBuilder extends Module {
         if(!state.isOf(Blocks.DIRT)){builder.escapeSupports.remove(pos);builder.escapeSupportWork.remove(pos);}
         if(pos.equals(builder.routeMining)||pos.equals(builder.mining)||builder.unconfirmedPlacements.containsKey(pos)){
             builder.viewSearches.clear();builder.floorProbes.clear();
+            builder.descentEscapes.clear();builder.hatchSearchFeet=null;
         }
         if(builder.pendingPlacement!=null&&builder.pendingPlacement.target.equals(pos))builder.pendingServerState=state;
         var job=builder.unconfirmedPlacements.get(pos);
         var late=builder.latePlacements.remove(pos);if(job==null&&late!=null)job=late.job;
         if(job!=null){
             builder.viewSearches.clear();builder.floorProbes.clear();
+            builder.descentEscapes.clear();builder.hatchSearchFeet=null;
             if(state.getBlock()==job.state.getBlock()){
                 builder.unconfirmedPlacements.remove(pos);
                 if(job.temporary)builder.supports.add(pos.toImmutable());
@@ -583,7 +586,7 @@ public final class AutoBuilder extends Module {
             if(!materialIgnored(Items.FLOWER_POT))remaining.computeIfPresent(Items.FLOWER_POT,(item,count)->Math.max(0,count-1));
             var flower=Schematic.material(desired(i));if(!materialIgnored(flower))remaining.computeIfPresent(flower,(item,count)->Math.max(0,count-1));
         }
-        visible=workCells=sectionCells=List.of();visibleScan.clear();workScan.clear();retryAt.clear();triedContainers.clear();routeSupportExclusions.clear();
+        visible=workCells=sectionCells=List.of();visibleScan.clear();workScan.clear();retryAt.clear();navigationWorkTicks.clear();triedContainers.clear();routeSupportExclusions.clear();
     }
     private void applyPreset(String name){
         if(ghostFill==null)return;
@@ -715,6 +718,8 @@ public final class AutoBuilder extends Module {
         if(useHomes.get()&&homes.tick(value->status=value,this::pause))return;
         if(homeSetupResume&&homes.ready()){homeSetupResume=false;startBuild();return;}
         if(building&&!buying&&!depositing&&recoverUnexpectedBuildMenu())return;
+        if(building&&!buying&&!depositing&&!pasting&&!loading&&restockTarget==null&&mc.currentScreen==null
+            &&(!mode.is("Semi Auto")||mc.options.useKey.isPressed())&&deferUnproductiveWork())return;
         if(mc.currentScreen==null&&(building||depositing)&&clearPassageTick())return;
         if(mc.currentScreen==null&&(building||depositing)&&clearRouteSupportTick())return;
         if(building&&!buying&&mc.currentScreen==null&&restockTarget==null&&ceilingTop!=null){
@@ -1034,6 +1039,20 @@ public final class AutoBuilder extends Module {
         double dz=eye.z-MathHelper.clamp(eye.z,pos.getZ(),pos.getZ()+1);
         return dx*dx+dy*dy+dz*dz<=effectiveReach()*effectiveReach();
     }
+    /** Temporary placements must not renew an unsuccessful schematic job forever. */
+    private boolean deferUnproductiveWork(){
+        int cell=navigatingCell;
+        if(cell<0||cell>=states.length)return false;
+        if(states[cell]==CORRECT||states[cell]==IGNORED){navigationWorkTicks.remove(cell);return false;}
+        int spent=navigationWorkTicks.merge(cell,1,Integer::sum);
+        // Count active work, including its scaffolding, but finish any native
+        // placement/mining receipt and settle before changing the route.
+        if(spent<360||!mc.player.isOnGround()||placement!=null||pendingPlacement!=null||mining!=null)return false;
+        var retries=new HashMap<>(retryAt);
+        resetAccessRouting();retryAt.putAll(retries);retryAt.put(cell,ticks+200);
+        navigationWorkTicks.remove(cell);navigatingCell=-1;walker.stop();
+        status="Trying another schematic target after an unproductive access route";return true;
+    }
     private void findWork(){
         if(completedScans==0){status="Checking schematic: "+(100L*scanCursor/Math.max(1,states.length))+"%";return;}
         // Access repairs are a small, known set. Refresh them directly instead
@@ -1293,7 +1312,7 @@ public final class AutoBuilder extends Module {
             }
             if(search.recoveryStage==3){
                 boolean cleaning=target.equals(cleanupTarget)&&supports.contains(target);
-                if(wanted!=null&&(!wanted.isAir()||cleaning)&&states[cell]!=CORRECT&&preparePassage(options,cell,search))return true;
+                if((cleaning||wanted!=null&&!wanted.isAir()&&states[cell]!=CORRECT)&&preparePassage(options,cell,search))return true;
                 search.recoveryStage=4;
             }
             if(search.recoveryStage==4){
@@ -2279,7 +2298,7 @@ public final class AutoBuilder extends Module {
         finally{search.feet=passageSearchFeet;search.work=passageSearchWork;search.cursor=passageSearchCursor;search.retryAt=passageRetryAt;}
     }
     private boolean preparePassage(List<BlockPos> views,int work){
-        if(!unstuck.get()||views.isEmpty()||work<0||ticks<passageRetryAt)return false;
+        if(!unstuck.get()||views.isEmpty()||work<0&&(cleanupTarget==null||!supports.contains(cleanupTarget))||ticks<passageRetryAt)return false;
         var feet=BlockPos.ofFloored(mc.player.getEntityPos().add(0,.4,0));
         if(!feet.equals(passageSearchFeet)||work!=passageSearchWork){passageSearchFeet=feet;passageSearchWork=work;passageSearchCursor=0;}
         var destinations=views.stream().sorted(Comparator.comparingDouble(p->p.getSquaredDistance(feet))).limit(8).toList();
@@ -2309,12 +2328,13 @@ public final class AutoBuilder extends Module {
     /** A short entry tunnel may contain finished walls or obsolete owned dirt.
      * Never remove unrelated blocks, active steps or the target's attachment. */
     private Set<BlockPos> checkedPassage(BlockPos first,Direction direction,int depth,int work){
-        var removed=new LinkedHashSet<BlockPos>();var attachment=attachmentSide(desired(work));
+        var wanted=work<0?null:desired(work);var workTarget=work<0?cleanupTarget:position(work);
+        var removed=new LinkedHashSet<BlockPos>();var attachment=attachmentSide(wanted);
         for(int along=0;along<depth;along++)for(int up=0;up<2;up++){
             var pos=first.offset(direction,along).up(up);var state=mc.world.getBlockState(pos);
-            if(desired(work).getBlock() instanceof FluidBlock&&pos.getY()<=position(work).getY())return null;
+            if(wanted!=null&&wanted.getBlock() instanceof FluidBlock&&pos.getY()<=workTarget.getY())return null;
             if(state.isAir())continue;
-            if(pos.equals(position(work))||attachment!=null&&pos.equals(position(work).offset(attachment)))return null;
+            if(pos.equals(workTarget)||attachment!=null&&pos.equals(workTarget.offset(attachment)))return null;
             if(!passageCell(pos)&&!(supports.contains(pos)&&state.isOf(Blocks.DIRT)&&!plannedSolid(pos)&&!servesActiveScaffold(pos)))return null;
             removed.add(pos);
         }
@@ -2584,7 +2604,7 @@ public final class AutoBuilder extends Module {
         var job=pendingPlacement;var actual=pendingServerState;pendingPlacement=null;pendingServerState=null;
         if(actual!=null&&compatible(actual,job.state)&&!actual.equals(pendingBefore)){
             placementAttemptTarget=null;failedPlacementUntil.remove(job.target);
-            lastAction=ticks;triedContainers.clear();triedStands.clear();retryAt.clear();if(!job.temporary)navigatingCell=-1;else navigationStarted=ticks;
+            lastAction=ticks;triedContainers.clear();triedStands.clear();if(!job.temporary){retryAt.clear();navigationWorkTicks.remove(job.index);navigatingCell=-1;}else navigationStarted=ticks;
             if(job.temporary){supports.add(job.target);if(accessFloor&&accessStand!=null&&job.target.getX()==accessStand.getX()&&job.target.getZ()==accessStand.getZ()&&job.target.getY()<accessStand.getY())accessSupports.add(job.target);if(recoveryPhase==2&&job.target.equals(recoveryBase)){protectEscapeSupport(job.target);mc.options.jumpKey.setPressed(false);recoveryJump=false;recoveryPhase=3;}}
             else{recoveryAttempts=0;accessStand=accessBase=null;accessSupports.clear();accessStairs=Set.of();}
             if(job.index>=0)updateState(job.index);status="Placement confirmed";
@@ -2801,6 +2821,9 @@ public final class AutoBuilder extends Module {
         cameraMouseTick=ticks;cameraYawVelocity=cameraPitchVelocity=0;return true;
     }
     private void resetAfterHome(){
+        navigationWorkTicks.clear();resetAccessRouting();
+    }
+    private void resetAccessRouting(){
         clearEntryPassage();
         queuedLookAction=null;queuedAimPoint=aimPoint=null;lookWaitStarted=-1;
         endRecovery();
