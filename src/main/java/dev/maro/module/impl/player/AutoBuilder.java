@@ -552,13 +552,13 @@ public final class AutoBuilder extends Module {
     }
     private void refreshSection(){
         if(!sectionSupply())return;
-        sectionCells=sectionCells.stream().filter(i->states[i]!=CORRECT&&states[i]!=IGNORED&&!floorDeferred(position(i))&&layerAllows(i)&&taskPhase(i)==activePhase).toList();
+        sectionCells=sectionCells.stream().filter(i->states[i]!=CORRECT&&states[i]!=IGNORED&&!floorDeferred(position(i))&&layerAllows(i)&&taskPhase(i)==activePhase&&!placementDependencyDeferred(i)).toList();
         if(correct!=sectionCorrect||!building||restockTarget!=null||buying||mc.currentScreen!=null){sectionCorrect=correct;sectionProgressAt=ticks;}
         if(!sectionCells.isEmpty()&&ticks-sectionProgressAt>240&&placement==null&&pendingPlacement==null&&mining==null){
             for(int i:sectionCells)retryAt.put(i,ticks+200);sectionCells=List.of();walker.stop();navigatingCell=-1;
         }
         if(!sectionCells.isEmpty())return;
-        var available=workCells.stream().filter(i->states[i]!=CORRECT&&states[i]!=IGNORED&&!floorDeferred(position(i))&&retryAt.getOrDefault(i,0)<=ticks).toList();
+        var available=workCells.stream().filter(i->states[i]!=CORRECT&&states[i]!=IGNORED&&!floorDeferred(position(i))&&retryAt.getOrDefault(i,0)<=ticks&&!placementDependencyDeferred(i)).toList();
         if(available.isEmpty())return;
         var first=schematic.local(available.getFirst());
         var materials=new HashMap<Item,Integer>();var batch=new ArrayList<Integer>();int slots=0;
@@ -2566,6 +2566,21 @@ public final class AutoBuilder extends Module {
         if(floorSearchCursor<candidates.size()){walker.release();status="Checking temporary floor access";return true;}
         floorSearchCursor=0;
         return false;
+    }
+    private boolean placementDependencyDeferred(int work){
+        // Keep the stock batch stable during a supply trip. Otherwise a
+        // cooling-down prerequisite must not pin an entire section behind it.
+        if(restockTarget!=null||buying)return false;
+        var visited=new HashSet<Integer>();
+        for(int depth=0;depth<96;depth++){
+            var dependency=missingBuiltNeighbour(position(work),desired(work));if(dependency==null)return false;
+            int cell=schematic.indexAt(dependency.subtract(anchor()),turns(),mirror.get());
+            if(cell<0||!visited.add(cell)||!mc.world.isChunkLoaded(dependency)||!layerAllows(cell)
+                ||taskPhase(cell)!=activePhase||layerSupply()&&taskLayer(cell)!=supplyLayer()
+                ||retryAt.getOrDefault(cell,0)>ticks||floorDeferred(dependency))return true;
+            work=cell;
+        }
+        return true;
     }
     private void appendPlacementDependencies(List<Integer> candidates){
         var visited=new HashSet<>(candidates);long deadline=System.nanoTime()+2_000_000;

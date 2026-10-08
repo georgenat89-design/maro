@@ -5,6 +5,20 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+The second646 replay on185bfae restored both861/1095 and reached648, then was
+deliberately stopped. Native traces showed the buried dispenser583 exhausting
+access planning while its waiting hopper dependants were repeatedly selected
+as new sections during its retry cooldown. Other available work was starved.
+The pending change carries prerequisite cooldown/access/layer restrictions
+through bounded dependency chains when selecting sections, keeping supply
+batches fixed while restocking. Its extended native fixture requires another
+cube placed while the outlet is deferred, followed by the real outlet chain
+after release. The unchanged185bfae JAR failed that regression as expected
+in1m19s. The fixed full native home/restock/repair/crouch/camera suite passed
+in2m29s, including immediate alternate work and subsequent hopper completion.
+The unchanged646 capture is being replayed again. Complete710/fresh0
+verification remains pending.
+
 The first actual646 replay on8de83bc was deliberately stopped at646, not
 passed. Native reads proved two remaining dependencies: registered upper
 waxed copper1095 (depth3) had no anchor because its lower bulb861 (depth2)

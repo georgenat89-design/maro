@@ -41,6 +41,8 @@ remain in the normal placement path.
 Missing hopper outlets and attachment backing blocks can pull their placement
 prerequisites across a section boundary. This lookup is bounded to96 candidates
 and2ms and preserves phase, layer, retry and access-repair restrictions.
+A deferred prerequisite also defers its waiting dependants, allowing another
+available section immediately. Stock batches stay fixed during restocking.
 When those routes and short columns cannot reach unfinished work, a proved dry
 passage or floor/ceiling opening can temporarily reopen completed blocks. Mining
 requires a registered access job and rechecks attachments, fluids and footing;

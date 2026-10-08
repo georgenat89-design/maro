@@ -269,14 +269,18 @@ final class BuilderHomeChecks {
     }
     private static void sectionDependencyChain(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work){
         var first=work.south(2);var origin=first.west(6);var parent=first.east(2);var cells=new BlockState[9];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());
-        cells[6]=cells[7]=Blocks.HOPPER.getDefaultState().with(HopperBlock.FACING,Direction.EAST);cells[8]=Blocks.STONE.getDefaultState();
-        for(int x=0;x<3;x++)command(world,"setblock",first.east(x),"air");world.getServer().runCommand("give @a hopper 2");world.getServer().runCommand("give @a stone 1");teleport(world,work);context.waitTicks(12);
+        cells[5]=Blocks.STONE.getDefaultState();cells[6]=cells[7]=Blocks.HOPPER.getDefaultState().with(HopperBlock.FACING,Direction.EAST);cells[8]=Blocks.STONE.getDefaultState();
+        for(int x=-1;x<3;x++)command(world,"setblock",first.east(x),"air");world.getServer().runCommand("give @a hopper 2");world.getServer().runCommand("give @a stone 2");teleport(world,work);context.waitTicks(12);
         context.runOnClient(client->{setting(builder,"Material Supply","Nearby Sections");builder.install(new Schematic("section-hopper-chain.nbt","test",9,1,1,BlockPos.ORIGIN,cells));builder.setOrigin(origin);builder.preview();});context.waitTicks(15);
         context.runOnClient(client->{
             setField(builder,"sectionCells",List.of(6,7));setField(builder,"sectionProgressAt",field(builder,"ticks"));setField(builder,"sectionCorrect",field(builder,"correct"));
             require((boolean)call(builder,"waitingForBuiltNeighbour",new Class<?>[]{BlockPos.class,BlockState.class},first,cells[6]),"Section fixture did not need its outlet chain");
             BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
+            @SuppressWarnings("unchecked")var retries=(Map<Integer,Integer>)field(builder,"retryAt");retries.put(8,(int)field(builder,"ticks")+120);
         });
+        boolean otherPlaced=false;
+        for(int tick=0;tick<80;tick++){otherPlaced=world.getServer().computeOnServer(server->server.getOverworld().getBlockState(first.west()).isOf(Blocks.STONE));if(otherPlaced)break;context.waitTick();}
+        require(otherPlaced&&world.getServer().computeOnServer(server->server.getOverworld().getBlockState(parent).isAir()),"A deferred outlet pinned its dependants instead of selecting other native work: "+context.computeOnClient(client->builder.status()));
         boolean finished=false;
         for(int tick=0;tick<160;tick++){
             finished=world.getServer().computeOnServer(server->AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(parent),cells[8])&&AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(first.east()),cells[7])&&AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(first),cells[6]));
@@ -284,9 +288,9 @@ final class BuilderHomeChecks {
         }
         require(finished,"Nearby section waited for a missing outlet outside its batch: "+context.computeOnClient(client->builder.status()));
         for(int tick=0;tick<80&&context.computeOnClient(client->builder.building());tick++)context.waitTick();
-        context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20,"Section dependency chain left work, scaffolds or damage: "+builder.status());BuilderPacketChecks.verify(3);builder.pause("section dependencies checked");setting(builder,"Temporary Supports",true);setting(builder,"Restock When Empty",true);setting(builder,"Stockpile In Chests",true);});
-        teleport(world,work);context.waitTicks(12);for(int x=0;x<3;x++)command(world,"setblock",first.east(x),"air");context.waitTicks(4);
-        System.out.println("[builder-home] Missing native hopper outlet chain crossed the eight-cell batch boundary and finished before section timeout; full health and zero supports");
+        context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20,"Section dependency chain left work, scaffolds or damage: "+builder.status());BuilderPacketChecks.verify(4);builder.pause("section dependencies checked");setting(builder,"Temporary Supports",true);setting(builder,"Restock When Empty",true);setting(builder,"Stockpile In Chests",true);});
+        teleport(world,work);context.waitTicks(12);for(int x=-1;x<3;x++)command(world,"setblock",first.east(x),"air");context.waitTicks(4);
+        System.out.println("[builder-home] Deferred hopper outlet selected other native work immediately; released outlet chain crossed the eight-cell batch boundary and completed; full health and zero supports");
     }
     private static void restockRoundTrip(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work,BlockPos chest){
         restockRoundTrip(context,world,builder,work,chest,false);
