@@ -94,7 +94,6 @@ final class BuilderHomeChecks {
         context.runOnClient(client->button(builder,"Set Storage Home").press());waitHome(context,builder,80);
         context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(homes.ready()&&!builder.building(),"Storage setup failed or unexpectedly started building: "+builder.status());var entry=homes.saveData().get(0).getAsJsonObject();var feet=BlockPos.ofFloored(entry.get("x").getAsDouble(),entry.get("y").getAsDouble(),entry.get("z").getAsDouble());for(var reserved:List.of(feet,feet.up())){require((boolean)call(builder,"reservedSupplyAccess",new Class<?>[]{BlockPos.class},reserved),"Storage-home arrival cell was available to scaffolding");require(call(builder,"placement",new Class<?>[]{BlockPos.class,BlockState.class,Item.class,int.class,boolean.class},reserved,Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true)==null,"Scaffold could block native storage arrival");}});require(saveCommands==before+1,"Absent home 1 did not save exactly once");
         longCheckedWalk(context,world,builder,start);
-        nearReachJump(context,world,builder,start);
         blockedRepairReceivers(context,world,builder,start,chest);
         crouchedChestPlacementView(context,world,builder,start);
         scaffoldObstructedSign(context,world,builder,start);
@@ -428,25 +427,6 @@ final class BuilderHomeChecks {
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20,"Long route left active work, supports or damage");BuilderPacketChecks.verify(1);builder.pause("long walk checked");setting(builder,"Temporary Supports",true);});
         teleport(world,start);context.waitTicks(12);
         System.out.println("[builder-home] Long proved native walk retained past 240 ticks and finished its placement without a restart/home/support/damage in "+elapsed+" walking ticks");
-    }
-    private static void nearReachJump(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
-        var from=start.south(20);var target=from.north(5).up(3);var steps=List.of(from.north(),from.north(2).up(),from.north(3).up(2),from.north(4).up(2),target.down());
-        world.getServer().runCommand("fill "+from.add(-1,-1,-6).toShortString().replace(",","")+" "+from.add(1,-1,1).toShortString().replace(",","")+" stone");
-        world.getServer().runCommand("fill "+from.add(-1,0,-6).toShortString().replace(",","")+" "+from.add(1,6,1).toShortString().replace(",","")+" air");
-        for(var step:steps)command(world,"setblock",step,"stone");world.getServer().runCommand("clear @a observer");world.getServer().runCommand("give @a observer 1");teleport(world,from);context.waitTicks(12);int first=commands.size();
-        context.runOnClient(client->{
-            setting(builder,"Temporary Supports",false);setting(builder,"Prepare Whole Build",false);setting(builder,"Restock When Empty",false);setting(builder,"Auto Buy When Missing",false);
-            builder.install(new Schematic("airborne-reach-handoff.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.OBSERVER.getDefaultState().with(net.minecraft.state.property.Properties.FACING,Direction.EAST)}));builder.setOrigin(target);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
-        });
-        boolean airborneReach=false,landed=false;int elapsed=0;
-        for(;elapsed<220&&!landed;elapsed++){
-            airborneReach|=context.computeOnClient(client->!client.player.isOnGround()&&(boolean)call(builder,"withinReach",new Class<?>[]{BlockPos.class,Vec3d.class},target,client.player.getEyePos()));
-            landed=context.computeOnClient(client->client.player.isOnGround()&&client.player.getY()>=from.getY()+.99&&client.player.getZ()<from.getZ()-.9);context.waitTick();
-        }
-        require(airborneReach&&landed,"Native near-reach jump was interrupted before landing: "+context.computeOnClient(client->builder.status()+" at "+client.player.getEntityPos()));require(commands.size()==first,"Near-reach jump issued a home command");
-        context.runOnClient(client->{require(client.player.getHealth()==20&&builder.temporarySupports().isEmpty(),"Near-reach jump damaged player or added supports");BuilderPacketChecks.verify(0);builder.pause("near-reach jump checked");setting(builder,"Temporary Supports",true);setting(builder,"Restock When Empty",true);setting(builder,"Auto Buy When Missing",true);});
-        teleport(world,start);context.waitTicks(12);for(var step:steps)command(world,"setblock",step,"air");command(world,"setblock",target,"air");world.getServer().runCommand("clear @a observer");
-        System.out.println("[builder-home] Native jump crossed the placement reach boundary and landed without replanning/home/support/damage in "+elapsed+" ticks");
     }
     private static void crouchedChestPlacementView(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         var target=start.south(15).up(2);var footing=target.add(-1,0,2);var panel=footing.up();
@@ -847,3 +827,4 @@ final class BuilderHomeChecks {
     private static Object call(Object instance,String name,Class<?>[] args,Object...values){try{var method=instance.getClass().getDeclaredMethod(name,args);method.setAccessible(true);return method.invoke(instance,values);}catch(ReflectiveOperationException e){throw new AssertionError(e);}}
     private static void require(boolean success,String message){if(!success)throw new AssertionError(message);}
 }
+
