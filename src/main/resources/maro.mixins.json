@@ -45,7 +45,8 @@
     "CustomSkyMixins$Fog",
     "PotatoTexturesMixin",
     "CustomTotemSpriteMixin",
-    "CustomTotemPopMixin"
+    "CustomTotemPopMixin",
+    "EmoteModelMixin"
   ],
   "injectors": {
     "defaultRequire": 1
