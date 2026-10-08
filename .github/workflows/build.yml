@@ -43,6 +43,29 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq xvfb imagemagick > /dev/null
           ./gradlew runProductionClientGameTest --no-daemon --stacktrace
 
+      - name: Upload mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: maro-gg-mc1.21.11-build-${{ github.run_number }}
+          path: |
+            build/libs/*.jar
+            !build/libs/*-sources.jar
+            !build/libs/*-gametest.jar
+
+      # Only builds that passed the in-game test become releases. They are published before the
+      # slower builder tests below, which still run and report but do not hold the download up.
+      - name: Publish release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          JAR=$(ls build/libs/*.jar | grep -v -e '-sources' -e '-gametest' | head -1)
+          gh release create "build-${{ github.run_number }}" "$JAR" \
+            --target "${{ github.sha }}" \
+            --title "maro.gg build ${{ github.run_number }}" \
+            --notes "Minecraft 1.21.11 · commit ${{ github.sha }} · passed the in-game test" \
+            --latest
+
       - name: Schematic builder and auction tests
         env:
           ALSOFT_DRIVERS: "null"
@@ -66,24 +89,3 @@ jobs:
           name: test-screenshots-build-${{ github.run_number }}
           path: "**/screenshots/*.png"
 
-      - name: Upload mod jar
-        uses: actions/upload-artifact@v4
-        with:
-          name: maro-gg-mc1.21.11-build-${{ github.run_number }}
-          path: |
-            build/libs/*.jar
-            !build/libs/*-sources.jar
-            !build/libs/*-gametest.jar
-
-      # Only builds that passed the in-game test become releases.
-      - name: Publish release
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          JAR=$(ls build/libs/*.jar | grep -v -e '-sources' -e '-gametest' | head -1)
-          gh release create "build-${{ github.run_number }}" "$JAR" \
-            --target "${{ github.sha }}" \
-            --title "maro.gg build ${{ github.run_number }}" \
-            --notes "Minecraft 1.21.11 · commit ${{ github.sha }} · passed the in-game test" \
-            --latest
