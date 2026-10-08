@@ -103,6 +103,7 @@ final class BuilderHomeChecks {
         offsetPistonRoofAccess(context,world,builder,start);
         existingViewBeforeRoof(context,world,builder,start);
         hopperRepairStock(context,world,builder,start);
+        offsetRepairReceiver(context,world,builder,start);
         closedDoorAccess(context,world,builder,start);
         restockRoundTrip(context,world,builder,home2,chest);
         temporaryFootingReturn(context,world,builder,home2,chest);
@@ -367,26 +368,51 @@ final class BuilderHomeChecks {
             command(world,"setblock",origin.add(x,y,z),room||ledge?"stone":"air");
         }
         int repair=(3*8+1)*7+1;var opening=origin.add(1,3,1);cells[repair]=Blocks.CRACKED_POLISHED_BLACKSTONE_BRICKS.getDefaultState();command(world,"setblock",opening,"air");
+        int owner=(2*8+7)*7+2;var ownerPos=origin.add(2,2,7);cells[owner]=Blocks.GLASS.getDefaultState();
         world.getServer().runCommand("clear @a cracked_polished_blackstone_bricks");
+        world.getServer().runCommand("clear @a glass");
         for(String item:List.of("stone 16","dirt 64","diamond_pickaxe","diamond_shovel","cooked_beef 16"))world.getServer().runCommand("give @a "+item);
         world.getServer().runOnServer(server->{var drop=new net.minecraft.entity.ItemEntity(server.getOverworld(),origin.getX()+3.5,origin.getY()+2,origin.getZ()+7.5,new ItemStack(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS));drop.setPickupDelay(0);server.getOverworld().spawnEntity(drop);});
         teleport(world,origin.add(3,1,3));context.waitTicks(12);
         context.runOnClient(client->{
             require(builder.inventoryCount(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)==0,"Sealed drop fixture supplied the missing repair material directly");
             var walker=(BuilderWalk)field(builder,"walker");require(!walker.canReachStand(origin.add(3,2,7)),"Sealed drop fixture already had walking access");
-            setting(builder,"Temporary Supports",true);setting(builder,"Prepare Whole Build",false);builder.install(new Schematic("sealed-repair-drop.nbt","test",7,5,8,BlockPos.ORIGIN,cells));builder.setOrigin(origin);
-            @SuppressWarnings("unchecked")var owners=(Map<BlockPos,Integer>)field(builder,"floorAccessWork");owners.put(opening,-1);
+            setting(builder,"Temporary Supports",true);setting(builder,"Prepare Whole Build",false);setting(builder,"Restock When Empty",false);setting(builder,"Auto Buy When Missing",false);builder.install(new Schematic("sealed-repair-drop.nbt","test",7,5,8,BlockPos.ORIGIN,cells));builder.setOrigin(origin);
+            @SuppressWarnings("unchecked")var owners=(Map<BlockPos,Integer>)field(builder,"floorAccessWork");owners.put(opening,owner);
             BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
         });
-        boolean planned=false;int elapsed=0;
+        boolean planned=false,secured=false;int elapsed=0;
         for(;elapsed<2000&&context.computeOnClient(client->builder.building());elapsed++){
-            planned|=context.computeOnClient(client->field(builder,"accessPickupSearch")!=null);context.waitTick();
+            planned|=context.computeOnClient(client->field(builder,"accessPickupSearch")!=null);
+            if(!secured&&context.computeOnClient(client->builder.inventoryCount(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)>0)){
+                require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(ownerPos).isAir()),"Repair material was not secured before its unfinished owner");
+                world.getServer().runCommand("give @a glass 1");secured=true;
+            }
+            context.waitTick();
         }
-        require(planned,"Sealed repair drop never exercised native pickup access planning");
+        require(planned&&secured,"Sealed repair drop never secured material through native pickup access before its owner");
         require(world.getServer().computeOnServer(server->{var w=server.getOverworld();for(int i=0;i<cells.length;i++)if(!cells[i].isOf(Blocks.STRUCTURE_VOID)&&!AutoBuilder.matchesBuildState(w.getBlockState(origin.add(i%7,i/56,i/7%8)),cells[i]))return false;for(int y=0;y<8;y++)for(int z=-3;z<11;z++)for(int x=-3;x<10;x++)if(w.getBlockState(origin.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Sealed repair drop access did not collect and restore every block/temporary post");
-        context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Sealed drop left work, supports, damage or menu: "+builder.status());BuilderPacketChecks.verify(1);builder.pause("sealed drop checked");});
+        context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Sealed drop left work, supports, damage or menu: "+builder.status());BuilderPacketChecks.verify(1);builder.pause("sealed drop checked");setting(builder,"Restock When Empty",true);setting(builder,"Auto Buy When Missing",true);});
         teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+6)+" "+(origin.getY()+4)+" "+(origin.getZ()+7)+" air");context.waitTicks(4);
         System.out.println("[builder-home] Sealed upper repair drop collected through native access; all openings restored, zero dirt, full health and bounded look in "+elapsed+" ticks");
+    }
+    private static void offsetRepairReceiver(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-home] Recover deflected repair stock through an adjacent native hopper column");
+        var origin=start.south(10);var cells=new BlockState[18];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());
+        cells[0]=Blocks.DISPENSER.getDefaultState().with(DispenserBlock.FACING,Direction.WEST);cells[1]=Blocks.HOPPER.getDefaultState().with(HopperBlock.FACING,Direction.WEST);
+        cells[4]=cells[11]=Blocks.STONE.getDefaultState();cells[17]=Blocks.CRACKED_POLISHED_BLACKSTONE_BRICKS.getDefaultState();var opening=origin.add(2,2,1);
+        for(int i=0;i<cells.length;i++)command(world,"setblock",origin.add(i%3,i/6,i/3%2),i==17||cells[i].isOf(Blocks.STRUCTURE_VOID)?"air":i==0?"dispenser[facing=west]":i==1?"hopper[facing=west]":"stone");
+        world.getServer().runOnServer(server->{var stock=(net.minecraft.inventory.Inventory)server.getOverworld().getBlockEntity(origin);stock.setStack(0,new ItemStack(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS,5));stock.setStack(1,new ItemStack(Items.DIAMOND,7));stock.markDirty();});
+        world.getServer().runCommand("clear @a cracked_polished_blackstone_bricks");teleport(world,origin.add(1,1,1));context.waitTicks(12);int first=commands.size();
+        context.runOnClient(client->{setting(builder,"Temporary Supports",false);setting(builder,"Prepare Whole Build",false);builder.install(new Schematic("offset-repair-receiver.nbt","test",3,3,2,BlockPos.ORIGIN,cells));builder.setOrigin(origin);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();@SuppressWarnings("unchecked")var owners=(Map<BlockPos,Integer>)field(builder,"floorAccessWork");owners.put(opening,-1);});
+        boolean recovered=false;int elapsed=0;
+        for(;elapsed<600&&context.computeOnClient(client->builder.building());elapsed++){recovered|=context.computeOnClient(client->(boolean)field(builder,"recoveringAccessStock"));context.waitTick();}
+        require(recovered,"Adjacent fall column was not searched for repair stock");
+        require(world.getServer().computeOnServer(server->{var w=server.getOverworld();for(int i=0;i<cells.length;i++)if(!cells[i].isOf(Blocks.STRUCTURE_VOID)&&!AutoBuilder.matchesBuildState(w.getBlockState(origin.add(i%3,i/6,i/3%2)),cells[i]))return false;var stock=(net.minecraft.inventory.Inventory)w.getBlockEntity(origin);return stock.getStack(0).isOf(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)&&stock.getStack(0).getCount()==4&&stock.getStack(1).isOf(Items.DIAMOND)&&stock.getStack(1).getCount()==7;}),"Adjacent receiver recovery failed repair or changed original stock");
+        require(commands.size()==first,"Adjacent repair receiver used storage homes");
+        context.runOnClient(client->{require(!builder.building()&&builder.inventoryCount(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)==0&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Adjacent receiver left material, supports, damage or menu: "+builder.status());BuilderPacketChecks.verify(1);builder.pause("offset receiver checked");setting(builder,"Temporary Supports",true);});
+        teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+2)+" "+(origin.getY()+2)+" "+(origin.getZ()+1)+" air");context.waitTicks(4);
+        System.out.println("[builder-home] Adjacent native hopper/dispenser stock repaired the opening; original four bricks/seven diamonds intact, no home trip, full health in "+elapsed+" ticks");
     }
     private static void raisedLiquidEntrance(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-home] Enter above a liquid view, retain the wall footing, then descend and restore the entrance");

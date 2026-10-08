@@ -3420,9 +3420,10 @@ public final class AutoBuilder extends Module {
         if(!autoMove.get()||!mc.player.isOnGround()||floorAccessWork.isEmpty())return false;
         var required=new HashMap<Item,Integer>();var openings=new HashMap<Item,List<BlockPos>>();var repairCells=new HashMap<Item,Integer>();
         for(var entry:floorAccessWork.entrySet()){
-            int owner=entry.getValue(),cell=schematic.indexAt(entry.getKey().subtract(anchor()),turns(),mirror.get());
-            if(cell<0||owner>=0&&owner<states.length&&!matchesBuildState(mc.world.getBlockState(position(owner)),desired(owner))
-                ||!mc.world.getBlockState(entry.getKey()).isAir())continue;
+            int cell=schematic.indexAt(entry.getKey().subtract(anchor()),turns(),mirror.get());
+            // Secure mined material before it despawns, even while its owner
+            // still needs this opening. floorDeferred controls replacement.
+            if(cell<0||!mc.world.getBlockState(entry.getKey()).isAir())continue;
             var item=Schematic.material(desired(cell));if(item==Items.AIR)continue;
             required.merge(item,1,Integer::sum);openings.computeIfAbsent(item,key->new ArrayList<>()).add(entry.getKey());repairCells.putIfAbsent(item,cell);
         }
@@ -3494,8 +3495,11 @@ public final class AutoBuilder extends Module {
     }
     private Set<BlockPos> accessPipeBelow(BlockPos opening){
         var result=new LinkedHashSet<BlockPos>();
+        // Loot can deflect around an edge into an adjacent fall column. Keep
+        // the receiver search local; every pipe remains typed and bounded.
+        for(var offset:new int[][]{{0,0},{1,0},{-1,0},{0,1},{0,-1},{1,1},{1,-1},{-1,1},{-1,-1}}){
             for(int down=1;down<=8;down++){
-                var pos=opening.down(down);if(!mc.world.isChunkLoaded(pos))break;var state=mc.world.getBlockState(pos);
+                var pos=opening.add(offset[0],-down,offset[1]);if(!mc.world.isChunkLoaded(pos))break;var state=mc.world.getBlockState(pos);
                 if(state.getBlock() instanceof HopperBlock){
                     var pipe=new ArrayList<BlockPos>();var seen=new HashSet<BlockPos>();
                     for(int step=0;step<16&&mc.world.isChunkLoaded(pos)&&seen.add(pos);step++){
@@ -3507,6 +3511,7 @@ public final class AutoBuilder extends Module {
                 }
                 if(!floorAccessWork.containsKey(pos)&&!state.getCollisionShape(mc.world,pos).isEmpty())break;
             }
+        }
         return result;
     }
     private boolean accessRecoveryMenu(ScreenHandler handler){
