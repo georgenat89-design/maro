@@ -57,7 +57,9 @@ final class BaseEspChecks {
                 ((BooleanSetting)setting(module,"chat alerts")).set(false);
                 module.setEnabled(true);
             });
+            long searching = System.nanoTime();
             await(context, () -> !module.detectedBounds().isEmpty(), "Underground built base was not detected");
+            System.out.printf(java.util.Locale.ROOT, "BASE ESP first detection after %.0f ms%n", (System.nanoTime() - searching) / 1e6);
             context.runOnClient(c -> {
                 require(module.detectedBounds().size() == 1, "Base split across chunks or a false positive was produced: " + module.detectedBounds());
                 var bounds = module.detectedBounds().getFirst();
@@ -65,7 +67,7 @@ final class BaseEspChecks {
                     "Base shell did not contain its storage: " + bounds);
                 require(bounds.maxY <= 0, "Above-ground base was included");
                 require(module.detections().getFirst().storageBlocks()==32,"HUD storage count included structure blocks");
-                require(module.pendingScans()<=12,"Scan queue exceeded its bound");
+                require(module.pendingScans()<=module.queueLimit(),"Scan queue exceeded its bound");
                 require(((ModeSetting)setting(module,"scan speed")).get().equals("Fast"),"Fast scan was not the default");
                 module.hudMove(10000,10000);
                 require(module.hudLeft()+module.hudWidth()<=c.getWindow().getScaledWidth(),"Detector HUD escaped the screen");
@@ -122,7 +124,7 @@ final class BaseEspChecks {
             await(context, () -> !module.detectedBounds().isEmpty(),90,"New base in previously checked chunks did not get priority");
             context.runOnClient(c -> {
                 require(module.detections().getFirst().storageBlocks()==32,"A stale snapshot replaced changed block counts");
-                require(module.pendingScans()<=12,"Block updates submitted unbounded jobs");
+                require(module.pendingScans()<=module.queueLimit(),"Block updates submitted unbounded jobs");
                 ((ModeSetting)setting(module,"scan speed")).set("Eco");
             });
             context.waitTicks(10);
