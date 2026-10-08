@@ -11,12 +11,14 @@ import dev.maro.runtime.MeteorClient;
 import dev.maro.runtime.event.EventHandler;
 import dev.maro.runtime.events.world.BlockUpdateEvent;
 import dev.maro.runtime.utils.render.color.Color;
+import com.google.gson.JsonObject;
+import dev.maro.gui.hud.BlockEspScreen;
 import dev.maro.setting.BooleanSetting;
+import dev.maro.setting.ButtonSetting;
 import dev.maro.setting.ColorSetting;
 import dev.maro.setting.ModeSetting;
 import dev.maro.setting.NumberSetting;
 import dev.maro.setting.SettingSection;
-import dev.maro.setting.TextSetting;
 import dev.maro.util.ColorUtil;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
@@ -40,8 +42,8 @@ import net.minecraft.world.chunk.WorldChunk;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.EnumMap;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -102,21 +104,18 @@ public class BlockESP extends Module {
         }
     }
 
-    /** What a custom block is, in the target map; groups are their ordinal. */
-    private static final int CUSTOM = -1;
     /** Chunks scanned in a tick at most, and waiting for the worker at once. */
     private static final int PER_TICK = 10, QUEUE_LIMIT = 24;
 
     private static BlockESP instance;
 
-    // ---- blocks
-    private final Map<Group, BooleanSetting> groups = new EnumMap<>(Group.class);
-    {
-        for (Group g : Group.values()) groups.put(g, add(new BooleanSetting(g.label, g.description, g.on)));
-    }
-    private final TextSetting custom = add(new TextSetting("Custom Blocks",
-            "More blocks to find, by id and separated by commas: beacon, hopper, crafter", "", 300, "beacon, hopper"));
-    private final ColorSetting customColor = add(new ColorSetting("Custom Color", "The colour custom blocks are drawn in", 0xFF7CF6FF));
+    // ---- blocks: picked in BlockEspScreen, each with its own colour, kept in the order they were added
+    private final Map<Block, Integer> picked = new LinkedHashMap<>();
+    /** Bumped whenever a block is picked or dropped (not when a colour changes), so the scan starts over. */
+    private int pickedVersion, builtVersion = -1;
+    private final ButtonSetting blocksButton = add(new ButtonSetting("Blocks",
+            "Pick which blocks to find, from every block in the game, and the colour of each", "Choose",
+            () -> mc.setScreen(new BlockEspScreen(mc.currentScreen, this))));
 
     // ---- Y level
     private final ModeSetting yLimit = add(new ModeSetting("Y Limit",
@@ -180,9 +179,8 @@ public class BlockESP extends Module {
     private final Long2IntOpenHashMap versions = new Long2IntOpenHashMap();
     private long session;
     private ClientWorld world;
-    /** Each wanted block: its group's ordinal, or CUSTOM. Replaced whole, read by the worker. */
-    private volatile Map<Block, Integer> targets = Map.of();
-    private String targetsKey;
+    /** The picked blocks, as a set the worker reads. Replaced whole when the pick changes. */
+    private volatile Set<Block> targets = Set.of();
     private int[] offsetsX = new int[0], offsetsZ = new int[0];
     private int offsetsRadius = -1;
     private int ticks, listTick;
@@ -199,12 +197,9 @@ public class BlockESP extends Module {
     public BlockESP() {
         super("Block ESP", "Boxes round the blocks you pick through walls, with glowing tracers, bloom and a Y limit", Category.VISUALS);
         instance = this;
-        SettingSection blocks = new SettingSection("Blocks");
-        for (Group g : Group.values()) blocks.add(groups.get(g));
-        blocks.add(custom);
-        blocks.add(customColor);
+        resetBlocks();
         sections = List.of(
-                blocks,
+                SettingSection.of("Blocks", blocksButton),
                 SettingSection.of("Y Level", yLimit, maxY),
                 SettingSection.of("Look", range, style, colorMode, oneColor, fillOpacity, lineWidth, throughWalls, maxBlocks),
                 SettingSection.of("Tracers", tracers, tracerStart, tracerColor, tracerCustom, tracerWidth, tracerGlow, pulses, pulseSpeed, maxTracers),
@@ -223,7 +218,7 @@ public class BlockESP extends Module {
             thread.setDaemon(true);
             return thread;
         });
-        targetsKey = null;
+        builtVersion = -1;
         clearScans();
         MeteorClient.EVENT_BUS.subscribe(this);
     }
@@ -247,41 +242,142 @@ public class BlockESP extends Module {
 
     // ---- what to look for ---------------------------------------------------------------------
 
-    /** Rebuilds the wanted blocks when the choice of them changes, and starts the scan over. */
+    /** Rebuilds the wanted blocks when the pick changes, and starts the scan over. */
     private void refreshTargets() {
-        StringBuilder key = new StringBuilder();
-        for (Group g : Group.values()) key.append(groups.get(g).get() ? '1' : '0');
-        String typed = custom.get().trim().toLowerCase(Locale.ROOT);
-        key.append('|').append(typed);
-        if (key.toString().equals(targetsKey)) return;
-        targetsKey = key.toString();
-
-        Set<Block> customBlocks = Collections.newSetFromMap(new IdentityHashMap<>());
-        for (String token : typed.split("[,;\\s]+")) {
-            if (token.isEmpty()) continue;
-            Identifier id = Identifier.tryParse(token.contains(":") ? token : "minecraft:" + token);
-            if (id != null && Registries.BLOCK.containsId(id)) customBlocks.add(Registries.BLOCK.get(id));
-        }
-        Map<Block, Integer> next = new IdentityHashMap<>();
-        for (Block block : Registries.BLOCK) {
-            if (block == Blocks.AIR) continue;
-            for (Group g : Group.values()) {
-                if (groups.get(g).get() && g.matches.test(block)) {
-                    next.put(block, g.ordinal());
-                    break;
-                }
-            }
-            if (!next.containsKey(block) && customBlocks.contains(block)) next.put(block, CUSTOM);
-        }
+        if (builtVersion == pickedVersion) return;
+        builtVersion = pickedVersion;
+        Set<Block> next = Collections.newSetFromMap(new IdentityHashMap<>());
+        next.addAll(picked.keySet());
         targets = next;
         clearScans();
     }
 
-    private int colorOf(Block block) {
+    private int drawColorOf(Block block) {
         if (colorMode.is("One Color")) return oneColor.get() | 0xFF000000;
-        Integer group = targets.get(block);
-        if (group == null || group == CUSTOM) return customColor.get() | 0xFF000000;
-        return Group.values()[group].color;
+        return colorOf(block);
+    }
+
+    // ---- the pick, for BlockEspScreen -----------------------------------------------------------
+
+    /** The picked blocks, in the order they were added. */
+    public List<Block> pickedBlocks() {
+        return new ArrayList<>(picked.keySet());
+    }
+
+    public boolean isPicked(Block block) {
+        return picked.containsKey(block);
+    }
+
+    /** The block's own colour: the one chosen for it, or the one it would get if picked. */
+    public int colorOf(Block block) {
+        Integer color = picked.get(block);
+        return color != null ? color | 0xFF000000 : defaultColor(block);
+    }
+
+    public void pick(Block block) {
+        if (block == null || block == Blocks.AIR || picked.containsKey(block)) return;
+        picked.put(block, defaultColor(block));
+        pickedVersion++;
+    }
+
+    public void unpick(Block block) {
+        if (picked.remove(block) != null) pickedVersion++;
+    }
+
+    public void setColor(Block block, int color) {
+        if (picked.containsKey(block)) picked.put(block, color | 0xFF000000);
+    }
+
+    public void clearPicked() {
+        if (picked.isEmpty()) return;
+        picked.clear();
+        pickedVersion++;
+    }
+
+    /** Back to the starting pick: spawners, chests, shulker boxes, ancient debris and diamond ore. */
+    public void resetBlocks() {
+        picked.clear();
+        for (Block block : Registries.BLOCK) {
+            for (Group g : Group.values()) {
+                if (g.on && g.matches.test(block)) {
+                    picked.put(block, g.color);
+                    break;
+                }
+            }
+        }
+        pickedVersion++;
+    }
+
+    /** The presets the picker offers: a name and the blocks it adds. */
+    public static List<Map.Entry<String, List<Block>>> presets() {
+        List<Map.Entry<String, List<Block>>> out = new ArrayList<>();
+        out.add(Map.entry("Spawners", groupBlocks(Group.SPAWNERS)));
+        out.add(Map.entry("Storage", groupBlocks(Group.CHESTS, Group.SHULKERS, Group.ENDER_CHESTS, Group.BARRELS)));
+        out.add(Map.entry("Valuables", groupBlocks(Group.DEBRIS, Group.DIAMONDS, Group.EMERALDS)));
+        out.add(Map.entry("All Ores", groupBlocks(Group.DIAMONDS, Group.EMERALDS, Group.GOLD, Group.IRON, Group.REDSTONE, Group.LAPIS, Group.DEBRIS)));
+        return out;
+    }
+
+    private static List<Block> groupBlocks(Group... groups) {
+        List<Block> out = new ArrayList<>();
+        for (Block block : Registries.BLOCK) {
+            for (Group g : groups) {
+                if (g.matches.test(block)) {
+                    out.add(block);
+                    break;
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The colour a block starts with: its kind's if it is one Block ESP knows (spawners pink, diamond
+     * ore cyan and so on), otherwise its map colour made bright enough to see through walls.
+     */
+    public static int defaultColor(Block block) {
+        for (Group g : Group.values()) if (g.matches.test(block)) return g.color;
+        int rgb = block.getDefaultMapColor().color;
+        if (rgb == 0) {
+            float hue = (Registries.BLOCK.getId(block).hashCode() & 0xFFFF) / 65535f;
+            return ColorUtil.hsv(hue, 0.65f, 1f);
+        }
+        float[] hsv = ColorUtil.toHsv(0xFF000000 | rgb);
+        if (hsv[1] < 0.08f) return 0xFFE6E9F0;
+        return ColorUtil.hsv(hsv[0], Math.max(0.55f, hsv[1]), Math.max(0.9f, hsv[2]));
+    }
+
+    @Override
+    public JsonObject saveExtra() {
+        JsonObject data = super.saveExtra();
+        JsonObject blocks = new JsonObject();
+        picked.forEach((block, color) -> blocks.addProperty(Registries.BLOCK.getId(block).toString(),
+                String.format(Locale.ROOT, "#%06X", color & 0xFFFFFF)));
+        data.add("blocks", blocks);
+        return data;
+    }
+
+    @Override
+    public void loadExtra(JsonObject data) {
+        super.loadExtra(data);
+        if (!data.has("blocks") || !data.get("blocks").isJsonObject()) return;
+        Map<Block, Integer> loaded = new LinkedHashMap<>();
+        for (var entry : data.getAsJsonObject("blocks").entrySet()) {
+            Identifier id = Identifier.tryParse(entry.getKey());
+            if (id == null || !Registries.BLOCK.containsId(id)) continue;
+            Block block = Registries.BLOCK.get(id);
+            int color = defaultColor(block);
+            try {
+                String hex = entry.getValue().getAsString().replace("#", "");
+                color = (int) Long.parseLong(hex, 16) | 0xFF000000;
+            } catch (RuntimeException ignored) {
+                // A colour that does not read keeps the block's own.
+            }
+            loaded.put(block, color);
+        }
+        picked.clear();
+        picked.putAll(loaded);
+        pickedVersion++;
     }
 
     // ---- scanning -------------------------------------------------------------------------------
@@ -346,14 +442,14 @@ public class BlockESP extends Module {
     }
 
     private void scan(WorldChunk chunk, long key) {
-        Map<Block, Integer> wanted = targets;
+        Set<Block> wanted = targets;
         ChunkSection[] sections = chunk.getSectionArray();
         ChunkSection[] copies = new ChunkSection[sections.length];
         boolean any = false;
         for (int i = 0; i < sections.length; i++) {
             ChunkSection section = sections[i];
             // The palette says whether a section holds a wanted block at all, without its blocks.
-            if (section != null && !section.isEmpty() && section.hasAny(state -> wanted.containsKey(state.getBlock()))) {
+            if (section != null && !section.isEmpty() && section.hasAny(state -> wanted.contains(state.getBlock()))) {
                 copies[i] = section.copy();
                 any = true;
             }
@@ -383,7 +479,7 @@ public class BlockESP extends Module {
                                 Block block = section.getBlockState(x, y, z).getBlock();
                                 if (block != last) {
                                     last = block;
-                                    lastWanted = wanted.containsKey(block);
+                                    lastWanted = wanted.contains(block);
                                 }
                                 if (lastWanted) found.put(BlockPos.asLong(startX + x, baseY + y, startZ + z), block);
                             }
@@ -425,8 +521,8 @@ public class BlockESP extends Module {
     /** Keeps the list up to date as blocks are placed and broken, without scanning again. */
     @EventHandler
     private void onBlockUpdate(BlockUpdateEvent event) {
-        Map<Block, Integer> wanted = targets;
-        boolean was = wanted.containsKey(event.oldState.getBlock()), now = wanted.containsKey(event.newState.getBlock());
+        Set<Block> wanted = targets;
+        boolean was = wanted.contains(event.oldState.getBlock()), now = wanted.contains(event.newState.getBlock());
         if (!was && !now) return;
         long key = ChunkPos.toLong(event.pos.getX() >> 4, event.pos.getZ() >> 4);
         if (queued.contains(key)) {
@@ -508,7 +604,7 @@ public class BlockESP extends Module {
             long pos = shown[i];
             int x = BlockPos.unpackLongX(pos), y = BlockPos.unpackLongY(pos), z = BlockPos.unpackLongZ(pos);
             Block block = shownBlocks[i];
-            int color = colorOf(block);
+            int color = drawColorOf(block);
             Box shape = shapeOf(block);
             double x1 = x + shape.minX, y1 = y + shape.minY, z1 = z + shape.minZ;
             double x2 = x + shape.maxX, y2 = y + shape.maxY, z2 = z + shape.maxZ;

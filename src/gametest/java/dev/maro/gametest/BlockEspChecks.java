@@ -9,6 +9,7 @@ import dev.maro.setting.Setting;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.minecraft.client.option.Perspective;
+import net.minecraft.block.Blocks;
 import net.minecraft.util.math.BlockPos;
 
 import javax.imageio.ImageIO;
@@ -28,7 +29,7 @@ final class BlockEspChecks {
     }
 
     private static final BlockPos SPAWNER = new BlockPos(6, -40, 6), CHEST = new BlockPos(-6, -38, 4),
-            DIAMOND = new BlockPos(4, -36, -7), HIGH_SPAWNER = new BlockPos(-3, 30, -3);
+            DIAMOND = new BlockPos(4, -36, -7), HIGH_SPAWNER = new BlockPos(-3, 30, -3), GOLD = new BlockPos(-4, -34, 8);
 
     private static void require(boolean value, String message) {
         if (!value) throw new AssertionError(message);
@@ -76,6 +77,7 @@ final class BlockEspChecks {
                 // As F1: no hand, chat or hotbar, so between screenshots only the ESP can change.
                 c.options.hudHidden = true;
                 module.getSettings().forEach(Setting::reset);
+                module.resetBlocks();
             });
             // The same view with nothing drawn, to compare every screenshot after with.
             context.waitTicks(5);
@@ -126,15 +128,50 @@ final class BlockEspChecks {
             await(context, () -> !module.shownPositions().contains(SPAWNER), "A broken spawner stayed in Block ESP");
             world.getServer().runCommand("setblock " + at(SPAWNER) + " minecraft:spawner");
             await(context, () -> module.shownPositions().contains(SPAWNER), "A placed spawner did not show in Block ESP");
+
+            // The picker: search, pick gold blocks, colour them, and the pick and colour are saved.
+            world.getServer().runCommand("setblock " + at(GOLD) + " minecraft:gold_block");
+            context.runOnClient(c -> {
+                c.options.hudHidden = false;
+                var picker = new dev.maro.gui.hud.BlockEspScreen(null, module);
+                c.setScreen(picker);
+                picker.search("gold");
+                require(picker.results().contains(Blocks.GOLD_BLOCK) && picker.results().contains(Blocks.GOLD_ORE),
+                        "Searching gold did not find gold blocks and ore: " + picker.results().size());
+                require(!picker.results().contains(Blocks.STONE), "Searching gold found stone");
+                picker.toggle(Blocks.GOLD_BLOCK);
+                require(module.isPicked(Blocks.GOLD_BLOCK), "Clicking gold block did not pick it");
+                picker.expand(Blocks.GOLD_BLOCK);
+                module.setColor(Blocks.GOLD_BLOCK, 0xFF12AB34);
+            });
+            context.waitTicks(5);
+            context.takeScreenshot("maro-block-esp-picker");
+            context.runOnClient(c -> {
+                var picker = (dev.maro.gui.hud.BlockEspScreen) c.currentScreen;
+                picker.search("");
+                c.setScreen(null);
+                c.options.hudHidden = true;
+                var saved = module.saveExtra();
+                var copy = new BlockESP();
+                copy.loadExtra(saved);
+                require(copy.isPicked(Blocks.GOLD_BLOCK) && (copy.colorOf(Blocks.GOLD_BLOCK) & 0xFFFFFF) == 0x12AB34,
+                        "The picked block or its colour was not saved: " + saved);
+                require(copy.isPicked(Blocks.SPAWNER), "Saving lost the starting pick: " + saved);
+            });
+            await(context, () -> module.shownPositions().contains(GOLD), "A newly picked gold block was not found");
+            context.runOnClient(c -> module.unpick(Blocks.GOLD_BLOCK));
+            await(context, () -> !module.shownPositions().contains(GOLD), "An unpicked block stayed in Block ESP");
         } finally {
             context.runOnClient(c -> {
                 module.setEnabled(false);
                 module.getSettings().forEach(Setting::reset);
+                module.resetBlocks();
+                if (c.currentScreen instanceof dev.maro.gui.hud.BlockEspScreen) c.setScreen(null);
                 c.options.setPerspective(perspective);
                 c.options.hudHidden = hudHidden;
                 c.player.getAbilities().flying = flying;
             });
-            for (BlockPos pos : List.of(SPAWNER, CHEST, DIAMOND, HIGH_SPAWNER)) world.getServer().runCommand("setblock " + at(pos) + " minecraft:air");
+            for (BlockPos pos : List.of(SPAWNER, CHEST, DIAMOND, HIGH_SPAWNER, GOLD)) world.getServer().runCommand("setblock " + at(pos) + " minecraft:air");
             world.getServer().runCommand("tp @a " + position.x + " " + position.y + " " + position.z + " " + angles[0] + " " + angles[1]);
             world.getServer().runOnServer(s -> s.getPlayerManager().getPlayerList().getFirst().changeGameMode(gameMode));
             context.waitTicks(5);
