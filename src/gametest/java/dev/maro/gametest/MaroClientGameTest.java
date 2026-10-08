@@ -355,6 +355,23 @@ public class MaroClientGameTest implements FabricClientGameTest {
         context.setScreen(() -> new dev.maro.nathan.gui.ChatMacroScreens.Editor(new dev.maro.runtime.gui.GuiTheme(), ModuleManager.get(dev.maro.nathan.modules.ChatMacros.class), ModuleManager.get(dev.maro.nathan.modules.ChatMacros.class).macros.getFirst(), () -> {}));
         context.waitTicks(3);
         context.takeScreenshot("maro-macro-editor");
+        // The macro menu: a row added, typed and bound by pressing its key, as in the menu.
+        context.runOnClient(client -> {
+            var chatMacros = ModuleManager.get(dev.maro.nathan.modules.ChatMacros.class);
+            var menu = new dev.maro.gui.hud.ChatMacroScreen(null, chatMacros);
+            client.setScreen(menu);
+            var rtp = menu.addMacro();
+            menu.setText(rtp, "/rtp");
+            menu.listenFor(rtp);
+            menu.keyPressed(new net.minecraft.client.input.KeyInput(GLFW.GLFW_KEY_K, 0, 0));
+            if (rtp.keybind.get().getValue() != GLFW.GLFW_KEY_K || !rtp.steps.get().getFirst().equals("/rtp")
+                || !rtp.name.get().equals("/rtp"))
+                throw new AssertionError("The macro menu did not type and bind a row: " + rtp.steps.get() + " " + rtp.keybind.get().getValue());
+            var home = menu.addMacro();
+            menu.setText(home, "/home base");
+        });
+        context.waitTicks(4);
+        context.takeScreenshot("maro-chat-macros");
         context.setScreen(() -> null);
         context.runOnClient(client -> ModuleManager.get(dev.maro.nathan.modules.ChatMacros.class).macros.clear());
         for (String name : java.util.List.of("Bloom", "Color Correct", "Motion Blur")) {
