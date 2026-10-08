@@ -730,17 +730,17 @@ final class BuilderHomeChecks {
     }
     private static void repairDependencyCycle(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work,boolean attachment){
         var origin=work.south(2);var post=work.east(13).up(3);var cells=new BlockState[20];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());
-        cells[4]=Blocks.GLASS.getDefaultState();cells[0]=attachment?Blocks.BLACKSTONE.getDefaultState():Blocks.STONE.getDefaultState();
+        cells[4]=Blocks.OBSERVER.getDefaultState();cells[0]=attachment?Blocks.BLACKSTONE.getDefaultState():Blocks.STONE.getDefaultState();
         if(attachment){cells[10]=Blocks.CRACKED_POLISHED_BLACKSTONE_BRICKS.getDefaultState();cells[11]=Blocks.STONE.getDefaultState();cells[15]=Blocks.WALL_TORCH.getDefaultState().with(WallTorchBlock.FACING,Direction.SOUTH);}
         else cells[2]=Blocks.BLACKSTONE.getDefaultState();
         for(var pos:BlockPos.iterate(origin,origin.add(4,1,1)))command(world,"setblock",pos,"air");
         if(attachment)command(world,"setblock",origin.east().up(),"stone");
         command(world,"setblock",post,"dirt");
-        for(String item:List.of("stone","blackstone","cracked_polished_blackstone_bricks","torch","glass"))world.getServer().runCommand("clear @a "+item);
+        for(String item:List.of("stone","blackstone","cracked_polished_blackstone_bricks","torch","observer"))world.getServer().runCommand("clear @a "+item);
         world.getServer().runCommand("give @a blackstone 1");
         if(attachment){world.getServer().runCommand("give @a cracked_polished_blackstone_bricks 1");world.getServer().runCommand("give @a torch 1");}
         else world.getServer().runCommand("give @a stone 1");
-        teleport(world,work);context.waitTicks(12);
+        teleport(world,work.west(12));context.waitTicks(12);
         context.runOnClient(client->{
             setting(builder,"Temporary Supports",true);setting(builder,"Restock When Empty",false);setting(builder,"Auto Buy Tools",false);setting(builder,"Stockpile In Chests",false);setting(builder,"Prepare Whole Build",false);setting(builder,"Material Supply","Nearby Sections");
             builder.install(new Schematic("repair-dependency-cycle.nbt","test",5,2,2,BlockPos.ORIGIN,cells));builder.setOrigin(origin);builder.preview();
@@ -765,7 +765,7 @@ final class BuilderHomeChecks {
         }
         require(repaired&&(!attachment||anchorSeen),"Native dependency cycle did not repair: "+context.computeOnClient(client->builder.status()));
         require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(post).isOf(Blocks.DIRT)&&server.getOverworld().getBlockState(origin.east(4)).isAir()),"Cycle repairs waited for cleanup or completed unrelated work without its material");
-        world.getServer().runCommand("give @a glass 1");
+        world.getServer().runCommand("give @a observer 1");
         for(int tick=0;tick<900&&context.computeOnClient(client->builder.building());tick++)context.waitTick();
         require(world.getServer().computeOnServer(server->{for(int i=0;i<cells.length;i++)if(!cells[i].isOf(Blocks.STRUCTURE_VOID)&&!AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(origin.add(i%5,i/10,i/5%2)),cells[i]))return false;return server.getOverworld().getBlockState(post).isAir();}),"Cycle repair left a wrong native cell, open hole or temporary post");
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Cycle repair left work, dirt, damage or menu: "+builder.status());BuilderPacketChecks.verify(attachment?4:3);builder.pause("repair dependency cycle checked");setting(builder,"Restock When Empty",true);setting(builder,"Auto Buy Tools",true);setting(builder,"Stockpile In Chests",true);});

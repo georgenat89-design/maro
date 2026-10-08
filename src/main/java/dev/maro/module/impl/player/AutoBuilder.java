@@ -1063,9 +1063,10 @@ public final class AutoBuilder extends Module {
         // Nested access can make two repairs own each other, or remove the
         // attachment needed by its own torch/sign. Restore a member of that
         // actual dependency cycle before waiting for its impossible owner.
-        boolean cycleRepair=!ownerReady&&bodyClear&&accessStand==null&&standGoal==null
-            &&entryPassageTop==null&&passageStand==null&&ceilingTop==null&&liquidTopStand==null
-            &&(supports.isEmpty()||useHomes.get()&&homes.hasSafeReturn())&&repairDependencyCycle(pos);
+        // Eligibility must survive the walk/climb to this repair. The local
+        // passage guards above and native placement collision checks still
+        // prevent closing a cut in use or placing into the player's body.
+        boolean cycleRepair=!ownerReady&&(supports.isEmpty()||useHomes.get()&&homes.hasSafeReturn())&&repairDependencyCycle(pos);
         boolean prompt=bodyClear&&(cycleRepair||useHomes.get()&&homes.ready()&&ownerReady);
         int openings=0;
         for(var opening:floorAccessWork.keySet()){
@@ -1085,7 +1086,7 @@ public final class AutoBuilder extends Module {
             // New scaffolds for final wall repair are build work. Re-deferring
             // every repair when its first post appears cancels the committed
             // climb and sends cleanup straight back to mine that same post.
-            if(!prompt&&openings>0&&(solid-correct-ignoredSolid>openings||cleanup.get()&&!supports.isEmpty()&&!openingRestoration))return true;
+            if(!prompt&&!cycleRepair&&openings>0&&(solid-correct-ignoredSolid>openings||cleanup.get()&&!supports.isEmpty()&&!openingRestoration))return true;
             var depth=openingRepairDepth.get(pos);
             if(depth!=null)for(var other:floorAccessWork.keySet()){
                 if(openingRepairDepth.getOrDefault(other,0)<=depth)continue;
