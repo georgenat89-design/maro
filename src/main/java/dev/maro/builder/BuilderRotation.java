@@ -14,8 +14,8 @@ final class BuilderRotation {
     void reset(){yawVelocity=pitchVelocity=0;lastUse=turned=-100;spentYaw=spentPitch=0;}
     private float velocity(float current,float error,float limit){
         // Brake before reaching the target; retain momentum across walking/aiming changes.
-        float desired=Math.copySign(Math.min(limit,Math.min((float)Math.sqrt(2*Math.abs(error)),Math.abs(error)*.45f)),error);
-        return MathHelper.clamp(current+MathHelper.clamp(desired-current,-2,2),-limit,limit);
+        float desired=Math.copySign(Math.min(limit,Math.min((float)Math.sqrt(4*Math.abs(error)),Math.abs(error)*.65f)),error);
+        return MathHelper.clamp(current+MathHelper.clamp(desired-current,-4,4),-limit,limit);
     }
     boolean turn(float yaw,float pitch){
         pitch=MathHelper.clamp(pitch,-90,90);

@@ -3267,8 +3267,8 @@ public final class AutoBuilder extends Module {
         previousCameraYaw=cameraYaw=mc.player.getYaw();previousCameraPitch=cameraPitch=mc.player.getPitch();cameraYawVelocity=cameraPitchVelocity=0;cameraMouseTick=-100;cameraLocked=true;
     }
     private float cameraVelocity(float velocity,float error,float limit){
-        float desired=Math.copySign(Math.min(limit,Math.min((float)Math.sqrt(2*Math.abs(error)),Math.abs(error)*.45f)),error);
-        return MathHelper.clamp(velocity+MathHelper.clamp(desired-velocity,-2,2),-limit,limit);
+        float desired=Math.copySign(Math.min(limit,Math.min((float)Math.sqrt(4*Math.abs(error)),Math.abs(error)*.65f)),error);
+        return MathHelper.clamp(velocity+MathHelper.clamp(desired-velocity,-4,4),-limit,limit);
     }
     private void followBuilderCamera(){
         previousCameraYaw=cameraYaw;previousCameraPitch=cameraPitch;

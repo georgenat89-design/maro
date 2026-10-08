@@ -807,6 +807,15 @@ final class BuilderHomeChecks {
         System.out.println("[builder-home] Saved work return survives pause/reload; temporary dirt footing protected; rejected teleport keeps home 2; resume confirms arrival then deletes it");
     }
     private static void rotations(ClientGameTestContext context,AutoBuilder builder,BlockPos start){
+        context.runOnClient(client->{builder.pause("brisk head check");client.player.setYaw(0);client.player.setPitch(0);});
+        boolean quickReady=false;int quickTicks=0;
+        for(;quickTicks<15;quickTicks++){
+            quickReady=context.computeOnClient(client->(boolean)call(builder,"aim",new Class<?>[]{Vec3d.class},Vec3d.ofCenter(start.east(3))));
+            context.waitTick();if(quickReady)break;
+        }
+        require(quickReady,"Native visible 90-degree aim still takes more than 15 ticks");
+        System.out.println("[builder-camera] Brisk native 90-degree visible aim settled in "+(quickTicks+1)+" ticks; action waited for the visible head");
+        context.runOnClient(client->builder.pause("brisk head checked"));
         context.runOnClient(client->{client.player.setYaw(178);client.player.setPitch(0);});
         float[] previous={178,0},previousView={178,0};boolean settled=false,visibleTurn=false;
         for(int tick=0;tick<65;tick++){
