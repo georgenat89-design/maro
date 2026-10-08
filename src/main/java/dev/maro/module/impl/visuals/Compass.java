@@ -37,6 +37,8 @@ public class Compass extends Module implements HudElement {
     private final NumberSetting x = new NumberSetting("X", "Across the screen: 0 is the left edge, 100 the right", 50, 0, 100, 0.5).suffix("%");
     private final NumberSetting y = new NumberSetting("Y", "Down the screen: 0 is the top, 100 the bottom", 0, 0, 100, 0.5).suffix("%");
     private final NumberSetting scale = new NumberSetting("Scale", "How big the compass is", 1, 0.5, 2.5, 0.05).suffix("x");
+    private final ButtonSetting center = new ButtonSetting("Center", "Put the compass in the exact middle, across the screen", "Center",
+            () -> x.set(50.0));
 
     private final ModeSetting style = new ModeSetting("Style", "A strip across the screen, or a round dial", "Strip", "Strip", "Dial");
     private final NumberSetting width = new NumberSetting("Strip Width", "How wide the strip is", 260, 120, 480, 5);
@@ -68,7 +70,7 @@ public class Compass extends Module implements HudElement {
     public Compass() {
         super("Compass", "A good-looking compass with markers for home, spawn and your last death", Category.VISUALS);
         SettingSection placement = new SettingSection("Placement");
-        for (var s : new dev.maro.setting.Setting<?>[]{position, x, y, scale}) placement.add(add(s));
+        for (var s : new dev.maro.setting.Setting<?>[]{position, center, x, y, scale}) placement.add(add(s));
         SettingSection look = new SettingSection("Look");
         for (var s : new dev.maro.setting.Setting<?>[]{style, width, view, smooth, degrees, opacity}) look.add(add(s));
         width.visible(() -> style.is("Strip"));
@@ -82,6 +84,24 @@ public class Compass extends Module implements HudElement {
     @Override
     public List<SettingSection> getSettingSections() {
         return sections;
+    }
+
+    /** Compasses saved before placement snapped to the middle; those placed near it are centered once. */
+    private static final int PLACEMENT_REVISION = 1;
+
+    @Override
+    public com.google.gson.JsonObject saveExtra() {
+        var data = super.saveExtra();
+        data.addProperty("placement-revision", PLACEMENT_REVISION);
+        return data;
+    }
+
+    @Override
+    public void loadExtra(com.google.gson.JsonObject data) {
+        super.loadExtra(data);
+        int saved = data.has("placement-revision") ? data.get("placement-revision").getAsInt() : 0;
+        // Dragged by hand to roughly the middle, it was a few pixels off; anywhere else was meant.
+        if (saved < 1 && Math.abs(x.get() - 50) <= 15) x.set(50.0);
     }
 
     private void markHome() {

@@ -765,6 +765,29 @@ public class MaroClientGameTest implements FabricClientGameTest {
         });
         context.waitTicks(5);
         context.takeScreenshot("maro-compass-dial");
+        // Centered: a compass saved just off the middle is put in it, once; dragged near the middle,
+        // it snaps there.
+        context.runOnClient(client -> {
+            var x = (dev.maro.setting.NumberSetting) compass.getSettings().stream().filter(s -> s.getName().equals("X")).findFirst().orElseThrow();
+            x.set(46.5);
+            compass.loadExtra(new com.google.gson.JsonObject());
+            if (x.get() != 50) throw new AssertionError("An old compass near the middle was not centered: " + x.get());
+            x.set(46.5);
+            compass.loadExtra(compass.saveExtra());
+            if (x.get() != 46.5) throw new AssertionError("A compass saved since was moved: " + x.get());
+            x.set(20.0);
+            compass.loadExtra(new com.google.gson.JsonObject());
+            if (x.get() != 20) throw new AssertionError("A compass placed well off the middle was moved: " + x.get());
+            var placing = new dev.maro.gui.hud.HudPlacementScreen(null, compass);
+            client.setScreen(placing);
+            int screenWidth = client.getWindow().getScaledWidth();
+            placing.dragTo(screenWidth / 2f - compass.hudWidth() / 2 + 4, 30);
+            float middle = compass.hudLeft() + compass.hudWidth() / 2;
+            if (Math.abs(middle - screenWidth / 2f) > 1) throw new AssertionError("Dragging near the middle did not snap: " + middle + " of " + screenWidth);
+            placing.dragTo(10, 30);
+            if (compass.hudLeft() > 12) throw new AssertionError("Dragging away from the middle still snapped: " + compass.hudLeft());
+            client.setScreen(null);
+        });
         context.runOnClient(client -> {
             compass.setEnabled(false);
             for (var s : compass.getSettings()) s.reset();
