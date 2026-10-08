@@ -5,6 +5,19 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+The dedicated liquid suite on3b08e4a caught a coupled condition: removing the
+above-only restriction for dry walls also removed their optional verified
+roof-opening fallback. The sealed native basin stalled with its buried
+retaining wall and source still missing, without a leak. The correction
+separates optional roof access (fluids and basin boundaries) from mandatory
+above-only placement (fluids). Door proof excludes viewpoints still requiring
+a roof opening. Compilation passed after correcting a non-final lambda capture.
+Both native75-block sealed water/lava basins now completed in17s each, restoring
+the low wall before pouring and replacing roof/temporary blocks. The complete
+native liquid suite passed in2m37s, including all four captured roof sources and
+flooded departure at normal/low health. The unchanged668 capture and true fresh
+build are next; full710/fresh0 remain pending.
+
 The first668 replay on97fbc09 was deliberately stopped at668, not passed.
 Native traces showed that the door planner never scanned: its placement-view
 list was empty. Dispenser583 is a planned liquid boundary, so the shared

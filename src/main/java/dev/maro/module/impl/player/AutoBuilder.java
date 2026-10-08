@@ -1294,6 +1294,7 @@ public final class AutoBuilder extends Module {
         // Dry basin walls/floors need ordinary placement views while assembling.
         // Only bucket work requires entry from above; boundary mining stays forbidden.
         boolean topWork=liquid;
+        boolean roofAccess=liquid||wanted!=null&&liquidBoundary(target);
         // Mining and cleanup need a reachable hit on the existing block.
         // A view of a hypothetical scaffold is useful only to place missing
         // work; cleanup never places that scaffold after arriving there.
@@ -1308,7 +1309,7 @@ public final class AutoBuilder extends Module {
         // invalidate these views; exhausted passes remain eligible for retry.
         if(search==null||search.expires>0&&ticks>search.expires&&(search.recoveryStage==0&&(search.doorChecked||search.doorScanCursor==0)||search.recoveryStage>=7)){search=new ViewSearch();viewSearches.put(key,search);}
         while(viewSearches.size()>24)viewSearches.remove(viewSearches.keySet().iterator().next());
-        var options=search.options;var directStands=search.direct;var scaffoldDistance=search.scaffoldDistance;
+        var options=search.options;var directStands=search.direct;var scaffoldDistance=search.scaffoldDistance;var roofOpenings=search.liquidOpenings;
         if(viewPlanningDeadline==0)viewPlanningDeadline=System.nanoTime()+2_000_000;
         int heights=below+above+1,total=49*heights;
         // Retain the enumeration cursor across ticks. Repeatedly ray-testing every
@@ -1326,7 +1327,7 @@ public final class AutoBuilder extends Module {
             var body=mc.player.getBoundingBox().offset(eye.subtract(mc.player.getEyePos()));
             boolean direct=!mc.world.getBlockState(target).isReplaceable()?visibleHit(target,eye)!=null
                 :wanted!=null&&placement(target,wanted,Schematic.material(wanted),cell,false,eye,body)!=null;
-            if(!direct&&topWork&&(!liquid||fluidContained(target,wanted))){
+            if(!direct&&roofAccess&&stand.getY()>target.getY()&&(!liquid||fluidContained(target,wanted))){
                 var removed=liquidTopOpening(target,stand,eye);
                 if(removed!=null){direct=true;search.liquidOpenings.put(stand,removed);}
             }
@@ -1350,7 +1351,7 @@ public final class AutoBuilder extends Module {
         long routeDeadline=System.nanoTime()+6_000_000;
         while(search.routeCursor<options.size()){
             if(!directStands.contains(options.get(search.routeCursor))&&!search.doorChecked){
-                if(prepareDoorAccess(target,options.stream().filter(directStands::contains).toList(),routingWork,search))return true;
+                if(prepareDoorAccess(target,options.stream().filter(p->directStands.contains(p)&&!roofOpenings.containsKey(p)).toList(),routingWork,search))return true;
                 search.doorChecked=true;
             }
             var option=options.get(search.routeCursor++);
@@ -1365,7 +1366,7 @@ public final class AutoBuilder extends Module {
             if(search.recoveryStage==0){
                 // Use an existing door before planning speculative scaffolds.
                 if(!search.doorChecked){
-                    if(prepareDoorAccess(target,options.stream().filter(directStands::contains).toList(),routingWork,search))return true;
+                    if(prepareDoorAccess(target,options.stream().filter(p->directStands.contains(p)&&!roofOpenings.containsKey(p)).toList(),routingWork,search))return true;
                     search.doorChecked=true;
                 }
                 if(supportFallback&&!bridge&&repositionTarget(target,tried,true)){bridgeTarget=target;return true;}
@@ -1416,7 +1417,7 @@ public final class AutoBuilder extends Module {
             }
             return false;
         }
-        if(topWork&&search.liquidOpenings.containsKey(standGoal)){
+        if(roofAccess&&search.liquidOpenings.containsKey(standGoal)){
             liquidTopStand=standGoal;liquidTopBlocks.clear();liquidTopBlocks.addAll(search.liquidOpenings.get(standGoal));
             passageBlocks.addAll(liquidTopBlocks);
             for(var opening:liquidTopBlocks){floorAccessWork.put(opening,cell);openingRepairDepth.put(opening,-opening.getY());}
