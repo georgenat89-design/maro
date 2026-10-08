@@ -36,7 +36,7 @@ public final class StaffNotifier extends Module implements HudElement {
         3,List.of("CaptainMoose35","Owen1212055"));
     private static final int LIST_REVISION=3;
     private static final Set<String> FACE_STAFF=Set.copyOf(DEFAULT_STAFF.subList(0,9));
-    private static final int WIDTH = 176, MARGIN = 4, HEAD = 24, PAD = 8;
+    private static final int WIDTH = 150, MARGIN = 4, HEAD = 24, PAD = 8;
     /** What each staff member is doing, by colour: close by, hidden from tab, spectating, in tab; and nobody about. */
     private static final int NEARBY = 0xFFFF5D6C, HIDDEN = 0xFFB28CFF, SPECTATING = 0xFF6FB6FF, IN_TAB = 0xFFFFB547, CLEAR = 0xFF3DDC97;
     private final SettingGroup general = settings.getDefaultGroup();
@@ -64,7 +64,6 @@ public final class StaffNotifier extends Module implements HudElement {
     private final Setting<Boolean> list = hud.add(new BoolSetting.Builder().name("staff-list").defaultValue(true).build());
     private final Setting<Boolean> empty = hud.add(new BoolSetting.Builder().name("show-empty")
         .description("Keep the panel visible when no configured staff are listed in tab").defaultValue(true).build());
-    private final Setting<Boolean> ping = hud.add(new BoolSetting.Builder().name("show-ping").defaultValue(true).build());
     private final Setting<Boolean> avatars = hud.add(new BoolSetting.Builder().name("show-heads").defaultValue(true).build());
     private final Setting<Boolean> hidden = hud.add(new BoolSetting.Builder().name("show-hidden-profiles")
         .description("Include configured profiles the server supplied but did not list in tab").defaultValue(true).build());
@@ -91,7 +90,7 @@ public final class StaffNotifier extends Module implements HudElement {
     private Set<String> configured = Set.of();
     private boolean initialized, rebaseline;
     public record HudStaff(UUID id,String name,int ping,boolean listed,boolean spectator,float distance) {
-        public String status(){return distance>=0?"Nearby · "+Math.round(distance)+"m":spectator?"Spectating":listed?"In tab":"Hidden from tab";}
+        public String status(){return distance>=0?"Nearby · "+Math.round(distance)+"m":spectator?"Spectating":listed?"Online":"Hidden from tab";}
     }
     private List<HudStaff> hudDisplay=List.of();
     private final Map<UUID,PlayerListEntry> profiles=new HashMap<>();
@@ -242,7 +241,7 @@ public final class StaffNotifier extends Module implements HudElement {
         button.action=() -> { list.set(true); setEnabled(true); mc.setScreen(new HudPlacementScreen(mc.currentScreen,this)); };
         return button;
     }
-    private int rowHeight(){return layout.get()==Layout.Compact?18:26;}
+    private int rowHeight(){return layout.get()==Layout.Compact?16:20;}
     private int shownRows(){return Math.min(rows.get(),hudDisplay.size());}
     private int height() {
         int n=shownRows();
@@ -280,15 +279,6 @@ public final class StaffNotifier extends Module implements HudElement {
     private void drawV(DrawContext ctx,String value,float x,float cy,int color,boolean bold,float size) {
         if(smoothText.get()) SmoothHudText.draw(ctx,value,x,cy-size*2.9f,color,bold,size); else Fonts.drawV(ctx,value,x,cy,color,bold,size);
     }
-    /** Four bars for the connection, coloured by how good it is. */
-    private void signal(DrawContext ctx,float right,float cy,int ping) {
-        int bars=ping<=0?0:ping<80?4:ping<150?3:ping<250?2:1;
-        int color=bars>=3?CLEAR:bars==2?IN_TAB:NEARBY;
-        for(int i=0;i<4;i++) {
-            float h=3+i*2,x=right-(4-i)*3f;
-            Render2D.roundRect(ctx,x,cy+4.5f-h,2,h,.8f,i<bars?color:0x2EFFFFFF);
-        }
-    }
     @Override public void onRender2D(DrawContext ctx,float delta) {
         if (!inGame() || !list.get() || mc.options.hudHidden || (!empty.get() && hudDisplay.isEmpty())) return;
         if(smoothText.get()) SmoothHudText.beginFrame();
@@ -321,50 +311,40 @@ public final class StaffNotifier extends Module implements HudElement {
             drawRight(ctx,summary,WIDTH-PAD,cy,clear?0xFF8FE3BE:near>0?NEARBY:0xFFA8B0BF,false,text(.68f));
             if(n>0) Render2D.rect(ctx,PAD,HEAD,WIDTH-PAD*2,.6f,0x18FFFFFF);
 
+            // One clean line per person: their head with a dot in their status colour, and their
+            // name; someone close by also gets a faint red wash and how far away they are.
             boolean compact=layout.get()==Layout.Compact;
-            int rh=rowHeight(),head=compact?12:16;
+            int rh=rowHeight(),head=compact?11:14;
+            float nameSize=text(compact?.8f:.86f);
             for (int i=0;i<n;i++) {
                 HudStaff staff=hudDisplay.get(i);
                 float top=HEAD+3+i*rh,rcy=top+rh/2f;
                 int color=statusColor(staff);
-                // Close by stays tinted; anyone who just came or went flashes for a moment.
                 float flash=(float)Math.max(0,1-(now-highlights.getOrDefault(staff.id,0L))/3500.0);
-                int tint=Math.round((staff.distance>=0?0x18:0)+flash*0x30);
+                int tint=Math.round((staff.distance>=0?0x1C:0)+flash*0x30);
+                if(i%2==1&&tint==0) Render2D.roundRect(ctx,4,top+1,WIDTH-8,rh-2,5,0x08FFFFFF);
                 if(tint>0) Render2D.roundRect(ctx,4,top+1,WIDTH-8,rh-2,5,(Math.min(255,tint)<<24)|(color&0xFFFFFF));
 
                 PlayerListEntry entry=profiles.get(staff.id);
-                float textX=PAD;
+                float textX;
                 if(avatars.get()) {
                     int hx=PAD,hy=Math.round(rcy-head/2f);
-                    Render2D.roundRect(ctx,hx-1,hy-1,head+2,head+2,3,0xFF1B1F27);
+                    Render2D.roundRect(ctx,hx-1,hy-1,head+2,head+2,2.5f,0xFF1B1F27);
                     if (FACE_STAFF.contains(staff.name.toLowerCase(Locale.ROOT))) {
                         ctx.drawTexture(RenderPipelines.GUI_TEXTURED,Identifier.of("maro","textures/staff/"+staff.name.toLowerCase(Locale.ROOT)+".png"),hx,hy,0,0,head,head,8,8,8,8);
                     } else if (entry!=null) PlayerSkinDrawer.draw(ctx,entry.getSkinTextures(),hx,hy,head);
-                    // Its status, as a dot on the corner of the head.
-                    Render2D.circle(ctx,hx+head,hy+head,3.3f,0xFF0D0F14);
-                    Render2D.circle(ctx,hx+head,hy+head,2.3f,color);
+                    Render2D.circle(ctx,hx+head,hy+head,3f,0xFF0D0F14);
+                    Render2D.circle(ctx,hx+head,hy+head,2.1f,color);
                     textX=hx+head+7;
                 } else {
-                    Render2D.circle(ctx,PAD+2,rcy,2.3f,color);
+                    Render2D.circle(ctx,PAD+2,rcy,2.2f,color);
                     textX=PAD+9;
                 }
-
-                // Right: the distance when close by, then the connection bars.
-                float right=WIDTH-PAD;
-                if (ping.get()&&entry!=null&&staff.listed) { signal(ctx,right,rcy,staff.ping); right-=16; }
-                if (staff.distance>=0) {
-                    String far=Math.round(staff.distance)+"m";
-                    drawRight(ctx,far,right,rcy,NEARBY,true,text(.7f));
-                    right-=Fonts.width(far,true,text(.7f))+6;
-                }
-                float room=right-textX-2;
-                if (compact) {
-                    drawV(ctx,trim(ctx,staff.name,room,true,text(.86f)),textX,rcy,0xFFF2F4F8,true,text(.86f));
-                } else {
-                    drawV(ctx,trim(ctx,staff.name,room,true,text(.86f)),textX,rcy-4.5f,0xFFF2F4F8,true,text(.86f));
-                    String status=staff.distance>=0?"Close by":staff.spectator?"Spectating":staff.listed?"In tab":"Hidden from tab";
-                    drawV(ctx,trim(ctx,status,room,false,text(.64f)),textX,rcy+5f,(color&0xFFFFFF)|0xD0000000,false,text(.64f));
-                }
+                String far=staff.distance>=0?Math.round(staff.distance)+"m":null;
+                float farWidth=far==null?0:Fonts.width(far,true,text(.68f))+6;
+                String name=trim(ctx,staff.name,WIDTH-PAD-textX-farWidth,true,nameSize);
+                drawV(ctx,name,textX,rcy,0xFFF2F4F8,true,nameSize);
+                if(far!=null) drawV(ctx,far,textX+Fonts.width(name,true,nameSize)+5,rcy,NEARBY,true,text(.68f));
             }
             if (hudDisplay.size()>n)
                 drawV(ctx,"+"+(hudDisplay.size()-n)+" more",PAD,h-7,0xFF7F8796,false,text(.62f));

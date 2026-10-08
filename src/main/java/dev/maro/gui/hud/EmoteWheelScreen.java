@@ -195,7 +195,7 @@ public final class EmoteWheelScreen extends Screen {
                 pointed != null ? 0xFFFFFFFF : 0xFFD6DAE4, true, pointed != null ? 0.95f : 0.85f);
         if (pages() > 1) Fonts.drawCentered(ctx, (page + 1) + " / " + pages(), cx, cy + 8f, 0xFF8890A0, false, 0.62f);
         Fonts.drawCentered(ctx, "Let go over an emote to play it  •  or click  •  scroll for more  •  moving stops it",
-                cx, Math.min(height - 8f, cy + outer + 18f), 0xC0B4BAC8, false, 0.62f);
+                cx, Math.max(8f, cy - outer - 14f), 0xC0B4BAC8, false, 0.62f);
         Render2D.setAlpha(1f);
     }
 
