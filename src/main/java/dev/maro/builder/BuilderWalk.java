@@ -12,6 +12,7 @@ public final class BuilderWalk {
     private final MinecraftClient mc=MinecraftClient.getInstance();
     private record Node(BlockPos pos,double cost,double score,Node parent){}
     private List<BlockPos> path=List.of();
+    private final Map<BlockPos,Integer> provedRouteTicks=new LinkedHashMap<>();
     private BlockPos goal;
     private int cursor,retry,stuck,routeTimeout=240;
     private Vec3d last;
@@ -146,7 +147,16 @@ public final class BuilderWalk {
         for(var p:BlockPos.iterate(BlockPos.ofFloored(body.minX,body.minY,body.minZ),BlockPos.ofFloored(body.maxX,body.maxY,body.maxZ)))if(!mc.world.getFluidState(p).isEmpty())return false;
         return true;
     }
-    public boolean canReachStand(BlockPos pos){return walkable(pos)&&(walkingCell().equals(pos)||mc.player.getEntityPos().squaredDistanceTo(standingPoint(pos))<=.22*.22||!find(walkingCell(),pos,.22,true).isEmpty());}
+    public boolean canReachStand(BlockPos pos){
+        if(!walkable(pos))return false;
+        if(walkingCell().equals(pos)||mc.player.getEntityPos().squaredDistanceTo(standingPoint(pos))<=.22*.22)return true;
+        var proved=find(walkingCell(),pos,.22,true);if(proved.isEmpty())return false;
+        // Movement may split this proof into short frontier segments. Keep
+        // its full bounded travel allowance; it never authorizes collision.
+        provedRouteTicks.merge(pos.toImmutable(),Math.min(960,Math.max(240,proved.size()*12)),Math::max);
+        if(provedRouteTicks.size()>128)provedRouteTicks.remove(provedRouteTicks.keySet().iterator().next());
+        return true;
+    }
     public boolean canReachStandFrom(BlockPos from,BlockPos to){return walkable(from)&&walkable(to)&&(from.equals(to)||!find(from,to,.22,true).isEmpty());}
     /** Use the real opened door panels, including their hinge collision. */
     public boolean canReachWithOpenedDoors(BlockPos from,BlockPos to,Set<BlockPos> doors){
@@ -237,7 +247,7 @@ public final class BuilderWalk {
     public boolean canPillar(BlockPos feet){return clear(feet)&&clear(feet.up())&&clear(feet.up(2))&&clear(feet.up(3))&&safe(feet.down())&&mc.world.getBlockState(feet.down()).isSideSolidFullSquare(mc.world,feet.down(),Direction.UP);}
     private boolean approach(BlockPos target,double distance,boolean stand){
         if(mc.player==null||mc.world==null)return false;
-        if(!target.equals(goal)||exact!=stand){stop();goal=target;exact=stand;}
+        if(!target.equals(goal)||exact!=stand){stop();goal=target;exact=stand;routeTimeout=Math.max(provedRouteTicks.getOrDefault(target,240),Math.min(960,Math.max(240,walkingCell().getManhattanDistance(target)*12)));}
         if(exact?atStandingView(target,distance):mc.player.getEyePos().squaredDistanceTo(Vec3d.ofCenter(target))<=distance*distance){
             release();if(!exact||mc.player.isOnGround()&&mc.player.getVelocity().horizontalLengthSquared()<.0004){failedRoutes=0;recoveryRequested=movementStalled=false;return true;}
             status="Settling at build position";return false;

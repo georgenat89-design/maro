@@ -93,6 +93,7 @@ final class BuilderHomeChecks {
         int before=saveCommands;
         context.runOnClient(client->button(builder,"Set Storage Home").press());waitHome(context,builder,80);
         context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(homes.ready()&&!builder.building(),"Storage setup failed or unexpectedly started building: "+builder.status());var entry=homes.saveData().get(0).getAsJsonObject();var feet=BlockPos.ofFloored(entry.get("x").getAsDouble(),entry.get("y").getAsDouble(),entry.get("z").getAsDouble());for(var reserved:List.of(feet,feet.up())){require((boolean)call(builder,"reservedSupplyAccess",new Class<?>[]{BlockPos.class},reserved),"Storage-home arrival cell was available to scaffolding");require(call(builder,"placement",new Class<?>[]{BlockPos.class,BlockState.class,Item.class,int.class,boolean.class},reserved,Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true)==null,"Scaffold could block native storage arrival");}});require(saveCommands==before+1,"Absent home 1 did not save exactly once");
+        longCheckedWalk(context,world,builder,start);
         roofEdgeRoundTrip(context,world,builder,home2,chest);
         obstructedStorageRoundTrip(context,world,builder,home2,chest);
         immediateWorkBeforeAccess(context,world,builder,home2);
@@ -113,7 +114,6 @@ final class BuilderHomeChecks {
         elevatedRoomAccess(context,world,builder,start);
         raisedLiquidEntrance(context,world,builder,start);
         sealedRepairDrop(context,world,builder,start);
-        longCheckedWalk(context,world,builder,start);
         crouchedMining(context,world,builder,start);
         columnEdgeMining(context,world,builder,start);
         teleport(world,start);context.waitTicks(12);
@@ -414,7 +414,7 @@ final class BuilderHomeChecks {
         int elapsed=0;
         for(;elapsed<900&&context.computeOnClient(client->field(builder,"standGoal")!=null);elapsed++)context.waitTick();
         final int walked=elapsed;
-        context.runOnClient(client->{require(walked>240&&client.player.getEntityPos().squaredDistanceTo(((BuilderWalk)field(builder,"walker")).standingPoint(destination))<.4*.4,"Long advancing route was cancelled before arrival after "+walked+" ticks: "+builder.status());});
+        context.runOnClient(client->{var walker=(BuilderWalk)field(builder,"walker");require(walked>240&&client.player.getEntityPos().squaredDistanceTo(walker.standingPoint(destination))<.4*.4,"Long advancing route was cancelled before arrival after "+walked+" ticks: "+builder.status()+", allowance="+walker.routeTimeoutTicks()+", position="+client.player.getEntityPos());});
         for(int i=0;i<200&&context.computeOnClient(client->builder.building());i++)context.waitTick();
         require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(target).isOf(Blocks.STONE)),"Long route did not finish its native placement");require(commands.size()==first,"Long route used a home teleport");
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20,"Long route left active work, supports or damage");BuilderPacketChecks.verify(1);builder.pause("long walk checked");setting(builder,"Temporary Supports",true);});
