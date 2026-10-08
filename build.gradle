@@ -88,6 +88,7 @@ tasks.register('runProductionClientGameTest', net.fabricmc.loom.task.prod.Client
     jvmArgs.add("-Dmaro.gametest.builderSealedEscapeOnly=" + providers.gradleProperty("builderSealedEscapeTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.builderHomeOnly=" + providers.gradleProperty("builderHomeTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.builderRepairCycleOnly=" + providers.gradleProperty("builderRepairCycleTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderDoorOnly=" + providers.gradleProperty("builderDoorTestOnly").getOrElse("false"))
     jvmArgs.addAll([
             "-Dfabric.client.gametest",
             "-Dfabric.client.gametest.disableNetworkSynchronizer=true",

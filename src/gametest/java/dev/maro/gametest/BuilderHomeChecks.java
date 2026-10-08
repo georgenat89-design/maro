@@ -93,6 +93,10 @@ final class BuilderHomeChecks {
         int before=saveCommands;
         context.runOnClient(client->button(builder,"Set Storage Home").press());waitHome(context,builder,80);
         context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(homes.ready()&&!builder.building(),"Storage setup failed or unexpectedly started building: "+builder.status());var entry=homes.saveData().get(0).getAsJsonObject();var feet=BlockPos.ofFloored(entry.get("x").getAsDouble(),entry.get("y").getAsDouble(),entry.get("z").getAsDouble());for(var reserved:List.of(feet,feet.up())){require((boolean)call(builder,"reservedSupplyAccess",new Class<?>[]{BlockPos.class},reserved),"Storage-home arrival cell was available to scaffolding");require(call(builder,"placement",new Class<?>[]{BlockPos.class,BlockState.class,Item.class,int.class,boolean.class},reserved,Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true)==null,"Scaffold could block native storage arrival");}});require(saveCommands==before+1,"Absent home 1 did not save exactly once");
+        if(Boolean.getBoolean("maro.gametest.builderDoorOnly")){
+            closedDoorAccess(context,world,builder,start);rotations(context,builder,start);
+            System.out.println("[builder-door] PASS: native door route, contained water and brisk visible aim");return;
+        }
         if(Boolean.getBoolean("maro.gametest.builderRepairCycleOnly")){
             repairDependencyCycles(context,world,builder,home2);
             System.out.println("[builder-cycle] PASS: native repair cycles, delayed material and scaffold cleanup");return;
@@ -310,7 +314,7 @@ final class BuilderHomeChecks {
                 // real dry assembly; it cannot serve as an above-only shortcut.
                 command(world,"setblock",roofOpening,"air");command(world,"setblock",origin.add(7,1,2),"bedrock");command(world,"setblock",origin.add(7,2,3),"bedrock");roofReady=true;
             }
-            if(elapsed%100==0)System.out.println((String)context.computeOnClient(client->"[builder-door-progress] "+builder.status()+" player="+client.player.getEntityPos()+" target="+builder.state(target)+" open="+client.world.getBlockState(door).get(DoorBlock.OPEN)));
+            if(elapsed%100==0)System.out.println((String)context.computeOnClient(client->"[builder-door-progress] "+builder.status()+" player="+client.player.getEntityPos()+" target="+builder.state(target)+" open="+client.world.getBlockState(door).get(DoorBlock.OPEN)+" goal="+field(builder,"standGoal")+" tuning="+field(builder,"tuningTarget")+" route="+field(field(builder,"walker"),"goal")));
             context.waitTick();
         }
         require(opened&&registered,"Existing door was not opened and registered for its enclosed work: "+context.computeOnClient(client->builder.status()));
