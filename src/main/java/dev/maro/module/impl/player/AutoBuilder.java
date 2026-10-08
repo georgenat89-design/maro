@@ -1057,9 +1057,16 @@ public final class AutoBuilder extends Module {
         if(liquidBoundary(pos))return false;
         // Confirmed homes provide the return route. Restore each completed
         // access job as soon as the body clears it, rather than after all dirt.
-        boolean prompt=useHomes.get()&&homes.ready()&&(work<0||work>=states.length||states[work]==CORRECT||states[work]==IGNORED)
-            &&!new Box(pos).expand(.05).intersects(mc.player.getBoundingBox())&&!pos.equals(routeOpening)
+        boolean ownerReady=work<0||work>=states.length||states[work]==CORRECT||states[work]==IGNORED;
+        boolean bodyClear=!new Box(pos).expand(.05).intersects(mc.player.getBoundingBox())&&!pos.equals(routeOpening)
             &&!ceilingBlocks.contains(pos)&&!liquidTopBlocks.contains(pos);
+        // Nested access can make two repairs own each other, or remove the
+        // attachment needed by its own torch/sign. Restore a member of that
+        // actual dependency cycle before waiting for its impossible owner.
+        boolean cycleRepair=!ownerReady&&bodyClear&&accessStand==null&&standGoal==null
+            &&entryPassageTop==null&&passageStand==null&&ceilingTop==null&&liquidTopStand==null
+            &&(supports.isEmpty()||useHomes.get()&&homes.hasSafeReturn())&&repairDependencyCycle(pos);
+        boolean prompt=bodyClear&&(cycleRepair||useHomes.get()&&homes.ready()&&ownerReady);
         int openings=0;
         for(var opening:floorAccessWork.keySet()){
             int cell=schematic.indexAt(opening.subtract(anchor()),turns(),mirror.get());
@@ -1070,7 +1077,7 @@ public final class AutoBuilder extends Module {
             &&!floorAccessWork.containsKey(position(owner))&&(!mc.world.isChunkLoaded(position(owner))
             ||!matchesBuildState(mc.world.getBlockState(position(owner)),desired(owner))));
         if(!unfinishedAccess&&openings>0&&supports.isEmpty()&&solid-correct-ignoredSolid<=openings)openingRestoration=true;
-        if(openingRestoration||work<0||work>=states.length||states[work]==CORRECT||states[work]==IGNORED){
+        if(openingRestoration||ownerReady||cycleRepair){
             // The final wall must not close behind us while our access column
             // still needs cleanup. Once those posts are gone, restore normally.
             // Keep the entry for subsequent work and cleanup. Repair the deeper
@@ -1098,6 +1105,27 @@ public final class AutoBuilder extends Module {
             return false;
         }
         return true;
+    }
+    /** Follow only recorded owners and native placement prerequisites, never whole-build scans. */
+    private boolean repairDependencyCycle(BlockPos opening){
+        int first=schematic.indexAt(opening.subtract(anchor()),turns(),mirror.get());
+        if(first<0)return false;
+        var pending=new ArrayDeque<Integer>();var visited=new HashSet<Integer>();pending.add(first);
+        for(int probes=0;!pending.isEmpty()&&probes<96;probes++){
+            int cell=pending.removeFirst();if(!visited.add(cell))continue;
+            var pos=position(cell);if(!mc.world.isChunkLoaded(pos))continue;
+            var owner=floorAccessWork.get(pos);
+            if(owner!=null&&owner>=0&&owner<states.length&&states[owner]!=IGNORED
+                &&mc.world.isChunkLoaded(position(owner))&&!matchesBuildState(mc.world.getBlockState(position(owner)),desired(owner))){
+                if(owner==first)return true;pending.addLast(owner);
+            }
+            var dependency=missingBuiltNeighbour(pos,desired(cell));
+            if(dependency==null||!mc.world.isChunkLoaded(dependency))continue;
+            int next=schematic.indexAt(dependency.subtract(anchor()),turns(),mirror.get());
+            if(next<0||states[next]==IGNORED)continue;
+            if(next==first)return true;pending.addLast(next);
+        }
+        return false;
     }
     private boolean repairAnchorBelow(BlockPos lower,BlockPos upper){
         if(lower.getX()!=upper.getX()||lower.getZ()!=upper.getZ()||lower.getY()>=upper.getY()||upper.getY()-lower.getY()>96)return false;

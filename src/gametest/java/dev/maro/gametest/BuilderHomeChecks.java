@@ -104,6 +104,7 @@ final class BuilderHomeChecks {
         immediateWorkBeforeAccess(context,world,builder,home2);
         verticalRepairOrder(context,world,builder,home2);
         repairOwnerOrder(context,world,builder,home2);
+        repairDependencyCycles(context,world,builder,home2);
         sectionDependencyChain(context,world,builder,home2);
         buriedHopperRoofAccess(context,world,builder,start);
         offsetPistonRoofAccess(context,world,builder,start);
@@ -723,6 +724,53 @@ final class BuilderHomeChecks {
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Repair owner order left work, supports, damage or menu");BuilderPacketChecks.verify(3);builder.pause("repair owner order checked");setting(builder,"Temporary Supports",true);setting(builder,"Restock When Empty",true);setting(builder,"Stockpile In Chests",true);setting(builder,"Material Supply",previousSupply);});
         teleport(world,work);context.waitTicks(12);for(int x:new int[]{0,1,2,4})command(world,"setblock",origin.east(x),"air");context.waitTicks(4);
         System.out.println("[builder-home] Ready owner repaired before its deeper dependent access opening in "+elapsed+" ticks; unrelated work stayed deferred, then all native blocks completed; full health and zero supports");
+    }
+    private static void repairDependencyCycles(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work){
+        repairDependencyCycle(context,world,builder,work,false);repairDependencyCycle(context,world,builder,work,true);
+    }
+    private static void repairDependencyCycle(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work,boolean attachment){
+        var origin=work.south(2);var post=work.east(13).up(3);var cells=new BlockState[20];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());
+        cells[4]=Blocks.GLASS.getDefaultState();cells[0]=attachment?Blocks.BLACKSTONE.getDefaultState():Blocks.STONE.getDefaultState();
+        if(attachment){cells[10]=Blocks.CRACKED_POLISHED_BLACKSTONE_BRICKS.getDefaultState();cells[11]=Blocks.STONE.getDefaultState();cells[15]=Blocks.WALL_TORCH.getDefaultState().with(WallTorchBlock.FACING,Direction.SOUTH);}
+        else cells[2]=Blocks.BLACKSTONE.getDefaultState();
+        for(var pos:BlockPos.iterate(origin,origin.add(4,1,1)))command(world,"setblock",pos,"air");
+        if(attachment)command(world,"setblock",origin.east().up(),"stone");
+        command(world,"setblock",post,"dirt");
+        for(String item:List.of("stone","blackstone","cracked_polished_blackstone_bricks","torch","glass"))world.getServer().runCommand("clear @a "+item);
+        world.getServer().runCommand("give @a blackstone 1");
+        if(attachment){world.getServer().runCommand("give @a cracked_polished_blackstone_bricks 1");world.getServer().runCommand("give @a torch 1");}
+        else world.getServer().runCommand("give @a stone 1");
+        teleport(world,work);context.waitTicks(12);
+        context.runOnClient(client->{
+            setting(builder,"Temporary Supports",true);setting(builder,"Restock When Empty",false);setting(builder,"Auto Buy Tools",false);setting(builder,"Stockpile In Chests",false);setting(builder,"Prepare Whole Build",false);setting(builder,"Material Supply","Nearby Sections");
+            builder.install(new Schematic("repair-dependency-cycle.nbt","test",5,2,2,BlockPos.ORIGIN,cells));builder.setOrigin(origin);builder.preview();
+        });context.waitTicks(15);
+        context.runOnClient(client->{
+            @SuppressWarnings("unchecked")var repairs=(Map<BlockPos,Integer>)field(builder,"floorAccessWork");
+            @SuppressWarnings("unchecked")var depths=(Map<BlockPos,Integer>)field(builder,"openingRepairDepth");
+            @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.add(post);
+            var other=attachment?origin.up():origin.east(2);repairs.put(origin,attachment?15:2);repairs.put(other,attachment?15:0);depths.put(origin,1);depths.put(other,2);
+            require((boolean)call(builder,"repairDependencyCycle",new Class<?>[]{BlockPos.class},other),"Missing recorded repair cycle");
+            require(!(boolean)call(builder,"floorDeferred",new Class<?>[]{BlockPos.class},other),"Cyclic repair still waits for its impossible owner");
+            if(attachment)require((boolean)call(builder,"floorDeferred",new Class<?>[]{BlockPos.class},origin),"Non-cyclic lower opening closed before its torch owner");
+            @SuppressWarnings("unchecked")var passage=(Set<BlockPos>)field(builder,"passageBlocks");passage.add(other);setField(builder,"passageStand",client.player.getBlockPos());
+            require((boolean)call(builder,"floorDeferred",new Class<?>[]{BlockPos.class},other),"Cycle repair closed an unfinished proved passage");passage.clear();setField(builder,"passageStand",null);
+            BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
+        });
+        boolean repaired=false,anchorSeen=false;int elapsed=0;
+        for(;elapsed<180;elapsed++){
+            var nativeState=world.getServer().computeOnServer(server->{var level=server.getOverworld();return List.of(level.getBlockState(origin).isOf(cells[0].getBlock()),level.getBlockState(attachment?origin.up():origin.east(2)).isOf(attachment?Blocks.CRACKED_POLISHED_BLACKSTONE_BRICKS:Blocks.BLACKSTONE),!attachment||AutoBuilder.matchesBuildState(level.getBlockState(origin.up().south()),cells[15]));});
+            if(attachment&&!anchorSeen&&nativeState.get(1)){require(!nativeState.get(0)&&!nativeState.get(2),"Torch attachment was not repaired before its deferred lower opening and owner");anchorSeen=true;}
+            if(nativeState.stream().allMatch(Boolean::booleanValue)){repaired=true;break;}context.waitTick();
+        }
+        require(repaired&&(!attachment||anchorSeen),"Native dependency cycle did not repair: "+context.computeOnClient(client->builder.status()));
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(post).isOf(Blocks.DIRT)&&server.getOverworld().getBlockState(origin.east(4)).isAir()),"Cycle repairs waited for cleanup or completed unrelated work without its material");
+        world.getServer().runCommand("give @a glass 1");
+        for(int tick=0;tick<900&&context.computeOnClient(client->builder.building());tick++)context.waitTick();
+        require(world.getServer().computeOnServer(server->{for(int i=0;i<cells.length;i++)if(!cells[i].isOf(Blocks.STRUCTURE_VOID)&&!AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(origin.add(i%5,i/10,i/5%2)),cells[i]))return false;return server.getOverworld().getBlockState(post).isAir();}),"Cycle repair left a wrong native cell, open hole or temporary post");
+        context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Cycle repair left work, dirt, damage or menu: "+builder.status());BuilderPacketChecks.verify(attachment?4:3);builder.pause("repair dependency cycle checked");setting(builder,"Restock When Empty",true);setting(builder,"Auto Buy Tools",true);setting(builder,"Stockpile In Chests",true);});
+        teleport(world,work);context.waitTicks(12);for(var pos:BlockPos.iterate(origin,origin.add(4,1,1)))command(world,"setblock",pos,"air");context.waitTicks(4);
+        System.out.println("[builder-home] "+(attachment?"Native torch attachment cycle repaired prerequisite, then owner and lower hole":"Native mutual repair-owner cycle closed both holes")+" before scaffold cleanup in "+elapsed+" ticks; missing unrelated material respected, all cells/posts completed, full health and bounded look");
     }
     private static void sectionDependencyChain(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work){
         var first=work.south(2);var origin=first.west(6);var parent=first.east(2);var cells=new BlockState[9];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());
