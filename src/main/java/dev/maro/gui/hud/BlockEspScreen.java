@@ -120,6 +120,8 @@ public final class BlockEspScreen extends Screen {
             if (expanded == block) expanded = null;
         } else {
             module.pick(block);
+            // New picks go at the end of the list: bring it into view.
+            rightTarget = Float.MAX_VALUE;
         }
         Sounds.click();
     }
