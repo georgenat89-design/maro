@@ -17,7 +17,7 @@ layout(std140) uniform SkyData {
     mat4 InvViewProj;   // clip space -> world direction (camera at the origin)
     vec4 Params;        // x seconds of animation, y sky shown, z sky fading out, w how much of it is left
     vec4 View;          // x brightness, y size of one pixel in radians, z picture fit (0 panorama, 1 wrap, 2 cube), w copies round when wrapped
-    vec4 ImageParams;   // x turn round the horizon (radians), y height of a wrapped copy (radians)
+    vec4 ImageParams;   // x turn round the horizon (radians), y height of a wrapped copy (radians), z 1 to mirror every other copy
     vec4 ImageTop;      // rgb: the picture's colour along its top, for the sky above a wrapped picture
     vec4 ImageBottom;   // rgb: its colour along the bottom, for below it
 };
@@ -633,11 +633,12 @@ vec3 imageSky(vec3 d) {
     float elevation = asin(clamp(d.y, -1.0, 1.0));
     if (fit == 0) return textureLod(u_Sky, vec2(around, 0.5 - elevation / PI), 0.0).rgb;
     if (fit == 2) return cubeCross(d);
-    // Wrapped: copies side by side round the horizon, every other one mirrored so they meet
-    // seamlessly, from a little below the horizon up; beyond them the picture's own edge colours.
-    float x = around * View.w + 0.5;     // an unmirrored copy straight ahead when facing south
+    // Wrapped: copies side by side round the horizon, from a little below the horizon up; beyond
+    // them the picture's own edge colours. Mirroring every other copy makes neighbours meet
+    // seamlessly but flips any writing, so it is only done when asked for.
+    float x = around * View.w + 0.5;     // a copy straight ahead, the right way round, when facing south
     float u = fract(x);
-    if (mod(floor(x), 2.0) > 0.5) u = 1.0 - u;
+    if (ImageParams.z > 0.5 && mod(floor(x), 2.0) > 0.5) u = 1.0 - u;
     float v = 1.0 - (elevation + 0.17) / ImageParams.y;
     vec3 col = textureLod(u_Sky, vec2(u, clamp(v, 0.0, 1.0)), 0.0).rgb;
     col = mix(col, ImageTop.rgb, sstep(0.0, -0.3, v));

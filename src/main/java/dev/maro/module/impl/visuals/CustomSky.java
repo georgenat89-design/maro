@@ -59,6 +59,9 @@ public class CustomSky extends Module {
             "Auto", "Auto", "Panorama", "Cube Cross", "Wrap Around").visible(this::showingPicture));
     private final NumberSetting turn = add(new NumberSetting("Image Turn", "Turn the picture round the horizon", 0, 0, 355, 5)
             .suffix("°").visible(this::showingPicture));
+    private final BooleanSetting mirror = add(new BooleanSetting("Mirror Copies",
+            "Flip every other copy of a wrapped picture so the edges meet without a seam (also flips any writing)", false)
+            .visible(() -> showingPicture() && currentFit() == SkyImage.Fit.WRAP));
     private final NumberSetting spin = add(new NumberSetting("Image Spin", "Keep turning the picture slowly, in degrees a second", 0, 0, 10, 0.5)
             .visible(this::showingPicture));
 
@@ -69,7 +72,7 @@ public class CustomSky extends Module {
 
     private final List<SettingSection> sections = List.of(
             SettingSection.of("Sky", sky, speed, brightness, cycle, cycleTime),
-            SettingSection.of("Your Image", choosePicture, fit, turn, spin),
+            SettingSection.of("Your Image", choosePicture, fit, mirror, turn, spin),
             SettingSection.of("World", matchFog, sunMoon, clouds, end));
 
     /** The sky showing, the one fading out and when that fade began (0 for none). */
@@ -347,7 +350,7 @@ public class CustomSky extends Module {
         return new float[] {
                 (float) m.clock, m.shown, m.previous, m.fadeLeft(),
                 m.brightness.getFloat() / 100f, pixelAngle, m.currentFit().ordinal(), (float) wrap[0],
-                (float) Math.toRadians(turnDegrees), (float) Math.toRadians(wrap[1]), 0, 0,
+                (float) Math.toRadians(turnDegrees), (float) Math.toRadians(wrap[1]), m.mirror.get() ? 1 : 0, 0,
                 (top >> 16 & 0xFF) / 255f, (top >> 8 & 0xFF) / 255f, (top & 0xFF) / 255f, 0,
                 (bottom >> 16 & 0xFF) / 255f, (bottom >> 8 & 0xFF) / 255f, (bottom & 0xFF) / 255f, 0
         };
