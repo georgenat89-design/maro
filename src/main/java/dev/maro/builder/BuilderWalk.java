@@ -50,6 +50,12 @@ public final class BuilderWalk {
         forward=jump=false;
     }
     public boolean moving(){return forward||jump;}
+    private double approachDistance;
+    /** Finish the native jump before a changing airborne reach check can cancel its forward input. */
+    public boolean finishJump(){
+        if(mc.player==null||mc.player.isOnGround()||mc.player.isTouchingWater()||mc.player.isInLava()||goal==null||!moving())return false;
+        approach(goal,approachDistance,exact);return true;
+    }
     /** Allow a proved long walk to finish without renewing its deadline forever. */
     public int routeTimeoutTicks(){return routeTimeout;}
     /** Native sneak edging keeps part of the body over the original solid footing. */
@@ -246,6 +252,7 @@ public final class BuilderWalk {
     public void requestRecovery(){recoveryRequested=true;}
     public boolean canPillar(BlockPos feet){return clear(feet)&&clear(feet.up())&&clear(feet.up(2))&&clear(feet.up(3))&&safe(feet.down())&&mc.world.getBlockState(feet.down()).isSideSolidFullSquare(mc.world,feet.down(),Direction.UP);}
     private boolean approach(BlockPos target,double distance,boolean stand){
+        approachDistance=distance;
         if(mc.player==null||mc.world==null)return false;
         if(!target.equals(goal)||exact!=stand){stop();goal=target;exact=stand;routeTimeout=Math.max(provedRouteTicks.getOrDefault(target,240),Math.min(960,Math.max(240,walkingCell().getManhattanDistance(target)*12)));}
         if(exact?atStandingView(target,distance):mc.player.getEyePos().squaredDistanceTo(Vec3d.ofCenter(target))<=distance*distance){

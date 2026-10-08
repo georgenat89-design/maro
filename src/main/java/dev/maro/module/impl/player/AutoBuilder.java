@@ -780,6 +780,7 @@ public final class AutoBuilder extends Module {
             if(restock.get()&&beginRestock()){status="Checking selected chests for build tools";return;}
             if(autoBuy.get()&&maxSpend.get()>0){startBuying(false);if(buying)resumeAfterMarket=true;return;}
         }
+        if(walker.finishJump()){status=walker.status;return;}
         findWork();
     }
     private boolean waterDepartureTick(){
