@@ -94,6 +94,7 @@ final class BuilderHomeChecks {
         context.runOnClient(client->button(builder,"Set Storage Home").press());waitHome(context,builder,80);
         context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(homes.ready()&&!builder.building(),"Storage setup failed or unexpectedly started building: "+builder.status());var entry=homes.saveData().get(0).getAsJsonObject();var feet=BlockPos.ofFloored(entry.get("x").getAsDouble(),entry.get("y").getAsDouble(),entry.get("z").getAsDouble());for(var reserved:List.of(feet,feet.up())){require((boolean)call(builder,"reservedSupplyAccess",new Class<?>[]{BlockPos.class},reserved),"Storage-home arrival cell was available to scaffolding");require(call(builder,"placement",new Class<?>[]{BlockPos.class,BlockState.class,Item.class,int.class,boolean.class},reserved,Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true)==null,"Scaffold could block native storage arrival");}});require(saveCommands==before+1,"Absent home 1 did not save exactly once");
         longCheckedWalk(context,world,builder,start);
+        unproductiveHomeEscape(context,world,builder,start);
         blockedRepairReceivers(context,world,builder,start,chest);
         crouchedChestPlacementView(context,world,builder,start);
         scaffoldObstructedSign(context,world,builder,start);
@@ -387,6 +388,21 @@ final class BuilderHomeChecks {
             setting(builder,"Temporary Supports",true);setting(builder,"Prepare Whole Build",false);setting(builder,"Restock When Empty",false);setting(builder,"Auto Buy When Missing",false);builder.install(new Schematic("sealed-repair-drop.nbt","test",7,5,8,BlockPos.ORIGIN,cells));builder.setOrigin(origin);
             @SuppressWarnings("unchecked")var owners=(Map<BlockPos,Integer>)field(builder,"floorAccessWork");owners.put(opening,owner);
             BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
+            require((boolean)call(builder,"collectAccessDrop",new Class<?>[]{}),"Sealed native drop did not start a pickup intent");
+            require(field(builder,"accessPickupSearch")!=null,"Sealed native drop did not need a routed pickup");
+            int dropId=(int)field(builder,"accessPickupId");
+            call(builder,"repositionTarget",new Class<?>[]{BlockPos.class,Map.class},opening,new HashMap<BlockPos,Integer>());
+            @SuppressWarnings("unchecked")var searches=(Map<Object,Object>)field(builder,"viewSearches");
+            var receipts=new LinkedHashMap<>(searches);require(!receipts.isEmpty(),"Native roof planning did not retain a partial route receipt");
+            setField(builder,"accessPickupUntil",field(builder,"ticks"));
+            require(!(boolean)call(builder,"collectAccessDrop",new Class<?>[]{}),"Expired pickup kept its access intent");
+            require((int)field(builder,"accessPickupId")==-1&&receipts.entrySet().stream().allMatch(entry->searches.get(entry.getKey())==entry.getValue()),"Expired pickup erased the unfinished native roof route and restarted planning");
+            require(client.world.getEntityById(dropId) instanceof net.minecraft.entity.ItemEntity drop&&drop.isAlive()&&builder.inventoryCount(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)==0,"Expired pickup forged or removed the real repair material");
+            // Resume the deliberately expired fixture attempt immediately; the
+            // complete native pickup/repair flow below still has to finish.
+            ((Map<?,?>)field(builder,"accessPickupRetry")).remove(dropId);
+            require((boolean)call(builder,"collectAccessDrop",new Class<?>[]{}),"Native pickup did not resume after its forced timeout");
+            System.out.println("[builder-home] Expired native ledge pickup retained the unfinished roof route; real drop and inventory unchanged");
         });
         boolean planned=false,secured=false;int elapsed=0;
         for(;elapsed<2000&&context.computeOnClient(client->builder.building());elapsed++){
@@ -402,6 +418,24 @@ final class BuilderHomeChecks {
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Sealed drop left work, supports, damage or menu: "+builder.status());BuilderPacketChecks.verify(1);builder.pause("sealed drop checked");setting(builder,"Restock When Empty",true);setting(builder,"Auto Buy When Missing",true);});
         teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+6)+" "+(origin.getY()+4)+" "+(origin.getZ()+7)+" air");context.waitTicks(4);
         System.out.println("[builder-home] Sealed upper repair drop collected through native access; all openings restored, zero dirt, full health and bounded look in "+elapsed+" ticks");
+    }
+    private static void unproductiveHomeEscape(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-home] Leave an exhausted enclosed route through safe storage home 1, then complete the next native placement");
+        var room=start.add(-15,0,-5);var target=start.south(4);
+        world.getServer().runCommand("fill "+room.down().toShortString().replace(",","")+" "+room.add(2,2,2).toShortString().replace(",","")+" bedrock");
+        command(world,"setblock",room.add(1,0,1),"air");command(world,"setblock",room.add(1,1,1),"air");command(world,"setblock",target,"air");
+        world.getServer().runCommand("give @a stone 1");teleport(world,room.add(1,0,1));context.waitTicks(12);int first=commands.size(),savesBefore=saveCommands,deletesBefore=deleteCommands;
+        context.runOnClient(client->{
+            setting(builder,"Temporary Supports",false);setting(builder,"Prepare Whole Build",false);builder.install(new Schematic("exhausted-enclosed-route.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);
+            BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
+            setField(builder,"navigatingCell",0);((Map<Integer,Integer>)field(builder,"navigationWorkTicks")).put(0,359);
+        });
+        int elapsed=0;for(;elapsed<200&&context.computeOnClient(client->builder.building());elapsed++)context.waitTick();
+        require(world.getServer().computeOnServer(server->{var w=server.getOverworld();if(!w.getBlockState(target).isOf(Blocks.STONE))return false;for(var pos:BlockPos.iterate(room.down(),room.add(2,2,2)))if(!pos.equals(room.add(1,0,1))&&!pos.equals(room.add(1,1,1))&&!w.getBlockState(pos).isOf(Blocks.BEDROCK))return false;return true;}),"Exhausted route did not complete the native placement or damaged its enclosure");
+        require(commands.subList(first,commands.size()).equals(List.of("home 1"))&&saveCommands==savesBefore&&deleteCommands==deletesBefore&&saved[1]==null&&saved[2]==reservedThird,"Exhausted route changed transient/reserved homes or repeatedly teleported");
+        context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20,"Storage escape left work, supports or damage");BuilderPacketChecks.verify(1);builder.pause("storage escape checked");setting(builder,"Temporary Supports",true);});
+        teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+room.down().toShortString().replace(",","")+" "+room.add(2,2,2).toShortString().replace(",","")+" air");command(world,"setblock",target,"air");context.waitTicks(4);
+        System.out.println("[builder-home] Exhausted route escaped through one native home 1 arrival and completed placement in "+elapsed+" ticks; enclosure/other homes intact, zero supports and full health");
     }
     private static void longCheckedWalk(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-home] Finish a long proved native walk without cancelling it at the old 240-tick deadline");

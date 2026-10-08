@@ -1125,6 +1125,13 @@ public final class AutoBuilder extends Module {
         var wanted=desired(cell);var item=Schematic.material(wanted);
         if(!wanted.isAir()&&mc.world.getBlockState(position(cell)).isReplaceable()&&inventoryCount(item)>0
             &&placement(position(cell),wanted,item,cell,false)!=null)return false;
+        if(useHomes.get()){
+            var chest=selectedSupplyChest();
+            if(chest!=null&&homes.storage(chest)){
+                if(homes.busy()){navigationWorkTicks.remove(cell);navigatingCell=-1;resetAfterHome();}
+                status="Returning to storage ground after an unproductive access route";return true;
+            }
+        }
         var retries=new HashMap<>(retryAt);
         // Switching jobs does not change geometry. Keep the bounded search
         // cursors so a large exterior-entry pass can reach later recovery
@@ -3451,7 +3458,13 @@ public final class AutoBuilder extends Module {
                 ||ticks>=accessPickupUntil){
                 boolean routed=accessPickupSearch!=null;
                 accessPickupRetry.put(accessPickupId,ticks+100);accessPickupId=-1;accessPickupWork=-1;accessPickupStand=accessPickupFeet=null;accessPickupItem=null;accessPickupViews=List.of();accessPickupSearch=null;
-                if(routed)resetAccessRouting();else walker.stop();return false;
+                if(routed){
+                    // Ending a pickup attempt changes intent, not geometry. A
+                    // failed ledge pickup must not erase the main job's bounded
+                    // route search every time this same drop becomes eligible.
+                    var searches=new LinkedHashMap<>(viewSearches);
+                    resetAccessRouting();viewSearches.putAll(searches);
+                }else walker.stop();return false;
             }
             if(accessPickupSearch!=null){
                 long deadline=System.nanoTime()+3_000_000;
