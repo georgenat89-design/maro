@@ -5,6 +5,23 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+The first actual646 replay on8de83bc was deliberately stopped at646, not
+passed. Native reads proved two remaining dependencies: registered upper
+waxed copper1095 (depth3) had no anchor because its lower bulb861 (depth2)
+was globally deferred behind it, despite their owner1717 already being correct.
+The hopper chain638->620->602->601->583 also crossed the eight-cell section
+boundary, so its missing terminal dispenser was outside the candidate batch.
+The pending fix restores contiguous full-cube repair stacks from below and
+expands same-phase/layer placement dependencies with a96-cell/2ms bound.
+Existing owner, body, fluid, retry and layer checks remain in force. Native
+vertical-repair regression failed against unchanged8de83bc production, as
+expected. Both new regressions and the full home/restock/repair/crouch/camera
+suite passed in2m30s. An initial positive run placed both repair cubes but
+exposed a test assertion earlier than the existing20-tick completion quiet
+period; the corrected fixture waits for bounded confirmed completion without
+changing its120-tick placement deadline. The unchanged646 replay is next.
+No complete710 replay or fresh build has passed yet.
+
 Current: CI441 passed all checks on a7d62c8. True fresh9 started at0 and reached
 647, but timed out after one hour at644 with full health. The actual646 scene
 was saved, with126 owned posts, unchanged supplies and idle homes. Its chest

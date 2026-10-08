@@ -38,13 +38,17 @@ Before selecting a new access job, a bounded look-ahead checks dry, immediately
 placeable full cubes in the current phase/layer. Committed walks and columns
 keep their existing target. Liquid, attachment and native placement checks
 remain in the normal placement path.
+Missing hopper outlets and attachment backing blocks can pull their placement
+prerequisites across a section boundary. This lookup is bounded to96 candidates
+and2ms and preserves phase, layer, retry and access-repair restrictions.
 When those routes and short columns cannot reach unfinished work, a proved dry
 passage or floor/ceiling opening can temporarily reopen completed blocks. Mining
 requires a registered access job and rechecks attachments, fluids and footing;
 unrelated finished blocks stay protected. Checked liquid access opens only above
 its source, and retaining floors/walls stay intact.
 Completed access jobs restore their openings as soon as the body clears and the
-active route releases them. Deeper repairs precede outer faces. The repair list
+active route releases them. Deeper repairs precede outer faces; contiguous
+vertical full-cube repairs restore their lower placement anchor first. The repair list
 survives pause and saved-placement reload.
 
 Head Spoofing eases the visible first-person view toward walking and action aim

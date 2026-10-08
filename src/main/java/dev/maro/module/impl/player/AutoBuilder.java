@@ -1036,6 +1036,9 @@ public final class AutoBuilder extends Module {
             var depth=openingRepairDepth.get(pos);
             if(depth!=null)for(var other:floorAccessWork.keySet()){
                 if(openingRepairDepth.getOrDefault(other,0)<=depth)continue;
+                // Restore a vertical stack from its native supporting cube.
+                // Deeper-first still applies to separate wall faces.
+                if(repairAnchorBelow(pos,other))continue;
                 int cell=schematic.indexAt(other.subtract(anchor()),turns(),mirror.get());
                 if(cell>=0&&states[cell]!=IGNORED&&!desired(cell).isAir()&&mc.world.isChunkLoaded(other)
                     &&!matchesBuildState(mc.world.getBlockState(other),desired(cell)))return true;
@@ -1043,6 +1046,16 @@ public final class AutoBuilder extends Module {
             int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());
             if(cell<0||states[cell]==IGNORED||mc.world.isChunkLoaded(pos)&&matchesBuildState(mc.world.getBlockState(pos),desired(cell))){floorAccessWork.remove(pos);openingRepairDepth.remove(pos);}
             return false;
+        }
+        return true;
+    }
+    private boolean repairAnchorBelow(BlockPos lower,BlockPos upper){
+        if(lower.getX()!=upper.getX()||lower.getZ()!=upper.getZ()||lower.getY()>=upper.getY()||upper.getY()-lower.getY()>96)return false;
+        for(var pos=lower;pos.getY()<=upper.getY();pos=pos.up()){
+            int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());
+            if(cell<0||!mc.world.isChunkLoaded(pos))return false;
+            var wanted=desired(cell);
+            if(!wanted.getFluidState().isEmpty()||!Block.isShapeFullCube(wanted.getCollisionShape(mc.world,pos)))return false;
         }
         return true;
     }
@@ -1146,6 +1159,7 @@ public final class AutoBuilder extends Module {
         // from the scan are appended for walking. A candidate's actual world state is rechecked below.
         for(int i:sectionSupply()?sectionCells:workCells)if(layerAllows(i)&&!floorDeferred(position(i))&&taskPhase(i)==activePhase&&(!layerSupply()||taskLayer(i)==supplyLayer())&&states[i]!=CORRECT&&states[i]!=IGNORED&&retryAt.getOrDefault(i,0)<=ticks)candidates.add(i);
         for(int i:repairs)if(layerAllows(i)&&taskPhase(i)==activePhase&&!candidates.contains(i)&&retryAt.getOrDefault(i,0)<=ticks)candidates.add(i);
+        appendPlacementDependencies(candidates);
         if(navigatingCell>=0&&(states[navigatingCell]==CORRECT||!candidates.contains(navigatingCell)||ticks-navigationStarted>240)){navigatingCell=-1;walker.stop();}
         candidates.sort(Comparator.<Integer>comparingInt(i->i==navigatingCell?0:1).thenComparingDouble(i->taskLayer(i)*(sectionSupply()?8:100)+position(i).getSquaredDistance(mc.player.getBlockPos())));
         needed=null;Integer distant=null;List<Integer> blocked=new ArrayList<>();
@@ -2553,15 +2567,30 @@ public final class AutoBuilder extends Module {
         floorSearchCursor=0;
         return false;
     }
-    private boolean waitingForBuiltNeighbour(BlockPos target,BlockState wanted){
+    private void appendPlacementDependencies(List<Integer> candidates){
+        var visited=new HashSet<>(candidates);long deadline=System.nanoTime()+2_000_000;
+        // Spatial batches can split a hopper outlet or attachment chain.
+        // Include missing prerequisites without a global scan or phase jump.
+        for(int next=0;next<candidates.size()&&next<96&&System.nanoTime()<=deadline;next++){
+            int work=candidates.get(next);var dependency=missingBuiltNeighbour(position(work),desired(work));
+            if(dependency==null||!mc.world.isChunkLoaded(dependency))continue;
+            int cell=schematic.indexAt(dependency.subtract(anchor()),turns(),mirror.get());
+            if(cell<0||!visited.add(cell)||!layerAllows(cell)||taskPhase(cell)!=activePhase
+                ||layerSupply()&&taskLayer(cell)!=supplyLayer()||floorDeferred(dependency)||retryAt.getOrDefault(cell,0)>ticks)continue;
+            updateState(cell);
+            if(states[cell]!=CORRECT&&states[cell]!=IGNORED&&states[cell]!=UNKNOWN&&!materialIgnored(desired(cell)))candidates.add(cell);
+        }
+    }
+    private boolean waitingForBuiltNeighbour(BlockPos target,BlockState wanted){return missingBuiltNeighbour(target,wanted)!=null;}
+    private BlockPos missingBuiltNeighbour(BlockPos target,BlockState wanted){
         var block=wanted.getBlock();Direction side=null;
         if(block instanceof HopperBlock)side=wanted.get(HopperBlock.FACING);
         else if(block instanceof ShulkerBoxBlock)side=wanted.get(ShulkerBoxBlock.FACING).getOpposite();
         else if(block instanceof WallTorchBlock||block instanceof WallSignBlock||block instanceof WallBannerBlock||block instanceof LadderBlock)side=wanted.get(net.minecraft.state.property.Properties.HORIZONTAL_FACING).getOpposite();
         else if(block instanceof PlantBlock||block instanceof RedstoneWireBlock||block instanceof FlowerPotBlock)side=Direction.DOWN;
-        if(side==null)return false;
+        if(side==null)return null;
         var neighbour=target.offset(side);
-        return plannedSolid(neighbour)&&mc.world.getBlockState(neighbour).isReplaceable();
+        return plannedSolid(neighbour)&&mc.world.getBlockState(neighbour).isReplaceable()?neighbour:null;
     }
     private BlockPos visibleCleanupTip(){
         var floor=mc.player.getBoundingBox().offset(0,-1,0);
