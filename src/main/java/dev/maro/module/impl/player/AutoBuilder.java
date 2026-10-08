@@ -2101,11 +2101,12 @@ public final class AutoBuilder extends Module {
         // actual attachment; committed climb/escape posts remain excluded.
         var wanted=desired(cell);var item=Schematic.material(wanted);
         var plan=placement(target,wanted,item,cell,false,eye,body,clearedView(candidates));if(plan==null)return null;
-        var point=plan.hit.getPos();var end=point.add(point.subtract(eye).normalize().multiply(.003));
+        var rayEye=placementEye(eye,mc.world.getBlockState(plan.hit.getBlockPos()));
+        var point=plan.hit.getPos();var end=point.add(point.subtract(rayEye).normalize().multiply(.003));
         var removed=new LinkedHashSet<BlockPos>();boolean reached=false;
         for(int cut=0;cut<=4;cut++){
             var view=removed.isEmpty()?mc.world:clearedView(removed);
-            var ray=view.raycast(new RaycastContext(eye,end,RaycastContext.ShapeType.OUTLINE,RaycastContext.FluidHandling.NONE,mc.player));
+            var ray=view.raycast(new RaycastContext(rayEye,end,RaycastContext.ShapeType.OUTLINE,RaycastContext.FluidHandling.NONE,mc.player));
             if(ray.getType()!=HitResult.Type.BLOCK)return null;
             if(ray.getBlockPos().equals(plan.hit.getBlockPos())&&ray.getSide()==plan.hit.getSide()){reached=true;break;}
             if(!candidates.contains(ray.getBlockPos())||!removed.add(ray.getBlockPos().toImmutable()))return null;
@@ -2163,11 +2164,12 @@ public final class AutoBuilder extends Module {
         if(candidates.isEmpty()||candidates.size()>24)return null;
         var body=mc.player.getBoundingBox().offset(eye.subtract(mc.player.getEyePos()));
         var plan=placement(target,wanted,item,cell,false,eye,body,clearedView(candidates));if(plan==null)return null;
-        var point=plan.hit.getPos();var end=point.add(point.subtract(eye).normalize().multiply(.003));
+        var rayEye=placementEye(eye,mc.world.getBlockState(plan.hit.getBlockPos()));
+        var point=plan.hit.getPos();var end=point.add(point.subtract(rayEye).normalize().multiply(.003));
         var removed=new LinkedHashSet<BlockPos>();boolean reached=false;
         for(int cut=0;cut<=4;cut++){
             var view=removed.isEmpty()?mc.world:clearedView(removed);
-            var ray=view.raycast(new RaycastContext(eye,end,RaycastContext.ShapeType.OUTLINE,RaycastContext.FluidHandling.NONE,mc.player));
+            var ray=view.raycast(new RaycastContext(rayEye,end,RaycastContext.ShapeType.OUTLINE,RaycastContext.FluidHandling.NONE,mc.player));
             if(ray.getType()!=HitResult.Type.BLOCK)return null;
             if(ray.getBlockPos().equals(plan.hit.getBlockPos())&&ray.getSide()==plan.hit.getSide()){reached=true;break;}
             if(!candidates.contains(ray.getBlockPos())||!removed.add(ray.getBlockPos().toImmutable()))return null;
@@ -2217,6 +2219,13 @@ public final class AutoBuilder extends Module {
     private Place placement(BlockPos target,BlockState wanted,Item item,int index,boolean temporary,Vec3d eye,Box body){
         return placement(target,wanted,item,index,temporary,eye,body,mc.world);
     }
+    /** Clickable attachments require the same crouched ray used by the native interaction. */
+    private Vec3d placementEye(Vec3d eye,BlockState attachment){
+        if(!clickable(attachment.getBlock()))return eye;
+        double height=eye.squaredDistanceTo(mc.player.getEyePos())<.0001
+            ?mc.player.getEyePos().y-mc.player.getY():mc.player.getStandingEyeHeight();
+        return eye.add(0,mc.player.getDimensions(net.minecraft.entity.EntityPose.CROUCHING).eyeHeight()-height,0);
+    }
     private Place placement(BlockPos target,BlockState wanted,Item item,int index,boolean temporary,Vec3d eye,Box body,net.minecraft.world.WorldView view){
         if(temporary&&reservedSupplyAccess(target))return null;
         if(failedPlacementUntil.getOrDefault(target,0)>ticks&&eye.squaredDistanceTo(mc.player.getEyePos())<.0001)return null;
@@ -2236,6 +2245,7 @@ public final class AutoBuilder extends Module {
                 BlockPos neighbor=direct==1?target:target.offset(side.getOpposite());var supportState=view.getBlockState(neighbor);
                 if(direct==1&&supportState.getBlock()!=wanted.getBlock())continue;
                 if(supportState.isAir()||supportState.isReplaceable()||!supportState.getFluidState().isEmpty())continue;
+                var rayEye=placementEye(eye,supportState);
                 // Prefer points away from the centre boundary used by door hinges and
                 // slab halves, and sample both height and width on vertical faces.
                 boolean boundarySensitive=wanted.getBlock() instanceof DoorBlock||wanted.getBlock() instanceof TrapdoorBlock||wanted.getBlock() instanceof SlabBlock;
@@ -2248,13 +2258,13 @@ public final class AutoBuilder extends Module {
                     if(side.getAxis()==Direction.Axis.Y)point=new Vec3d(neighbor.getX()+sample[0],point.y,neighbor.getZ()+sample[1]);
                     if(side.getAxis()!=Direction.Axis.Y)point=new Vec3d(side.getAxis()==Direction.Axis.Z?neighbor.getX()+sample[1]:point.x,neighbor.getY()+height,side.getAxis()==Direction.Axis.X?neighbor.getZ()+sample[1]:point.z);
                     if(side==Direction.UP&&!supportState.getOutlineShape(view,neighbor).isEmpty())point=new Vec3d(point.x,neighbor.getY()+supportState.getOutlineShape(view,neighbor).getMax(Direction.Axis.Y),point.z);
-                    if(eye.squaredDistanceTo(point)>range*range)continue;
+                    if(rayEye.squaredDistanceTo(point)>range*range)continue;
                     boolean shapedSupport=direct==0&&clickable(supportState.getBlock());
-                    Vec3d rayEnd=shapedSupport?point.add(point.subtract(eye).normalize().multiply(1.1)):point.add(Vec3d.of(side.getVector()).multiply(-.002));
-                    var ray=view.raycast(new RaycastContext(eye,rayEnd,RaycastContext.ShapeType.OUTLINE,RaycastContext.FluidHandling.NONE,mc.player));
+                    Vec3d rayEnd=shapedSupport?point.add(point.subtract(rayEye).normalize().multiply(1.1)):point.add(Vec3d.of(side.getVector()).multiply(-.002));
+                    var ray=view.raycast(new RaycastContext(rayEye,rayEnd,RaycastContext.ShapeType.OUTLINE,RaycastContext.FluidHandling.NONE,mc.player));
                     if(ray.getType()!=HitResult.Type.BLOCK||!ray.getBlockPos().equals(neighbor)||ray.getSide()!=side)continue;
                     if(shapedSupport)point=ray.getPos();
-                    float[] angles=angles(eye,point);mc.player.setYaw(angles[0]);mc.player.setPitch(angles[1]);
+                    float[] angles=angles(rayEye,point);mc.player.setYaw(angles[0]);mc.player.setPitch(angles[1]);
                     var hit=new BlockHitResult(point,side,neighbor,false);var context=new ItemPlacementContext(mc.player,Hand.MAIN_HAND,stack,hit);
                     context=blockItem.getPlacementContext(context);if(context==null)continue;
                     // Hypothetical standing positions use the supplied body box. The

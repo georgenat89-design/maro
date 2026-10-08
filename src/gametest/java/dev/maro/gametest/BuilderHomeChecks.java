@@ -95,6 +95,7 @@ final class BuilderHomeChecks {
         context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(homes.ready()&&!builder.building(),"Storage setup failed or unexpectedly started building: "+builder.status());var entry=homes.saveData().get(0).getAsJsonObject();var feet=BlockPos.ofFloored(entry.get("x").getAsDouble(),entry.get("y").getAsDouble(),entry.get("z").getAsDouble());for(var reserved:List.of(feet,feet.up())){require((boolean)call(builder,"reservedSupplyAccess",new Class<?>[]{BlockPos.class},reserved),"Storage-home arrival cell was available to scaffolding");require(call(builder,"placement",new Class<?>[]{BlockPos.class,BlockState.class,Item.class,int.class,boolean.class},reserved,Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true)==null,"Scaffold could block native storage arrival");}});require(saveCommands==before+1,"Absent home 1 did not save exactly once");
         longCheckedWalk(context,world,builder,start);
         blockedRepairReceivers(context,world,builder,start,chest);
+        crouchedChestPlacementView(context,world,builder,start);
         scaffoldObstructedSign(context,world,builder,start);
         roofEdgeRoundTrip(context,world,builder,home2,chest);
         obstructedStorageRoundTrip(context,world,builder,home2,chest);
@@ -422,6 +423,25 @@ final class BuilderHomeChecks {
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20,"Long route left active work, supports or damage");BuilderPacketChecks.verify(1);builder.pause("long walk checked");setting(builder,"Temporary Supports",true);});
         teleport(world,start);context.waitTicks(12);
         System.out.println("[builder-home] Long proved native walk retained past 240 ticks and finished its placement without a restart/home/support/damage in "+elapsed+" walking ticks");
+    }
+    private static void crouchedChestPlacementView(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        var target=start.south(15).up(2);var footing=target.add(-1,0,2);var panel=footing.up();
+        command(world,"setblock",target.down(),"chest[facing=north]");command(world,"setblock",footing,"chest[facing=south]");command(world,"setblock",panel,"oak_sign[rotation=8]");
+        world.getServer().runCommand("tp @a "+(target.getX()-.369858265)+" "+(target.getY()+.875)+" "+(target.getZ()+2.48539117115));context.waitTicks(12);
+        context.runOnClient(client->{
+            var wanted=Blocks.OAK_SIGN.getDefaultState().with(net.minecraft.state.property.Properties.ROTATION,2);
+            builder.install(new Schematic("crouched-chest-ray.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{wanted}));builder.setOrigin(target);
+            var eye=client.player.getEyePos();var point=new Vec3d(target.getX()+.9,target.getY()-.125,target.getZ()+.9);
+            var ray=client.world.raycast(new net.minecraft.world.RaycastContext(eye,point.add(point.subtract(eye).normalize().multiply(1.1)),net.minecraft.world.RaycastContext.ShapeType.OUTLINE,net.minecraft.world.RaycastContext.FluidHandling.NONE,client.player));
+            require(ray.getBlockPos().equals(target.down())&&ray.getSide()==Direction.UP,"Crouch fixture lost its clear standing chest ray");
+            var crouched=client.player.getEntityPos().add(0,client.player.getDimensions(net.minecraft.entity.EntityPose.CROUCHING).eyeHeight(),0);
+            var blocked=client.world.raycast(new net.minecraft.world.RaycastContext(crouched,point.add(point.subtract(crouched).normalize().multiply(1.1)),net.minecraft.world.RaycastContext.ShapeType.OUTLINE,net.minecraft.world.RaycastContext.FluidHandling.NONE,client.player));
+            require(blocked.getBlockPos().equals(panel),"Crouch fixture did not hit the existing sign panel");
+            require(call(builder,"placement",new Class<?>[]{BlockPos.class,BlockState.class,Item.class,int.class,boolean.class},target,wanted,Items.OAK_SIGN,0,false)==null,"Standing-only chest placement accepted a blocked mandatory crouch ray");
+            builder.pause("crouched chest ray checked");
+        });
+        teleport(world,start);context.waitTicks(12);for(var pos:List.of(target.down(),footing,panel))command(world,"setblock",pos,"air");
+        System.out.println("[builder-home] Native standing chest ray rejected when mandatory crouch is blocked by an existing sign");
     }
     private static void scaffoldObstructedSign(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-home] Clear an owned scaffold from a native rotated sign view, then clean up and preserve its chest/floor");
