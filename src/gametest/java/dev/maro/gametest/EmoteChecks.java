@@ -80,7 +80,7 @@ final class EmoteChecks {
             context.waitTicks(16);
             context.takeScreenshot("maro-emote-dab");
 
-            for (Emote emote : new Emote[] {Emote.WAVE, Emote.FLOSS, Emote.CHEER, Emote.T_POSE, Emote.SIT}) {
+            for (Emote emote : new Emote[] {Emote.WAVE, Emote.FLOSS, Emote.CHEER, Emote.T_POSE, Emote.SIT, Emote.TAKE_THE_L, Emote.GRIDDY, Emote.DEFAULT_DANCE}) {
                 context.runOnClient(c -> emotes.play(emote));
                 context.waitTicks(14);
                 context.takeScreenshot("maro-emote-" + emote.name().toLowerCase(Locale.ROOT).replace('_', '-'));
