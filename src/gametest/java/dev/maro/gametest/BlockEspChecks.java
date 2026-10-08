@@ -76,7 +76,7 @@ final class BlockEspChecks {
             });
             // The same view with nothing drawn: the sky and grass of the test world are coloured too.
             context.waitTicks(5);
-            int plain = lit(context.takeScreenshot("maro-block-esp-off"));
+            BufferedImage plain = read(context.takeScreenshot("maro-block-esp-off"));
             context.runOnClient(c -> module.setEnabled(true));
 
             // Spawners, chests and diamonds are on by default, and the Y limit keeps to Y 0 and below.
@@ -86,16 +86,16 @@ final class BlockEspChecks {
             System.out.printf(Locale.ROOT, "BLOCK ESP found the blocks after %.0f ms%n", (System.nanoTime() - searching) / 1e6);
             require(context.computeOnClient(c -> !module.shownPositions().contains(HIGH_SPAWNER)), "A spawner above the Y limit was drawn");
             context.waitTicks(10);
-            int withBloom = lit(context.takeScreenshot("maro-block-esp"));
+            int withBloom = changed(plain, read(context.takeScreenshot("maro-block-esp")));
 
             context.runOnClient(c -> {
                 ((BooleanSetting) setting(module, "ESP Bloom")).set(false);
                 ((BooleanSetting) setting(module, "Tracer Bloom")).set(false);
             });
             context.waitTicks(5);
-            int withoutBloom = lit(context.takeScreenshot("maro-block-esp-no-bloom"));
-            System.out.println("BLOCK ESP lit pixels: off " + plain + ", bloom " + withBloom + ", no bloom " + withoutBloom);
-            require(withoutBloom - plain > 400, "Block ESP drew too little: " + withoutBloom + " vs " + plain + " off");
+            int withoutBloom = changed(plain, read(context.takeScreenshot("maro-block-esp-no-bloom")));
+            System.out.println("BLOCK ESP pixels changed from Block ESP off: bloom " + withBloom + ", no bloom " + withoutBloom);
+            require(withoutBloom > 400, "Block ESP drew too little: " + withoutBloom);
             require(withBloom > withoutBloom, "Bloom added no glow: " + withBloom + " vs " + withoutBloom);
 
             context.runOnClient(c -> {
@@ -115,9 +115,8 @@ final class BlockEspChecks {
                 ((NumberSetting) setting(module, "Max Y")).set(-64.0);
             });
             context.waitTicks(3);
-            int hidden = lit(context.takeScreenshot("maro-block-esp-you-above"));
-            require(Math.abs(hidden - plain) < (withoutBloom - plain) / 4,
-                    "Y Limit You drew while you were above Max Y: " + hidden + " vs " + plain + " off");
+            int hidden = changed(plain, read(context.takeScreenshot("maro-block-esp-you-above")));
+            require(hidden < withoutBloom / 4, "Y Limit You drew while you were above Max Y: " + hidden);
             context.runOnClient(c -> ((ModeSetting) setting(module, "Y Limit")).set("Blocks"));
             context.runOnClient(c -> ((NumberSetting) setting(module, "Max Y")).set(0.0));
             world.getServer().runCommand("setblock " + at(SPAWNER) + " minecraft:air");
@@ -142,25 +141,27 @@ final class BlockEspChecks {
         return pos.getX() + " " + pos.getY() + " " + pos.getZ();
     }
 
-    /**
-     * Pixels bright and strongly coloured: the ESP's boxes, tracers and glow, but also the test
-     * world's sky and grass, so a count means something only next to one with Block ESP off. The
-     * bottom fifth, where the hotbar and chat are, is left out.
-     */
-    private static int lit(Path shot) {
-        BufferedImage image;
+    private static BufferedImage read(Path shot) {
         try {
-            image = ImageIO.read(shot.toFile());
+            return ImageIO.read(shot.toFile());
         } catch (IOException e) {
             throw new AssertionError("Cannot read " + shot, e);
         }
+    }
+
+    /**
+     * Pixels clearly different from the same view with Block ESP off: what its boxes, tracers and
+     * glow drew. The bottom fifth, where the hotbar and chat are, is left out.
+     */
+    private static int changed(BufferedImage before, BufferedImage after) {
         int count = 0;
-        for (int y = 0; y < image.getHeight() * 4 / 5; y += 2) {
-            for (int x = 0; x < image.getWidth(); x += 2) {
-                int rgb = image.getRGB(x, y);
-                int r = rgb >> 16 & 0xFF, g = rgb >> 8 & 0xFF, b = rgb & 0xFF;
-                int max = Math.max(r, Math.max(g, b)), min = Math.min(r, Math.min(g, b));
-                if (max > 90 && max - min > 60) count++;
+        int width = Math.min(before.getWidth(), after.getWidth()), height = Math.min(before.getHeight(), after.getHeight());
+        for (int y = 0; y < height * 4 / 5; y += 2) {
+            for (int x = 0; x < width; x += 2) {
+                int a = before.getRGB(x, y), b = after.getRGB(x, y);
+                int d = Math.abs((a >> 16 & 0xFF) - (b >> 16 & 0xFF)) + Math.abs((a >> 8 & 0xFF) - (b >> 8 & 0xFF))
+                        + Math.abs((a & 0xFF) - (b & 0xFF));
+                if (d > 60) count++;
             }
         }
         return count;
