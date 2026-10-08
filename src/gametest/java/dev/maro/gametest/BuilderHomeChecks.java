@@ -111,6 +111,7 @@ final class BuilderHomeChecks {
         checkedRoomAccess(context,world,builder,start);
         elevatedRoomAccess(context,world,builder,start);
         raisedLiquidEntrance(context,world,builder,start);
+        sealedRepairDrop(context,world,builder,start);
         crouchedMining(context,world,builder,start);
         columnEdgeMining(context,world,builder,start);
         teleport(world,start);context.waitTicks(12);
@@ -355,6 +356,37 @@ final class BuilderHomeChecks {
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Elevated room left work, dirt, damage or menu");BuilderPacketChecks.verify(1);builder.pause("elevated entry checked");});
         teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+4)+" "+(origin.getY()+3)+" "+(origin.getZ()+4)+" air");context.waitTicks(4);
         System.out.println("[builder-home] Exterior-column opening retained, mined and replaced; elevated work and zero-support cleanup completed in "+elapsed+" ticks");
+    }
+    private static void sealedRepairDrop(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-home] Recover a required repair drop on a sealed upper ledge through native proved access");
+        var origin=start.add(-3,0,10);var cells=new BlockState[7*5*8];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());
+        for(int y=0;y<5;y++)for(int z=0;z<8;z++)for(int x=0;x<7;x++){
+            boolean room=z<7&&(y==0||y==3||(y==1||y==2)&&(x==0||x==6||z==0||z==6));
+            boolean ledge=y==1&&z==7&&x>=2&&x<=4;
+            if(room||ledge)cells[(y*8+z)*7+x]=Blocks.STONE.getDefaultState();
+            command(world,"setblock",origin.add(x,y,z),room||ledge?"stone":"air");
+        }
+        int repair=(3*8+1)*7+1;var opening=origin.add(1,3,1);cells[repair]=Blocks.CRACKED_POLISHED_BLACKSTONE_BRICKS.getDefaultState();command(world,"setblock",opening,"air");
+        world.getServer().runCommand("clear @a cracked_polished_blackstone_bricks");
+        for(String item:List.of("stone 16","dirt 64","diamond_pickaxe","diamond_shovel","cooked_beef 16"))world.getServer().runCommand("give @a "+item);
+        world.getServer().runOnServer(server->{var drop=new net.minecraft.entity.ItemEntity(server.getOverworld(),origin.getX()+3.5,origin.getY()+2,origin.getZ()+7.5,new ItemStack(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS));drop.setPickupDelay(0);server.getOverworld().spawnEntity(drop);});
+        teleport(world,origin.add(3,1,3));context.waitTicks(12);
+        context.runOnClient(client->{
+            require(builder.inventoryCount(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)==0,"Sealed drop fixture supplied the missing repair material directly");
+            var walker=(BuilderWalk)field(builder,"walker");require(!walker.canReachStand(origin.add(3,2,7)),"Sealed drop fixture already had walking access");
+            setting(builder,"Temporary Supports",true);setting(builder,"Prepare Whole Build",false);builder.install(new Schematic("sealed-repair-drop.nbt","test",7,5,8,BlockPos.ORIGIN,cells));builder.setOrigin(origin);
+            @SuppressWarnings("unchecked")var owners=(Map<BlockPos,Integer>)field(builder,"floorAccessWork");owners.put(opening,-1);
+            BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
+        });
+        boolean planned=false;int elapsed=0;
+        for(;elapsed<2000&&context.computeOnClient(client->builder.building());elapsed++){
+            planned|=context.computeOnClient(client->field(builder,"accessPickupSearch")!=null);context.waitTick();
+        }
+        require(planned,"Sealed repair drop never exercised native pickup access planning");
+        require(world.getServer().computeOnServer(server->{var w=server.getOverworld();for(int i=0;i<cells.length;i++)if(!cells[i].isOf(Blocks.STRUCTURE_VOID)&&!AutoBuilder.matchesBuildState(w.getBlockState(origin.add(i%7,i/56,i/7%8)),cells[i]))return false;for(int y=0;y<8;y++)for(int z=-3;z<11;z++)for(int x=-3;x<10;x++)if(w.getBlockState(origin.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Sealed repair drop access did not collect and restore every block/temporary post");
+        context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Sealed drop left work, supports, damage or menu: "+builder.status());BuilderPacketChecks.verify(1);builder.pause("sealed drop checked");});
+        teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+6)+" "+(origin.getY()+4)+" "+(origin.getZ()+7)+" air");context.waitTicks(4);
+        System.out.println("[builder-home] Sealed upper repair drop collected through native access; all openings restored, zero dirt, full health and bounded look in "+elapsed+" ticks");
     }
     private static void raisedLiquidEntrance(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-home] Enter above a liquid view, retain the wall footing, then descend and restore the entrance");

@@ -341,8 +341,12 @@ public final class AutoBuilder extends Module {
     private final Map<BlockPos,Set<BlockPos>> accessDropSources=new HashMap<>();
     private final Map<Item,Set<BlockPos>> accessStockSources=new HashMap<>();
     private int accessPickupId=-1,accessPickupUntil,accessPickupCount;
+    private int accessPickupWork=-1;
     private Item accessPickupItem;
     private BlockPos accessPickupStand;
+    private BlockPos accessPickupFeet;
+    private List<BlockPos> accessPickupViews=List.of();
+    private ViewSearch accessPickupSearch;
     private final Map<Integer,Integer> accessPickupRetry=new HashMap<>();
     private boolean openingRestoration;
     private boolean waterDeparture;
@@ -681,7 +685,7 @@ public final class AutoBuilder extends Module {
         lookWaitStarted=-1;queuedAimPoint=aimPoint=null;
         bridgeTarget=null;
         clearEntryPassage();
-        supportPickup=null;supportPickupUntil=supportRecycleAt=0;accessPickupId=-1;accessPickupStand=null;accessPickupItem=null;accessPickupRetry.clear();
+        supportPickup=null;supportPickupUntil=supportRecycleAt=0;accessPickupId=-1;accessPickupWork=-1;accessPickupStand=accessPickupFeet=null;accessPickupItem=null;accessPickupViews=List.of();accessPickupSearch=null;accessPickupRetry.clear();
         walker.resetLook();cameraLocked=false;
         placementAttemptTarget=null;failedPlacementUntil.clear();unexpectedBuildHandler=null;resetChestJourney();
         stopEating();navigatingCell=-1;foodRestock=foodShopping=supportRestock=supportShopping=false;
@@ -1099,6 +1103,9 @@ public final class AutoBuilder extends Module {
     private boolean deferUnproductiveWork(){
         int cell=navigatingCell;
         if(cell<0||cell>=states.length)return false;
+        // The repair drop owns a separate, bounded access deadline. Let its
+        // checked climb/passage finish before resuming material placement.
+        if(accessPickupId>=0&&cell==accessPickupWork)return false;
         if(states[cell]==CORRECT||states[cell]==IGNORED){navigationWorkTicks.remove(cell);return false;}
         int spent=navigationWorkTicks.merge(cell,1,Integer::sum);
         // Count active work, including its scaffolding, but finish any native
@@ -3381,19 +3388,43 @@ public final class AutoBuilder extends Module {
         if(accessPickupId>=0){
             var entity=mc.world.getEntityById(accessPickupId);
             if(!(entity instanceof net.minecraft.entity.ItemEntity drop)||!drop.isAlive()||inventoryCount(accessPickupItem)>accessPickupCount
-                ||ticks>=accessPickupUntil||!walker.canStand(accessPickupStand)){
-                accessPickupRetry.put(accessPickupId,ticks+100);accessPickupId=-1;accessPickupStand=null;accessPickupItem=null;walker.stop();return false;
+                ||ticks>=accessPickupUntil){
+                boolean routed=accessPickupSearch!=null;
+                accessPickupRetry.put(accessPickupId,ticks+100);accessPickupId=-1;accessPickupWork=-1;accessPickupStand=accessPickupFeet=null;accessPickupItem=null;accessPickupViews=List.of();accessPickupSearch=null;
+                if(routed)resetAccessRouting();else walker.stop();return false;
             }
+            if(accessPickupSearch!=null){
+                long deadline=System.nanoTime()+3_000_000;
+                for(var stand:accessPickupViews){
+                    if(System.nanoTime()>=deadline)break;
+                    if(!walker.canStand(stand)||!walker.canReachStand(stand))continue;
+                    // A real route is now open. Release the scaffold intent
+                    // and collect before another repair closes that route.
+                    resetAccessRouting();accessPickupSearch=null;accessPickupStand=stand;accessPickupUntil=ticks+100;
+                    walker.standAt(stand);status="Collecting access repair material";return true;
+                }
+                if(accessStand!=null||standGoal!=null||ceilingTop!=null||entryPassageTop!=null||passageStand!=null
+                    ||placement!=null||pendingPlacement!=null||mining!=null||recoveryPhase!=0)return false;
+                var feet=mc.player.getBlockPos();
+                if(!feet.equals(accessPickupFeet)){accessPickupFeet=feet.toImmutable();accessPickupSearch=new ViewSearch();}
+                navigatingCell=accessPickupWork;navigationStarted=ticks;
+                if(prepareDirectColumn(accessPickupViews,accessPickupWork,accessPickupSearch)
+                    ||preparePassage(accessPickupViews,accessPickupWork,accessPickupSearch)
+                    ||prepareCeilingEntry(accessPickupViews,accessPickupWork,accessPickupSearch)
+                    ||prepareElevatedEntry(accessPickupViews,accessPickupWork,accessPickupSearch))return true;
+                accessPickupUntil=ticks;return false;
+            }
+            if(!walker.canStand(accessPickupStand)){accessPickupUntil=ticks;return false;}
             walker.standAt(accessPickupStand);status="Collecting access repair material";return true;
         }
         if(!autoMove.get()||!mc.player.isOnGround()||floorAccessWork.isEmpty())return false;
-        var required=new HashMap<Item,Integer>();var openings=new HashMap<Item,List<BlockPos>>();
+        var required=new HashMap<Item,Integer>();var openings=new HashMap<Item,List<BlockPos>>();var repairCells=new HashMap<Item,Integer>();
         for(var entry:floorAccessWork.entrySet()){
             int owner=entry.getValue(),cell=schematic.indexAt(entry.getKey().subtract(anchor()),turns(),mirror.get());
             if(cell<0||owner>=0&&owner<states.length&&!matchesBuildState(mc.world.getBlockState(position(owner)),desired(owner))
                 ||!mc.world.getBlockState(entry.getKey()).isAir())continue;
             var item=Schematic.material(desired(cell));if(item==Items.AIR)continue;
-            required.merge(item,1,Integer::sum);openings.computeIfAbsent(item,key->new ArrayList<>()).add(entry.getKey());
+            required.merge(item,1,Integer::sum);openings.computeIfAbsent(item,key->new ArrayList<>()).add(entry.getKey());repairCells.putIfAbsent(item,cell);
         }
         required.entrySet().removeIf(entry->inventoryCount(entry.getKey())>=entry.getValue());if(required.isEmpty())return false;
         accessPickupRetry.values().removeIf(until->until<=ticks);
@@ -3412,8 +3443,16 @@ public final class AutoBuilder extends Module {
                 .thenComparingDouble(stand->stand.getSquaredDistance(mc.player.getBlockPos())));
             for(var stand:views){
                 if(System.nanoTime()>=deadline)break;if(!walker.canReachStand(stand))continue;
-                accessPickupId=drop.getId();accessPickupStand=stand;accessPickupItem=drop.getStack().getItem();accessPickupCount=inventoryCount(accessPickupItem);accessPickupUntil=ticks+100;
+                accessPickupId=drop.getId();accessPickupStand=stand;accessPickupItem=drop.getStack().getItem();accessPickupWork=repairCells.get(accessPickupItem);accessPickupCount=inventoryCount(accessPickupItem);accessPickupUntil=ticks+100;
                 walker.stop();walker.standAt(stand);status="Collecting access repair material";return true;
+            }
+            // A needed mined item can land on a sealed upper ledge. Walking
+            // alone must not retry until it despawns: prove a bounded native
+            // column or registered entrance using its unfinished repair owner.
+            if(!views.isEmpty()&&support.get()&&unstuck.get()){
+                accessPickupId=drop.getId();accessPickupItem=drop.getStack().getItem();accessPickupWork=repairCells.get(accessPickupItem);
+                accessPickupViews=List.copyOf(views);accessPickupStand=views.getFirst();accessPickupSearch=new ViewSearch();accessPickupFeet=mc.player.getBlockPos().toImmutable();
+                accessPickupCount=inventoryCount(accessPickupItem);accessPickupUntil=ticks+600;walker.stop();status="Checking access to repair material";return true;
             }
             accessPickupRetry.put(drop.getId(),ticks+40);
         }
