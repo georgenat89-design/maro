@@ -43,7 +43,7 @@ public final class CustomCrosshair extends Module {
         MAX_TEXT, "Type your crosshair").visible(this::textMode));
     private final NumberSetting textSize = add(new NumberSetting("Text Size", "Height of the letters in GUI pixels", 9, 4, 40, 0.5)
         .visible(this::textMode));
-    private final ModeSetting textFont = add(new ModeSetting("Font", "Minecraft also draws symbols like ♥ ★ ✦ ☠; Clean is the menu font",
+    private final ModeSetting textFont = add(new ModeSetting("Font", "Minecraft can also show symbols like hearts and stars; Clean is the menu font",
         "Minecraft", "Minecraft", "Clean").visible(this::textMode));
     private final BooleanSetting textShadow = add(new BooleanSetting("Text Shadow", "A drop shadow under the text", false)
         .visible(this::textMode));

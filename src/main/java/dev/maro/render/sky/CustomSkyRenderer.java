@@ -116,16 +116,19 @@ public final class CustomSkyRenderer {
             GpuBufferSlice data = writeUniforms(2f / (projectionScale * target.textureHeight));
             GpuBuffer vertices = VertexFormats.POSITION.uploadImmediateVertexBuffer(VERTICES);
             GpuBuffer indices = VertexFormats.POSITION.uploadImmediateIndexBuffer(INDICES);
+            // Everything that writes to the GPU (the placeholder's upload included) has to happen
+            // before the render pass opens. A panorama wraps round the horizon; anything else stops
+            // at its edges.
+            Texture sky = picture != null ? picture : placeholder();
+            AddressMode across = CustomSky.pictureWraps() ? AddressMode.REPEAT : AddressMode.CLAMP_TO_EDGE;
+            GpuSampler sampler = RenderSystem.getSamplerCache().get(across, AddressMode.CLAMP_TO_EDGE, FilterMode.LINEAR, FilterMode.LINEAR, false);
 
             RenderPass pass = RenderSystem.getDevice().createCommandEncoder()
                 .createRenderPass(() -> "maro custom sky", target.getColorAttachmentView(), OptionalInt.empty());
             try {
                 pass.setPipeline(PIPELINE);
                 pass.setUniform("SkyData", data);
-                // A panorama wraps round the horizon; anything else stops at its edges.
-                AddressMode across = CustomSky.pictureWraps() ? AddressMode.REPEAT : AddressMode.CLAMP_TO_EDGE;
-                GpuSampler sampler = RenderSystem.getSamplerCache().get(across, AddressMode.CLAMP_TO_EDGE, FilterMode.LINEAR, FilterMode.LINEAR, false);
-                pass.bindTexture("u_Sky", (picture != null ? picture : placeholder()).getGlTextureView(), sampler);
+                pass.bindTexture("u_Sky", sky.getGlTextureView(), sampler);
                 pass.setVertexBuffer(0, vertices);
                 pass.setIndexBuffer(indices, VertexFormat.IndexType.INT);
                 pass.drawIndexed(0, 0, 6, 1);
