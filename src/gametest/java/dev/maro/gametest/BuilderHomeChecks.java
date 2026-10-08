@@ -95,6 +95,7 @@ final class BuilderHomeChecks {
         context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(homes.ready()&&!builder.building(),"Storage setup failed or unexpectedly started building: "+builder.status());var entry=homes.saveData().get(0).getAsJsonObject();var feet=BlockPos.ofFloored(entry.get("x").getAsDouble(),entry.get("y").getAsDouble(),entry.get("z").getAsDouble());for(var reserved:List.of(feet,feet.up())){require((boolean)call(builder,"reservedSupplyAccess",new Class<?>[]{BlockPos.class},reserved),"Storage-home arrival cell was available to scaffolding");require(call(builder,"placement",new Class<?>[]{BlockPos.class,BlockState.class,Item.class,int.class,boolean.class},reserved,Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true)==null,"Scaffold could block native storage arrival");}});require(saveCommands==before+1,"Absent home 1 did not save exactly once");
         longCheckedWalk(context,world,builder,start);
         blockedRepairReceivers(context,world,builder,start,chest);
+        scaffoldObstructedSign(context,world,builder,start);
         roofEdgeRoundTrip(context,world,builder,home2,chest);
         obstructedStorageRoundTrip(context,world,builder,home2,chest);
         immediateWorkBeforeAccess(context,world,builder,home2);
@@ -421,6 +422,31 @@ final class BuilderHomeChecks {
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20,"Long route left active work, supports or damage");BuilderPacketChecks.verify(1);builder.pause("long walk checked");setting(builder,"Temporary Supports",true);});
         teleport(world,start);context.waitTicks(12);
         System.out.println("[builder-home] Long proved native walk retained past 240 ticks and finished its placement without a restart/home/support/damage in "+elapsed+" walking ticks");
+    }
+    private static void scaffoldObstructedSign(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-home] Clear an owned scaffold from a native rotated sign view, then clean up and preserve its chest/floor");
+        var origin=start.south(9);var target=origin.add(2,1,2);var cells=new BlockState[100];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());
+        for(int z=0;z<5;z++)for(int x=0;x<5;x++){cells[z*5+x]=Blocks.STONE.getDefaultState();command(world,"setblock",origin.add(x,0,z),"stone");}
+        cells[12]=Blocks.CHEST.getDefaultState();command(world,"setblock",target.down(),"chest");cells[37]=Blocks.OAK_SIGN.getDefaultState().with(net.minecraft.state.property.Properties.ROTATION,2);command(world,"setblock",target,"air");
+        var owned=new LinkedHashSet<BlockPos>();
+        for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++)if(dx!=0||dz!=0){var post=target.add(dx,0,dz);owned.add(post);command(world,"setblock",post,"dirt");}
+        owned.add(target.up());command(world,"setblock",target.up(),"dirt");
+        var footing=origin.add(0,1,4);command(world,"setblock",footing,"stone");
+        world.getServer().runCommand("clear @a oak_sign");world.getServer().runCommand("give @a oak_sign 1");teleport(world,footing.up());context.waitTicks(12);
+        context.runOnClient(client->{
+            setting(builder,"Temporary Supports",true);setting(builder,"Prepare Whole Build",false);setting(builder,"Restock When Empty",false);setting(builder,"Auto Buy When Missing",false);
+            builder.install(new Schematic("scaffold-obstructed-sign.nbt","test",5,4,5,BlockPos.ORIGIN,cells));builder.setOrigin(origin);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
+            @SuppressWarnings("unchecked")var supports=(Set<BlockPos>)field(builder,"supports");supports.addAll(owned);
+            require(call(builder,"placement",new Class<?>[]{BlockPos.class,BlockState.class,Item.class,int.class,boolean.class},target,cells[37],Items.OAK_SIGN,37,false)==null,"Sign fixture already had an unobstructed native placement");
+        });
+        boolean cleared=false;int elapsed=0;
+        for(;elapsed<1200&&context.computeOnClient(client->builder.building());elapsed++){
+            cleared|=world.getServer().computeOnServer(server->owned.stream().anyMatch(post->server.getOverworld().getBlockState(post).isAir()));context.waitTick();
+        }
+        require(cleared&&world.getServer().computeOnServer(server->{var level=server.getOverworld();for(int i=0;i<cells.length;i++)if(!cells[i].isOf(Blocks.STRUCTURE_VOID)&&!AutoBuilder.matchesBuildState(level.getBlockState(origin.add(i%5,i/25,i/5%5)),cells[i]))return false;return owned.stream().allMatch(post->level.getBlockState(post).isAir())&&level.getBlockState(footing).isOf(Blocks.STONE);}),"Owned scaffold blocked the sign or cleanup changed native build/footing: "+context.computeOnClient(client->builder.status()));
+        context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Sign recovery left work, dirt, damage or a menu: "+builder.status());BuilderPacketChecks.verify(1);builder.pause("scaffold-obstructed sign checked");setting(builder,"Restock When Empty",true);setting(builder,"Auto Buy When Missing",true);});
+        teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+4)+" "+(origin.getY()+3)+" "+(origin.getZ()+4)+" air");context.waitTicks(4);
+        System.out.println("[builder-home] Rotated native sign placed after owned ray obstruction removal; chest/floor/footing intact, zero dirt and full health in "+elapsed+" ticks");
     }
     private static void blockedRepairReceivers(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,BlockPos chest){
         System.out.println("[builder-home] Skip two unreachable repair receivers and patch the hole from actual selected storage");

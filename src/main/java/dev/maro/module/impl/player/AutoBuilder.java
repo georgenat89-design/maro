@@ -1362,6 +1362,10 @@ public final class AutoBuilder extends Module {
             var body=mc.player.getBoundingBox().offset(eye.subtract(mc.player.getEyePos()));
             boolean direct=!mc.world.getBlockState(target).isReplaceable()?visibleHit(target,eye)!=null
                 :wanted!=null&&placement(target,wanted,Schematic.material(wanted),cell,false,eye,body)!=null;
+            if(!direct&&roofAccess&&!liquid){
+                var removed=ownedPlacementOpening(target,stand,eye,body,cell);
+                if(removed!=null){direct=true;roofOpenings.put(stand,removed);}
+            }
             if(!direct&&roofAccess&&stand.getY()>target.getY()&&(!liquid||fluidContained(target,wanted))){
                 var removed=liquidTopOpening(target,stand,eye);
                 if(removed!=null){direct=true;search.liquidOpenings.put(stand,removed);}
@@ -1464,7 +1468,7 @@ public final class AutoBuilder extends Module {
         if(roofAccess&&search.liquidOpenings.containsKey(standGoal)){
             liquidTopStand=standGoal;liquidTopBlocks.clear();liquidTopBlocks.addAll(search.liquidOpenings.get(standGoal));
             passageBlocks.addAll(liquidTopBlocks);
-            for(var opening:liquidTopBlocks){floorAccessWork.put(opening,cell);openingRepairDepth.put(opening,-opening.getY());}
+            for(var opening:liquidTopBlocks)if(!supports.contains(opening)){floorAccessWork.put(opening,cell);openingRepairDepth.put(opening,-opening.getY());}
         }
         standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();status="Moving around an obstructed block";return true;
     }
@@ -2079,6 +2083,33 @@ public final class AutoBuilder extends Module {
         cleanupTarget=post;navigatingCell=work;
         if(!repositionTarget(post,cleanupStands.computeIfAbsent(post,p->new HashMap<>()))){walker.release();status="Checking access to the obsolete liquid-view support";}
         return true;
+    }
+    /** Clear only owned scaffold crossed by an otherwise valid native placement ray. */
+    private Set<BlockPos> ownedPlacementOpening(BlockPos target,BlockPos stand,Vec3d eye,Box body,int cell){
+        if(!unstuck.get()||cell<0)return null;
+        var candidates=new LinkedHashSet<BlockPos>();
+        for(var post:supports){
+            if(Math.abs(post.getX()-target.getX())>3||Math.abs(post.getZ()-target.getZ())>3
+                ||post.getY()<target.getY()-1||post.getY()>target.getY()+3||post.equals(stand.down())
+                ||plannedSolid(post)||servesActiveScaffold(post)||!mc.world.getBlockState(post).isOf(Blocks.DIRT)||!safeToRecycle(post))continue;
+            candidates.add(post);
+        }
+        if(candidates.isEmpty()||candidates.size()>32)return null;
+        var wanted=desired(cell);var item=Schematic.material(wanted);
+        var plan=placement(target,wanted,item,cell,false,eye,body,clearedView(candidates));if(plan==null)return null;
+        var point=plan.hit.getPos();var end=point.add(point.subtract(eye).normalize().multiply(.003));
+        var removed=new LinkedHashSet<BlockPos>();boolean reached=false;
+        for(int cut=0;cut<=4;cut++){
+            var view=removed.isEmpty()?mc.world:clearedView(removed);
+            var ray=view.raycast(new RaycastContext(eye,end,RaycastContext.ShapeType.OUTLINE,RaycastContext.FluidHandling.NONE,mc.player));
+            if(ray.getType()!=HitResult.Type.BLOCK)return null;
+            if(ray.getBlockPos().equals(plan.hit.getBlockPos())&&ray.getSide()==plan.hit.getSide()){reached=true;break;}
+            if(!candidates.contains(ray.getBlockPos())||!removed.add(ray.getBlockPos().toImmutable()))return null;
+        }
+        if(!reached||removed.isEmpty()||removed.size()>4||!safeToRecycle(removed)
+            ||removed.stream().noneMatch(pos->visibleHit(pos,eye)!=null)
+            ||placement(target,wanted,item,cell,false,eye,body,clearedView(removed))==null)return null;
+        return Collections.unmodifiableSet(removed);
     }
     /** Prove native placement through a roof opening; retain its ledge, attachments and basin walls. */
     private Set<BlockPos> liquidTopOpening(BlockPos target,BlockPos stand,Vec3d eye){
