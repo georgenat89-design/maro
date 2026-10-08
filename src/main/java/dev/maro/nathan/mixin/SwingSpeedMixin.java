@@ -38,7 +38,7 @@ public abstract class SwingSpeedMixin {
 
     @ModifyExpressionValue(method = {"tickHandSwing()V", "swingHand(Lnet/minecraft/util/Hand;Z)V"},
         at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/LivingEntity;getHandSwingDuration()I"),
-        require = 1)
+        require = 0)
     private int nameeprotect$scaleSwingDuration(int duration) {
         if ((Object) this != MinecraftClient.getInstance().player) return duration;
 

@@ -2,6 +2,7 @@ package dev.maro.mixin;
 
 import dev.maro.Maro;
 import dev.maro.module.impl.visuals.CustomTotem;
+import dev.maro.render.TotemTexture;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.SpriteContents;
 import org.spongepowered.asm.mixin.Final;
@@ -34,7 +35,14 @@ public abstract class CustomTotemSpriteMixin {
     @Inject(method = "<init>*", at = @At("RETURN"))
     private void maro$customTotem(CallbackInfo ci) {
         if (maro$customTotem) return;
-        var picture = CustomTotem.pictureFor(((SpriteContents) (Object) this).getId(), image);
+        TotemTexture.Made picture;
+        try {
+            picture = CustomTotem.pictureFor(((SpriteContents) (Object) this).getId(), image);
+        } catch (RuntimeException | OutOfMemoryError e) {
+            // Thrown from here, it would fail the whole resource reload and with it the game.
+            Maro.LOGGER.warn("Custom Totem could not make its picture; the normal totem stays", e);
+            return;
+        }
         if (picture == null) return;
         int size = picture.size();
         NativeImage swapped = new NativeImage(size, size, false);
