@@ -23,7 +23,17 @@ no legal piston placement or offset roof opening. The first positive run
 exposed a handoff bug: floorDeferred removed a still-intact second beam's
 registration after its stale completion counter enabled final restoration.
 The fix retains all active roof beams and checks unfinished native access
-owners before entering final restoration. Positive run3 is testing this.
+owners before entering final restoration. Full native run3 passed in 3m33s;
+the piston took 261 ticks and the intact glass roof consumed no glass.
+Committed/pushed 2eb2623, with matching 493 production classes and a verified
+release candidate. Its exact695 replay placed piston580 and repaired320,
+then stalled at695 on a different native mining guard. Inventory4 proves
+a retired, restored passage block (-26216,64,-150580) remained in the set
+without an owner when a new passage for618 was added. New passage activation
+now replaces that set. The elevated-room native regression seeds a retired
+opening and requires the new passage to discard it; full positive4 passed in
+3m36s, with elevated-room placement/restoration and zero supports in 526 ticks.
+The failed replay was deliberately stopped after saving its native scene.
 Main compilation and native gametest launch must run sequentially to avoid
 a compile race; that earlier compiler failure was not a native result.
 Exact695-c089 capture SHA256:
@@ -32,7 +42,8 @@ It retains idle homes, native supplies and128 posts. The original695 fixture
 is preserved; the suffixed name identifies this different native scene.
 No full710 or fresh0 pass yet. CI456 on96a passed build/general/home checks,
 then failed the eight-cell restart inventory check (unnecessary glass repair).
-CI458 on current committedc089 is still running.
+CI458 on c089 passed the sealed chest-return case, then failed the same restart
+inventory check. CI460 on 2eb2623 is running. No true fresh run on this head yet.
 
 The96a51a5 replay placed the four missing hoppers and another wire, reaching685,
 then stalled. Its repair queue proves a depth/owner cycle:636 is owned by the

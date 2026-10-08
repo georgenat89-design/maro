@@ -1591,7 +1591,7 @@ public final class AutoBuilder extends Module {
             ||!walker.canReachAfterClearing(top,destination,removed)){
             clearEntryPassage();return false;
         }
-        passageBlocks.addAll(removed);passageStand=destination;
+        passageBlocks.clear();passageBlocks.addAll(removed);passageStand=destination;
         for(var opening:removed)if(passageCell(opening)){
             floorAccessWork.put(opening,work);openingRepairDepth.put(opening,opening.getManhattanDistance(top));
         }
@@ -2563,7 +2563,7 @@ public final class AutoBuilder extends Module {
                 ||removed.stream().noneMatch(p->visibleHit(p)!=null)||!safeToRecycle(removed))continue;
             var destination=destinations.get(sample%destinations.size());
             if(!walker.canReachAfterClearing(feet,destination,removed))continue;
-            passageBlocks.addAll(removed);passageStand=destination;
+            passageBlocks.clear();passageBlocks.addAll(removed);passageStand=destination;
             if(cleanupTarget!=null)openingRestoration=false;
             for(var opening:removed)if(passageCell(opening)){
                 floorAccessWork.put(opening,work);openingRepairDepth.put(opening,Math.abs(opening.getX()-feet.getX())+Math.abs(opening.getZ()-feet.getZ()));

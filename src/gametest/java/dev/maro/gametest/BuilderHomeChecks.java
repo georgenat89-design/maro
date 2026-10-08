@@ -304,10 +304,14 @@ final class BuilderHomeChecks {
         int target=37;cells[target]=Blocks.GLASS.getDefaultState();
         for(String item:List.of("glass 1","stone 16","dirt 32","diamond_pickaxe","diamond_shovel"))world.getServer().runCommand("give @a "+item);
         teleport(world,start.south(8));context.waitTicks(12);
-        context.runOnClient(client->{setting(builder,"Temporary Supports",true);setting(builder,"Prepare Whole Build",false);builder.install(new Schematic("home-elevated-entry.nbt","test",5,4,5,BlockPos.ORIGIN,cells));builder.setOrigin(origin);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();});
+        var retired=origin;
+        context.runOnClient(client->{setting(builder,"Temporary Supports",true);setting(builder,"Prepare Whole Build",false);builder.install(new Schematic("home-elevated-entry.nbt","test",5,4,5,BlockPos.ORIGIN,cells));builder.setOrigin(origin);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
+            @SuppressWarnings("unchecked")var oldPassage=(Set<BlockPos>)field(builder,"passageBlocks");oldPassage.add(retired);
+        });
         boolean retained=false;int elapsed=0;
         for(;elapsed<2400&&context.computeOnClient(client->builder.building());elapsed++){
-            retained|=context.computeOnClient(client->field(builder,"entryPassageTop")!=null);context.waitTick();
+            retained|=context.computeOnClient(client->field(builder,"entryPassageTop")!=null);
+            context.runOnClient(client->{if(field(builder,"passageStand")!=null)require(!((Set<?>)field(builder,"passageBlocks")).contains(retired),"New verified passage retained a retired opening");});context.waitTick();
         }
         require(retained,"Elevated room did not exercise the retained exterior-column opening");
         require(world.getServer().computeOnServer(server->{for(int i=0;i<cells.length;i++)if(!cells[i].isOf(Blocks.STRUCTURE_VOID)&&!AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(origin.add(i%5,i/25,i/5%5)),cells[i]))return false;return true;}),"Exterior column did not open its proved passage and restore the room");
