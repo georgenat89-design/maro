@@ -361,7 +361,9 @@ final class BuilderHomeChecks {
         var origin=start.add(-4,4,10);var cells=new BlockState[9*6*9];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());
         for(int y=0;y<6;y++)for(int z=0;z<9;z++)for(int x=0;x<9;x++){
             boolean rim=x==0||x==8||z==0||z==8;
-            boolean solid=y==0||y==5||y==1&&!rim||y>=2&&y<=4&&rim;
+            // Leave both lower rim cells empty. A floor under the rim would
+            // permit a lower doorway and fail to exercise the higher entrance.
+            boolean solid=(y==0||y==1)&&!rim||y==5||y>=2&&y<=4&&rim;
             if(solid)cells[(y*9+z)*9+x]=Blocks.STONE.getDefaultState();
             command(world,"setblock",origin.add(x,y,z),solid?"stone":"air");
         }
