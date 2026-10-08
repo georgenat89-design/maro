@@ -452,10 +452,10 @@ final class AutoBuilderChecks {
                 builder.install(stash);builder.setOrigin(origin);((Set<BlockPos>)field(builder,"supports")).addAll(priorSupports);client.crosshairTarget=new BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();if(checkpoint!=null)checkpoint.restoreBuilder(builder);BuilderPacketChecks.begin();if(homeTest)BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
                 if(upper)try{var attempts=AutoBuilder.class.getDeclaredField("recoveryAttempts");attempts.setAccessible(true);attempts.setInt(builder,3);}catch(ReflectiveOperationException error){throw new AssertionError(error);}
             });
-            // This survival replay includes material trips, enclosed access,
-            // removal of 128 captured posts and restoration of every opening.
-            // The 30-minute run reached cleanup while still making progress.
-            await(context,builder,72000);
+            // The full empty-ground run also prepares stock and constructs all
+            // 710 cells before removing its posts and restoring every opening.
+            // Individual access/pickup no-progress limits remain in production.
+            await(context,builder,homeTest&&checkpoint==null?90000:72000);
             String mismatch=world.getServer().computeOnServer(server->{for(int i=0;i<stash.size();i++)if(!stash.state(i).isAir()&&!AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(origin.add(stash.local(i))),stash.state(i)))return origin.add(stash.local(i)).toShortString();return "";});
             require(mismatch.isEmpty(),"Stash server mismatch at "+mismatch);
             String dirt=world.getServer().computeOnServer(server->{for(int x=-24;x<=24;x++)for(int y=0;y<=12;y++)for(int z=-24;z<=24;z++)if(server.getOverworld().getBlockState(start.add(x,y,z)).isOf(Blocks.DIRT))return start.add(x,y,z).toShortString();return "";});

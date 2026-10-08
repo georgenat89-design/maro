@@ -424,7 +424,7 @@ final class BuilderHomeChecks {
         var room=start.add(-15,0,-5);var target=start.south(4);
         world.getServer().runCommand("fill "+room.down().toShortString().replace(",","")+" "+room.add(2,2,2).toShortString().replace(",","")+" bedrock");
         command(world,"setblock",room.add(1,0,1),"air");command(world,"setblock",room.add(1,1,1),"air");command(world,"setblock",target,"air");
-        world.getServer().runCommand("give @a stone 1");teleport(world,room.add(1,0,1));context.waitTicks(12);int first=commands.size(),savesBefore=saveCommands,deletesBefore=deleteCommands;
+        world.getServer().runCommand("give @a stone 1");teleport(world,room.add(1,0,1));context.waitTicks(12);int first=commands.size(),savesBefore=saveCommands,deletesBefore=deleteCommands;Home secondBefore=saved[1],thirdBefore=saved[2];
         context.runOnClient(client->{
             setting(builder,"Temporary Supports",false);setting(builder,"Prepare Whole Build",false);builder.install(new Schematic("exhausted-enclosed-route.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);
             BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
@@ -432,9 +432,9 @@ final class BuilderHomeChecks {
         });
         int elapsed=0;for(;elapsed<200&&context.computeOnClient(client->builder.building());elapsed++)context.waitTick();
         require(world.getServer().computeOnServer(server->{var w=server.getOverworld();if(!w.getBlockState(target).isOf(Blocks.STONE))return false;for(var pos:BlockPos.iterate(room.down(),room.add(2,2,2)))if(!pos.equals(room.add(1,0,1))&&!pos.equals(room.add(1,1,1))&&!w.getBlockState(pos).isOf(Blocks.BEDROCK))return false;return true;}),"Exhausted route did not complete the native placement or damaged its enclosure");
-        require(commands.subList(first,commands.size()).equals(List.of("home 1"))&&saveCommands==savesBefore&&deleteCommands==deletesBefore&&saved[1]==null&&saved[2]==reservedThird,"Exhausted route changed transient/reserved homes or repeatedly teleported");
+        require(commands.subList(first,commands.size()).equals(List.of("home 1"))&&saveCommands==savesBefore&&deleteCommands==deletesBefore&&saved[1]==secondBefore&&saved[2]==thirdBefore,"Exhausted route changed existing homes or repeatedly teleported: "+commands.subList(first,commands.size()));
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20,"Storage escape left work, supports or damage");BuilderPacketChecks.verify(1);builder.pause("storage escape checked");setting(builder,"Temporary Supports",true);});
-        teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+room.down().toShortString().replace(",","")+" "+room.add(2,2,2).toShortString().replace(",","")+" air");command(world,"setblock",target,"air");context.waitTicks(4);
+        teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+room.down().toShortString().replace(",","")+" "+room.add(2,2,2).toShortString().replace(",","")+" air");world.getServer().runCommand("fill "+room.down().toShortString().replace(",","")+" "+room.add(2,-1,2).toShortString().replace(",","")+" end_stone");command(world,"setblock",target,"air");context.waitTicks(4);
         System.out.println("[builder-home] Exhausted route escaped through one native home 1 arrival and completed placement in "+elapsed+" ticks; enclosure/other homes intact, zero supports and full health");
     }
     private static void longCheckedWalk(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
