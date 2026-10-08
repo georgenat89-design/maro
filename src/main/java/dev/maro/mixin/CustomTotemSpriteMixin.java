@@ -34,7 +34,7 @@ public abstract class CustomTotemSpriteMixin {
     @Inject(method = "<init>*", at = @At("RETURN"))
     private void maro$customTotem(CallbackInfo ci) {
         if (maro$customTotem) return;
-        var picture = CustomTotem.pictureFor(((SpriteContents) (Object) this).getId());
+        var picture = CustomTotem.pictureFor(((SpriteContents) (Object) this).getId(), image);
         if (picture == null) return;
         int size = picture.size();
         NativeImage swapped = new NativeImage(size, size, false);

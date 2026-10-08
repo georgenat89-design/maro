@@ -11,10 +11,12 @@ import dev.maro.render.TotemTexture;
 import dev.maro.runtime.renderer.Texture;
 import dev.maro.setting.BooleanSetting;
 import dev.maro.setting.ButtonSetting;
+import dev.maro.setting.ModeSetting;
 import dev.maro.setting.NumberSetting;
 import dev.maro.setting.SettingSection;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.minecraft.client.texture.NativeImage;
 import net.minecraft.util.Identifier;
 
 import javax.imageio.ImageIO;
@@ -29,18 +31,25 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Your own picture as the Totem of Undying: in your hand, in the inventory, dropped, and in the pop
- * animation when one saves you. The totem's texture is swapped while the game loads its textures
- * (see {@link dev.maro.mixin.CustomTotemSpriteMixin}), so everything that draws the totem shows it.
- * The pop animation can also be made bigger, smaller or switched off.
+ * animation when one saves you. By default it is wrapped over the totem's own shape; it can also be
+ * cut out of its background or used whole (see {@link TotemTexture}). The totem's texture is swapped
+ * while the game loads its textures (see {@link dev.maro.mixin.CustomTotemSpriteMixin}), so
+ * everything that draws the totem shows it. The pop animation can also be resized or switched off.
  */
 public class CustomTotem extends Module {
     private static final String TOTEM_SPRITE = "item/totem_of_undying";
+    public static final String WRAP = "Wrap", CUT_OUT = "Cut Out", SQUARE = "Square";
 
     private static CustomTotem instance;
 
     private final ButtonSetting choose = add(new ButtonSetting("Your Image",
             "Pick a PNG for the totem: in your hand, your inventory and the pop animation", "Choose",
             () -> mc.setScreen(new TotemImageScreen(mc.currentScreen, this))));
+    private final ModeSetting shape = add(new ModeSetting("Shape",
+            "Wrap covers the totem's own shape with your picture, Cut Out removes a plain background so your picture is the shape, Square uses the whole picture",
+            WRAP, WRAP, CUT_OUT, SQUARE));
+    private final NumberSetting detail = add(new NumberSetting("Totem Detail", "How much of the totem's own shading shows through a wrap",
+            50, 0, 100, 5).suffix("%").visible(() -> shape.is(WRAP)));
     private final BooleanSetting pop = add(new BooleanSetting("Pop Animation", "Show the big totem on screen when one saves you", true));
     private final NumberSetting popSize = add(new NumberSetting("Pop Size", "How big the pop animation is", 100, 50, 250, 5)
             .suffix("%").visible(pop::get));
@@ -48,18 +57,32 @@ public class CustomTotem extends Module {
     /** A picture ready to be the totem, numbered so the loaded texture can say which one it was made from. */
     private record Picture(TotemTexture.Decoded image, int version) { }
 
+    /** How the picture is made into the totem. */
+    private record Look(TotemTexture.Shape shape, int detail) {
+        TotemTexture.Made make(Picture picture, TotemTexture.Base totem) {
+            return TotemTexture.make(picture.image(), shape, totem, detail / 100f);
+        }
+    }
+
+    /** What the preview was last made from. */
+    private record PreviewOf(Picture picture, Look look, TotemTexture.Base totem) { }
+
     private static final AtomicInteger versions = new AtomicInteger();
 
     /** Your picture; also read by the texture loader on its own thread. */
     private volatile Picture picture;
-    private Picture previewOf;
+    private PreviewOf previewOf;
     private Texture preview;
     private boolean busy, closing;
     private String error;
 
-    /** Which picture the loaded totem texture was made from (0: the normal totem), and the last reload asked for. */
-    private static volatile int loadedVersion;
-    private static int requestedVersion = -1;
+    /** The game's own totem texture, seen as it last loaded. */
+    private static volatile TotemTexture.Base totemBase;
+    /** What the loaded totem texture was made from (0: the normal totem), and the last reload asked for. */
+    private static volatile int loadedKey;
+    private static int requestedKey = -1;
+    /** A wanted texture waiting for the settings to settle, and for how many ticks it has. */
+    private static int pendingKey = -1, pendingTicks;
 
     public CustomTotem() {
         super("Custom Totem", "Your own picture as the Totem of Undying, and a bigger, smaller or no pop animation", Category.VISUALS);
@@ -71,7 +94,7 @@ public class CustomTotem extends Module {
 
     @Override
     public List<SettingSection> getSettingSections() {
-        return List.of(SettingSection.of("Totem", choose, pop, popSize));
+        return List.of(SettingSection.of("Totem", choose, shape, detail), SettingSection.of("Pop", pop, popSize));
     }
 
     @Override
@@ -81,37 +104,83 @@ public class CustomTotem extends Module {
 
     // ---- the texture ------------------------------------------------------------------------
 
-    private static int wantedVersion() {
-        CustomTotem m = instance;
-        Picture p = m != null && m.isEnabled() ? m.picture : null;
-        return p != null ? p.version() : 0;
+    private Look look() {
+        TotemTexture.Shape s = switch (shape.get()) {
+            case CUT_OUT -> TotemTexture.Shape.CUT_OUT;
+            case SQUARE -> TotemTexture.Shape.SQUARE;
+            default -> TotemTexture.Shape.WRAP;
+        };
+        return new Look(s, s == TotemTexture.Shape.WRAP ? (int) Math.round(detail.get()) : 0);
     }
 
-    /** Asks for one texture reload whenever the totem texture loaded is not the one wanted. */
+    /** A number for the texture {@code picture} makes with {@code look}; 0 for the normal totem. */
+    private static int key(Picture picture, Look look) {
+        return picture == null ? 0 : picture.version() * 1000 + look.shape().ordinal() * 101 + look.detail() + 1;
+    }
+
+    private static int wantedKey() {
+        CustomTotem m = instance;
+        return m != null && m.isEnabled() ? key(m.picture, m.look()) : 0;
+    }
+
+    /**
+     * Asks for one texture reload whenever the totem texture loaded is not the one wanted, once the
+     * settings have stopped changing and no menu is open: a slider dragged or a shape clicked
+     * through reloads the textures once, when you are back in the game, not at every step.
+     */
     private static void syncTexture() {
-        int wanted = wantedVersion();
-        if (wanted == loadedVersion || wanted == requestedVersion || mc.getOverlay() != null) return;
-        requestedVersion = wanted;
+        int wanted = wantedKey();
+        if (wanted == loadedKey || wanted == requestedKey) return;
+        if (wanted != pendingKey) {
+            pendingKey = wanted;
+            pendingTicks = 0;
+        }
+        if (++pendingTicks < 10 || mc.currentScreen != null || mc.getOverlay() != null) return;
+        requestedKey = wanted;
         mc.reloadResources();
     }
 
     /** Whether the loaded totem texture is the one wanted and no reload is running. */
     public static boolean textureSettled() {
-        return wantedVersion() == loadedVersion && mc.getOverlay() == null;
+        return wantedKey() == loadedKey && mc.getOverlay() == null;
     }
 
-    /** Called as each texture loads: your picture if {@code id} is the totem and it should be swapped, else null. */
-    public static TotemTexture.Decoded pictureFor(Identifier id) {
+    /** The game's own totem texture as it last loaded, or null before it has. */
+    public static TotemTexture.Base totemBase() {
+        return totemBase;
+    }
+
+    /**
+     * Called as each texture loads, with the image it was read from: the texture to use instead if
+     * {@code id} is the totem and it should be swapped, else null.
+     */
+    public static TotemTexture.Made pictureFor(Identifier id, NativeImage original) {
         if (!id.getNamespace().equals(Identifier.DEFAULT_NAMESPACE) || !id.getPath().equals(TOTEM_SPRITE)) return null;
+        TotemTexture.Base base = baseOf(original);
+        if (base != null) totemBase = base;
         CustomTotem m = instance;
         Picture p = null;
+        Look look = null;
         if (m != null && m.isEnabled()) {
             // Straight after starting the game the saved picture may still be on its way; it is
             // needed now, so read it here rather than load the textures a second time for it.
             p = m.picture != null ? m.picture : m.readStoredNow();
+            look = m.look();
         }
-        loadedVersion = p != null ? p.version() : 0;
-        return p != null ? p.image() : null;
+        loadedKey = key(p, look);
+        return p != null ? look.make(p, totemBase) : null;
+    }
+
+    /** The first frame of the totem texture the game (or a resource pack) has. */
+    private static TotemTexture.Base baseOf(NativeImage image) {
+        if (image == null || image.getFormat() != NativeImage.Format.RGBA) return null;
+        int w = image.getWidth(), h = image.getHeight();
+        if (h > w && h % w == 0) h = w; // an animated strip: its first frame
+        int[] argb = new int[w * h];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) argb[y * w + x] = image.getColorArgb(x, y);
+        }
+        return new TotemTexture.Base(argb, w, h);
     }
 
     // ---- the pop animation ----------------------------------------------------------------------
@@ -150,7 +219,7 @@ public class CustomTotem extends Module {
         Picture p = picture;
         if (p == null) return "No image chosen yet";
         var image = p.image();
-        return "Using a " + image.sourceWidth() + " × " + image.sourceHeight() + " image (" + image.size() + " × " + image.size() + " totem)";
+        return "Using a " + image.sourceWidth() + " × " + image.sourceHeight() + " image";
     }
 
     /** Your picture, or null if there is none. */
@@ -159,13 +228,22 @@ public class CustomTotem extends Module {
         return p != null ? p.image() : null;
     }
 
-    /** A sharp, unfiltered copy of your picture for the Choose screen; made on the render thread when first asked for. */
+    /** The shape setting, for the Choose screen's button. */
+    public ModeSetting shapeSetting() {
+        return shape;
+    }
+
+    /**
+     * The totem as it will look, sharp and unfiltered, for the Choose screen; made on the render
+     * thread when first asked for, and again whenever the picture or its shape changes.
+     */
     public Texture previewTexture() {
         Picture p = picture;
-        if (p != previewOf) {
+        var now = new PreviewOf(p, look(), totemBase);
+        if (!now.equals(previewOf)) {
             if (preview != null) preview.close();
-            preview = p != null ? makePreview(p.image()) : null;
-            previewOf = p;
+            preview = p != null ? makePreview(now.look().make(p, now.totem())) : null;
+            previewOf = now;
         }
         return preview;
     }
@@ -227,7 +305,7 @@ public class CustomTotem extends Module {
             }
             if (importing) {
                 setEnabled(true);
-                Notifications.push(getName(), "Your totem is ready - textures reload for a moment", Notifications.Type.INFO);
+                Notifications.push(getName(), "Your totem is ready - it appears once menus are closed", Notifications.Type.INFO);
             }
             result.complete(true);
         }));
@@ -252,7 +330,7 @@ public class CustomTotem extends Module {
         }
     }
 
-    private static Texture makePreview(TotemTexture.Decoded image) {
+    private static Texture makePreview(TotemTexture.Made image) {
         int size = image.size();
         byte[] rgba = new byte[size * size * 4];
         for (int i = 0; i < size * size; i++) {

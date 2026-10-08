@@ -2,7 +2,9 @@ package dev.maro.gametest;
 
 import dev.maro.module.ModuleManager;
 import dev.maro.module.impl.visuals.CustomTotem;
+import dev.maro.render.TotemTexture;
 import dev.maro.setting.BooleanSetting;
+import dev.maro.setting.ModeSetting;
 import dev.maro.setting.NumberSetting;
 import dev.maro.setting.Setting;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
@@ -12,6 +14,10 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 
 import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -20,7 +26,8 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * Custom Totem: a magenta picture imported the way the Choose screen does it shows up as the totem
- * in your hand and in the pop animation, the pop can be resized and hidden, and switching the
+ * in your hand and in the pop animation, wrapped over the totem's own shape; a logo on a black
+ * background can be wrapped or cut out of it; the pop can be resized and hidden; and switching the
  * module off brings the normal totem back.
  */
 final class TotemChecks {
@@ -51,7 +58,8 @@ final class TotemChecks {
         context.waitTicks(10);
         int normal = magenta(context.takeScreenshot("maro-custom-totem-normal"));
         try {
-            Path file = context.computeOnClient(c -> c.runDirectory.toPath().resolve("maro-test-totems/magenta.png"));
+            Path folder = context.computeOnClient(c -> c.runDirectory.toPath().resolve("maro-test-totems"));
+            Path file = folder.resolve("magenta.png");
             writePicture(file);
             context.runOnClient(c -> totem.getSettings().forEach(Setting::reset));
             CompletableFuture<Boolean> loaded = context.computeOnClient(c -> totem.importImage(file));
@@ -78,6 +86,23 @@ final class TotemChecks {
             require(popped > 2000, "The pop animation did not show the picture (" + popped + " magenta pixels)");
             require(bigger > popped * 1.4, "Pop Size 200% did not make the pop bigger (" + popped + " -> " + bigger + ")");
             require(hidden < 50, "Pop Animation off still showed the pop (" + hidden + " magenta pixels)");
+            context.runOnClient(c -> totem.getSettings().forEach(Setting::reset));
+
+            checkShapes(file, writeLogo(folder.resolve("logo.png")));
+
+            // A logo on a black background, as people use: wrapped over the totem, then cut out of the black.
+            Path logo = folder.resolve("logo.png");
+            CompletableFuture<Boolean> logoLoaded = context.computeOnClient(c -> totem.importImage(logo));
+            for (int i = 0; i < 400 && !logoLoaded.isDone(); i++) context.waitTick();
+            require(logoLoaded.getNow(false), "Could not load the logo: " + totem.imageStatus());
+            settleTexture(context);
+            int wrapped = pop(context, "maro-custom-totem-logo-wrap") - empty;
+            context.runOnClient(c -> ((ModeSetting) setting(totem, "Shape")).set(CustomTotem.CUT_OUT));
+            settleTexture(context);
+            int cut = pop(context, "maro-custom-totem-logo-cutout") - empty;
+            System.out.println("CUSTOM TOTEM logo pop magenta pixels: wrap=" + wrapped + " cut out=" + cut);
+            require(wrapped > 1000, "The wrapped logo did not show in the pop (" + wrapped + " magenta pixels)");
+            require(cut > 1000, "The cut-out logo did not show in the pop (" + cut + " magenta pixels)");
         } finally {
             context.runOnClient(c -> {
                 totem.setEnabled(false);
@@ -106,6 +131,74 @@ final class TotemChecks {
         int count = magenta(context.takeScreenshot(name));
         context.waitTicks(40); // let it finish before the next one
         return count;
+    }
+
+    /**
+     * The shapes, worked out directly from the game's own totem texture: Wrap keeps exactly the
+     * totem's outline, Cut Out takes the black away from a logo, Square keeps everything.
+     */
+    private static void checkShapes(Path square, Path logo) {
+        var base = CustomTotem.totemBase();
+        require(base != null, "Custom Totem never saw the game's totem texture");
+        try {
+            var wrapped = TotemTexture.make(TotemTexture.decode(square), TotemTexture.Shape.WRAP, base, 0.5f);
+            int size = wrapped.size(), outside = 0, missing = 0, drawn = 0;
+            for (int y = 0; y < size; y++) {
+                for (int x = 0; x < size; x++) {
+                    boolean inTotem = base.argb()[(y * base.height() / size) * base.width() + x * base.width() / size] >>> 24 >= 128;
+                    boolean there = wrapped.argb()[y * size + x] >>> 24 > 0;
+                    if (there && !inTotem) outside++;
+                    if (inTotem && !there) missing++;
+                    if (there) drawn++;
+                }
+            }
+            System.out.println("CUSTOM TOTEM wrap: " + base.width() + "x" + base.height() + " totem, " + size + "x" + size + " texture, " + drawn
+                    + " pixels drawn, " + outside + " outside the totem, " + missing + " of it missing");
+            require(drawn > 0 && outside == 0 && missing == 0, "Wrap did not follow the totem's outline (" + outside + " outside, " + missing + " missing)");
+
+            var picture = TotemTexture.decode(logo);
+            int[] cut = counts(TotemTexture.make(picture, TotemTexture.Shape.CUT_OUT, base, 0));
+            int[] whole = counts(TotemTexture.make(picture, TotemTexture.Shape.SQUARE, base, 0));
+            System.out.println("CUSTOM TOTEM logo (drawn, black): cut out " + cut[0] + ", " + cut[1] + "; square " + whole[0] + ", " + whole[1]);
+            require(cut[0] > 200 && cut[1] * 20 < cut[0], "Cut Out did not take the black background away (" + cut[1] + " of " + cut[0] + " black)");
+            require(whole[1] * 2 > whole[0], "Square did not keep the whole picture (" + whole[1] + " of " + whole[0] + " black)");
+        } catch (IOException e) {
+            throw new AssertionError("Cannot read the test pictures", e);
+        }
+    }
+
+    /** Pixels drawn, and how many of them are black. */
+    private static int[] counts(TotemTexture.Made made) {
+        int drawn = 0, black = 0;
+        for (int p : made.argb()) {
+            if (p >>> 24 == 0) continue;
+            drawn++;
+            if ((p >> 16 & 0xFF) < 40 && (p >> 8 & 0xFF) < 40 && (p & 0xFF) < 40) black++;
+        }
+        return new int[] {drawn, black};
+    }
+
+    /** "ZA" in magenta on black, like a logo saved without a see-through background. */
+    private static Path writeLogo(Path file) {
+        BufferedImage image = new BufferedImage(512, 512, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = image.createGraphics();
+        try {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setColor(Color.BLACK);
+            g.fillRect(0, 0, 512, 512);
+            g.setColor(new Color(0xFF00FF));
+            g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 300));
+            g.drawString("ZA", 40, 370);
+        } finally {
+            g.dispose();
+        }
+        try {
+            Files.createDirectories(file.getParent());
+            ImageIO.write(image, "png", file.toFile());
+        } catch (IOException e) {
+            throw new AssertionError("Cannot write " + file, e);
+        }
+        return file;
     }
 
     /** A 64 × 64 magenta square with a see-through border, a colour nothing else in the scene has. */

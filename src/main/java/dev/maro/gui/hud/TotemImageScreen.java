@@ -44,15 +44,25 @@ public final class TotemImageScreen extends Screen {
         addDrawableChild(path);
         setInitialFocus(path);
         addDrawableChild(ButtonWidget.builder(Text.literal("Browse"), button -> browse()).dimensions(x + w - 72, y + 8, 72, 20).build());
+        int third = (w - 8) / 3;
         addDrawableChild(ButtonWidget.builder(Text.literal("Use as totem"), button -> {
             try {
                 use(Path.of(path.getText().strip()));
             } catch (RuntimeException e) {
                 pickerError = "Choose an image file first";
             }
-        }).dimensions(x, y + 35, w / 2 - 4, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Done"), button -> close()).dimensions(x + w / 2 + 4, y + 35, w / 2 - 4, 20).build());
+        }).dimensions(x, y + 35, third, 20).build());
+        var shape = module.shapeSetting();
+        addDrawableChild(ButtonWidget.builder(shapeLabel(), button -> {
+            shape.cycle(1);
+            button.setMessage(shapeLabel());
+        }).dimensions(x + third + 4, y + 35, third, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Done"), button -> close()).dimensions(x + w - third, y + 35, third, 20).build());
         module.loadStoredImage();
+    }
+
+    private Text shapeLabel() {
+        return Text.literal("Shape: " + module.shapeSetting().get());
     }
 
     private void use(Path file) {
@@ -102,12 +112,16 @@ public final class TotemImageScreen extends Screen {
         super.render(ctx, mx, my, delta);
         String status = !pickerError.isEmpty() ? pickerError : choosing ? "Choosing a file…" : module.imageStatus();
         ctx.drawCenteredTextWithShadow(textRenderer, textRenderer.trimToWidth(status, w), width / 2, y + 63, 0xFFADB5C7);
-        ctx.drawCenteredTextWithShadow(textRenderer, textRenderer.trimToWidth("Square pictures with a see-through background look best;", w),
-            width / 2, y + 77, 0xFF7C8599);
-        ctx.drawCenteredTextWithShadow(textRenderer, textRenderer.trimToWidth("pixel art up to 64 × 64 stays pixel-sharp.", w), width / 2, y + 89, 0xFF7C8599);
+        String[] help = switch (module.shapeSetting().get()) {
+            case CustomTotem.CUT_OUT -> new String[] {"Cut Out: a plain background is taken away,", "so your picture's own outline is the totem."};
+            case CustomTotem.SQUARE -> new String[] {"Square: the whole picture, background and all;", "see-through parts of it stay see-through."};
+            default -> new String[] {"Wrap: your picture covers the totem's own shape,", "with the totem showing through its see-through parts."};
+        };
+        ctx.drawCenteredTextWithShadow(textRenderer, textRenderer.trimToWidth(help[0], w), width / 2, y + 77, 0xFF7C8599);
+        ctx.drawCenteredTextWithShadow(textRenderer, textRenderer.trimToWidth(help[1], w), width / 2, y + 89, 0xFF7C8599);
     }
 
-    /** Your totem as the game will use it, pixel-sharp, on a checkerboard so see-through parts show. */
+    /** Your totem as the game will use it, in the shape chosen, pixel-sharp, on a checkerboard so see-through parts show. */
     private void drawPreview(DrawContext ctx, float x, float y, int size) {
         var texture = module.previewTexture();
         if (texture == null) {
