@@ -442,7 +442,9 @@ public final class PanelsView {
         }
         float foot = m != null ? POP_FOOT : 0f;
         float extra = pop.sections() == ClientSettings.THEME_PAGE ? 20f : 0f;
-        float maxBody = Math.max(40f, height - 16f - POP_HEAD - foot - extra);
+        // A box from the dock stays under its button and scrolls rather than climbing over the dock.
+        float room = m != null ? height - 8f : height - pop.anchorY() - 6f;
+        float maxBody = Math.max(40f, room - POP_HEAD - foot - extra - 4f);
         float body = Math.min(popoverContent, maxBody);
         float h = Anims.of(pop.key(), "popHeight", POP_HEAD + extra + body + foot + 4f, 22f);
         x = Math.max(4f, Math.min(width - w - 4f, x));
