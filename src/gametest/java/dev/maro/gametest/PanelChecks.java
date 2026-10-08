@@ -13,8 +13,8 @@ import java.util.List;
 
 /**
  * The panel menu: it opens on a panel per category; clicking a module's row turns it on, a right
- * click opens its settings in the window and Escape comes back; a right click on a header folds
- * that panel; typing searches.
+ * click opens a small box of its settings beside it and Escape closes it; the dock's Theme opens in
+ * the same kind of box; a right click on a header folds that panel; typing searches.
  */
 final class PanelChecks {
     private PanelChecks() {
@@ -55,17 +55,25 @@ final class PanelChecks {
         settle(context);
         context.takeScreenshot("maro-panels-on");
 
-        // Right click: its settings, in the window over the panels; Escape twice comes back.
+        // Right click: a small box of its settings beside its row; a slider in it works; Escape closes it.
         context.runOnClient(c -> screen(c).clickAt(row[0], row[1], GLFW.GLFW_MOUSE_BUTTON_RIGHT));
         settle(context);
-        require(context.computeOnClient(c -> !screen(c).showingPanels()), "Right clicking a module did not open its settings");
+        require(context.computeOnClient(c -> screen(c).showingPanels() && screen(c).panelSettingsModule() == example),
+                "Right clicking a module did not open its settings box beside it");
         context.takeScreenshot("maro-panels-settings");
         context.getInput().pressKey(GLFW.GLFW_KEY_ESCAPE);
         settle(context);
+        require(context.computeOnClient(c -> c.currentScreen instanceof ClickGuiScreen && screen(c).showingPanels()
+                && screen(c).panelSettingsModule() == null), "Escape did not close the settings box and stay on the panels");
+
+        // The dock's Settings button opens the client settings in the same kind of box.
+        context.runOnClient(c -> screen(c).openPanelPage("Theme"));
+        settle(context);
+        context.takeScreenshot("maro-panels-theme");
         context.getInput().pressKey(GLFW.GLFW_KEY_ESCAPE);
         settle(context);
         require(context.computeOnClient(c -> c.currentScreen instanceof ClickGuiScreen && screen(c).showingPanels()),
-                "Escape did not go back from the settings to the panels");
+                "Escape from the Theme box left the panels");
 
         // A right click on a header folds the panel, and another opens it again.
         float[] head = context.computeOnClient(c -> screen(c).panelPlace(Category.VISUALS));

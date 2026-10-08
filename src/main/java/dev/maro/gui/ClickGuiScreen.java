@@ -141,7 +141,13 @@ public class ClickGuiScreen extends Screen {
         searchPage = new ModulesPage(this, null);
         search = new TextField("Search modules...", 32);
         List<PanelsView.PageLink> pages = new ArrayList<>();
-        for (int i = moduleEntries; i < entries.size(); i++) pages.add(new PanelsView.PageLink(entries.get(i).label(), entries.get(i).icon(), i));
+        for (int i = moduleEntries; i < entries.size(); i++) {
+            Page page = entries.get(i).page();
+            // The client settings and theme open in a settings box over the panels; configs and socials in the window.
+            List<dev.maro.setting.SettingSection> sections = page instanceof SettingsPage ? ClientSettings.GENERAL_PAGE
+                    : page instanceof ThemePage ? ClientSettings.THEME_PAGE : null;
+            pages.add(new PanelsView.PageLink(entries.get(i).label(), entries.get(i).icon(), i, sections));
+        }
         panels = new PanelsView(this, pages);
         selected = Math.max(0, Math.min(lastEntry, entries.size() - 1));
         entries.get(selected).page().onOpen();
@@ -291,6 +297,16 @@ public class ClickGuiScreen extends Screen {
         listening = null;
         focused = null;
         Sounds.click();
+    }
+
+    /** Opens a page from the panels' dock by its label, as its button does. */
+    public void openPanelPage(String label) {
+        panels.openDockPage(label);
+    }
+
+    /** The module whose settings box is open over the panels, if any; for tests. */
+    public dev.maro.module.Module panelSettingsModule() {
+        return panels.popoverModule();
     }
 
     /** Where a module's row or a category's header was drawn in the panels last frame, as {x, y}; for tests. */
@@ -734,6 +750,7 @@ public class ClickGuiScreen extends Screen {
             return true;
         }
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            if (showingPanels() && panels.closePopover()) return true;
             if (!search.getText().isEmpty()) {
                 search.clear();
                 return true;

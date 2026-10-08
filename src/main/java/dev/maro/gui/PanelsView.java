@@ -8,10 +8,13 @@ import dev.maro.gui.render.Icons;
 import dev.maro.gui.render.Render2D;
 import dev.maro.gui.theme.Theme;
 import dev.maro.gui.widget.Anims;
+import dev.maro.gui.widget.CompactSettings;
 import dev.maro.gui.widget.Scroll;
+import dev.maro.gui.widget.Widgets;
 import dev.maro.module.Category;
 import dev.maro.module.Module;
 import dev.maro.module.ModuleManager;
+import dev.maro.setting.SettingSection;
 import dev.maro.util.ColorUtil;
 import dev.maro.util.Easing;
 import dev.maro.util.Sounds;
@@ -27,15 +30,21 @@ import java.util.Set;
 
 /**
  * The menu as panels: one per category, side by side over the game, every module a row you can
- * see at once. Left click turns a module on or off, right click opens its settings in the menu
- * window, middle click sets its key. Panels can be dragged by their header and folded away with a
- * right click on it; where they are is remembered. A dock at the top holds the search and the
- * Settings, Configs, Theme and Socials pages.
+ * see at once. Left click turns a module on or off, right click opens a small box of its settings
+ * beside it, middle click sets its key. Panels can be dragged by their header and folded away with
+ * a right click on it; where they are is remembered. A dock at the top holds the search, the
+ * client Settings and Theme (in the same kind of box) and the Configs and Socials pages.
  */
 public final class PanelsView {
-    /** A page the dock opens in the menu window. */
-    record PageLink(String label, Icons.Icon icon, int index) {
+    /** A page the dock opens: in a settings box when it has {@code sections}, else in the menu window. */
+    record PageLink(String label, Icons.Icon icon, int index, List<SettingSection> sections) {
     }
+
+    /** The open settings box: a module's, or a dock page's next to its button. */
+    private record Popover(Object key, String title, Module module, List<SettingSection> sections, float anchorX, float anchorY) {
+    }
+
+    private static final float POP_W = 172f, POP_HEAD = 20f, POP_FOOT = 18f;
 
     /** Where a panel is and whether it is folded; kept between openings and saved with the client settings. */
     private static final class Panel {
@@ -68,7 +77,18 @@ public final class PanelsView {
     private final long openedAt = System.currentTimeMillis();
     /** Each row and header's place on screen in the last frame, for tests. */
     private final Map<Object, float[]> places = new HashMap<>();
+    /** Each panel's {x, y, width} for the rows drawn in it last frame, so a settings box can sit beside it. */
+    private final Map<Module, float[]> rowPanels = new HashMap<>();
+    /** Where under each dock button its box opens, from last frame. */
+    private final Map<PageLink, float[]> dockAnchors = new HashMap<>();
+    /** Each panel's {x, y, width} last frame. */
+    private final Map<Category, float[]> panelRects = new HashMap<>();
     private float logoSpin;
+    private Popover popover;
+    private long popoverSince;
+    private final Scroll popoverScroll = new Scroll();
+    private final CompactSettings compact = new CompactSettings();
+    private float popoverContent = 40f;
 
     PanelsView(ClickGuiScreen gui, List<PageLink> pages) {
         this.gui = gui;
@@ -77,6 +97,49 @@ public final class PanelsView {
 
     float[] placeOf(Object rowOrCategory) {
         return places.get(rowOrCategory);
+    }
+
+    /** The module whose settings box is open, if any. */
+    Module popoverModule() {
+        return popover != null ? popover.module() : null;
+    }
+
+    /** Closes the settings box; false if none was open. */
+    boolean closePopover() {
+        if (popover == null) return false;
+        popover = null;
+        gui.focused = null;
+        gui.listening = null;
+        Sounds.click();
+        return true;
+    }
+
+    private void openPopover(Popover next) {
+        boolean same = popover != null && popover.key().equals(next.key());
+        popover = same ? null : next;
+        popoverSince = System.currentTimeMillis();
+        popoverScroll.reset();
+        gui.focused = null;
+        Sounds.click();
+    }
+
+    /** Opens a dock page by its label, as its button does; for tests. */
+    void openDockPage(String label) {
+        for (PageLink page : pages) {
+            if (!page.label().equals(label)) continue;
+            float[] at = dockAnchors.getOrDefault(page, new float[] {gui.width / 2f, MARGIN + DOCK_H + 6f});
+            if (page.sections() != null) openPopover(new Popover(page, page.label(), null, page.sections(), at[0], at[1]));
+            else gui.openPage(page.index());
+        }
+    }
+
+    /** A module's settings box beside its row, or the Auto Builder's own screen. */
+    private void openSettings(Module m) {
+        if (m instanceof dev.maro.module.impl.player.AutoBuilder builder) {
+            net.minecraft.client.MinecraftClient.getInstance().setScreen(new dev.maro.builder.BuilderControlScreen(gui, builder));
+            return;
+        }
+        openPopover(new Popover(m, m.getName(), m, m.getSettingSections(), 0, 0));
     }
 
     // ---- layout -----------------------------------------------------------------------------
@@ -125,6 +188,10 @@ public final class PanelsView {
      */
     void render(DrawContext ctx, float width, float height, float p, float shown) {
         places.clear();
+        rowPanels.clear();
+        panelRects.clear();
+        // A click on nothing closes the settings box.
+        if (popover != null) gui.hit(0, 0, width, height, (button, mx, my) -> closePopover());
         float base = Render2D.getAlpha();
         float top = MARGIN + DOCK_H + 10f;
         List<Category> visible = shownCategories();
@@ -155,6 +222,11 @@ public final class PanelsView {
         Render2D.setAlpha(base);
         ctx.createNewRootLayer();
         renderDock(ctx, width, shown);
+        if (popover != null) {
+            ctx.createNewRootLayer();
+            Render2D.setAlpha(base * shown);
+            renderPopover(ctx, width, height);
+        }
         // How to use it, along the bottom.
         Render2D.setAlpha(base * shown);
         Fonts.drawCentered(ctx, "Click to toggle  •  right click for settings  •  middle click for a key  •  drag a header to move it",
@@ -178,6 +250,7 @@ public final class PanelsView {
         float prev = Render2D.getAlpha();
         Render2D.setAlpha(prev * (1f - dim * 0.6f));
 
+        panelRects.put(panel.category, new float[] {x, y, w});
         // The panel takes every click on it, so nothing behind it gets them; any click brings it forward.
         gui.hit(x, y, w, h, (button, mx, my) -> toFront(panel));
 
@@ -286,6 +359,7 @@ public final class PanelsView {
         boolean listening = gui.listening == m.getBind();
         float cy = y + h / 2f, r = Math.min(4f, Theme.radius());
         places.put(m, new float[] {x + w / 2f, cy});
+        rowPanels.put(m, new float[] {x - 4f, y, w + 8f});
 
         gui.hit(x, y, w, h, (button, mx, my) -> {
             toFront(panel);
@@ -293,13 +367,16 @@ public final class PanelsView {
                 m.toggle();
                 Sounds.toggle(m.isEnabled());
             } else if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
-                gui.openModuleSettings(m);
+                openSettings(m);
             } else if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
                 gui.listening = m.getBind();
             }
         });
         if (hov) gui.tooltip(m.getDescription());
 
+        // Its settings box is open: an accent outline.
+        float sel = Anims.of(m, "panelSelected", popover != null && popover.module() == m);
+        if (sel > 0.01f) Render2D.roundOutline(ctx, x, y, w, h, r, 1f, Theme.accent(Math.round(0xC0 * sel)));
         // On: an accent gradient pill with a soft glow and a light bar at its left edge.
         if (hv > 0.01f) Render2D.roundRect(ctx, x, y, w, h, r, ColorUtil.withAlpha(0xFF1C1C26, Math.round(0xFF * hv * (1f - en * 0.6f))));
         if (en > 0.01f) {
@@ -332,6 +409,143 @@ public final class PanelsView {
         Fonts.beginRaw();
         Fonts.drawV(ctx, Fonts.trim(m.getName(), right - nx - 2f, en > 0.5f, NAME_SCALE), nx, cy, color, en > 0.5f, NAME_SCALE);
         Fonts.endRaw();
+    }
+
+    // ---- the settings box -------------------------------------------------------------------
+
+    /**
+     * A small box of settings: beside the module's panel (on whichever side has room) level with its
+     * row, or under the dock button that opened it. Tight rows, a header with the name, the module's
+     * own switch and a close button, and the module's key at the bottom.
+     */
+    private void renderPopover(DrawContext ctx, float width, float height) {
+        Popover pop = popover;
+        Module m = pop.module();
+        float w = POP_W, x, y;
+        if (m != null) {
+            float[] at = rowPanels.get(m);
+            if (at == null) {
+                // Its row is scrolled out of sight or filtered out by the search: beside its panel's top.
+                float[] panelAt = panelRects.get(m.getCategory());
+                if (panelAt == null) {
+                    popover = null;
+                    return;
+                }
+                at = new float[] {panelAt[0], panelAt[1] + HEADER, panelAt[2]};
+            }
+            x = at[0] + at[2] + 5f;
+            if (x + w > width - 4f) x = at[0] - w - 5f;
+            y = at[1] - 4f;
+        } else {
+            x = pop.anchorX() - w / 2f;
+            y = pop.anchorY();
+        }
+        float foot = m != null ? POP_FOOT : 0f;
+        float extra = pop.sections() == ClientSettings.THEME_PAGE ? 20f : 0f;
+        float maxBody = Math.max(40f, height - 16f - POP_HEAD - foot - extra);
+        float body = Math.min(popoverContent, maxBody);
+        float h = Anims.of(pop.key(), "popHeight", POP_HEAD + extra + body + foot + 4f, 22f);
+        x = Math.max(4f, Math.min(width - w - 4f, x));
+        y = Math.max(4f, Math.min(height - h - 4f, y));
+        float t = Easing.outCubic((System.currentTimeMillis() - popoverSince) / (180f / ClientSettings.animationSpeed()));
+        float prev = Render2D.getAlpha();
+        Render2D.setAlpha(prev * t);
+        y += (1f - t) * 4f;
+        float r = Theme.radius() + 1f;
+
+        gui.hit(x, y, w, h, (button, mx, my) -> {
+        });
+        if (ClientSettings.shadow.get()) Render2D.shadow(ctx, x, y + 2, w, h, r, 14f, 0x80000000);
+        if (Theme.glow()) Render2D.shadow(ctx, x, y, w, h, r, 14f, Theme.accent(0x16));
+        Render2D.roundRect(ctx, x, y, w, h, r, Theme.windowBg());
+        Render2D.roundRect(ctx, x, y, w, Math.min(40f, h), r, Theme.accent(0x18), Theme.accent2(0x18), 0x00000000, 0x00000000);
+        Render2D.roundOutline(ctx, x, y, w, h, r, 1f, Theme.accent(0x50), Theme.accent2(0x30), 0xFF15151B, 0xFF15151B);
+
+        // Header: the name, the module's switch and a close button.
+        float hy = y + POP_HEAD / 2f, right = x + w - 6f;
+        boolean closeHov = gui.hovered(right - 9f, hy - 5f, 10f, 10f);
+        float ch = Anims.of(pop.key(), "popClose", closeHov);
+        Icons.CLOSE.draw(ctx, right - 4f, hy, 6.5f, ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT, ch), ch);
+        gui.hit(right - 10f, hy - 6f, 12f, 12f, (button, mx, my) -> closePopover());
+        right -= 15f;
+        if (m != null) {
+            boolean th = gui.hovered(right - 18f, hy - 5f, 18f, 10f);
+            Widgets.toggle(ctx, right - 17f, hy - 4.5f, 17f, 9f, Anims.of(m, "popOn", m.isEnabled()), Anims.of(m, "popToggleHover", th));
+            gui.hit(right - 19f, hy - 6f, 20f, 12f, (button, mx, my) -> {
+                m.toggle();
+                Sounds.toggle(m.isEnabled());
+            });
+            right -= 24f;
+        }
+        Render2D.roundGradientV(ctx, x + 6f, hy - 4.5f, 2f, 9f, 1f, Theme.accent(), Theme.accent2());
+        Fonts.beginRaw();
+        Fonts.drawV(ctx, Fonts.trim(pop.title(), right - x - 16f, true, 0.84f), x + 12f, hy, Theme.TEXT, true, 0.84f);
+        Fonts.endRaw();
+        Render2D.rectGradient(ctx, x + 6f, y + POP_HEAD, w - 12f, 1f, Theme.accent(0x60), Theme.accent2(0x10), Theme.accent2(0x10), Theme.accent(0x60));
+
+        float by = y + POP_HEAD + 2f;
+        if (extra > 0) {
+            presets(ctx, x + 6f, by + 3f, w - 12f);
+            by += extra;
+        }
+
+        // The settings, scrolling when there are more than fit.
+        popoverScroll.setBounds(popoverContent, body);
+        float off = popoverScroll.update();
+        gui.scrollHit(x, by, w, body, popoverScroll::scroll);
+        gui.pushClip(x + 2f, by, w - 4f, body);
+        if (pop.sections().stream().allMatch(section -> section.getSettings().stream().noneMatch(dev.maro.setting.Setting::isVisible))) {
+            Fonts.drawV(ctx, "No settings", x + 10f, by + 8f, Theme.TEXT_MUTED, false, 0.7f);
+            popoverContent = 16f;
+        } else {
+            popoverContent = compact.render(gui, ctx, x + 4f, by - off, w - 8f, pop.sections()) + 2f;
+        }
+        gui.popClip();
+        popoverScroll.drawBar(gui, ctx, x + w - 2.5f, by + 2f, body - 4f);
+
+        // Footer: the module's key, and a button to clear it.
+        if (m != null) {
+            float fy = by + body + 2f + POP_FOOT / 2f;
+            Render2D.rect(ctx, x + 6f, fy - POP_FOOT / 2f, w - 12f, Render2D.px(), Theme.BORDER);
+            Fonts.beginRaw();
+            Fonts.drawV(ctx, "Keybind", x + 9f, fy, Theme.TEXT_DIM, false, 0.74f);
+            Fonts.endRaw();
+            float ux = x + w - 9f;
+            if (m.getBind().isBound()) {
+                float uw = Fonts.width("Unbind", false, 0.85f) + 12f;
+                ux -= uw;
+                Widgets.button(gui, ctx, m.getBind(), ux, fy - 5.5f, uw, 11f, "Unbind", Widgets.Style.GHOST, null, () -> {
+                    m.getBind().set(dev.maro.util.KeyUtil.NONE);
+                    gui.listening = null;
+                });
+                ux -= 4f;
+            }
+            String key = gui.listening == m.getBind() ? "Press a key" : m.getBind().getKeyName();
+            Widgets.bindChip(gui, ctx, m.getBind(), ux - (Fonts.width(key, false, 0.72f) + 9f), fy, 1f);
+        }
+        Render2D.setAlpha(prev);
+    }
+
+    /** The Theme box's accent presets as a row of dots. */
+    private void presets(DrawContext ctx, float x, float y, float w) {
+        int n = Theme.PRESETS.length;
+        float dot = 10f, gap = (w - n * dot) / Math.max(1, n - 1);
+        for (int i = 0; i < n; i++) {
+            int preset = Theme.PRESETS[i];
+            float dx = x + i * (dot + gap), cy = y + dot / 2f;
+            boolean hov = gui.hovered(dx, y, dot, dot);
+            float hv = Anims.of(Theme.PRESETS, "popPreset" + i, hov);
+            boolean sel = !ClientSettings.rainbow.get() && (ClientSettings.accent.get() & 0xFFFFFF) == (preset & 0xFFFFFF);
+            Render2D.circle(ctx, dx + dot / 2f, cy, dot / 2f - 0.5f + hv * 0.6f, preset);
+            if (sel) Render2D.ring(ctx, dx + dot / 2f, cy, dot / 2f + 1.5f, 1f, 0xFFFFFFFF);
+            final int index = i;
+            gui.hit(dx - 1f, y - 1f, dot + 2f, dot + 2f, (button, mx, my) -> {
+                ClientSettings.accent.set(preset);
+                ClientSettings.rainbow.set(false);
+                Sounds.click();
+            });
+            if (hov) gui.tooltip(Theme.PRESET_NAMES[index]);
+        }
     }
 
     // ---- the dock ---------------------------------------------------------------------------
@@ -370,19 +584,24 @@ public final class PanelsView {
         float bx = sx + searchW + 8f, by = y + 3f;
         Render2D.rect(ctx, bx - 4f, y + 6f, Render2D.px(), DOCK_H - 12f, Theme.BORDER);
         for (PageLink page : pages) {
-            dockButton(ctx, page, page.label(), page.icon(), bx, by, bs, () -> gui.openPage(page.index()));
+            final float ax = bx + bs / 2f, ay = by + bs + 6f;
+            dockAnchors.put(page, new float[] {ax, ay});
+            dockButton(ctx, page, page.label(), page.icon(), bx, by, bs, () -> {
+                if (page.sections() != null) openPopover(new Popover(page, page.label(), null, page.sections(), ax, ay));
+                else gui.openPage(page.index());
+            });
             bx += bs + 3f;
         }
         dockButton(ctx, DOCK, "Put the panels back in a row", Icons.LAYOUT, bx, by, bs, () -> {
             resetLayout();
-            Sounds.click();
+            popover = null;
         });
         Render2D.setAlpha(prev);
     }
 
     private void dockButton(DrawContext ctx, Object key, String label, Icons.Icon icon, float x, float y, float s, Runnable action) {
         boolean hov = gui.hovered(x, y, s, s);
-        float hv = Anims.of(key, "dockHover", hov);
+        float hv = Math.max(Anims.of(key, "dockHover", hov), Anims.of(key, "dockOpen", popover != null && popover.key() == key));
         if (Theme.glow() && hv > 0.01f) Render2D.shadow(ctx, x, y, s, s, s / 2f, 5, Theme.accent(Math.round(0x30 * hv)));
         Render2D.roundRect(ctx, x, y, s, s, s / 2f, ColorUtil.lerp(0x00000000, Theme.accent(0x38), hv));
         icon.draw(ctx, x + s / 2f, y + s / 2f, 8f, ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT, hv), hv);
