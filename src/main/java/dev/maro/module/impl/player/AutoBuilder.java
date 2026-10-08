@@ -761,6 +761,9 @@ public final class AutoBuilder extends Module {
         // work can consume it while the replacement drop despawns.
         if(building&&!buying&&!depositing&&!pasting&&restockTarget==null&&mc.currentScreen==null
             &&accessPickupId<0&&placement==null&&mining==null&&recoveryPhase==0
+            &&passageBlocks.stream().allMatch(pos->mc.world.getBlockState(pos).isAir())
+            &&ceilingBlocks.stream().allMatch(pos->mc.world.getBlockState(pos).isAir())
+            &&liquidTopBlocks.stream().allMatch(pos->mc.world.getBlockState(pos).isAir())
             &&(!mode.is("Semi Auto")||mc.options.useKey.isPressed())&&collectAccessDrop())return;
         if(homeSetupResume&&homes.ready()){homeSetupResume=false;startBuild();return;}
         if(building&&!buying&&!depositing&&recoverUnexpectedBuildMenu())return;
