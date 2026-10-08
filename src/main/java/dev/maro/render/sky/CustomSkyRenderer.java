@@ -7,11 +7,16 @@ import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.platform.DepthTestFunction;
 import com.mojang.blaze3d.systems.RenderPass;
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.textures.AddressMode;
+import com.mojang.blaze3d.textures.FilterMode;
+import com.mojang.blaze3d.textures.TextureFormat;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import dev.maro.Maro;
 import dev.maro.module.impl.visuals.CustomSky;
+import dev.maro.runtime.renderer.Texture;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.Framebuffer;
+import net.minecraft.client.gl.GpuSampler;
 import net.minecraft.client.gl.UniformType;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.util.Identifier;
@@ -35,6 +40,7 @@ public final class CustomSkyRenderer {
         .withLocation(Identifier.of(Maro.MOD_ID, "pipeline/custom_sky"))
         .withVertexShader(Identifier.of(Maro.MOD_ID, "core/custom_sky"))
         .withFragmentShader(Identifier.of(Maro.MOD_ID, "core/custom_sky"))
+        .withSampler("u_Sky")
         .withUniform("SkyData", UniformType.UNIFORM_BUFFER)
         .withVertexFormat(VertexFormats.POSITION, VertexFormat.DrawMode.TRIANGLES)
         .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
@@ -43,8 +49,8 @@ public final class CustomSkyRenderer {
         .withCull(false)
         .build();
 
-    /** SkyData in custom_sky.fsh: the inverse view-projection, then Params and View. */
-    private static final int UNIFORM_BYTES = (4 + 2) * 16;
+    /** SkyData in custom_sky.fsh: the inverse view-projection, then Params, View, ImageParams, ImageTop, ImageBottom. */
+    private static final int UNIFORM_BYTES = (4 + 5) * 16;
 
     private static final ByteBuffer VERTICES = BufferUtils.createByteBuffer(4 * 3 * Float.BYTES);
     private static final ByteBuffer INDICES = BufferUtils.createByteBuffer(6 * Integer.BYTES);
@@ -61,6 +67,8 @@ public final class CustomSkyRenderer {
     }
 
     private static GpuBuffer uniforms;
+    /** Bound in place of the player's picture while there is none; the shader only reads it for that sky. */
+    private static Texture placeholder;
 
     /** This frame's inverse view-projection, from the start of world rendering. */
     private static final Matrix4f inverse = new Matrix4f();
@@ -100,6 +108,9 @@ public final class CustomSkyRenderer {
         if (!haveMatrices || !shaderBuilt()) return false;
         Framebuffer target = mc.getFramebuffer();
         if (target == null || target.getColorAttachmentView() == null || target.textureHeight <= 0) return false;
+        // The picture sky with no picture loaded yet: keep the game's sky until there is one.
+        Texture picture = CustomSky.pictureTexture();
+        if (picture == null && CustomSky.showsPicture()) return false;
 
         try {
             GpuBufferSlice data = writeUniforms(2f / (projectionScale * target.textureHeight));
@@ -111,6 +122,10 @@ public final class CustomSkyRenderer {
             try {
                 pass.setPipeline(PIPELINE);
                 pass.setUniform("SkyData", data);
+                // A panorama wraps round the horizon; anything else stops at its edges.
+                AddressMode across = CustomSky.pictureWraps() ? AddressMode.REPEAT : AddressMode.CLAMP_TO_EDGE;
+                GpuSampler sampler = RenderSystem.getSamplerCache().get(across, AddressMode.CLAMP_TO_EDGE, FilterMode.LINEAR, FilterMode.LINEAR, false);
+                pass.bindTexture("u_Sky", (picture != null ? picture : placeholder()).getGlTextureView(), sampler);
                 pass.setVertexBuffer(0, vertices);
                 pass.setIndexBuffer(indices, VertexFormat.IndexType.INT);
                 pass.drawIndexed(0, 0, 6, 1);
@@ -124,6 +139,14 @@ public final class CustomSkyRenderer {
             CustomSky.renderFailed(e);
             return false;
         }
+    }
+
+    private static Texture placeholder() {
+        if (placeholder == null) {
+            placeholder = new Texture(1, 1, TextureFormat.RGBA8, FilterMode.NEAREST, FilterMode.NEAREST);
+            placeholder.upload(new byte[] {0, 0, 0, (byte) 0xFF});
+        }
+        return placeholder;
     }
 
     /**

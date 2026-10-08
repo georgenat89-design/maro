@@ -5,15 +5,21 @@
 // Drawn in place of the game's sky, before the terrain: every pixel works out which way it looks
 // into the world (from the inverse of this frame's view-projection) and paints one of the skies
 // below for that direction. Everything is procedural and animated by Params.x. When the sky is
-// changed the old one is painted too and faded out, so switching never pops.
+// changed the old one is painted too and faded out, so switching never pops. The last sky is a
+// picture of the player's own (u_Sky), laid on the sky as a panorama, a cube cross or wrapped round.
 
 in vec2 ndc;
+
+uniform sampler2D u_Sky;
 
 // Only a mat4 and vec4s, so std140 lays it out exactly as CustomSkyRenderer writes it.
 layout(std140) uniform SkyData {
     mat4 InvViewProj;   // clip space -> world direction (camera at the origin)
     vec4 Params;        // x seconds of animation, y sky shown, z sky fading out, w how much of it is left
-    vec4 View;          // x brightness, y size of one pixel in radians
+    vec4 View;          // x brightness, y size of one pixel in radians, z picture fit (0 panorama, 1 wrap, 2 cube), w copies round when wrapped
+    vec4 ImageParams;   // x turn round the horizon (radians), y height of a wrapped copy (radians)
+    vec4 ImageTop;      // rgb: the picture's colour along its top, for the sky above a wrapped picture
+    vec4 ImageBottom;   // rgb: its colour along the bottom, for below it
 };
 
 out vec4 fragColor;
@@ -592,6 +598,53 @@ vec3 thunderstorm(vec3 d, float t) {
     return col;
 }
 
+// ---- your own picture ------------------------------------------------------------------------
+
+// A skybox laid out as a horizontal cross, four faces across the middle (left, front, right, back,
+// front facing south) with the top above the front and the bottom below it.
+vec3 cubeCross(vec3 d) {
+    vec3 a = abs(d);
+    vec3 c, r, t;
+    vec2 cell;
+    if (a.y >= a.x && a.y >= a.z) {
+        if (d.y > 0.0) { c = UP; r = vec3(-1.0, 0.0, 0.0); t = vec3(0.0, 0.0, -1.0); cell = vec2(1.0, 0.0); }
+        else { c = -UP; r = vec3(-1.0, 0.0, 0.0); t = vec3(0.0, 0.0, 1.0); cell = vec2(1.0, 2.0); }
+    } else if (a.z >= a.x) {
+        if (d.z > 0.0) { c = vec3(0.0, 0.0, 1.0); r = vec3(-1.0, 0.0, 0.0); t = UP; cell = vec2(1.0, 1.0); }
+        else { c = vec3(0.0, 0.0, -1.0); r = vec3(1.0, 0.0, 0.0); t = UP; cell = vec2(3.0, 1.0); }
+    } else {
+        if (d.x > 0.0) { c = vec3(1.0, 0.0, 0.0); r = vec3(0.0, 0.0, 1.0); t = UP; cell = vec2(0.0, 1.0); }
+        else { c = vec3(-1.0, 0.0, 0.0); r = vec3(0.0, 0.0, -1.0); t = UP; cell = vec2(2.0, 1.0); }
+    }
+    vec2 f = vec2(dot(d, r), dot(d, t)) / dot(d, c);       // -1 to 1 across the face
+    vec2 uv = vec2(f.x, -f.y) * 0.5 + 0.5;                  // 0 to 1 from its top left
+    vec2 facePixels = vec2(textureSize(u_Sky, 0)) / vec2(4.0, 3.0);
+    uv = clamp(uv, 0.5 / facePixels, 1.0 - 0.5 / facePixels);  // never bleed into the next face
+    return textureLod(u_Sky, (cell + uv) / vec2(4.0, 3.0), 0.0).rgb;
+}
+
+// 15: the player's picture.
+vec3 imageSky(vec3 d) {
+    float c = cos(ImageParams.x), s = sin(ImageParams.x);
+    d = vec3(c * d.x - s * d.z, d.y, s * d.x + c * d.z);
+    int fit = int(View.z + 0.5);
+    // round the horizon from 0 to 1, starting behind you when facing south, increasing to the right
+    float around = 0.5 + atan(-d.x, d.z) / TAU;
+    float elevation = asin(clamp(d.y, -1.0, 1.0));
+    if (fit == 0) return textureLod(u_Sky, vec2(around, 0.5 - elevation / PI), 0.0).rgb;
+    if (fit == 2) return cubeCross(d);
+    // Wrapped: copies side by side round the horizon, every other one mirrored so they meet
+    // seamlessly, from a little below the horizon up; beyond them the picture's own edge colours.
+    float x = around * View.w + 0.5;     // an unmirrored copy straight ahead when facing south
+    float u = fract(x);
+    if (mod(floor(x), 2.0) > 0.5) u = 1.0 - u;
+    float v = 1.0 - (elevation + 0.17) / ImageParams.y;
+    vec3 col = textureLod(u_Sky, vec2(u, clamp(v, 0.0, 1.0)), 0.0).rgb;
+    col = mix(col, ImageTop.rgb, sstep(0.0, -0.3, v));
+    col = mix(col, ImageBottom.rgb, sstep(1.0, 1.3, v));
+    return col;
+}
+
 vec3 sky(int index, vec3 d, float t) {
     switch (index) {
         case 0: return neonWaves(d, t);
@@ -608,7 +661,8 @@ vec3 sky(int index, vec3 d, float t) {
         case 11: return deepOcean(d, t);
         case 12: return blackHole(d, t);
         case 13: return prism(d, t);
-        default: return thunderstorm(d, t);
+        case 14: return thunderstorm(d, t);
+        default: return imageSky(d);
     }
 }
 
