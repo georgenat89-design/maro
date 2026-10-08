@@ -2091,10 +2091,14 @@ public final class AutoBuilder extends Module {
         for(var post:supports){
             if(Math.abs(post.getX()-target.getX())>3||Math.abs(post.getZ()-target.getZ())>3
                 ||post.getY()<target.getY()-1||post.getY()>target.getY()+3||post.equals(stand.down())
-                ||plannedSolid(post)||servesActiveScaffold(post)||!mc.world.getBlockState(post).isOf(Blocks.DIRT)||!safeToRecycle(post))continue;
+                ||plannedSolid(post)||escapeSupports.contains(post)||accessSupports.contains(post)||post.equals(descentPost)
+                ||!mc.world.getBlockState(post).isOf(Blocks.DIRT)||!safeToRecycle(post))continue;
             candidates.add(post);
         }
         if(candidates.isEmpty()||candidates.size()>32)return null;
+        // The proximity-only scaffold heuristic would protect the very dirt
+        // blocking this job. The native placement proof below preserves its
+        // actual attachment; committed climb/escape posts remain excluded.
         var wanted=desired(cell);var item=Schematic.material(wanted);
         var plan=placement(target,wanted,item,cell,false,eye,body,clearedView(candidates));if(plan==null)return null;
         var point=plan.hit.getPos();var end=point.add(point.subtract(eye).normalize().multiply(.003));

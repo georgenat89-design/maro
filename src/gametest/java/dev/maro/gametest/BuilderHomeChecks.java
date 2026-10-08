@@ -438,6 +438,8 @@ final class BuilderHomeChecks {
             builder.install(new Schematic("scaffold-obstructed-sign.nbt","test",5,4,5,BlockPos.ORIGIN,cells));builder.setOrigin(origin);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
             @SuppressWarnings("unchecked")var supports=(Set<BlockPos>)field(builder,"supports");supports.addAll(owned);
             require(call(builder,"placement",new Class<?>[]{BlockPos.class,BlockState.class,Item.class,int.class,boolean.class},target,cells[37],Items.OAK_SIGN,37,false)==null,"Sign fixture already had an unobstructed native placement");
+            setField(builder,"navigatingCell",37);setField(builder,"navigationStarted",field(builder,"ticks"));
+            require(call(builder,"ownedPlacementOpening",new Class<?>[]{BlockPos.class,BlockPos.class,Vec3d.class,net.minecraft.util.math.Box.class,int.class},target,client.player.getBlockPos(),client.player.getEyePos(),client.player.getBoundingBox(),37)!=null,"Active-job proximity protection hid the proved owned ray obstruction");
         });
         boolean cleared=false;int elapsed=0;
         for(;elapsed<1200&&context.computeOnClient(client->builder.building());elapsed++){
