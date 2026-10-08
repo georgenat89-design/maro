@@ -5,6 +5,51 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+These changes build on6dcbdf1. Its original695 replay passed the repair
+stock failure and reached705/710, with all ordinary access repairs closed
+except1286 owned by water390. Remaining: water282/339/390, observer762, repair1286.
+The native capture still has every needed supply (player water1, storage
+water2/blackstone1/observer1),126 owned posts and idle homes/home2 empty.
+`stash-fresh-705-6dcb.json` is byte-identical to that capture, SHA256
+`E719DBF9CE29EBD789286D1FE85E043DA6709E2087E6AFFA4A08866393045789`.
+Read-only planning receipts prove repeated mining-route attempts for the
+same liquid-obstruction post across its147 possible water-view samples.
+Pending fix advances to the next post after committing its first proof.
+Blind upper-post peeking also shifted the player's feet under a ceiling,
+restarting route searches. The second pending guard requires a native
+crouched ray for upper posts; lower-column edging remains available.
+Home regression checks20 native ticks of no blind upper edging, then the
+existing hidden-block and lower-column mining cases. Completed home-route
+queries now stay with their view's target, feet and geometry instead of
+repeating every40 ticks during later access searches. The705 traces proved
+real climbs and post removals, but the water intent lost its upper view or
+spent arrival budget. Pending code retains that exact view, renews its
+budget once on actual post removal, and tries a bounded upper passage.
+It also tries a native bucket footing from a raised ledge before another
+hidden-post detour. Recoveries1 through7 were intentionally stopped without
+a full710 pass; none is claimed as successful.
+A bounded native collision scan found a safe higher entrance: base
+(-26211,65,-150584), top(-26211,68,-150584), water view
+(-26212,66,-150582), with one obsolete post and one upper roof cube removed.
+The entry planner previously tried only the view's height or one below it.
+Pending code adds entrances one through three blocks higher; native
+collision checks still prove every climb and the complete onward descent.
+The safe upper entry requires seven outside posts from the ground. The
+column proof now checks up to eight native jumps, retaining the same
+per-jump clearance and body-corridor checks. Confirmed column placements
+renew actual access progress; arrival and bounded passage handlers run
+before the already-spent work budget can discard their handoff.
+Recoveries8 through10 were intentionally stopped after diagnosing these
+limits; none passed. Recovery11 climbed all seven posts, opened the two
+registered upper blocks, descended to the native water view, placed water,
+restored both openings and reached707/710. It is still running; a full710
+pass and zero-dirt completion have not yet been demonstrated.
+A new Home regression requires a higher liquid entrance, contained native
+water, complete entry restoration, zero raw dirt, health20 and bounded look.
+It has not run yet. No full710 or fresh0 pass yet.
+Committed6dcbdf1 CI466 passed build, general and all builder/auction tests
+(run37752927119/job113230297542); the pending source still needs its own CI.
+
 The807c37e actual695-c089 replay reached701/710, then stalled on a polished
 repair brick. Native701 capture proves that brick still in dispenser
 (-26219,65,-150579). Removing a completed opening also removed the only

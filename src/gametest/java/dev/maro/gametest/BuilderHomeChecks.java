@@ -110,6 +110,7 @@ final class BuilderHomeChecks {
         promptRepair(context,world,builder,start);
         checkedRoomAccess(context,world,builder,start);
         elevatedRoomAccess(context,world,builder,start);
+        raisedLiquidEntrance(context,world,builder,start);
         crouchedMining(context,world,builder,start);
         columnEdgeMining(context,world,builder,start);
         teleport(world,start);context.waitTicks(12);
@@ -355,6 +356,32 @@ final class BuilderHomeChecks {
         teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+4)+" "+(origin.getY()+3)+" "+(origin.getZ()+4)+" air");context.waitTicks(4);
         System.out.println("[builder-home] Exterior-column opening retained, mined and replaced; elevated work and zero-support cleanup completed in "+elapsed+" ticks");
     }
+    private static void raisedLiquidEntrance(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-home] Enter above a liquid view, retain the wall footing, then descend and restore the entrance");
+        var origin=start.add(-4,4,10);var cells=new BlockState[9*6*9];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());
+        for(int y=0;y<6;y++)for(int z=0;z<9;z++)for(int x=0;x<9;x++){
+            boolean rim=x==0||x==8||z==0||z==8;
+            boolean solid=y==0||y==5||y==1&&!rim||y>=2&&y<=4&&rim;
+            if(solid)cells[(y*9+z)*9+x]=Blocks.STONE.getDefaultState();
+            command(world,"setblock",origin.add(x,y,z),solid?"stone":"air");
+        }
+        int target=(1*9+4)*9+4;cells[target]=Blocks.WATER.getDefaultState();command(world,"setblock",origin.add(4,1,4),"air");
+        for(String item:List.of("water_bucket","stone 16","dirt 64","diamond_pickaxe","diamond_shovel"))world.getServer().runCommand("give @a "+item);
+        teleport(world,start.south(8));context.waitTicks(12);
+        context.runOnClient(client->{setting(builder,"Temporary Supports",true);setting(builder,"Prepare Whole Build",false);builder.install(new Schematic("raised-liquid-entrance.nbt","test",9,6,9,BlockPos.ORIGIN,cells));builder.setOrigin(origin);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();});
+        boolean raised=false,budgetAged=false;int elapsed=0;
+        for(;elapsed<2400&&context.computeOnClient(client->builder.building());elapsed++){
+            raised|=context.computeOnClient(client->{var top=(BlockPos)field(builder,"entryPassageTop");var destination=(BlockPos)field(builder,"entryPassageDestination");return top!=null&&destination!=null&&top.getY()>destination.getY();});
+            if(raised&&!budgetAged){context.runOnClient(client->{@SuppressWarnings("unchecked")var spent=(Map<Integer,Integer>)field(builder,"navigationWorkTicks");spent.put(target,359);});budgetAged=true;}
+            require(world.getServer().computeOnServer(server->{var w=server.getOverworld();for(int z=-1;z<10;z++)for(int x=-1;x<10;x++){var p=origin.add(x,1,z);if(!p.equals(origin.add(4,1,4))&&!w.getFluidState(p).isEmpty())return false;}return true;}),"Raised liquid entrance leaked through its retaining blocks");
+            context.waitTick();
+        }
+        require(raised,"Liquid entry did not exercise a higher exterior entrance: "+context.computeOnClient(client->builder.status()));
+        require(world.getServer().computeOnServer(server->{var w=server.getOverworld();for(int i=0;i<cells.length;i++)if(!cells[i].isOf(Blocks.STRUCTURE_VOID)&&!AutoBuilder.matchesBuildState(w.getBlockState(origin.add(i%9,i/81,i/9%9)),cells[i]))return false;for(int y=-4;y<10;y++)for(int z=-5;z<14;z++)for(int x=-5;x<14;x++)if(w.getBlockState(origin.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Raised liquid placement or entrance restoration/cleanup failed");
+        context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Raised liquid entry left work, supports, damage or menu: "+builder.status());BuilderPacketChecks.verify(1);builder.pause("raised liquid entrance checked");});
+        teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+8)+" "+(origin.getY()+5)+" "+(origin.getZ()+8)+" air");context.waitTicks(4);
+        System.out.println("[builder-home] Higher liquid entrance, native descent and contained source; all retaining/entry blocks restored, zero dirt, full health and bounded look in "+elapsed+" ticks");
+    }
     private static void roofEdgeRoundTrip(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work,BlockPos chest){
         var feet=work.south(4).up(4);var footing=feet.north().down();
         // Exact offsets from the 706-block native roof save failure: the
@@ -572,6 +599,10 @@ final class BuilderHomeChecks {
     }
     private static void crouchedMining(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         var target=start.south(2);var beam=start.south().up();command(world,"setblock",target,"dirt");command(world,"setblock",beam,"stone");world.getServer().runCommand("give @a diamond_shovel");context.waitTicks(8);
+        var upper=target.up(3);command(world,"setblock",upper,"dirt");command(world,"setblock",beam.up(),"stone");context.waitTicks(4);
+        var beforePeek=context.computeOnClient(client->client.player.getEntityPos());
+        for(int i=0;i<20;i++){context.runOnClient(client->{require(call(builder,"visibleHit",new Class<?>[]{BlockPos.class},upper)==null,"Upper peek fixture did not hide its post");require(!(boolean)call(builder,"beginPeek",new Class<?>[]{BlockPos.class},upper)&&!client.options.sneakKey.isPressed(),"Inaccessible upper post started blind sneak edging");});context.waitTick();}
+        context.runOnClient(client->require(client.player.getEntityPos().squaredDistanceTo(beforePeek)<.0001,"Blind upper peek moved the route's starting feet"));command(world,"setblock",upper,"air");command(world,"setblock",beam.up(),"air");context.waitTicks(4);
         context.runOnClient(client->{
             builder.install(new Schematic("crouch-mining.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STRUCTURE_VOID.getDefaultState()}));builder.setOrigin(target);
             require(call(builder,"visibleHit",new Class<?>[]{BlockPos.class},target)==null,"Crouch fixture already had a standing view");

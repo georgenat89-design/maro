@@ -178,7 +178,7 @@ public final class BuilderWalk {
     /** Prove every native jump of an opened ceiling column and its onward route. */
     public boolean canClimbAfterClearing(BlockPos base,BlockPos top,BlockPos to,Set<BlockPos> removed){
         int rise=top.getY()-base.getY();
-        if(rise<1||rise>6||base.getX()!=top.getX()||base.getZ()!=top.getZ())return false;
+        if(rise<1||rise>8||base.getX()!=top.getX()||base.getZ()!=top.getZ())return false;
         var previous=clearedForSearch;var previousStairs=stairsForSearch;
         clearedForSearch=removed;var posts=new HashSet<BlockPos>();stairsForSearch=posts;
         try{
