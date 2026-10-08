@@ -733,7 +733,8 @@ final class BuilderHomeChecks {
         repairDependencyCycle(context,world,builder,work,false);repairDependencyCycle(context,world,builder,work,true);
     }
     private static void repairDependencyCycle(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work,boolean attachment){
-        var origin=work.south(2);var post=work.east(13).up(3);var cells=new BlockState[20];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());
+        var origin=work.south(2);var post=work.west(10).north(6).up(3);var cells=new BlockState[20];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(post.down(4)).isOf(Blocks.STONE)),"Repair-cycle cleanup post is outside the native test platform");
         cells[4]=Blocks.OBSERVER.getDefaultState();cells[0]=attachment?Blocks.BLACKSTONE.getDefaultState():Blocks.STONE.getDefaultState();
         if(attachment){cells[10]=Blocks.CRACKED_POLISHED_BLACKSTONE_BRICKS.getDefaultState();cells[11]=Blocks.STONE.getDefaultState();cells[15]=Blocks.WALL_TORCH.getDefaultState().with(WallTorchBlock.FACING,Direction.SOUTH);}
         else cells[2]=Blocks.BLACKSTONE.getDefaultState();
