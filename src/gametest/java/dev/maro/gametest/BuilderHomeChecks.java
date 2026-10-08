@@ -421,21 +421,37 @@ final class BuilderHomeChecks {
     }
     private static void unproductiveHomeEscape(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-home] Leave an exhausted enclosed route through safe storage home 1, then complete the next native placement");
-        var room=start.add(-15,0,-5);var target=start.south(4);
+        var room=start.add(-15,0,-5);var target=start.south(4);var abandoned=start.north(2);
         world.getServer().runCommand("fill "+room.down().toShortString().replace(",","")+" "+room.add(2,2,2).toShortString().replace(",","")+" bedrock");
         command(world,"setblock",room.add(1,0,1),"air");command(world,"setblock",room.add(1,1,1),"air");command(world,"setblock",target,"air");
+        for(int y=0;y<3;y++)command(world,"setblock",abandoned.up(y),"dirt");
         world.getServer().runCommand("give @a stone 1");teleport(world,room.add(1,0,1));context.waitTicks(12);int first=commands.size(),savesBefore=saveCommands,deletesBefore=deleteCommands;Home secondBefore=saved[1],thirdBefore=saved[2];
         context.runOnClient(client->{
             setting(builder,"Temporary Supports",false);setting(builder,"Prepare Whole Build",false);builder.install(new Schematic("exhausted-enclosed-route.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);
             BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
+            @SuppressWarnings("unchecked")var posts=(Set<BlockPos>)field(builder,"supports");
+            @SuppressWarnings("unchecked")var escape=(Set<BlockPos>)field(builder,"escapeSupports");
+            @SuppressWarnings("unchecked")var owners=(Map<BlockPos,Integer>)field(builder,"escapeSupportWork");
+            for(int y=0;y<3;y++){var post=abandoned.up(y);posts.add(post);escape.add(post);owners.put(post,0);
+                require((boolean)call(builder,"servesActiveScaffold",new Class<?>[]{BlockPos.class},post),"Escape column lost protection before native storage arrival");}
             setField(builder,"navigatingCell",0);((Map<Integer,Integer>)field(builder,"navigationWorkTicks")).put(0,359);
         });
-        int elapsed=0;for(;elapsed<200&&context.computeOnClient(client->builder.building());elapsed++)context.waitTick();
+        boolean retiredBeforePlacement=false;int elapsed=0;
+        for(;elapsed<400&&context.computeOnClient(client->builder.building());elapsed++){
+            retiredBeforePlacement|=context.computeOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");var escape=(Set<?>)field(builder,"escapeSupports");
+                if(homes.busy()&&client.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(room.add(1,0,1)))<1)
+                    require(escape.contains(abandoned),"Escape column retired while native home travel was still pending");
+                return !escape.contains(abandoned)&&builder.state(0)!=AutoBuilder.CORRECT&&client.world.getBlockState(abandoned).isOf(Blocks.DIRT);});
+            context.waitTick();
+        }
+        require(retiredBeforePlacement,"Confirmed storage arrival kept old escape columns protected until their unfinished owner completed");
+        require(world.getServer().computeOnServer(server->{for(int y=0;y<3;y++)if(!server.getOverworld().getBlockState(abandoned.up(y)).isAir())return false;return true;}),"Retired escape column was removed from the ledger instead of being mined natively");
         require(world.getServer().computeOnServer(server->{var w=server.getOverworld();if(!w.getBlockState(target).isOf(Blocks.STONE))return false;for(var pos:BlockPos.iterate(room.down(),room.add(2,2,2)))if(!pos.equals(room.add(1,0,1))&&!pos.equals(room.add(1,1,1))&&!w.getBlockState(pos).isOf(Blocks.BEDROCK))return false;return true;}),"Exhausted route did not complete the native placement or damaged its enclosure");
         require(commands.subList(first,commands.size()).equals(List.of("home 1"))&&saveCommands==savesBefore&&deleteCommands==deletesBefore&&saved[1]==secondBefore&&saved[2]==thirdBefore,"Exhausted route changed existing homes or repeatedly teleported: "+commands.subList(first,commands.size()));
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20,"Storage escape left work, supports or damage");BuilderPacketChecks.verify(1);builder.pause("storage escape checked");setting(builder,"Temporary Supports",true);});
         teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+room.down().toShortString().replace(",","")+" "+room.add(2,2,2).toShortString().replace(",","")+" air");world.getServer().runCommand("fill "+room.down().toShortString().replace(",","")+" "+room.add(2,-1,2).toShortString().replace(",","")+" end_stone");command(world,"setblock",target,"air");context.waitTicks(4);
         System.out.println("[builder-home] Exhausted route escaped through one native home 1 arrival and completed placement in "+elapsed+" ticks; enclosure/other homes intact, zero supports and full health");
+        System.out.println("[builder-home] Confirmed native storage arrival retired abandoned escape columns before owner placement; pending travel retained protection; real three-block cleanup completed");
     }
     private static void longCheckedWalk(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-home] Finish a long proved native walk without cancelling it at the old 240-tick deadline");

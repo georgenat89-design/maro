@@ -33,6 +33,9 @@ public final class BuilderHomes {
     public boolean ready(){return points[0]!=null;}
     public boolean readyFor(BlockPos chest){return chest!=null&&ready()&&chest.getSquaredDistance(points[0].feet())<=25&&safe(points[0]);}
     public boolean hasSafeReturn(){return ready()&&safe(points[0]);}
+    /** Old escape columns are no longer an exit once native travel reaches permanent storage ground. */
+    public boolean onStorageGround(){return !busy()&&!returnTrip&&hasSafeReturn()&&safeHere()
+        &&mc.player.getEntityPos().squaredDistanceTo(points[0].position)<=.36;}
     public boolean busy(){return stage!=Stage.IDLE;}
     public void cancel(){
         stage=Stage.IDLE;pending=null;storageChest=storageStand=null;storageViews=List.of();storageProgress=null;receipt=savingReturn=travellingBack=false;failure="";settled=0;invalidateRoutes();walker.stop();

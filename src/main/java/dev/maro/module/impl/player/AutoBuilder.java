@@ -747,6 +747,14 @@ public final class AutoBuilder extends Module {
         if(mc.currentScreen==null&&autoMove.get()&&(depositing||building&&(!mode.is("Semi Auto")||mc.options.useKey.isPressed()))&&waterDepartureTick())return;
         if((building||buying||pasting||depositing||homes.busy())&&mc.player.getHealth()<minHealth.get()*2){walker.release();status="Paused — low health";return;}
         if(useHomes.get()&&homes.tick(value->status=value,this::pause))return;
+        // Abandoned recovery columns must not consume the entire scaffold pool
+        // until an unreachable owner is complete. Keep their real block ledger,
+        // but retire escape protection after a confirmed permanent-ground return.
+        // A transient home 2 trip still retains its original work footing.
+        if(useHomes.get()&&!escapeSupports.isEmpty()&&accessStand==null&&standGoal==null
+            &&recoveryPhase==0&&homes.onStorageGround()){
+            escapeSupports.clear();escapeSupportWork.clear();recycleSearchFeet=null;
+        }
         if(building&&restockTarget==null&&mc.currentScreen==null&&accessPickupId>=0&&collectAccessDrop())return;
         if(homeSetupResume&&homes.ready()){homeSetupResume=false;startBuild();return;}
         if(building&&!buying&&!depositing&&recoverUnexpectedBuildMenu())return;
