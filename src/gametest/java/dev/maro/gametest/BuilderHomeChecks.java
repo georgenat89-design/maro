@@ -535,8 +535,14 @@ final class BuilderHomeChecks {
         context.runOnClient(client->{setting(builder,"Prepare Whole Build",false);setting(builder,"Restock When Empty",false);setting(builder,"Auto Buy Tools",false);setting(builder,"Temporary Supports",false);setting(builder,"Stockpile In Chests",false);setting(builder,"Material Supply","Whole Schematic");builder.install(new Schematic("ready-before-access.nbt","test",1,1,3,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState(),Blocks.STRUCTURE_VOID.getDefaultState(),Blocks.STONE.getDefaultState()}));builder.setOrigin(work);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();});
         boolean placed=false;
         for(int tick=0;tick<80;tick++){
-            placed=world.getServer().computeOnServer(server->server.getOverworld().getBlockState(ready).isOf(Blocks.STONE));if(placed)break;
-            context.runOnClient(client->require(client.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(work))<.0004,"Started access movement while another full cube was immediately placeable"));context.waitTick();
+            // Observe placement and movement in one authoritative server task.
+            // Separate server/client tasks can straddle the successful place
+            // and wrongly reject the legitimate next walk on a slower runner.
+            placed=world.getServer().computeOnServer(server->{
+                boolean done=server.getOverworld().getBlockState(ready).isOf(Blocks.STONE);
+                if(!done)require(server.getPlayerManager().getPlayerList().getFirst().getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(work))<.0004,"Started access movement while another full cube was immediately placeable");
+                return done;
+            });if(placed)break;context.waitTick();
         }
         require(placed&&world.getServer().computeOnServer(server->server.getOverworld().getBlockState(work).isAir()),"Immediate cube did not precede the occupied nearer target");
         for(int tick=0;tick<300&&context.computeOnClient(client->builder.building());tick++)context.waitTick();
