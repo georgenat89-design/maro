@@ -1027,6 +1027,9 @@ public final class AutoBuilder extends Module {
         // A proved roof can contain several beams. Keep every beam registered
         // while mining them; a still-correct beam is not a completed repair.
         if(liquidTopStand!=null&&liquidTopBlocks.contains(pos))return true;
+        // Cleanup has no unfinished schematic owner. Preserve its newly proved
+        // exit as well, until the bounded passage/ceiling handler finishes it.
+        if(passageStand!=null&&passageBlocks.contains(pos)||ceilingTop!=null&&ceilingBlocks.contains(pos))return true;
         // Retaining walls and basin floors must close before any bucket work,
         // even when the other temporary route still needs later cleanup.
         if(liquidBoundary(pos))return false;
