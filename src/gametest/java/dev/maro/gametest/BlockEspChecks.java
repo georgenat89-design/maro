@@ -73,8 +73,11 @@ final class BlockEspChecks {
                 c.player.setVelocity(0, 0, 0);
                 c.options.setPerspective(Perspective.FIRST_PERSON);
                 module.getSettings().forEach(Setting::reset);
-                module.setEnabled(true);
             });
+            // The same view with nothing drawn: the sky and grass of the test world are coloured too.
+            context.waitTicks(5);
+            int plain = lit(context.takeScreenshot("maro-block-esp-off"));
+            context.runOnClient(c -> module.setEnabled(true));
 
             // Spawners, chests and diamonds are on by default, and the Y limit keeps to Y 0 and below.
             long searching = System.nanoTime();
@@ -91,8 +94,8 @@ final class BlockEspChecks {
             });
             context.waitTicks(5);
             int withoutBloom = lit(context.takeScreenshot("maro-block-esp-no-bloom"));
-            System.out.println("BLOCK ESP lit pixels: bloom " + withBloom + ", no bloom " + withoutBloom);
-            require(withoutBloom > 400, "Block ESP drew too little: " + withoutBloom);
+            System.out.println("BLOCK ESP lit pixels: off " + plain + ", bloom " + withBloom + ", no bloom " + withoutBloom);
+            require(withoutBloom - plain > 400, "Block ESP drew too little: " + withoutBloom + " vs " + plain + " off");
             require(withBloom > withoutBloom, "Bloom added no glow: " + withBloom + " vs " + withoutBloom);
 
             context.runOnClient(c -> {
@@ -113,7 +116,8 @@ final class BlockEspChecks {
             });
             context.waitTicks(3);
             int hidden = lit(context.takeScreenshot("maro-block-esp-you-above"));
-            require(hidden < withoutBloom / 4, "Y Limit You drew while you were above Max Y: " + hidden);
+            require(Math.abs(hidden - plain) < (withoutBloom - plain) / 4,
+                    "Y Limit You drew while you were above Max Y: " + hidden + " vs " + plain + " off");
             context.runOnClient(c -> ((ModeSetting) setting(module, "Y Limit")).set("Blocks"));
             context.runOnClient(c -> ((NumberSetting) setting(module, "Max Y")).set(0.0));
             world.getServer().runCommand("setblock " + at(SPAWNER) + " minecraft:air");
@@ -139,8 +143,9 @@ final class BlockEspChecks {
     }
 
     /**
-     * Pixels bright and strongly coloured: the ESP's boxes, tracers and glow, not the dark cave. The
-     * bottom fifth, where the hotbar and hearts are, is left out.
+     * Pixels bright and strongly coloured: the ESP's boxes, tracers and glow, but also the test
+     * world's sky and grass, so a count means something only next to one with Block ESP off. The
+     * bottom fifth, where the hotbar and chat are, is left out.
      */
     private static int lit(Path shot) {
         BufferedImage image;
