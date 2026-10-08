@@ -415,24 +415,6 @@ public class MaroClientGameTest implements FabricClientGameTest {
         String lowered = context.computeOnClient(snapshot::apply);
         context.takeScreenshot("maro-potato-graphics-on");
         if (flattened < 200) throw new AssertionError("Potato Graphics did not flatten the block textures: " + flattened);
-        String hiding = context.computeOnClient(client -> {
-            var p = client.player;
-            var near = new net.minecraft.entity.decoration.ArmorStandEntity(client.world, p.getX() + 4, p.getY(), p.getZ());
-            var far = new net.minecraft.entity.decoration.ArmorStandEntity(client.world, p.getX() + 60, p.getY(), p.getZ());
-            var farPlayer = new net.minecraft.client.network.OtherClientPlayerEntity(client.world,
-                    new com.mojang.authlib.GameProfile(java.util.UUID.randomUUID(), "MaroPotatoFar"));
-            farPlayer.setPosition(p.getX() + 60, p.getY(), p.getZ());
-            return "near=" + dev.maro.module.impl.visuals.PotatoGraphics.hidesEntity(near)
-                    + " far=" + dev.maro.module.impl.visuals.PotatoGraphics.hidesEntity(far)
-                    + " farPlayer=" + dev.maro.module.impl.visuals.PotatoGraphics.hidesEntity(farPlayer);
-        });
-        if (!hiding.endsWith("near=false far=true farPlayer=false"))
-            throw new AssertionError("Potato Graphics did not hide far entities (and only those): " + hiding);
-        boolean ok = context.computeOnClient(client -> client.options.getViewDistance().getValue() <= 6
-                && !client.options.getAo().getValue()
-                && client.options.getCloudRenderMode().getValue() == net.minecraft.client.option.CloudRenderMode.OFF
-                && client.options.getParticles().getValue() == net.minecraft.particle.ParticlesMode.MINIMAL
-                && !client.options.getEntityShadows().getValue());
         context.runOnClient(client -> potato.setEnabled(false));
         context.waitTicks(3);
         context.waitFor(client -> dev.maro.module.impl.visuals.PotatoGraphics.texturesSettled(), 2400);
@@ -441,8 +423,24 @@ public class MaroClientGameTest implements FabricClientGameTest {
         singleplayer.getServer().runCommand("tp @a " + home[0] + " " + home[1] + " " + home[2]);
         context.waitTicks(3);
         System.out.println("POTATO before=" + before + " on=" + lowered + " after=" + after + " flattened=" + flattened);
-        if (!ok) throw new AssertionError("Potato Graphics did not lower the settings: " + before + " -> " + lowered);
-        if (!before.equals(after)) throw new AssertionError("Potato Graphics did not restore the settings: " + before + " -> " + after);
+        // Textures only now: your video settings are left exactly as they are.
+        if (!before.equals(lowered) || !before.equals(after))
+            throw new AssertionError("Potato Graphics changed video settings: " + before + " -> " + lowered + " -> " + after);
+
+        // Someone who updated with an older version on gets the settings it lowered put back.
+        context.runOnClient(client -> {
+            client.options.getViewDistance().setValue(5);
+            client.options.getAo().setValue(false);
+            var saved = new com.google.gson.JsonObject();
+            saved.addProperty("render-distance", 12);
+            saved.addProperty("smooth-lighting", true);
+            potato.loadExtra(saved);
+        });
+        context.waitTicks(3);
+        String restored = context.computeOnClient(client -> client.options.getViewDistance().getValue() + "|" + client.options.getAo().getValue());
+        System.out.println("POTATO legacy originals restored=" + restored);
+        if (!restored.equals("12|true")) throw new AssertionError("Potato Graphics did not put back the settings an older version saved: " + restored);
+        if (!potato.saveExtra().entrySet().isEmpty()) throw new AssertionError("Potato Graphics kept old saved settings after putting them back");
     }
 
     private static void checkFullbright(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
