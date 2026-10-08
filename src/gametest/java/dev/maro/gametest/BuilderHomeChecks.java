@@ -427,6 +427,8 @@ final class BuilderHomeChecks {
     }
     private static void nearReachJump(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         var from=start.south(20);var target=from.north(5).up(3);var steps=List.of(from.north(),from.north(2).up(),from.north(3).up(2),from.north(4).up(2),target.down());
+        world.getServer().runCommand("fill "+from.add(-1,-1,-6).toShortString().replace(",","")+" "+from.add(1,-1,1).toShortString().replace(",","")+" stone");
+        world.getServer().runCommand("fill "+from.add(-1,0,-6).toShortString().replace(",","")+" "+from.add(1,6,1).toShortString().replace(",","")+" air");
         for(var step:steps)command(world,"setblock",step,"stone");world.getServer().runCommand("clear @a observer");world.getServer().runCommand("give @a observer 1");teleport(world,from);context.waitTicks(12);int first=commands.size();
         context.runOnClient(client->{
             setting(builder,"Temporary Supports",false);setting(builder,"Prepare Whole Build",false);setting(builder,"Restock When Empty",false);setting(builder,"Auto Buy When Missing",false);

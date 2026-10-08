@@ -3011,7 +3011,7 @@ public final class AutoBuilder extends Module {
         });
     }
     private boolean safeToRecycle(Set<BlockPos> removed){
-        if(removed.stream().anyMatch(pos->liquidBoundary(pos)||homes.protectsFooting(pos)))return false;
+        if(removed.stream().anyMatch(pos->liquidBoundary(pos)||homes.protectsFooting(pos)||circuitAccessBlock(pos)))return false;
         var view=clearedView(removed);
         for(var cell:removed)for(var side:Direction.values()){
             var neighbour=cell.offset(side);if(removed.contains(neighbour))continue;var state=mc.world.getBlockState(neighbour);
@@ -3019,6 +3019,17 @@ public final class AutoBuilder extends Module {
             if(!state.isAir()&&!state.canPlaceAt(view,neighbour))return false;
         }
         return true;
+    }
+    /** Access cuts must not erase configured notes or pulse a finished observer circuit. */
+    private boolean circuitAccessBlock(BlockPos pos){
+        var state=mc.world.getBlockState(pos);
+        if(state.getBlock() instanceof NoteBlock||state.getBlock() instanceof ObserverBlock)return true;
+        if(!plannedSolid(pos))return false;
+        for(var side:Direction.values()){
+            var observer=mc.world.getBlockState(pos.offset(side));
+            if(observer.getBlock() instanceof ObserverBlock&&observer.get(ObserverBlock.FACING)==side.getOpposite())return true;
+        }
+        return false;
     }
     private void placementReceiptTick(){
         walker.release();
