@@ -16,8 +16,8 @@ import java.io.InputStream;
 /** The static map artwork, rebuilt only when its scale, colours or label settings change. */
 public final class RegionMapRaster {
     public static final double GRID_UNITS = 108;
-    public static final double GUTTER_UNITS = 0.5;
-    public static final double CORNER_UNITS = 0.9;
+    public static final double GUTTER_UNITS = 0.85;
+    public static final double CORNER_UNITS = 1.35;
     private static final double NUMBER_CAPS = 3.2;
     public enum NumberFont {
         Rounded("Poppins-Medium.ttf"),
@@ -100,7 +100,9 @@ public final class RegionMapRaster {
                 RoundRectangle2D tile = new RoundRectangle2D.Double(left, top, width, height, radius * 2, radius * 2);
 
                 if (!gloss) {
-                    graphics.setColor(new java.awt.Color(fill, true));
+                    // A soft light from above: a touch lighter at the top, a touch deeper at the bottom.
+                    graphics.setPaint(new GradientPaint((float) left, (float) top, new java.awt.Color(mix(fill, 0xFFFFFFFF, 0.07), true),
+                        (float) left, (float) (top + height), new java.awt.Color(mix(fill, 0xFF000000, 0.08), true)));
                     graphics.fill(tile);
                     continue;
                 }
@@ -168,18 +170,19 @@ public final class RegionMapRaster {
                     }
                     float glyphX = (float) (Math.round(left + (width - bounds.width) / 2) - bounds.x);
                     float glyphY = (float) (Math.round(top + (height - bounds.height) / 2) - bounds.y);
+                    // Numbers outside your group step back with their tiles, so yours read first.
                     boolean faded = spotlight >= 0 && locale != spotlight;
-                    int ink = faded ? (inks[locale] & 0xFFFFFF) | (int) ((inks[locale] >>> 24) * (1 - dim * 0.55)) << 24 : inks[locale];
+                    int ink = faded ? (inks[locale] & 0xFFFFFF) | (int) ((inks[locale] >>> 24) * Math.max(0.3, 1 - dim * 1.1)) << 24 : inks[locale];
 
-                    if (gloss) {
-                        graphics.setColor(new java.awt.Color(0, 0, 0, (int) (90 * alpha(ink))));
-                        graphics.drawGlyphVector(glyphs, glyphX, glyphY + Math.max(1, Math.round(0.3f * (float) unit)));
+                    // A soft shadow under each number keeps it clear on light fills without the
+                    // heavy look of an outline.
+                    graphics.setColor(new java.awt.Color(0, 0, 0, (int) ((gloss ? 90 : 105) * alpha(ink))));
+                    graphics.drawGlyphVector(glyphs, glyphX, glyphY + Math.max(1, Math.round(0.3f * (float) unit)));
+                    if (!faded && !gloss) {
+                        graphics.setStroke(new BasicStroke(0.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                        graphics.setColor(new java.awt.Color(0, 0, 0, (int) (60 * alpha(ink))));
+                        graphics.draw(glyphs.getOutline(glyphX, glyphY));
                     }
-
-                    // A thin dark rim preserves contrast on bright region fills.
-                    graphics.setStroke(new BasicStroke(1f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                    graphics.setColor(new java.awt.Color(0, 0, 0, (int)(155 * alpha(ink))));
-                    graphics.draw(glyphs.getOutline(glyphX, glyphY));
 
                     graphics.setColor(new java.awt.Color(ink, true));
                     graphics.drawGlyphVector(glyphs, glyphX, glyphY);
