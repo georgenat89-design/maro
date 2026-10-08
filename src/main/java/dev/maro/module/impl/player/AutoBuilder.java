@@ -1125,7 +1125,7 @@ public final class AutoBuilder extends Module {
         var wanted=desired(cell);var item=Schematic.material(wanted);
         if(!wanted.isAir()&&mc.world.getBlockState(position(cell)).isReplaceable()&&inventoryCount(item)>0
             &&placement(position(cell),wanted,item,cell,false)!=null)return false;
-        if(useHomes.get()){
+        if(useHomes.get()&&restockTarget==null&&accessPickupId<0){
             var chest=selectedSupplyChest();
             if(chest!=null&&homes.storage(chest)){
                 if(homes.busy()){navigationWorkTicks.remove(cell);navigatingCell=-1;resetAfterHome();}
