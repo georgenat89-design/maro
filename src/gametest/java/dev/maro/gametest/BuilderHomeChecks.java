@@ -113,6 +113,7 @@ final class BuilderHomeChecks {
         elevatedRoomAccess(context,world,builder,start);
         raisedLiquidEntrance(context,world,builder,start);
         sealedRepairDrop(context,world,builder,start);
+        longCheckedWalk(context,world,builder,start);
         crouchedMining(context,world,builder,start);
         columnEdgeMining(context,world,builder,start);
         teleport(world,start);context.waitTicks(12);
@@ -398,6 +399,27 @@ final class BuilderHomeChecks {
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Sealed drop left work, supports, damage or menu: "+builder.status());BuilderPacketChecks.verify(1);builder.pause("sealed drop checked");setting(builder,"Restock When Empty",true);setting(builder,"Auto Buy When Missing",true);});
         teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+6)+" "+(origin.getY()+4)+" "+(origin.getZ()+7)+" air");context.waitTicks(4);
         System.out.println("[builder-home] Sealed upper repair drop collected through native access; all openings restored, zero dirt, full health and bounded look in "+elapsed+" ticks");
+    }
+    private static void longCheckedWalk(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-home] Finish a long proved native walk without cancelling it at the old 240-tick deadline");
+        var from=start.north(10);var destination=from.east(58);var target=destination.south(2);
+        world.getServer().runCommand("fill "+from.add(0,-1,-1).toShortString().replace(",","")+" "+destination.add(0,-1,2).toShortString().replace(",","")+" stone");
+        world.getServer().runCommand("fill "+from.north().toShortString().replace(",","")+" "+destination.add(0,2,2).toShortString().replace(",","")+" air");
+        world.getServer().runCommand("clear @a stone");world.getServer().runCommand("give @a stone 1");teleport(world,from);context.waitTicks(12);int first=commands.size();
+        context.runOnClient(client->{
+            setting(builder,"Temporary Supports",false);setting(builder,"Prepare Whole Build",false);builder.install(new Schematic("long-checked-walk.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);
+            var walker=(BuilderWalk)field(builder,"walker");require(walker.canReachStand(destination),"Long route fixture has no proved native walk");BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
+            setField(builder,"standGoal",destination);setField(builder,"standStarted",field(builder,"ticks"));setField(builder,"standProgressAt",field(builder,"ticks"));setField(builder,"standProgressPos",client.player.getEntityPos());setField(builder,"navigatingCell",0);
+        });
+        int elapsed=0;
+        for(;elapsed<900&&context.computeOnClient(client->field(builder,"standGoal")!=null);elapsed++)context.waitTick();
+        final int walked=elapsed;
+        context.runOnClient(client->{require(walked>240&&client.player.getEntityPos().squaredDistanceTo(((BuilderWalk)field(builder,"walker")).standingPoint(destination))<.4*.4,"Long advancing route was cancelled before arrival after "+walked+" ticks: "+builder.status());});
+        for(int i=0;i<200&&context.computeOnClient(client->builder.building());i++)context.waitTick();
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(target).isOf(Blocks.STONE)),"Long route did not finish its native placement");require(commands.size()==first,"Long route used a home teleport");
+        context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20,"Long route left active work, supports or damage");BuilderPacketChecks.verify(1);builder.pause("long walk checked");setting(builder,"Temporary Supports",true);});
+        teleport(world,start);context.waitTicks(12);
+        System.out.println("[builder-home] Long proved native walk retained past 240 ticks and finished its placement without a restart/home/support/damage in "+elapsed+" walking ticks");
     }
     private static void offsetRepairReceiver(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-home] Recover deflected repair stock through an adjacent native hopper column");

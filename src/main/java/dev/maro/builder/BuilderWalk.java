@@ -13,7 +13,7 @@ public final class BuilderWalk {
     private record Node(BlockPos pos,double cost,double score,Node parent){}
     private List<BlockPos> path=List.of();
     private BlockPos goal;
-    private int cursor,retry,stuck;
+    private int cursor,retry,stuck,routeTimeout=240;
     private Vec3d last;
     private boolean forward,jump;
     private boolean exact;
@@ -40,7 +40,7 @@ public final class BuilderWalk {
     public void resetLook(){rotation.reset();}
     public String status="";
     public void stop(){
-        release();path=List.of();goal=waterExitGoal=null;cursor=retry=stuck=failedRoutes=0;last=null;recoveryRequested=movementStalled=false;
+        release();path=List.of();goal=waterExitGoal=null;cursor=retry=stuck=failedRoutes=0;routeTimeout=240;last=null;recoveryRequested=movementStalled=false;
         waterDepartureCells=Set.of();waterExitRejected.clear();waterExitSearchTicks=0;waterExitHint=null;
     }
     public void release(){
@@ -49,6 +49,8 @@ public final class BuilderWalk {
         forward=jump=false;
     }
     public boolean moving(){return forward||jump;}
+    /** Allow a proved long walk to finish without renewing its deadline forever. */
+    public int routeTimeoutTicks(){return routeTimeout;}
     /** Native sneak edging keeps part of the body over the original solid footing. */
     public boolean peekToward(BlockPos target,BlockPos floor){
         if(!mc.player.isOnGround()||!mc.player.isSneaking()||mc.player.isTouchingWater()||mc.player.isInLava())return false;
@@ -245,6 +247,7 @@ public final class BuilderWalk {
             if(retry>0){release();return false;}
             path=exact&&walkingCell().equals(target)&&walkable(target)?List.of(target):find(walkingCell(),target,distance,exact,true);cursor=0;retry=20;
             if(path.isEmpty()){if(++failedRoutes>=2)recoveryRequested=true;release();status="No safe walking route — move closer or add stairs";return false;}
+            routeTimeout=Math.max(routeTimeout,Math.min(960,Math.max(240,path.size()*12)));
             // A previous failed search must not keep requesting underfoot steps
             // once ordinary walking has a verified route again.
             failedRoutes=0;recoveryRequested=movementStalled=false;

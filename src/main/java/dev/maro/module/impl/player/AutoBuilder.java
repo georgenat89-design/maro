@@ -838,7 +838,7 @@ public final class AutoBuilder extends Module {
                 // them during an intermediate climb forces us to rebuild them.
                 standGoal=null;navigationStarted=sectionProgressAt=ticks;walker.stop();
             }
-            else if(ticks-standProgressAt>50||ticks-standStarted>240||walker.routeUnavailable()){
+            else if(ticks-standProgressAt>50||ticks-standStarted>walker.routeTimeoutTicks()||walker.routeUnavailable()){
                 if(navigatingCell>=0){retryAt.put(navigatingCell,ticks+10);triedStands.computeIfAbsent(navigatingCell,i->new HashMap<>()).put(standGoal,ticks+600);}
                 if(recycleTarget!=null){recycleTarget=null;standGoal=null;walker.stop();status="Replanning temporary support pickup";return true;}
                 navigatingCell=-1;standGoal=null;descentPost=descentView=null;accessStand=accessBase=null;accessFloor=false;accessSupports.clear();accessStairs=Set.of();walker.stop();status="Replanning blocked build position";
