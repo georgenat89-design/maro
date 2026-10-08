@@ -5,6 +5,29 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+The third646 replay on6fe7dd0 progressed to668, then was deliberately stopped
+after more than20 minutes without placement progress. It did not pass. The
+exact idle-home scene is preserved as `stash-fresh-668.json` with127 owned posts
+and unchanged captured supplies (SHA256
+8FEBB40786BBF2DC42DF5D49C614194475BC8F0A2593CE62E1B81EC883FD8659).
+Native geometry checks proved that the closed wooden door blocks the inner
+dispenser's valid placement views. The outside door floor is one block lower
+than the inside floor and itself requires exterior access. The fix
+proves the real opened door hinge collision, reaches an outside approach using
+the existing bounded exterior-entry planner, opens the door through normal
+interaction and registers both halves for restoration after their work.
+Each nested door/approach/view query retains its cursor. A native enclosed-room
+regression checks opening, repair ownership, unchanged walls, closed halves,
+bounded look packets, health and zero scaffolds. Compilation passed; native
+negative2 failed against unchanged6fe7dd0 production as expected in1m57s.
+The fixed full native home/restock/repair/crouch/camera suite passed in2m55s;
+the door case completed in461 ticks with both halves closed and walls intact.
+Earlier test runs exposed fixture floor-placement/cleanup errors, corrected
+before that full pass. Door routes now precede fallback scaffold walking and
+use actual placement views; disabled supports no longer add scaffold views.
+Test-only, unsaved options prevent AFK frame limiting during unattended runs.
+The real668 replay is next. No full710/fresh0 pass.
+
 The second646 replay on185bfae restored both861/1095 and reached648, then was
 deliberately stopped. Native traces showed the buried dispenser583 exhausting
 access planning while its waiting hopper dependants were repeatedly selected

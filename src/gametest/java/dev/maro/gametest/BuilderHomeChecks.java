@@ -98,6 +98,7 @@ final class BuilderHomeChecks {
         immediateWorkBeforeAccess(context,world,builder,home2);
         verticalRepairOrder(context,world,builder,home2);
         sectionDependencyChain(context,world,builder,home2);
+        closedDoorAccess(context,world,builder,start);
         restockRoundTrip(context,world,builder,home2,chest);
         temporaryFootingReturn(context,world,builder,home2,chest);
         teleport(world,start);context.waitTicks(12);
@@ -157,6 +158,37 @@ final class BuilderHomeChecks {
         require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(post).isOf(Blocks.DIRT)),"Fixture did not repair before cleanup");
         context.runOnClient(client->{require(client.player.getHealth()==20&&client.currentScreen==null,"Repair caused damage or left menu");BuilderPacketChecks.verify(1);builder.pause("rotation test");});
         System.out.println("[builder-home] Access restored in "+repaired+" ticks with other temporary posts still present");
+    }
+    private static void closedDoorAccess(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-home] Open an existing wooden door for enclosed work, then restore both closed halves without mining it");
+        var origin=start.add(-3,-1,8);var cells=new BlockState[196];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());
+        for(int y=0;y<4;y++)for(int z=0;z<7;z++)for(int x=0;x<7;x++){
+            var pos=origin.add(x,y,z);
+            if(y==0||y==3||x==0||x==6||z==0||z==6){cells[(y*7+z)*7+x]=Blocks.BEDROCK.getDefaultState();command(world,"setblock",pos,"bedrock");}
+            else command(world,"setblock",pos,"air");
+        }
+        int target=(1*7+4)*7+3;cells[target]=Blocks.GLASS.getDefaultState();
+        var door=origin.add(3,1,0);
+        for(int part=0;part<2;part++){
+            var state=Blocks.DARK_OAK_DOOR.getDefaultState().with(DoorBlock.FACING,Direction.SOUTH).with(DoorBlock.HINGE,net.minecraft.block.enums.DoorHinge.RIGHT).with(DoorBlock.HALF,part==0?net.minecraft.block.enums.DoubleBlockHalf.LOWER:net.minecraft.block.enums.DoubleBlockHalf.UPPER);
+            cells[((1+part)*7)*7+3]=state;command(world,"setblock",door.up(part),"dark_oak_door[facing=south,hinge=right,half="+(part==0?"lower":"upper")+",open=false]");
+        }
+        world.getServer().runCommand("give @a glass 1");teleport(world,origin.add(3,1,-2));context.waitTicks(12);
+        context.runOnClient(client->{setting(builder,"Temporary Supports",false);setting(builder,"Prepare Whole Build",false);builder.install(new Schematic("closed-door-access.nbt","test",7,4,7,BlockPos.ORIGIN,cells));builder.setOrigin(origin);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();});
+        boolean opened=false,registered=false;int elapsed=0;
+        for(;elapsed<700&&context.computeOnClient(client->builder.building());elapsed++){
+            boolean open=world.getServer().computeOnServer(server->{var lower=server.getOverworld().getBlockState(door);var upper=server.getOverworld().getBlockState(door.up());require(lower.isOf(Blocks.DARK_OAK_DOOR)&&upper.isOf(Blocks.DARK_OAK_DOOR),"Access mined an existing door");return lower.get(DoorBlock.OPEN)&&upper.get(DoorBlock.OPEN);});
+            opened|=open;
+            if(open)registered|=context.computeOnClient(client->{var repairs=(Map<?,?>)field(builder,"floorAccessWork");return Objects.equals(repairs.get(door),target)&&Objects.equals(repairs.get(door.up()),target);});
+            if(elapsed%100==0)System.out.println((String)context.computeOnClient(client->"[builder-door-progress] "+builder.status()+" player="+client.player.getEntityPos()+" target="+builder.state(target)+" open="+client.world.getBlockState(door).get(DoorBlock.OPEN)));
+            context.waitTick();
+        }
+        require(opened&&registered,"Existing door was not opened and registered for its enclosed work: "+context.computeOnClient(client->builder.status()));
+        require(world.getServer().computeOnServer(server->{for(int i=0;i<cells.length;i++)if(!cells[i].isOf(Blocks.STRUCTURE_VOID)&&!AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(origin.add(i%7,i/49,i/7%7)),cells[i]))return false;return true;}),"Door access left enclosed work unfinished or a changed wall/door");
+        context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Door access left active work, dirt, damage or menu: "+builder.status());BuilderPacketChecks.verify(1);builder.pause("closed door checked");setting(builder,"Temporary Supports",true);});
+        teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+(origin.getY()+1)+" "+origin.getZ()+" "+(origin.getX()+6)+" "+(origin.getY()+3)+" "+(origin.getZ()+6)+" air");
+        world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+6)+" "+origin.getY()+" "+(origin.getZ()+6)+" stone");context.waitTicks(4);
+        System.out.println("[builder-home] Existing door opened natively, both halves registered and restored closed; enclosed work completed in "+elapsed+" ticks; untouched walls, full health and zero supports");
     }
     private static void checkedRoomAccess(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-home] Reach enclosed unfinished work through a verified dry opening with homes enabled");

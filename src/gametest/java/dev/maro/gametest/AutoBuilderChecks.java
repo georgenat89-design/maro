@@ -74,7 +74,13 @@ final class AutoBuilderChecks {
     }
     private static NbtCompound vector(int x,int y,int z){var n=new NbtCompound();n.putInt("x",x);n.putInt("y",y);n.putInt("z",z);return n;}
     static void run(ClientGameTestContext context,TestSingleplayerContext singleplayer){
-        context.runOnClient(client->imports());
+        context.runOnClient(client->{
+            // Long unattended native builds must retain normal tick pacing.
+            // These options belong only to this isolated test client; never save them.
+            client.options.getInactivityFpsLimit().setValue(net.minecraft.client.option.InactivityFpsLimit.MINIMIZED);
+            client.options.getEnableVsync().setValue(false);client.options.getMaxFps().setValue(120);client.options.pauseOnLostFocus=false;
+            imports();
+        });
         AutoBuilder builder=ModuleManager.get(AutoBuilder.class);
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{

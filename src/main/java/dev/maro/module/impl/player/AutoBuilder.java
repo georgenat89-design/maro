@@ -289,6 +289,12 @@ public final class AutoBuilder extends Module {
         final Map<BlockPos,FloorProbe> probes=new HashMap<>();
     }
     private static final class ViewSearch {
+        final EntrySearch doorEntry=new EntrySearch();
+        int doorScanCursor,doorApproachCursor,doorViewCursor,doorDirectCursor,doorDirectViewCursor;
+        BlockPos doorFeet,doorTuning;
+        boolean doorChecked;
+        final List<BlockPos> closedDoors=new ArrayList<>(),doorApproaches=new ArrayList<>();
+        final List<DoorApproach> doorCandidates=new ArrayList<>();
         final EntrySearch entry=new EntrySearch();
         final DescentSearch descent=new DescentSearch();
         final PassageSearch passage=new PassageSearch();
@@ -1059,6 +1065,7 @@ public final class AutoBuilder extends Module {
         }
         return true;
     }
+    private record DoorApproach(BlockPos door,BlockPos stand){}
     /** A block's nearest face can be reachable even when its centre is not. */
     private boolean withinReach(BlockPos pos,Vec3d eye){
         double dx=eye.x-MathHelper.clamp(eye.x,pos.getX(),pos.getX()+1);
@@ -1288,7 +1295,7 @@ public final class AutoBuilder extends Module {
         // Mining and cleanup need a reachable hit on the existing block.
         // A view of a hypothetical scaffold is useful only to place missing
         // work; cleanup never places that scaffold after arriving there.
-        boolean supportFallback=!liquid&&mc.world.getBlockState(target).isReplaceable()&&wanted!=null&&!wanted.isAir()&&!hasAttachment(target,wanted);
+        boolean supportFallback=support.get()&&!liquid&&mc.world.getBlockState(target).isReplaceable()&&wanted!=null&&!wanted.isAir()&&!hasAttachment(target,wanted);
         boolean extendedScaffold=supportFallback&&(bridge||!straightSupportBase(target,attachmentSide(wanted)));
         int below=(int)Math.floor(effectiveReach()+mc.player.getStandingEyeHeight()-.5),above=(int)Math.floor(effectiveReach()-mc.player.getStandingEyeHeight()+.5);
         if(extendedScaffold)below=Math.max(below,8);
@@ -1340,6 +1347,10 @@ public final class AutoBuilder extends Module {
             .thenComparingInt(p->scaffoldDistance.getOrDefault(p,0)).thenComparingDouble(p->p.getSquaredDistance(mc.player.getBlockPos())));standGoal=null;
         long routeDeadline=System.nanoTime()+6_000_000;
         while(search.routeCursor<options.size()){
+            if(!directStands.contains(options.get(search.routeCursor))&&!search.doorChecked){
+                if(prepareDoorAccess(target,options.stream().filter(directStands::contains).toList(),routingWork,search))return true;
+                search.doorChecked=true;
+            }
             var option=options.get(search.routeCursor++);
             if(tried.containsKey(option)&&!option.equals(accessStand)||!walker.canStand(option))continue;
             tried.put(option,ticks+40);if(walker.canReachStand(option)){standGoal=option;break;}
@@ -1350,6 +1361,11 @@ public final class AutoBuilder extends Module {
             // An anchored short column can still have no usable view. Only after
             // trying those views, allow a connected bridge from another side.
             if(search.recoveryStage==0){
+                // Use an existing door before planning speculative scaffolds.
+                if(!search.doorChecked){
+                    if(prepareDoorAccess(target,options.stream().filter(directStands::contains).toList(),routingWork,search))return true;
+                    search.doorChecked=true;
+                }
                 if(supportFallback&&!bridge&&repositionTarget(target,tried,true)){bridgeTarget=target;return true;}
                 search.recoveryStage=1;
             }
@@ -1404,6 +1420,71 @@ public final class AutoBuilder extends Module {
             for(var opening:liquidTopBlocks){floorAccessWork.put(opening,cell);openingRepairDepth.put(opening,-opening.getY());}
         }
         standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();status="Moving around an obstructed block";return true;
+    }
+    private boolean usableWorkDoor(BlockPos pos){
+        int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());var state=mc.world.getBlockState(pos);
+        if(cell<0||!(state.getBlock() instanceof DoorBlock door)||!door.getBlockSetType().canOpenByHand()
+            ||state.get(DoorBlock.HALF)!=net.minecraft.block.enums.DoubleBlockHalf.LOWER||state.get(DoorBlock.OPEN)
+            ||!matchesBuildState(state,desired(cell))||desired(cell).get(DoorBlock.OPEN)||liquidBoundary(pos)||liquidBoundary(pos.up()))return false;
+        int upper=schematic.indexAt(pos.up().subtract(anchor()),turns(),mirror.get());
+        if(upper<0||desired(upper).getBlock()!=state.getBlock()||!matchesBuildState(mc.world.getBlockState(pos.up()),desired(upper)))return false;
+        for(var part:List.of(pos,pos.up()))for(var side:Direction.values())if(!mc.world.getFluidState(part.offset(side)).isEmpty())return false;
+        return true;
+    }
+    private boolean prepareDoorAccess(BlockPos target,List<BlockPos> views,int work,ViewSearch search){
+        if(work<0||views.isEmpty()||desired(work).getBlock() instanceof FluidBlock)return false;
+        if(search.doorTuning!=null&&usableWorkDoor(search.doorTuning)){
+            var door=search.doorTuning;
+            floorAccessWork.put(door,work);floorAccessWork.put(door.up(),work);
+            var part=visibleHit(door)!=null?door:door.up();
+            tuneConfiguration(part,configuration(mc.world.getBlockState(part).with(DoorBlock.OPEN,true)));return true;
+        }
+        long deadline=System.nanoTime()+2_000_000;
+        while(search.doorScanCursor<486&&System.nanoTime()<deadline){
+            int sample=search.doorScanCursor++;var pos=target.add(sample/6/9-4,sample%6-2,sample/6%9-4);
+            if(!mc.world.isChunkLoaded(pos)||!usableWorkDoor(pos))continue;
+            search.closedDoors.add(pos);
+            for(var side:ESCAPE_SIDES)for(int down=0;down<=1;down++)search.doorCandidates.add(new DoorApproach(pos,pos.offset(side).down(down)));
+        }
+        if(search.doorScanCursor<486){walker.release();status="Checking existing door access";return true;}
+        if(!mc.player.getBlockPos().equals(search.doorFeet)){
+            search.doorFeet=mc.player.getBlockPos().toImmutable();search.doorDirectCursor=search.doorDirectViewCursor=0;
+        }
+        while(search.doorDirectCursor<search.closedDoors.size()&&System.nanoTime()<deadline){
+            var door=search.closedDoors.get(search.doorDirectCursor);
+            if(!usableWorkDoor(door)){search.doorDirectCursor++;search.doorDirectViewCursor=0;continue;}
+            var hit=visibleHit(door);if(hit==null)hit=visibleHit(door.up());
+            if(hit==null){search.doorDirectCursor++;search.doorDirectViewCursor=0;continue;}
+            while(search.doorDirectViewCursor<views.size()&&System.nanoTime()<deadline){
+                var view=views.get(search.doorDirectViewCursor++);
+                if(walker.canReachWithOpenedDoors(mc.player.getBlockPos(),view,Set.of(door,door.up()))){
+                    // Configuration openings share the persisted repair queue.
+                    // Their owner keeps both halves open until this job ends.
+                    floorAccessWork.put(door,work);floorAccessWork.put(door.up(),work);
+                    search.doorTuning=door;
+                    tuneConfiguration(hit.getBlockPos(),configuration(mc.world.getBlockState(hit.getBlockPos()).with(DoorBlock.OPEN,true)));
+                    return true;
+                }
+            }
+            if(search.doorDirectViewCursor==views.size()){search.doorDirectCursor++;search.doorDirectViewCursor=0;}
+        }
+        if(search.doorDirectCursor<search.closedDoors.size()){walker.release();status="Checking current door route";return true;}
+        while(search.doorApproachCursor<search.doorCandidates.size()&&System.nanoTime()<deadline){
+            var candidate=search.doorCandidates.get(search.doorApproachCursor);var stand=candidate.stand;var door=candidate.door;
+            if(!usableWorkDoor(door)||!walker.canStand(stand)){search.doorApproachCursor++;search.doorViewCursor=0;continue;}
+            var eye=walker.standingPoint(stand).add(0,mc.player.getStandingEyeHeight(),0);
+            if(visibleHit(door,eye)==null&&visibleHit(door.up(),eye)==null){search.doorApproachCursor++;search.doorViewCursor=0;continue;}
+            while(search.doorViewCursor<views.size()&&System.nanoTime()<deadline){
+                var view=views.get(search.doorViewCursor++);
+                if(walker.canReachWithOpenedDoors(stand,view,Set.of(door,door.up()))){if(!search.doorApproaches.contains(stand))search.doorApproaches.add(stand);search.doorViewCursor=views.size();break;}
+            }
+            if(search.doorViewCursor==views.size()){search.doorApproachCursor++;search.doorViewCursor=0;}
+        }
+        if(search.doorApproachCursor<search.doorCandidates.size()){walker.release();status="Checking door approaches";return true;}
+        for(var stand:search.doorApproaches)if(walker.canReachStand(stand)){
+            standGoal=stand;standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();status="Walking to existing wooden door";return true;
+        }
+        return prepareElevatedEntry(search.doorApproaches,work,search.doorEntry);
     }
     /** Enter a finished ceiling through a short opening above a clear, checked column. */
     private boolean prepareCeilingEntry(List<BlockPos> views,int work,ViewSearch search){
@@ -1648,12 +1729,14 @@ public final class AutoBuilder extends Module {
     }
     /** Each placement view keeps its own search when nearby work targets alternate. */
     private boolean prepareElevatedEntry(List<BlockPos> views,int work,ViewSearch search){
-        var entry=search.entry;
+        return prepareElevatedEntry(views,work,search.entry);
+    }
+    private boolean prepareElevatedEntry(List<BlockPos> views,int work,EntrySearch entry){
         int previousCursor=entry.cursor,previousDoor=entry.doorCursor;
         entrySearchFeet=entry.feet;entrySearchWork=entry.work;entrySearchHash=entry.hash;
         entrySearchCursor=entry.cursor;entryRetryAt=entry.retryAt;entryDoorCursor=entry.doorCursor;
         entryProbeCursor=entry.probeCursor;entryProbeBase=entry.probeBase;entryCandidates=entry.candidates;
-        try{return prepareElevatedEntry(views,work,entry);}
+        try{return prepareElevatedEntrySearch(views,work,entry);}
         finally{
             entry.feet=entrySearchFeet;entry.work=entrySearchWork;entry.hash=entrySearchHash;
             entry.cursor=entrySearchCursor;entry.retryAt=entryRetryAt;entry.doorCursor=entryDoorCursor;
@@ -1664,7 +1747,7 @@ public final class AutoBuilder extends Module {
         }
     }
     /** Reach a finished elevated floor by climbing outside it, rather than mining or pillaring underneath it. */
-    private boolean prepareElevatedEntry(List<BlockPos> views,int work,EntrySearch search){
+    private boolean prepareElevatedEntrySearch(List<BlockPos> views,int work,EntrySearch search){
         if(!support.get()||work<0&&cleanupTarget==null||views.isEmpty())return false;
         var feet=mc.player.getBlockPos();int hash=views.hashCode();
         if(!feet.equals(entrySearchFeet)||entrySearchWork!=work||entrySearchHash!=hash){

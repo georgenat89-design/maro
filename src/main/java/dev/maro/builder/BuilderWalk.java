@@ -1,6 +1,8 @@
 package dev.maro.builder;
 
 import net.minecraft.block.Blocks;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.DoorBlock;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.math.*;
 import java.util.*;
@@ -20,6 +22,7 @@ public final class BuilderWalk {
     private boolean movementStalled;
     private boolean smooth=true;
     private Set<BlockPos> clearedForSearch=Set.of();
+    private Set<BlockPos> openedDoorsForSearch=Set.of();
     private BlockPos pillarForSearch;
     private Set<BlockPos> stairsForSearch=Set.of();
     private Set<BlockPos> waterExitCells=Set.of();
@@ -143,6 +146,11 @@ public final class BuilderWalk {
     }
     public boolean canReachStand(BlockPos pos){return walkable(pos)&&(walkingCell().equals(pos)||mc.player.getEntityPos().squaredDistanceTo(standingPoint(pos))<=.22*.22||!find(walkingCell(),pos,.22,true).isEmpty());}
     public boolean canReachStandFrom(BlockPos from,BlockPos to){return walkable(from)&&walkable(to)&&(from.equals(to)||!find(from,to,.22,true).isEmpty());}
+    /** Use the real opened door panels, including their hinge collision. */
+    public boolean canReachWithOpenedDoors(BlockPos from,BlockPos to,Set<BlockPos> doors){
+        var previous=openedDoorsForSearch;openedDoorsForSearch=doors;
+        try{return canReachStandFrom(from,to);}finally{openedDoorsForSearch=previous;}
+    }
     /** Collision-only feasibility query; never changes client or server blocks. */
     public boolean canReachAfterClearing(BlockPos from,BlockPos to,Set<BlockPos> removed){
         var previous=clearedForSearch;clearedForSearch=removed;
@@ -392,11 +400,12 @@ public final class BuilderWalk {
         return List.of();
     }
     private static double heuristic(BlockPos a,BlockPos b){int x=Math.abs(a.getX()-b.getX()),z=Math.abs(a.getZ()-b.getZ());return Math.max(x,z)+(Math.sqrt(2)-1)*Math.min(x,z)+Math.abs(a.getY()-b.getY())*.6;}
-    private boolean clear(BlockPos p){return !stairsForSearch.contains(p)&&!p.equals(pillarForSearch)&&mc.world.isChunkLoaded(p)&&(clearedForSearch.contains(p)||mc.world.getBlockState(p).getCollisionShape(mc.world,p).isEmpty())&&safe(p);}
+    private BlockState searchState(BlockPos pos){var state=mc.world.getBlockState(pos);return openedDoorsForSearch.contains(pos)&&state.getBlock() instanceof DoorBlock?state.with(DoorBlock.OPEN,true):state;}
+    private boolean clear(BlockPos p){return !stairsForSearch.contains(p)&&!p.equals(pillarForSearch)&&mc.world.isChunkLoaded(p)&&(clearedForSearch.contains(p)||searchState(p).getCollisionShape(mc.world,p).isEmpty())&&safe(p);}
     private double footingHeight(BlockPos p){
         if(p.equals(pillarForSearch)||stairsForSearch.contains(p))return 1;
         if(clearedForSearch.contains(p))return 0;
-        var state=mc.world.getBlockState(p);
+        var state=searchState(p);
         if(state.isSideSolidFullSquare(mc.world,p,Direction.UP))return 1;
         double height=0;
         // Hoppers and chests are walkable although their top is not a full square.
@@ -422,7 +431,7 @@ public final class BuilderWalk {
         // A hopper's centred footing is lower than its rim. A normal jump can
         // clear that lip and settle inside; the centre-height approach cannot.
         double lip=to.y;
-        for(var box:mc.world.getBlockState(step.down()).getCollisionShape(mc.world,step.down()).getBoundingBoxes())
+        for(var box:searchState(step.down()).getCollisionShape(mc.world,step.down()).getBoundingBoxes())
             lip=Math.max(lip,step.getY()-1+box.maxY);
         if(lip<=to.y+.001||lip>from.y+1.25)return false;
         raised=new Vec3d(from.x,lip,from.z);var over=new Vec3d(to.x,lip,to.z);
@@ -438,7 +447,7 @@ public final class BuilderWalk {
             if(!mc.world.isChunkLoaded(cell)||!safe(cell))return false;
             if(clearedForSearch.contains(cell))continue;
             var shape=stairsForSearch.contains(cell)||cell.equals(pillarForSearch)?net.minecraft.util.shape.VoxelShapes.fullCube()
-                :mc.world.getBlockState(cell).getCollisionShape(mc.world,cell,net.minecraft.block.ShapeContext.of(mc.player));
+                :searchState(cell).getCollisionShape(mc.world,cell,net.minecraft.block.ShapeContext.of(mc.player));
             for(var bounds:shape.getBoundingBoxes())if(bounds.offset(cell).intersects(body))return false;
         }
         return true;
