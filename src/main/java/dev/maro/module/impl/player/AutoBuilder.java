@@ -1042,6 +1042,10 @@ public final class AutoBuilder extends Module {
             var depth=openingRepairDepth.get(pos);
             if(depth!=null)for(var other:floorAccessWork.keySet()){
                 if(openingRepairDepth.getOrDefault(other,0)<=depth)continue;
+                // Depth orders ready repairs. An opening whose owner is still
+                // unfinished must not block the very block it was opened for.
+                var owner=floorAccessWork.get(other);
+                if(!openingRestoration&&owner!=null&&owner>=0&&owner<states.length&&states[owner]!=CORRECT&&states[owner]!=IGNORED)continue;
                 // Restore a vertical stack from its native supporting cube.
                 // Deeper-first still applies to separate wall faces.
                 if(repairAnchorBelow(pos,other))continue;

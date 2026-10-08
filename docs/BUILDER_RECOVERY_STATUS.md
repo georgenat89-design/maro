@@ -5,6 +5,25 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+The96a51a5 replay placed the four missing hoppers and another wire, reaching685,
+then stalled. Its repair queue proves a depth/owner cycle:636 is owned by the
+already complete637, but waits for the deeper opening674, whose owner636 is
+still missing. This also suppresses other ready repairs and their wiring.
+The correction orders depth only among repairs whose owners are ready;
+final opening restoration retains its existing all-opening ordering. A native
+fixture requires an owner repair before its deeper dependent opening while
+unrelated work remains deferred. The96a production baseline failed this case
+in1m19s; the fix repaired the pair in27 ticks. The full native home/access suite
+passed in3m16s, including the buried hopper, native water, rooms, crouch mining
+and camera continuity. Compilation passed. The exact685 replay is next.
+The idle685 capture preserves native supplies and127 posts with no home2:
+`350621E25FD2348C8C5E8A6E6F8DF0A9761042F818A86630B597C521069149B1`.
+No full710/fresh0 pass has occurred. The beam/side-view probes did not prove a
+native piston placement, so no speculative geometry change was made.
+Prior9ce CI passed build/general/home/liquid checks but failed its sealed chest
+return after120s at81/82, "Settling at build position". Final-head validation
+must verify that case; current96a CI remains in progress.
+
 The second668 replay on9ce70d2 advanced to683, then repeated access recovery
 without completing another block for12 minutes. It was deliberately stopped;
 this is not a completion pass. An idle native683 snapshot preserves the exact

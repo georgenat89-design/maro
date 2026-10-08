@@ -97,6 +97,7 @@ final class BuilderHomeChecks {
         obstructedStorageRoundTrip(context,world,builder,home2,chest);
         immediateWorkBeforeAccess(context,world,builder,home2);
         verticalRepairOrder(context,world,builder,home2);
+        repairOwnerOrder(context,world,builder,home2);
         sectionDependencyChain(context,world,builder,home2);
         buriedHopperRoofAccess(context,world,builder,start);
         closedDoorAccess(context,world,builder,start);
@@ -338,6 +339,30 @@ final class BuilderHomeChecks {
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20,"Vertical repair left work, scaffolds or damage: "+builder.status());BuilderPacketChecks.verify(2);builder.pause("vertical repair checked");});
         teleport(world,work);context.waitTicks(12);command(world,"setblock",lower,"air");command(world,"setblock",lower.up(),"air");command(world,"setblock",owner,"air");context.waitTicks(4);
         System.out.println("[builder-home] Registered vertical repairs completed lower anchor then upper cube; full health, bounded native look and zero supports");
+    }
+    private static void repairOwnerOrder(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work){
+        String previousSupply=builder.sectionSupply()?"Nearby Sections":builder.layerSupply()?"Layer by Layer":"Whole Schematic";
+        var origin=work.south(2);for(int x:new int[]{0,1,4})command(world,"setblock",origin.east(x),"air");command(world,"setblock",origin.east(2),"stone");world.getServer().runCommand("give @a stone 3");teleport(world,work);context.waitTicks(12);
+        context.runOnClient(client->{setting(builder,"Temporary Supports",false);setting(builder,"Restock When Empty",false);setting(builder,"Stockpile In Chests",false);setting(builder,"Prepare Whole Build",false);setting(builder,"Material Supply","Whole Schematic");
+            builder.install(new Schematic("repair-owner-before-dependent.nbt","test",5,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState(),Blocks.STRUCTURE_VOID.getDefaultState(),Blocks.STONE.getDefaultState()}));builder.setOrigin(origin);builder.preview();});context.waitTicks(12);
+        context.runOnClient(client->{require(builder.state(2)==AutoBuilder.CORRECT,"Repair owner fixture did not establish its completed owner");
+            @SuppressWarnings("unchecked")var repairs=(Map<BlockPos,Integer>)field(builder,"floorAccessWork");repairs.put(origin,2);repairs.put(origin.east(),0);
+            @SuppressWarnings("unchecked")var depths=(Map<BlockPos,Integer>)field(builder,"openingRepairDepth");depths.put(origin,1);depths.put(origin.east(),2);
+            BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
+            @SuppressWarnings("unchecked")var retries=(Map<Integer,Integer>)field(builder,"retryAt");retries.put(4,(int)field(builder,"ticks")+120);});
+        boolean repaired=false;int elapsed=0;
+        for(;elapsed<80;elapsed++){
+            var pair=world.getServer().computeOnServer(server->List.of(server.getOverworld().getBlockState(origin).isOf(Blocks.STONE),server.getOverworld().getBlockState(origin.east()).isOf(Blocks.STONE)));
+            require(!pair.get(1)||pair.get(0),"Dependent repair closed before its unfinished owner");if(pair.get(0)&&pair.get(1)){repaired=true;break;}context.waitTick();
+        }
+        require(repaired,"Deeper opening waited on the block it was opened to repair: "+context.computeOnClient(client->builder.status()));
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(origin.east(4)).isAir()),"Repair owner fixture did not retain unrelated unfinished work");
+        context.runOnClient(client->((Map<?,?>)field(builder,"retryAt")).remove(4));
+        for(int tick=0;tick<300&&context.computeOnClient(client->builder.building());tick++)context.waitTick();
+        require(world.getServer().computeOnServer(server->{for(int x:new int[]{0,1,2,4})if(!server.getOverworld().getBlockState(origin.east(x)).isOf(Blocks.STONE))return false;return true;}),"Repair owner fixture did not finish all native work");
+        context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Repair owner order left work, supports, damage or menu");BuilderPacketChecks.verify(3);builder.pause("repair owner order checked");setting(builder,"Temporary Supports",true);setting(builder,"Restock When Empty",true);setting(builder,"Stockpile In Chests",true);setting(builder,"Material Supply",previousSupply);});
+        teleport(world,work);context.waitTicks(12);for(int x:new int[]{0,1,2,4})command(world,"setblock",origin.east(x),"air");context.waitTicks(4);
+        System.out.println("[builder-home] Ready owner repaired before its deeper dependent access opening in "+elapsed+" ticks; unrelated work stayed deferred, then all native blocks completed; full health and zero supports");
     }
     private static void sectionDependencyChain(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work){
         var first=work.south(2);var origin=first.west(6);var parent=first.east(2);var cells=new BlockState[9];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());
