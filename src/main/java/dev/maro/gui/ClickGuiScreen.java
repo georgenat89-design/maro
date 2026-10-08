@@ -367,6 +367,7 @@ public class ClickGuiScreen extends Screen {
             }
         }
         if (win > 0.01f) {
+            if (panelsStyle()) ctx.createNewRootLayer(); // the window wholly over the panels
             ghost = panelsStyle() && !windowOpen;
             renderWindow(ctx, p * win);
             ghost = false;

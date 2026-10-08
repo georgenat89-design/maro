@@ -81,16 +81,22 @@ public final class PanelsView {
 
     // ---- layout -----------------------------------------------------------------------------
 
-    private static float panelWidth(float width) {
-        int n = PANELS.size();
+    /** Categories with modules in them, in their usual order; an empty one gets no panel. */
+    private static List<Category> shownCategories() {
+        List<Category> shown = new ArrayList<>();
+        for (Category c : Category.values()) if (!ModuleManager.byCategory(c).isEmpty()) shown.add(c);
+        return shown;
+    }
+
+    private static float panelWidth(float width, int n) {
         float fit = (width - MARGIN * 2 - GAP * (n - 1)) / n;
         return Math.max(MIN_W, Math.min(MAX_W, fit));
     }
 
     /** Where a panel sits until it is moved: in one centred row, wrapping onto more if the screen is narrow. */
-    private static float[] autoPlace(Panel panel, float width, float pw, float top) {
-        int n = PANELS.size(), i = panel.category.ordinal();
-        int perRow = Math.max(1, (int) ((width - MARGIN * 2 + GAP) / (pw + GAP)));
+    private static float[] autoPlace(int i, int n, float width, float pw, float top) {
+        // The small allowance keeps rounding from pushing the last panel onto a row of its own.
+        int perRow = Math.max(1, (int) ((width - MARGIN * 2 + GAP + 0.5f) / (pw + GAP)));
         int row = i / perRow, col = i % perRow;
         int inRow = Math.min(perRow, n - row * perRow);
         float rowW = inRow * pw + (inRow - 1) * GAP;
@@ -121,25 +127,33 @@ public final class PanelsView {
         places.clear();
         float base = Render2D.getAlpha();
         float top = MARGIN + DOCK_H + 10f;
-        float pw = panelWidth(width);
+        List<Category> visible = shownCategories();
+        float pw = panelWidth(width, Math.max(1, visible.size()));
         String query = gui.getSearch().getText().trim();
         Set<Module> matches = query.isEmpty() ? null : new HashSet<>(ModuleManager.search(query));
 
+        boolean first = true;
         for (Panel panel : List.copyOf(PANELS)) {
+            int index = visible.indexOf(panel.category);
+            if (index < 0) continue;
             if (!panel.placed) {
-                float[] at = autoPlace(panel, width, pw, top);
+                float[] at = autoPlace(index, visible.size(), width, pw, top);
                 panel.x = at[0];
                 panel.y = at[1];
             }
+            // Each panel on a layer of its own, so one in front hides the text of one behind it.
+            if (!first) ctx.createNewRootLayer();
+            first = false;
             panel.x = Math.max(0, Math.min(width - pw, panel.x));
             panel.y = Math.max(0, Math.min(height - HEADER, panel.y));
             // Each panel drops in a moment after the one before it.
             float since = (System.currentTimeMillis() - openedAt) / (1000f / ClientSettings.animationSpeed());
-            float intro = Easing.outCubic((since - panel.category.ordinal() * 0.045f) / 0.32f);
+            float intro = Easing.outCubic((since - index * 0.045f) / 0.32f);
             Render2D.setAlpha(base * intro);
             renderPanel(ctx, panel, panel.x, panel.y + (1f - intro) * -10f - (1f - p) * 6f, pw, height, matches);
         }
         Render2D.setAlpha(base);
+        ctx.createNewRootLayer();
         renderDock(ctx, width, shown);
         // How to use it, along the bottom.
         Render2D.setAlpha(base * shown);
@@ -176,7 +190,7 @@ public final class PanelsView {
         Render2D.roundRect(ctx, x, y, w, Math.min(46f, h), r, Theme.accent(0x16), Theme.accent2(0x16), 0x00000000, 0x00000000);
         Render2D.roundOutline(ctx, x, y, w, h, r, 1f, 0xFF26262F, 0xFF26262F, 0xFF15151B, 0xFF15151B);
 
-        renderHeader(ctx, panel, x, y, w, rows.size(), on, open, lit);
+        renderHeader(ctx, panel, x, y, w, searching ? rows.size() : -1, on, open, lit);
 
         if (open > 0.01f) {
             float ly = y + HEADER, lh = listH * open;
@@ -195,7 +209,8 @@ public final class PanelsView {
         Render2D.setAlpha(prev);
     }
 
-    private void renderHeader(DrawContext ctx, Panel panel, float x, float y, float w, int count, long on, float open, float lit) {
+    /** @param found how many modules match the search, or -1 when not searching */
+    private void renderHeader(DrawContext ctx, Panel panel, float x, float y, float w, int found, long on, float open, float lit) {
         boolean hov = gui.hovered(x, y, w, HEADER);
         float hv = Anims.of(panel, "headHover", hov);
         float cy = y + HEADER / 2f;
@@ -225,11 +240,24 @@ public final class PanelsView {
         if (Theme.glow() && lit > 0.01f) Render2D.shadow(ctx, ix - 5, cy - 5, 10, 10, 5, 4, Theme.accent(Math.round(0x40 * lit)));
         panel.category.getIcon().draw(ctx, ix, cy, 8.5f, ColorUtil.lerp(ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT, hv), Theme.accent(), lit), hv);
         float caretX = x + w - 9f;
-        String counter = on + "/" + count;
-        float counterW = Fonts.width(counter, false, 0.62f);
-        float titleMax = caretX - 6f - counterW - 6f - (ix + 9f);
-        Fonts.drawV(ctx, Fonts.trim(panel.category.getDisplayName(), titleMax, true, 0.86f), ix + 9f, cy, Theme.TEXT, true, 0.86f);
-        Fonts.drawRight(ctx, counter, caretX - 6f, cy, on > 0 ? ColorUtil.lerp(Theme.TEXT_MUTED, Theme.accent(), 0.8f) : Theme.TEXT_MUTED, false, 0.62f);
+        // A badge: how many match the search, or how many are on; nothing when none are.
+        float titleRight = caretX - 6f;
+        String badge = found >= 0 ? String.valueOf(found) : on > 0 ? String.valueOf(on) : null;
+        if (badge != null) {
+            Fonts.beginRaw();
+            float bw = Math.max(9f, Fonts.width(badge, true, 0.6f) + 6f), bh = 9f, bx = caretX - 6f - bw;
+            boolean accent = found < 0 || found > 0;
+            Render2D.roundRect(ctx, bx, cy - bh / 2f, bw, bh, bh / 2f, accent ? Theme.accent(0x48) : 0xFF22222C);
+            Fonts.drawCentered(ctx, badge, bx + bw / 2f, cy, accent ? 0xFFFFFFFF : Theme.TEXT_MUTED, true, 0.6f);
+            Fonts.endRaw();
+            titleRight = bx - 4f;
+        }
+        // The name, a little smaller rather than cut short when the panel is narrow.
+        String title = panel.category.getDisplayName();
+        float tx = ix + 9f, room = titleRight - tx, scale = 0.86f;
+        float full = Fonts.width(title, true, scale);
+        if (full > room) scale = Math.max(0.68f, scale * room / full);
+        Fonts.drawV(ctx, Fonts.trim(title, room, true, scale), tx, cy, Theme.TEXT, true, scale);
 
         // A caret that turns as the panel folds.
         double turn = Math.toRadians(-90f * (1f - open));
