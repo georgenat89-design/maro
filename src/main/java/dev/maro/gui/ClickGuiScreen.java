@@ -20,6 +20,7 @@ import dev.maro.gui.widget.Widgets;
 import dev.maro.module.Category;
 import dev.maro.module.ModuleManager;
 import dev.maro.setting.KeybindSetting;
+import dev.maro.util.Animation;
 import dev.maro.util.ColorUtil;
 import dev.maro.util.Easing;
 import dev.maro.util.KeyUtil;
@@ -46,6 +47,10 @@ import java.util.function.DoubleConsumer;
 /**
  * The menu. Uses an immediate-mode approach: everything (including click regions) is
  * rebuilt every frame during {@link #render}, so pages only need to describe what they draw.
+ *
+ * <p>With the Panels menu style (the default) it opens on {@link PanelsView}, a panel per
+ * category; pages and module settings then open in the window over them, and Escape or a click
+ * outside the window goes back to the panels. With the Window style it is the window alone.
  */
 public class ClickGuiScreen extends Screen {
     @FunctionalInterface
@@ -113,6 +118,13 @@ public class ClickGuiScreen extends Screen {
     private long closingAt = -1;
     private float lastProgress;
 
+    private final PanelsView panels;
+    /** With the Panels style: whether the window is showing over the panels. */
+    private boolean windowOpen;
+    private final Animation windowShown = new Animation(14f, 0f);
+    /** Set while the window is still fading out over the panels: it is drawn but takes no input. */
+    private boolean ghost;
+
     private java.util.function.Supplier<SkinTextures> skinSupplier;
     private String tooltip, shownTooltip;
     private long tooltipSince;
@@ -128,6 +140,9 @@ public class ClickGuiScreen extends Screen {
         entries.add(new Entry("Socials", Icons.SOCIALS, new SocialsPage(this), null, "Friends and online players"));
         searchPage = new ModulesPage(this, null);
         search = new TextField("Search modules...", 32);
+        List<PanelsView.PageLink> pages = new ArrayList<>();
+        for (int i = moduleEntries; i < entries.size(); i++) pages.add(new PanelsView.PageLink(entries.get(i).label(), entries.get(i).icon(), i));
+        panels = new PanelsView(this, pages);
         selected = Math.max(0, Math.min(lastEntry, entries.size() - 1));
         entries.get(selected).page().onOpen();
     }
@@ -135,14 +150,14 @@ public class ClickGuiScreen extends Screen {
     // ---- immediate mode API used by pages and widgets -----------------------------------
 
     public boolean hovered(float x, float y, float w, float h) {
-        if (!interactive || closingAt >= 0 || drag != null) return false;
+        if (!interactive || ghost || closingAt >= 0 || drag != null) return false;
         if (!new Rect(x, y, w, h).contains(mouseXd, mouseYd)) return false;
         Rect clip = clips.peek();
         return clip == null || clip.contains(mouseXd, mouseYd);
     }
 
     public void hit(float x, float y, float w, float h, ClickHandler handler) {
-        if (!interactive) return;
+        if (!interactive || ghost) return;
         Rect r = new Rect(x, y, w, h);
         Rect clip = clips.peek();
         if (clip != null) r = r.intersect(clip);
@@ -152,7 +167,7 @@ public class ClickGuiScreen extends Screen {
 
     /** Registers a region that consumes mouse wheel input before the page scrolls. */
     public void scrollHit(float x, float y, float w, float h, DoubleConsumer handler) {
-        if (!interactive) return;
+        if (!interactive || ghost) return;
         Rect r = new Rect(x, y, w, h);
         Rect clip = clips.peek();
         if (clip != null) r = r.intersect(clip);
@@ -231,6 +246,7 @@ public class ClickGuiScreen extends Screen {
     }
 
     public void openPage(int index) {
+        windowOpen = true;
         if (index == selected && search.getText().isEmpty()) return;
         search.clear();
         if (focused == search) focused = null;
@@ -257,6 +273,29 @@ public class ClickGuiScreen extends Screen {
     public void openModuleSettings(dev.maro.module.Module module, String category) {
         openModuleOptions(module);
         if (entries.get(module.getCategory().ordinal()).page() instanceof ModulesPage page) page.openSection(category);
+    }
+
+    private static boolean panelsStyle() {
+        return ClientSettings.menuStyle.is("Panels");
+    }
+
+    /** Whether the panels are what is showing (the Panels style, with no page open over them). */
+    public boolean showingPanels() {
+        return panelsStyle() && !windowOpen;
+    }
+
+    /** Back from the window to the panels. */
+    public void showPanels() {
+        if (!panelsStyle() || !windowOpen) return;
+        windowOpen = false;
+        listening = null;
+        focused = null;
+        Sounds.click();
+    }
+
+    /** Where a module's row or a category's header was drawn in the panels last frame, as {x, y}; for tests. */
+    public float[] panelPlace(Object moduleOrCategory) {
+        return panels.placeOf(moduleOrCategory);
     }
 
     private Page currentPage() {
@@ -312,6 +351,38 @@ public class ClickGuiScreen extends Screen {
                     ColorUtil.withAlpha(0, dim), ColorUtil.withAlpha(0, dim));
         }
 
+        // The panels, fading back while the window is over them; a click outside the window returns to them.
+        float win = 1f;
+        if (panelsStyle()) {
+            win = windowShown.update(windowOpen ? 1f : 0f);
+            Render2D.setAlpha(p * (1f - win * 0.8f));
+            interactive = !windowOpen;
+            panels.render(ctx, width, height, p, 1f - win);
+            interactive = true;
+            if (windowOpen) {
+                hit(0, 0, width, height, (button, mx, my) -> showPanels());
+                Render2D.setAlpha(p * win);
+                Fonts.drawCentered(ctx, "Escape or click outside to go back to the panels", width / 2f, height - 7f,
+                        ColorUtil.withAlpha(Theme.TEXT_MUTED, 0xB0), false, 0.6f);
+            }
+        }
+        if (win > 0.01f) {
+            ghost = panelsStyle() && !windowOpen;
+            renderWindow(ctx, p * win);
+            ghost = false;
+        }
+        interactive = true;
+
+        ctx.createNewRootLayer(); // overlays always above the menu
+        renderTooltip(ctx, p);
+        Render2D.setAlpha(1f);
+        Notifications.render(ctx);
+    }
+
+    /** The window: tabs, header and the open page. */
+    private void renderWindow(DrawContext ctx, float p) {
+        Render2D.setAlpha(p);
+
         // window layout
         float ww = Math.min(width - 10f, Math.max(420f, Math.min(660f, width - 40f)));
         float wh = Math.min(height - 10f, Math.max(250f, Math.min(380f, height - 40f)));
@@ -326,6 +397,8 @@ public class ClickGuiScreen extends Screen {
             Render2D.shadow(ctx, wx, wy + 3, ww, wh, r, 24f, 0x80000000);
             if (Theme.glow()) Render2D.shadow(ctx, wx, wy, ww, wh, r, 36f, Theme.accent(0x12));
         }
+        hit(wx, wy, ww, wh, (button, mx, my) -> {
+        }); // the window takes clicks that land on it but on nothing in it
         Render2D.roundRect(ctx, wx, wy, ww, wh, r, Theme.windowBg());
         // soft accent light falling from the top edge
         Render2D.roundRect(ctx, wx, wy, ww, Math.min(110f, wh), r, Theme.accent(0x18), Theme.accent2(0x18), 0x00000000, 0x00000000);
@@ -356,11 +429,6 @@ public class ClickGuiScreen extends Screen {
         currentPage().render(ctx, hx, py + (1 - t) * 8f, hw, ph);
         popClip();
         interactive = true;
-
-        ctx.createNewRootLayer(); // overlays always above the menu
-        renderTooltip(ctx, p);
-        Render2D.setAlpha(1f);
-        Notifications.render(ctx);
     }
 
     private void renderTopBar(DrawContext ctx, float x, float y, float w, float h) {
@@ -595,10 +663,15 @@ public class ClickGuiScreen extends Screen {
             listening = null;
         }
         focused = null;
+        return clickAt(mouseX, mouseY, button);
+    }
+
+    /** Clicks whatever was drawn at {@code x, y} in the last frame, front-most first. */
+    public boolean clickAt(double x, double y, int button) {
         for (int i = hits.size() - 1; i >= 0; i--) {
             Hit h = hits.get(i);
-            if (mouseX >= h.x && mouseX < h.x + h.w && mouseY >= h.y && mouseY < h.y + h.h) {
-                h.handler.click(button, mouseX, mouseY);
+            if (x >= h.x && x < h.x + h.w && y >= h.y && y < h.y + h.h) {
+                h.handler.click(button, x, y);
                 return true;
             }
         }
@@ -630,7 +703,7 @@ public class ClickGuiScreen extends Screen {
                 return true;
             }
         }
-        currentPage().onScroll(verticalAmount);
+        if (!showingPanels()) currentPage().onScroll(verticalAmount);
         return true;
     }
 
@@ -664,15 +737,20 @@ public class ClickGuiScreen extends Screen {
                 search.clear();
                 return true;
             }
+            if (showingPanels()) {
+                close();
+                return true;
+            }
             if (currentPage().onEscape()) return true;
-            close();
+            if (panelsStyle()) showPanels();
+            else close();
             return true;
         }
         if (ClientSettings.guiBind.matches(keyCode)) {
             close();
             return true;
         }
-        if (keyCode == GLFW.GLFW_KEY_TAB) {
+        if (keyCode == GLFW.GLFW_KEY_TAB && !showingPanels()) {
             int dir = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0 ? -1 : 1;
             openPage(Math.floorMod(selected + dir, entries.size()));
             Sounds.click();
@@ -687,7 +765,7 @@ public class ClickGuiScreen extends Screen {
         char chr = (char) input.codepoint();
         if (closingAt >= 0 || listening != null || justOpened()) return true;
         if (focused != null) return focused.charTyped(chr);
-        if (ClientSettings.typeToSearch.get() && currentPage().typeToSearch() && Character.isLetterOrDigit(chr)) {
+        if (ClientSettings.typeToSearch.get() && (showingPanels() || currentPage().typeToSearch()) && Character.isLetterOrDigit(chr)) {
             focused = search;
             return search.charTyped(chr);
         }

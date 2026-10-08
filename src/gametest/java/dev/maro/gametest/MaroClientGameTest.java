@@ -114,6 +114,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             }
             settle(context);
             context.takeScreenshot("maro-01-open");
+            PanelChecks.run(context);
 
             String[] pages = {"combat", "movement", "player", "visuals", "misc", "settings", "configs", "theme", "socials"};
             for (int i = 0; i < pages.length; i++) {
@@ -158,8 +159,8 @@ public class MaroClientGameTest implements FabricClientGameTest {
             settle(context);
             context.takeScreenshot("maro-search");
 
-            // Escape clears the search, then unfocuses it, then closes the menu
-            for (int i = 0; i < 4 && context.computeOnClient(client -> client.currentScreen instanceof ClickGuiScreen); i++) {
+            // Escape clears the search, unfocuses it, goes back to the panels, then closes the menu
+            for (int i = 0; i < 6 && context.computeOnClient(client -> client.currentScreen instanceof ClickGuiScreen); i++) {
                 context.getInput().pressKey(GLFW.GLFW_KEY_ESCAPE);
                 settle(context);
             }

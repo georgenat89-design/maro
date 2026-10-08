@@ -75,6 +75,7 @@ public final class ConfigManager {
         FriendManager.list().forEach(friends::add);
         root.add("friends", friends);
         root.addProperty("config", current);
+        root.add("panels", dev.maro.gui.PanelsView.save());
         root.addProperty("version", CLIENT_VERSION);
         write(CLIENT_FILE, root);
     }
@@ -99,6 +100,7 @@ public final class ConfigManager {
             String name = sanitize(root.get("config").getAsString());
             if (!name.isEmpty()) current = name;
         }
+        dev.maro.gui.PanelsView.load(root.get("panels"));
     }
 
     // ---- module configs -----------------------------------------------------------------

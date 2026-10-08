@@ -19,6 +19,8 @@ public final class ClientSettings {
 
     public static final SettingSection INTERFACE = new SettingSection("Interface");
     public static final KeybindSetting guiBind = INTERFACE.add(new KeybindSetting("Menu Keybind", "Key that opens this menu", GLFW.GLFW_KEY_RIGHT_SHIFT));
+    public static final ModeSetting menuStyle = INTERFACE.add(new ModeSetting("Menu Style",
+            "Panels shows every category side by side, Window is one window with a tab per category", "Panels", "Panels", "Window"));
     public static final BooleanSetting customFont = INTERFACE.add(new BooleanSetting("Custom Font", "Use the Inter font instead of the Minecraft font", true));
     public static final BooleanSetting capsText = INTERFACE.add(new BooleanSetting("Caps Text", "Small bold all-caps labels (off = normal sentence case)", true));
     public static final NumberSetting animSpeed = INTERFACE.add(new NumberSetting("Animation Speed", "How fast menu animations play", 1.0, 0.3, 3.0, 0.1).suffix("x"));
