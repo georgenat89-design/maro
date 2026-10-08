@@ -27,7 +27,7 @@ public final class TotemTexture {
         BufferedImage source = ImageIO.read(path.toFile());
         if (source == null) throw new IOException("Not an image this can read - use a PNG");
         int w = source.getWidth(), h = source.getHeight();
-        if (w > 8192 || h > 8192) throw new IOException("Image must be 8192 × 8192 or smaller");
+        if (w > 8192 || h > 8192) throw new IOException("Image must be 8192 x 8192 or smaller");
         int longest = Math.max(w, h);
         int size = 16;
         while (size < Math.min(longest, MAX_SIZE)) size *= 2;

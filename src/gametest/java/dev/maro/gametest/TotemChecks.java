@@ -67,12 +67,14 @@ final class TotemChecks {
             // The pop animation, with the hand empty so only the floating totem counts.
             world.getServer().runCommand("item replace entity @a weapon.mainhand with minecraft:air");
             context.waitTicks(5);
-            int popped = pop(context, "maro-custom-totem-pop");
+            int empty = magenta(context.takeScreenshot("maro-custom-totem-empty-hand"));
+            int popped = pop(context, "maro-custom-totem-pop") - empty;
             context.runOnClient(c -> ((NumberSetting) setting(totem, "Pop Size")).set(200.0));
-            int bigger = pop(context, "maro-custom-totem-pop-200");
+            int bigger = pop(context, "maro-custom-totem-pop-200") - empty;
             context.runOnClient(c -> ((BooleanSetting) setting(totem, "Pop Animation")).set(false));
-            int hidden = pop(context, "maro-custom-totem-pop-hidden");
-            System.out.println("CUSTOM TOTEM pop magenta pixels: 100%=" + popped + " 200%=" + bigger + " hidden=" + hidden);
+            int hidden = pop(context, "maro-custom-totem-pop-hidden") - empty;
+            System.out.println("CUSTOM TOTEM pop magenta pixels over an empty hand (" + empty + "): 100%=" + popped + " 200%=" + bigger
+                    + " hidden=" + hidden);
             require(popped > 2000, "The pop animation did not show the picture (" + popped + " magenta pixels)");
             require(bigger > popped * 1.4, "Pop Size 200% did not make the pop bigger (" + popped + " -> " + bigger + ")");
             require(hidden < 50, "Pop Animation off still showed the pop (" + hidden + " magenta pixels)");
@@ -129,12 +131,22 @@ final class TotemChecks {
             throw new AssertionError("Cannot read " + screenshot, e);
         }
         int count = 0;
+        long sumX = 0, sumY = 0;
         for (int y = 0; y < image.getHeight(); y++) {
             for (int x = 0; x < image.getWidth(); x++) {
                 int rgb = image.getRGB(x, y);
                 int r = rgb >> 16 & 0xFF, g = rgb >> 8 & 0xFF, b = rgb & 0xFF;
-                if (r > 90 && b > 90 && g * 2 < Math.min(r, b) && Math.abs(r - b) * 3 < Math.max(r, b)) count++;
+                if (r > 90 && b > 90 && g * 2 < Math.min(r, b) && Math.abs(r - b) * 3 < Math.max(r, b)) {
+                    count++;
+                    sumX += x;
+                    sumY += y;
+                }
             }
+        }
+        // Where it sits on screen, as a fraction of the width and height, to see what the pop size grows about.
+        if (count > 0) {
+            System.out.printf(java.util.Locale.ROOT, "CUSTOM TOTEM %s: %d magenta pixels centred at %.2f, %.2f%n", screenshot.getFileName(), count,
+                    sumX / (double) count / image.getWidth(), sumY / (double) count / image.getHeight());
         }
         return count;
     }
