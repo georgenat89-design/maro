@@ -20,7 +20,7 @@ final class BuilderCheckpointFixture {
     final int progress;
     BuilderCheckpointFixture(){
         var stage=System.getProperty("maro.gametest.builderStashCheckpointStage","423");
-        if(!List.of("423","549","556","646","668","683","685","695","695-c089","698","702","704").contains(stage))throw new AssertionError("Unsupported captured stall: "+stage);
+        if(!List.of("423","549","556","646","668","683","685","695","695-c089","697-092","698","702","704").contains(stage))throw new AssertionError("Unsupported captured stall: "+stage);
         // Distinct native scenes can have the same compatible progress count.
         progress=Integer.parseInt(stage.split("-",2)[0]);
         try(var stream=getClass().getResourceAsStream("/fixtures/stash-fresh-"+stage+".json")){
@@ -49,6 +49,11 @@ final class BuilderCheckpointFixture {
             for(var element:data.getAsJsonArray("chests")){
                 var row=element.getAsJsonArray();var inventory=(net.minecraft.inventory.Inventory)level.getBlockEntity(pos(row));
                 inventory.clear();for(var entry:row.get(3).getAsJsonArray()){var slot=entry.getAsJsonArray();inventory.setStack(slot.get(0).getAsInt(),stack(slot));}inventory.markDirty();
+            }
+            // Preserve real mined drops collected by the schematic's item pipes.
+            if(data.has("buildContainers"))for(var element:data.getAsJsonArray("buildContainers")){
+                var row=element.getAsJsonArray();var inventory=(net.minecraft.inventory.Inventory)level.getBlockEntity(pos(row.get(0).getAsJsonArray()));
+                inventory.clear();for(var entry:row.get(1).getAsJsonArray()){var slot=entry.getAsJsonArray();inventory.setStack(slot.get(0).getAsInt(),stack(slot));}inventory.markDirty();
             }
             for(var player:server.getPlayerManager().getPlayerList()){
                 var inventory=player.getInventory();inventory.clear();

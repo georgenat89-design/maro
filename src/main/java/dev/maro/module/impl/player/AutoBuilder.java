@@ -32,6 +32,7 @@ import net.minecraft.registry.tag.ItemTags;
 import net.minecraft.registry.tag.BlockTags;
 import net.minecraft.screen.GenericContainerScreenHandler;
 import net.minecraft.screen.ScreenHandler;
+import net.minecraft.screen.ScreenHandlerType;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
@@ -337,6 +338,7 @@ public final class AutoBuilder extends Module {
     private int placementDeadline;
     private BlockPos routeMining;
     private final Map<BlockPos,Integer> floorAccessWork=new HashMap<>();
+    private final Map<BlockPos,Set<BlockPos>> accessDropSources=new HashMap<>();
     private boolean openingRestoration;
     private boolean waterDeparture;
     private BlockPos waterWorkTarget;
@@ -356,6 +358,7 @@ public final class AutoBuilder extends Module {
     private long staffStopAt;
     private ScreenHandler ownedHandler;
     private ScreenHandler receivedChestInventory;
+    private boolean recoveringAccessStock;
     private Runnable queuedLookAction;
     private float queuedLookYaw,queuedLookPitch;
     private Vec3d aimPoint,queuedAimPoint;
@@ -499,7 +502,7 @@ public final class AutoBuilder extends Module {
             }));
     }
     private static String rootMessage(Throwable error){while(error.getCause()!=null)error=error.getCause();return error.getMessage()==null?error.getClass().getSimpleName():error.getMessage();}
-    public void install(Schematic data){if(!restoringPlacement){checkpoint();activeBuildSlot=-1;placementName="";}pause("Schematic loaded");floorAccessWork.clear();openingRepairDepth.clear();schematic=data;unconfirmedPlacements.clear();latePlacements.clear();supports.clear();escapeSupports.clear();escapeSupportWork.clear();cleanupStands.clear();recoveryAttempts=0;replan();}
+    public void install(Schematic data){if(!restoringPlacement){checkpoint();activeBuildSlot=-1;placementName="";}pause("Schematic loaded");floorAccessWork.clear();openingRepairDepth.clear();accessDropSources.clear();schematic=data;unconfirmedPlacements.clear();latePlacements.clear();supports.clear();escapeSupports.clear();escapeSupportWork.clear();cleanupStands.clear();recoveryAttempts=0;replan();}
     public Schematic schematic(){return schematic;}
     public String status(){return status;}
     public boolean loading(){return loading;}
@@ -585,7 +588,7 @@ public final class AutoBuilder extends Module {
     public int inventoryCount(Item item){if(mc.player==null)return 0;int count=0;for(int i=0;i<36;i++){var stack=mc.player.getInventory().getStack(i);if(stack.isOf(item))count+=stack.getCount();}return count;}
     public void setOrigin(BlockPos pos){
         if(pos==null||!inGame())return;pause("Origin moved");
-        if(!pos.equals(origin)){floorAccessWork.clear();openingRepairDepth.clear();}
+        if(!pos.equals(origin)){floorAccessWork.clear();openingRepairDepth.clear();accessDropSources.clear();}
         String nextDimension=mc.world.getRegistryKey().getValue().toString();
         String nextScope=scope();
         if(!dimension.isEmpty()&&(!dimension.equals(nextDimension)||!worldScope.equals(nextScope))){homes.reset();containers.clear();supports.clear();escapeSupports.clear();escapeSupportWork.clear();}
@@ -683,7 +686,7 @@ public final class AutoBuilder extends Module {
         building=false;pasting=false;depositing=false;depositTarget=null;depositSlot=-1;resumeShoppingAfterDeposit=false;depositedShopping.clear();placement=pendingPlacement=null;pendingServerState=null;routeMining=null;mining=null;tuningTarget=tuningSession=null;tuningClicks=0;standGoal=null;descentPost=descentView=null;descentLanding=false;cleanupTarget=null;accessStand=accessBase=null;recycleTarget=null;accessFloor=false;accessSupports.clear();accessStairs=Set.of();viewSearches.clear();digging=false;walker.stop();releaseSneak();endRecovery();
         if(mc.interactionManager!=null)mc.interactionManager.cancelBlockBreaking();
         if(ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler&&ownedHandler.getCursorStack().isEmpty())mc.player.closeHandledScreen();
-        ownedHandler=null;restockTarget=null;routeOpening=null;restockBatch=Map.of();chestAccessRetryAt.clear();buying=false;pendingOffer=null;shopping.clear();status=reason;
+        ownedHandler=null;restockTarget=null;recoveringAccessStock=false;routeOpening=null;restockBatch=Map.of();chestAccessRetryAt.clear();buying=false;pendingOffer=null;shopping.clear();status=reason;
         floorSearchFeet=floorSearchView=null;floorSearchCursor=0;floorSearchWork=-2;floorProbes.clear();ceilingBase=ceilingTop=null;ceilingBlocks.clear();ceilingProgressPos=null;accessColumn=Set.of();
         entrySearchFeet=null;entrySearchWork=-2;entrySearchCursor=entryRetryAt=0;passageBlocks.clear();passageStand=passageSearchFeet=null;passageSearchWork=-2;passageSearchCursor=passageRetryAt=0;
         descentSearchFeet=descentSearchDestination=null;descentSearchPosts=descentSearchViews=descentHatchViews=List.of();descentSearchCursor=descentRetryAt=descentSearchPhase=0;descentHatchesReady=false;
@@ -1060,7 +1063,7 @@ public final class AutoBuilder extends Module {
                     &&!matchesBuildState(mc.world.getBlockState(other),desired(cell)))return true;
             }
             int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());
-            if(cell<0||states[cell]==IGNORED||mc.world.isChunkLoaded(pos)&&matchesBuildState(mc.world.getBlockState(pos),desired(cell))){floorAccessWork.remove(pos);openingRepairDepth.remove(pos);}
+            if(cell<0||states[cell]==IGNORED||mc.world.isChunkLoaded(pos)&&matchesBuildState(mc.world.getBlockState(pos),desired(cell))){floorAccessWork.remove(pos);openingRepairDepth.remove(pos);accessDropSources.remove(pos);}
             return false;
         }
         return true;
@@ -2939,6 +2942,7 @@ public final class AutoBuilder extends Module {
         }
         if(opened>=0&&!desired(opened).isAir()&&matchesBuildState(state,desired(opened))&&!supports.contains(mining)){
             floorAccessWork.putIfAbsent(mining,navigatingCell);openingRepairDepth.putIfAbsent(mining,-mining.getY());
+            if(!accessDropSources.containsKey(mining)){var receivers=accessPipeBelow(mining);if(!receivers.isEmpty())accessDropSources.put(mining,receivers);}
         }
         if(state.isAir()){supports.remove(mining);mining=null;digging=false;if(peekTarget!=null)releaseSneak();mc.interactionManager.cancelBlockBreaking();delay=actionDelay();return;}
         if(protectContainers.get()&&state.hasBlockEntity()||state.getHardness(mc.world,mining)<0||!state.getFluidState().isEmpty()){mining=null;return;}
@@ -3187,7 +3191,7 @@ public final class AutoBuilder extends Module {
         if(!inGame()||!mc.isOnThread())return;
         var handler=mc.player.currentScreenHandler;
         if((depositing&&depositOpenWait>0||restockTarget!=null&&restockWait>0)
-            &&handler.syncId==syncId&&handler instanceof GenericContainerScreenHandler chest&&chest.getRows()==6)
+            &&handler.syncId==syncId&&(recoveringAccessStock?accessRecoveryMenu(handler):handler instanceof GenericContainerScreenHandler chest&&chest.getRows()==6))
             receivedChestInventory=handler;
     }
     private boolean chestInventoryReady(){
@@ -3207,9 +3211,16 @@ public final class AutoBuilder extends Module {
         return ticks-chestInventoryProgressAt>100||ticks-chestSessionStarted>1200;
     }
     private BlockHitResult chestHit(BlockPos chest,Vec3d eye){
-        var hit=visibleHit(chest,eye);return hit!=null?hit:visibleHit(chest.offset(ChestBlock.getFacing(mc.world.getBlockState(chest))),eye);
+        var hit=visibleHit(chest,eye);return hit!=null||!(mc.world.getBlockState(chest).getBlock() instanceof ChestBlock)?hit:visibleHit(chest.offset(ChestBlock.getFacing(mc.world.getBlockState(chest))),eye);
     }
     private boolean openSupplyChest(BlockPos chest){
+        if(recoveringAccessStock){
+            if(chest==null||mc.player.isSneaking()||mc.player.isUsingItem())return false;
+            var actual=(BlockHitResult)mc.player.raycast(effectiveReach(),1,false);
+            boolean selected=actual.getBlockPos().equals(chest)||doubleChest(chest)&&actual.getBlockPos().equals(chest.offset(ChestBlock.getFacing(mc.world.getBlockState(chest))));
+            if(actual.getType()!=HitResult.Type.BLOCK||!selected)return false;
+            lastBuildInteraction=ticks;mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,actual);mc.player.swingHand(Hand.MAIN_HAND);return true;
+        }
         if(chest==null||!doubleChest(chest)||mc.player.isSneaking()||mc.player.isUsingItem())return false;
         var partner=chest.offset(ChestBlock.getFacing(mc.world.getBlockState(chest)));
         if(ChestBlock.isChestBlocked(mc.world,chest)||ChestBlock.isChestBlocked(mc.world,partner)){
@@ -3233,7 +3244,7 @@ public final class AutoBuilder extends Module {
         mc.player.swingHand(Hand.MAIN_HAND);return true;
     }
     private BlockHitResult approachChest(BlockPos chest){
-        if(useHomes.get()&&(restockTarget!=null&&!depositing?homes.restock(chest):homes.storage(chest))){resetAfterHome();status=restockTarget!=null&&!depositing?"Saving work return before restocking through /home 1":"Returning to storage through /home 1";return null;}
+        if(!recoveringAccessStock&&useHomes.get()&&(restockTarget!=null&&!depositing?homes.restock(chest):homes.storage(chest))){resetAfterHome();status=restockTarget!=null&&!depositing?"Saving work return before restocking through /home 1":"Returning to storage through /home 1";return null;}
         if(standGoal!=null){followStandGoal();chestProgressAt=ticks;chestJourneyFailed=false;return null;}
         if(chestProgressPosition==null||mc.player.getEntityPos().squaredDistanceTo(chestProgressPosition)>.04){chestProgressPosition=mc.player.getEntityPos();chestProgressAt=ticks;}
         if(chestStand!=null){
@@ -3293,7 +3304,9 @@ public final class AutoBuilder extends Module {
         if(needed!=restockAttemptItem){triedContainers.clear();restockAttemptItem=needed;}
         var excluded=new HashSet<>(triedContainers);if(needed!=null)emptyChestItems.forEach((pos,items)->{if(items.contains(needed))excluded.add(pos);});
         var selected=supplyChests();
-        restockTarget=selected.stream().filter(chest->!excluded.contains(chest)&&!excluded.contains(chest.offset(ChestBlock.getFacing(mc.world.getBlockState(chest)))))
+        restockTarget=accessRecoverySources(needed).stream().filter(pos->!excluded.contains(pos)&&!chestAccessRetryAt.containsKey(pos)).findFirst().orElse(null);
+        recoveringAccessStock=restockTarget!=null;
+        if(!recoveringAccessStock)restockTarget=selected.stream().filter(chest->!excluded.contains(chest)&&!excluded.contains(chest.offset(ChestBlock.getFacing(mc.world.getBlockState(chest)))))
             .filter(chest->!chestAccessRetryAt.containsKey(chest)).findFirst().orElse(null);
         if(restockTarget==null){
             // A failed walk/open is not a stock check. Retry uninspected selected
@@ -3301,23 +3314,61 @@ public final class AutoBuilder extends Module {
             if(selected.stream().anyMatch(chest->!excluded.contains(chest)&&chestAccessRetryAt.containsKey(chest))){walker.release();status="Retrying access to selected chest — contents not checked";return true;}
             return false;
         }
-        var requested=new HashMap<>(requiredMaterials());
+        var requested=recoveringAccessStock?new HashMap<Item,Integer>():new HashMap<>(requiredMaterials());
         // Access/defer state may change while a section is refreshed. The
         // material that triggered this trip must survive that batch change.
-        if(needed!=null)requested.merge(needed,1,Math::max);
+        if(needed!=null)requested.merge(needed,recoveringAccessStock?inventoryCount(needed)+1:1,Math::max);
         restockBatch=Map.copyOf(requested);foodRestock=supportRestock=false;restockWait=inventoryWait=0;partialSource=-1;partialItem=null;restockTriedSlots.clear();restockSlotRetries.clear();resetChestJourney();walker.stop();status="Restocking";
-        if(useHomes.get()&&homes.restock(restockTarget)){resetAfterHome();status="Saving work return before restocking through /home 1";}
+        if(!recoveringAccessStock&&useHomes.get()&&homes.restock(restockTarget)){resetAfterHome();status="Saving work return before restocking through /home 1";}
         return true;
     }
+    /** Only follow item pipes below our recorded missing access blocks. */
+    private Set<BlockPos> accessRecoverySources(Item item){
+        var result=new LinkedHashSet<BlockPos>();if(item==null)return result;
+        for(var opening:floorAccessWork.keySet()){
+            int cell=schematic.indexAt(opening.subtract(anchor()),turns(),mirror.get());
+            if(cell<0||Schematic.material(desired(cell))!=item||!mc.world.getBlockState(opening).isAir())continue;
+            result.addAll(accessDropSources.getOrDefault(opening,Set.of()));result.addAll(accessPipeBelow(opening));
+        }
+        return result;
+    }
+    private Set<BlockPos> accessPipeBelow(BlockPos opening){
+        var result=new LinkedHashSet<BlockPos>();
+            for(int down=1;down<=8;down++){
+                var pos=opening.down(down);if(!mc.world.isChunkLoaded(pos))break;var state=mc.world.getBlockState(pos);
+                if(state.getBlock() instanceof HopperBlock){
+                    var pipe=new ArrayList<BlockPos>();var seen=new HashSet<BlockPos>();
+                    for(int step=0;step<16&&mc.world.isChunkLoaded(pos)&&seen.add(pos);step++){
+                        state=mc.world.getBlockState(pos);
+                        if(state.getBlock() instanceof HopperBlock){pipe.add(pos);if(!state.get(HopperBlock.ENABLED))break;pos=pos.offset(state.get(HopperBlock.FACING));}
+                        else {if(state.getBlock() instanceof DispenserBlock||state.getBlock() instanceof ChestBlock)pipe.add(pos);break;}
+                    }
+                    Collections.reverse(pipe);result.addAll(pipe);break;
+                }
+                if(!floorAccessWork.containsKey(pos)&&!state.getCollisionShape(mc.world,pos).isEmpty())break;
+            }
+        return result;
+    }
+    private boolean accessRecoveryMenu(ScreenHandler handler){
+        if(restockTarget==null||handler==mc.player.playerScreenHandler)return false;var block=mc.world.getBlockState(restockTarget).getBlock();var type=handler.getType();
+        return block instanceof HopperBlock&&type==ScreenHandlerType.HOPPER
+            ||block instanceof DispenserBlock&&type==ScreenHandlerType.GENERIC_3X3
+            ||block instanceof ChestBlock&&(type==ScreenHandlerType.GENERIC_9X3||type==ScreenHandlerType.GENERIC_9X6);
+    }
     private void finishRestock(String reason){
+        boolean recovered=recoveringAccessStock;
         if(ownedHandler!=null&&mc.player.currentScreenHandler==ownedHandler)mc.player.closeHandledScreen();
         if(restockTarget!=null){
-            if(ownedHandler!=null&&receivedChestInventory==ownedHandler){triedContainers.add(restockTarget);chestAccessRetryAt.remove(restockTarget);}
+            if(ownedHandler!=null&&receivedChestInventory==ownedHandler){
+                if(recovered&&restockBatch.entrySet().stream().allMatch(entry->inventoryCount(entry.getKey())>=entry.getValue()))triedContainers.remove(restockTarget);
+                else triedContainers.add(restockTarget);
+                chestAccessRetryAt.remove(restockTarget);
+            }
             else chestAccessRetryAt.put(restockTarget,ticks+100);
         }
-        ownedHandler=null;restockTarget=null;restockBatch=Map.of();partialSource=-1;partialItem=null;restockWait=0;
+        ownedHandler=null;restockTarget=null;recoveringAccessStock=false;restockBatch=Map.of();partialSource=-1;partialItem=null;restockWait=0;
         resetChestJourney();walker.stop();delay=6;status=reason;
-        if(useHomes.get()&&homes.returnToWork()){resetAfterHome();status="Returning to saved work area through /home 2";}
+        if(!recovered&&useHomes.get()&&homes.returnToWork()){resetAfterHome();status="Returning to saved work area through /home 2";}
     }
     private void restockTick(){
         if(ownedHandler==null&&ticks-chestSessionStarted>1200){finishRestock("Chest access timed out - continuing supply search");return;}
@@ -3339,9 +3390,9 @@ public final class AutoBuilder extends Module {
                 inventoryWait=10;status="Returning held restock item";return;
             }
             cursorReturns=0;
-            Map<Item,Integer> required=new HashMap<>(restockBatch);if(support.get())required.merge(Items.DIRT,restockDirt.getInt(),Integer::sum);required.keySet().removeAll(ignoredMaterials);addRequiredTools(required);if(foodRestock){required.clear();required.put(Items.COOKED_BEEF,steakReserve.getInt());}
+            Map<Item,Integer> required=new HashMap<>(restockBatch);if(!recoveringAccessStock){if(support.get())required.merge(Items.DIRT,restockDirt.getInt(),Integer::sum);required.keySet().removeAll(ignoredMaterials);addRequiredTools(required);}if(foodRestock){required.clear();required.put(Items.COOKED_BEEF,steakReserve.getInt());}
             if(supportRestock){required.clear();required.put(Items.DIRT,supportReserve());}
-            if(autoTools.get()&&!foodRestock&&!supportRestock)for(boolean shovel:new boolean[]{false,true}){
+            if(!recoveringAccessStock&&autoTools.get()&&!foodRestock&&!supportRestock)for(boolean shovel:new boolean[]{false,true}){
                 var tag=shovel?ItemTags.SHOVELS:ItemTags.PICKAXES;
                 if(hasTool(shovel))continue;
                 var stored=ownedHandler.slots.stream().filter(slot->slot.inventory!=mc.player.getInventory()&&slot.getStack().isIn(tag)).findFirst().orElse(null);
@@ -3361,7 +3412,7 @@ public final class AutoBuilder extends Module {
                     mc.interactionManager.clickSlot(ownedHandler.syncId,slot.id,0,SlotActionType.QUICK_MOVE,mc.player);restockTriedSlots.add(slot.id);inventoryWait=8;return;
                 }
             }
-            if(stockpile.get())for(var slot:ownedHandler.slots){
+            if(!recoveringAccessStock&&stockpile.get())for(var slot:ownedHandler.slots){
                 var stack=slot.getStack();if(slot.inventory!=mc.player.getInventory()||stack.isEmpty()||restockTriedSlots.contains(slot.id)||!schematic.materials().containsKey(stack.getItem()))continue;
                 // Retain small batches for unfinished sections. Returning each
                 // single item makes adjacent repair sections restock forever.
@@ -3374,12 +3425,13 @@ public final class AutoBuilder extends Module {
             finishRestock("Restock checked");return;
         }
         if(mc.currentScreen instanceof HandledScreen<?> screen){
+            if(recoveringAccessStock&&restockWait>0){ownedHandler=screen.getScreenHandler();chestInventoryProgressAt=ticks;walker.release();if(!accessRecoveryMenu(ownedHandler))finishRestock("Unexpected access recovery menu");return;}
             if(restockWait>0&&screen.getScreenHandler() instanceof GenericContainerScreenHandler chest){ownedHandler=chest;chestInventoryProgressAt=ticks;walker.release();if(chest.getRows()!=6)finishRestock("Unexpected chest size - checking another supply chest");return;}
             if(restockWait>0){ownedHandler=screen.getScreenHandler();finishRestock("Unexpected supply menu - checking another chest");return;}
             walker.release();status="Close the current menu to restock";return;
         }
         if(restockWait>0){if(++restockWait>80)finishRestock("Chest did not open - continuing supply search");return;}
-        if(!doubleChest(restockTarget)){finishRestock("Supply chest unavailable - checking other supplies");return;}
+        if(!recoveringAccessStock&&!doubleChest(restockTarget)){finishRestock("Supply chest unavailable - checking other supplies");return;}
         var hit=approachChest(restockTarget);if(hit==null){if(chestJourneyFailed)finishRestock("No route to this chest - checking other supplies");return;}
         if(!aim(hit.getPos()))return;
         releaseSneak();if(mc.player.isSneaking())return;
@@ -3794,16 +3846,17 @@ public final class AutoBuilder extends Module {
     @Override public JsonObject saveExtra(){
         var result=new JsonObject();result.addProperty("file",selected);result.addProperty("dimension",dimension);result.addProperty("world-scope",worldScope);result.addProperty("active-build-slot",activeBuildSlot);
         var ignored=new JsonArray();for(var item:ignoredMaterials)ignored.add(Registries.ITEM.getId(item).toString());result.add("ignored-materials",ignored);
-        var openings=new JsonArray();for(var entry:floorAccessWork.entrySet()){var opening=new JsonObject();opening.add("pos",posJson(entry.getKey()));opening.addProperty("work",entry.getValue());opening.addProperty("depth",openingRepairDepth.getOrDefault(entry.getKey(),0));openings.add(opening);}result.add("access-openings",openings);
+        var openings=new JsonArray();for(var entry:floorAccessWork.entrySet()){var opening=new JsonObject();opening.add("pos",posJson(entry.getKey()));opening.addProperty("work",entry.getValue());opening.addProperty("depth",openingRepairDepth.getOrDefault(entry.getKey(),0));var receivers=new JsonArray();for(var receiver:accessDropSources.getOrDefault(entry.getKey(),Set.of()))receivers.add(posJson(receiver));opening.add("drop-receivers",receivers);openings.add(opening);}result.add("access-openings",openings);
         result.add("builder-homes",homes.saveData());if(selectedSupplyChest()!=null)result.add("supply-chest",posJson(selectedSupplyChest()));if(origin!=null)result.add("origin",posJson(origin));var marks=new JsonArray();for(var pos:containers)marks.add(posJson(pos));result.add("restock",marks);return result;
     }
     private static JsonArray posJson(BlockPos pos){var a=new JsonArray();a.add(pos.getX());a.add(pos.getY());a.add(pos.getZ());return a;}
     private static BlockPos jsonPos(JsonElement value){var a=value.getAsJsonArray();if(a.size()!=3)throw new IllegalArgumentException("Position");return new BlockPos(a.get(0).getAsInt(),a.get(1).getAsInt(),a.get(2).getAsInt());}
     private void loadOpenings(JsonObject data){
-        floorAccessWork.clear();openingRepairDepth.clear();if(!data.has("access-openings"))return;
+        floorAccessWork.clear();openingRepairDepth.clear();accessDropSources.clear();if(!data.has("access-openings"))return;
         var entries=data.getAsJsonArray("access-openings");if(entries.size()>1024)throw new IllegalArgumentException("Access openings");
         for(var value:entries){var opening=value.getAsJsonObject();var pos=jsonPos(opening.get("pos"));
-            floorAccessWork.put(pos,opening.get("work").getAsInt());openingRepairDepth.put(pos,opening.get("depth").getAsInt());}
+            floorAccessWork.put(pos,opening.get("work").getAsInt());openingRepairDepth.put(pos,opening.get("depth").getAsInt());
+            if(opening.has("drop-receivers")){var receivers=new LinkedHashSet<BlockPos>();if(opening.getAsJsonArray("drop-receivers").size()>16)throw new IllegalArgumentException("Access drop receivers");for(var receiver:opening.getAsJsonArray("drop-receivers"))receivers.add(jsonPos(receiver));accessDropSources.put(pos,receivers);}}
     }
     @Override public void loadExtra(JsonObject data){
         try{ignoredMaterials.clear();if(data.has("ignored-materials"))for(var value:data.getAsJsonArray("ignored-materials")){var id=net.minecraft.util.Identifier.tryParse(value.getAsString());if(id!=null){var item=Registries.ITEM.get(id);if(item!=Items.AIR)ignoredMaterials.add(item);}}

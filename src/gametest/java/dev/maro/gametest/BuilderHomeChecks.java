@@ -102,6 +102,7 @@ final class BuilderHomeChecks {
         buriedHopperRoofAccess(context,world,builder,start);
         offsetPistonRoofAccess(context,world,builder,start);
         existingViewBeforeRoof(context,world,builder,start);
+        hopperRepairStock(context,world,builder,start);
         closedDoorAccess(context,world,builder,start);
         restockRoundTrip(context,world,builder,home2,chest);
         temporaryFootingReturn(context,world,builder,home2,chest);
@@ -226,6 +227,39 @@ final class BuilderHomeChecks {
         context.runOnClient(client->{require(!builder.building()&&builder.inventoryCount(Items.GLASS)==glass&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Existing view consumed glass, left work, dirt, damage or menu: "+builder.status());BuilderPacketChecks.verify(1);builder.pause("existing view checked");setting(builder,"Temporary Supports",true);});
         teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+1)+" "+(origin.getY()+1)+" "+(origin.getZ()+1)+" air");context.waitTicks(4);
         System.out.println("[builder-home] Missing native stone repaired from an existing view; intact glass roof and inventory, zero dirt, full health and bounded look");
+    }
+    private static void hopperRepairStock(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        hopperRepairStock(context,world,builder,start,false);hopperRepairStock(context,world,builder,start,true);
+    }
+    private static void hopperRepairStock(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,boolean chestReceiver){
+        System.out.println("[builder-home] Recover a mined access block through a native hopper pipe; take exactly one replacement and preserve existing stock");
+        var origin=start.south(10);var cells=new BlockState[24];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());
+        cells[0]=Blocks.DISPENSER.getDefaultState().with(DispenserBlock.FACING,Direction.WEST);cells[1]=Blocks.HOPPER.getDefaultState().with(HopperBlock.FACING,Direction.WEST);
+        if(chestReceiver){cells[0]=Blocks.CHEST.getDefaultState().with(ChestBlock.FACING,Direction.WEST).with(ChestBlock.CHEST_TYPE,net.minecraft.block.enums.ChestType.RIGHT);cells[4]=cells[0].with(ChestBlock.CHEST_TYPE,net.minecraft.block.enums.ChestType.LEFT);}
+        cells[2]=cells[6]=Blocks.CRACKED_POLISHED_BLACKSTONE_BRICKS.getDefaultState();cells[9]=cells[17]=Blocks.CRACKED_POLISHED_BLACKSTONE_BRICKS.getDefaultState();cells[10]=Blocks.GLASS.getDefaultState();
+        // Lower beam9 closes before upper17; job10 owns both openings.
+        for(int i:List.of(0,1,2,6,9,17))command(world,"setblock",origin.add(i%4,i/8,i/4%2),i==0?"dispenser[facing=west]":i==1?"hopper[facing=west]":"cracked_polished_blackstone_bricks");
+        if(chestReceiver){command(world,"setblock",origin,"chest[facing=west,type=right]");command(world,"setblock",origin.south(),"chest[facing=west,type=left]");}
+        var beam=origin.add(1,1,0);var upper=beam.up();var target=origin.add(2,1,0);command(world,"setblock",target,"air");
+        world.getServer().runOnServer(server->{var inventory=(net.minecraft.inventory.Inventory)server.getOverworld().getBlockEntity(origin);inventory.setStack(0,new net.minecraft.item.ItemStack(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS,4));inventory.setStack(1,new net.minecraft.item.ItemStack(Items.DIAMOND,7));inventory.markDirty();});
+        world.getServer().runCommand("clear @a cracked_polished_blackstone_bricks");world.getServer().runCommand("clear @a glass");world.getServer().runCommand("give @a glass 1");teleport(world,origin.add(2,1,1));context.waitTicks(12);int first=commands.size();
+        context.runOnClient(client->{setting(builder,"Temporary Supports",false);setting(builder,"Prepare Whole Build",false);builder.install(new Schematic("hopper-access-stock.nbt","test",4,3,2,BlockPos.ORIGIN,cells));builder.setOrigin(origin);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
+            @SuppressWarnings("unchecked")var openings=(Map<BlockPos,Integer>)field(builder,"floorAccessWork");openings.put(beam,10);openings.put(upper,10);
+            @SuppressWarnings("unchecked")var depths=(Map<BlockPos,Integer>)field(builder,"openingRepairDepth");depths.put(beam,-beam.getY());depths.put(upper,-upper.getY());
+            @SuppressWarnings("unchecked")var passage=(Set<BlockPos>)field(builder,"passageBlocks");passage.add(upper);passage.add(beam);setField(builder,"passageStand",client.player.getBlockPos());
+        });
+        boolean mined=false,recovered=false,persisted=false;int elapsed=0;
+        for(;elapsed<800&&context.computeOnClient(client->builder.building());elapsed++){
+            mined|=world.getServer().computeOnServer(server->server.getOverworld().getBlockState(beam).isAir());
+            recovered|=context.computeOnClient(client->(boolean)field(builder,"recoveringAccessStock"));
+            if(!persisted&&context.computeOnClient(client->!((Map<?,?>)field(builder,"accessDropSources")).isEmpty())){context.runOnClient(client->{var savedBuild=builder.saveExtra();call(builder,"loadOpenings",new Class<?>[]{com.google.gson.JsonObject.class},savedBuild);require(!((Map<?,?>)field(builder,"accessDropSources")).isEmpty(),"Saved access openings lost their native pipe receipts");});persisted=true;}context.waitTick();
+        }
+        require(mined&&recovered&&persisted,"Native hopper access did not mine and recover its replacement: "+context.computeOnClient(client->builder.status()));
+        String stockResult=world.getServer().computeOnServer(server->{var level=server.getOverworld();for(int i:List.of(0,1,2,6,9,10,17))if(!AutoBuilder.matchesBuildState(level.getBlockState(origin.add(i%4,i/8,i/4%2)),cells[i]))return "block mismatch at "+i+" actual="+level.getBlockState(origin.add(i%4,i/8,i/4%2));var inventory=(net.minecraft.inventory.Inventory)level.getBlockEntity(origin);int stone=0,diamonds=0;for(int i=0;i<inventory.size();i++){var stack=inventory.getStack(i);if(stack.isOf(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS))stone+=stack.getCount();else if(stack.isOf(Items.DIAMOND))diamonds+=stack.getCount();else if(!stack.isEmpty())return "unexpected stock "+stack;}return stone==4&&diamonds==7?"":"brick stock="+stone+" diamonds="+diamonds;});require(stockResult.isEmpty(),"Access recovery changed native pipe blocks or unrelated/pre-existing stock: "+stockResult);
+        require(commands.size()==first,"Local access-stock recovery travelled through storage homes");
+        context.runOnClient(client->{require(!builder.building()&&builder.inventoryCount(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)==0&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Native access recovery left materials, work, supports, damage or a menu: "+builder.status());BuilderPacketChecks.verify(3);builder.pause("hopper repair stock checked");setting(builder,"Temporary Supports",true);});
+        teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+3)+" "+(origin.getY()+2)+" "+(origin.getZ()+1)+" air");context.waitTicks(4);
+        System.out.println("[builder-home] Mined access material recovered through native hopper/"+(chestReceiver?"double chest":"dispenser")+" UI; exact two-beam repairs, original brick/diamond stock intact, no home trip, zero supports and full health in "+elapsed+" ticks");
     }
     private static void closedDoorAccess(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-home] Open an existing wooden door for dry basin assembly, then restore both closed halves without mining it");

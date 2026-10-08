@@ -283,6 +283,8 @@ Buried dry blocks also keep a verified roof-opening fallback when no existing si
 
 Reachable existing placement views and checked doors take priority over new roof openings. When a dry oriented block is hidden by offset beams, a small upper mask proves a native placement, then the actual ray selects at most four obstructing cubes. Joint attachment and fluid safety are rechecked before those exact cubes are registered for restoration. Containers, the viewing footing and the block's required attachment remain intact. The current standing view is eligible for this proof, avoiding a needless walk away and back. Bucket work retains its original above-source proof.
 
+Access mining records nearby item pipes beneath its checked openings. If a hopper collects a required replacement, the builder can recover the exact repair quantity through that pipe's native container menu. Other items stay in the container. These local recovery trips do not use storage homes or stockpiling, and their receiver records survive saved-build reloads and repairs of lower beams.
+
 Nearby-section restocking includes ready registered repairs outside the current section. It counts each work cell once, so a chest trip collects repair materials even when ordinary section work is exhausted.
 
 The material that triggered restocking remains in the requested batch if a section refresh changes the queue. Stockpiling retains partial material stacks and nonstackable source buckets that still serve unfinished work, preventing adjacent sections from repeatedly collecting and returning the same small supplies. Home trips pause the active-work timeout without resetting it.

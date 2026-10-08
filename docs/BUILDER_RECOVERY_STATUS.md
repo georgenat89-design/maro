@@ -5,6 +5,30 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Pending on top of09287fa: the second actual695 replay passed the retired-passage
+failure and reached697, then lacked a cracked repair brick. Native container
+capture proves that brick and a polished brick in dispenser(-26219,65,-150579),
+with another blackstone in dispenser(-26220,65,-150580). The build's hoppers
+collected mined access drops. The pending fix records those pipe receivers
+before mining, persists them with their opening, and recovers only one required
+replacement per trip through native hopper/dispenser/chest menus. It uses local
+routes, preserves other stock and avoids home/stockpile actions for recovery.
+Successful recovery sources remain eligible for subsequent beams. Native Home7
+passed the full suite in3m49s. Its two-beam native recovery took261 ticks,
+preserving four original bricks/seven diamonds and saved receiver records.
+Home8 passed the exact final production in3m56s: dispenser recovery170 ticks,
+double-chest recovery169 ticks, both original quantities intact, three native
+placements, saved pipe receipts, no home commands, full health and zero posts.
+The original695 replay with this production is next, followed by fresh0.
+Home5 reached native completion but its stock test incorrectly used stone
+(which drops cobblestone). It was corrected to the actual self-dropping cracked
+brick. Home6 was deliberately stopped to include successful-source reuse.
+The real697 snapshot now preserves all build container contents, without
+inventing supplies: `stash-fresh-697-092.json`, SHA256
+`4F648828796D95F05EC41ED47FC3E5BDEC5B8C43AA41F91876C0843A98470C29`.
+The original695 replay must validate receiver recording across beam repairs;
+then the same production must pass a true fresh0 run. Neither has passed yet.
+
 Thec08905f replay restored more openings and wiring, reaching695. Piston580
 then had no existing native view. A bounded read-only mask probe found three
 compatible east-facing views. Reducing its mask proved two safe upper beams
