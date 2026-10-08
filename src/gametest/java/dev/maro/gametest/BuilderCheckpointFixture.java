@@ -20,8 +20,9 @@ final class BuilderCheckpointFixture {
     final int progress;
     BuilderCheckpointFixture(){
         var stage=System.getProperty("maro.gametest.builderStashCheckpointStage","423");
-        if(!List.of("423","549","556","646","668","683","685","695","698","702","704").contains(stage))throw new AssertionError("Unsupported captured stall: "+stage);
-        progress=Integer.parseInt(stage);
+        if(!List.of("423","549","556","646","668","683","685","695","695-c089","698","702","704").contains(stage))throw new AssertionError("Unsupported captured stall: "+stage);
+        // Distinct native scenes can have the same compatible progress count.
+        progress=Integer.parseInt(stage.split("-",2)[0]);
         try(var stream=getClass().getResourceAsStream("/fixtures/stash-fresh-"+stage+".json")){
             if(stream==null)throw new AssertionError("Missing real server checkpoint");
             data=JsonParser.parseReader(new InputStreamReader(stream,StandardCharsets.UTF_8)).getAsJsonObject();

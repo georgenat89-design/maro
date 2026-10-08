@@ -5,6 +5,35 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+Thec08905f replay restored more openings and wiring, reaching695. Piston580
+then had no existing native view. A bounded read-only mask probe found three
+compatible east-facing views. Reducing its mask proved two safe upper beams
+at(-26221,66,-150579) and(-26221,66,-150578) from the grounded view
+(-26220,66,-150578). The pending fallback preserves vertical/bucket access,
+masks only eligible dry upper cubes in a3x3 neighborhood, then follows the
+selected native ray to retain at most four real obstructions. It rechecks
+joint attachment/fluid safety and the native placement before registering
+those blocks in the existing restore queue. Existing real views and doors
+are prioritized ahead of future openings; the current pose can prove an
+opening without walking away first. An offset-piston fixture retains its
+protected shulker, and a glass-roof fixture forbids needless access mining.
+
+The corrected native negative control failed on unchanged c089 as expected:
+no legal piston placement or offset roof opening. The first positive run
+exposed a handoff bug: floorDeferred removed a still-intact second beam's
+registration after its stale completion counter enabled final restoration.
+The fix retains all active roof beams and checks unfinished native access
+owners before entering final restoration. Positive run3 is testing this.
+Main compilation and native gametest launch must run sequentially to avoid
+a compile race; that earlier compiler failure was not a native result.
+Exact695-c089 capture SHA256:
+`F6415D340E48666110DC32EF0870E28A2B324EEEAFD9F33992C8984494C1F944`.
+It retains idle homes, native supplies and128 posts. The original695 fixture
+is preserved; the suffixed name identifies this different native scene.
+No full710 or fresh0 pass yet. CI456 on96a passed build/general/home checks,
+then failed the eight-cell restart inventory check (unnecessary glass repair).
+CI458 on current committedc089 is still running.
+
 The96a51a5 replay placed the four missing hoppers and another wire, reaching685,
 then stalled. Its repair queue proves a depth/owner cycle:636 is owned by the
 already complete637, but waits for the deeper opening674, whose owner636 is

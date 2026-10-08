@@ -1015,6 +1015,9 @@ public final class AutoBuilder extends Module {
     private double effectiveReach(){return Math.min(reach.get(),mc.player.getBlockInteractionRange()-.1);}
     private boolean floorDeferred(BlockPos pos){
         var work=floorAccessWork.get(pos);if(work==null)return false;
+        // A proved roof can contain several beams. Keep every beam registered
+        // while mining them; a still-correct beam is not a completed repair.
+        if(liquidTopStand!=null&&liquidTopBlocks.contains(pos))return true;
         // Retaining walls and basin floors must close before any bucket work,
         // even when the other temporary route still needs later cleanup.
         if(liquidBoundary(pos))return false;
@@ -1029,7 +1032,10 @@ public final class AutoBuilder extends Module {
             if(cell>=0&&!desired(cell).isAir()&&states[cell]!=IGNORED&&mc.world.isChunkLoaded(opening)
                 &&!matchesBuildState(mc.world.getBlockState(opening),desired(cell)))openings++;
         }
-        if(openings>0&&supports.isEmpty()&&solid-correct-ignoredSolid<=openings)openingRestoration=true;
+        boolean unfinishedAccess=floorAccessWork.values().stream().anyMatch(owner->owner>=0&&owner<states.length&&states[owner]!=IGNORED
+            &&!floorAccessWork.containsKey(position(owner))&&(!mc.world.isChunkLoaded(position(owner))
+            ||!matchesBuildState(mc.world.getBlockState(position(owner)),desired(owner))));
+        if(!unfinishedAccess&&openings>0&&supports.isEmpty()&&solid-correct-ignoredSolid<=openings)openingRestoration=true;
         if(openingRestoration||work<0||work>=states.length||states[work]==CORRECT||states[work]==IGNORED){
             // The final wall must not close behind us while our access column
             // still needs cleanup. Once those posts are gone, restore normally.
@@ -1325,7 +1331,7 @@ public final class AutoBuilder extends Module {
             if(topWork&&stand.getY()<=target.getY())continue;
             // A hotbar transfer can defer the next stair piece without changing
             // geometry. Keep the committed view eligible during its retry window.
-            if(tried.containsKey(stand)&&!stand.equals(accessStand)||!walker.canStand(stand)||!topWork&&mc.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(stand))<.04)continue;
+            if(tried.containsKey(stand)&&!stand.equals(accessStand)||!walker.canStand(stand)||!roofAccess&&!topWork&&mc.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(stand))<.04)continue;
             Vec3d eye=walker.standingPoint(stand).add(0,mc.player.getStandingEyeHeight(),0);
             if(!extendedScaffold&&!withinReach(target,eye))continue;
             var body=mc.player.getBoundingBox().offset(eye.subtract(mc.player.getEyePos()));
@@ -1350,11 +1356,11 @@ public final class AutoBuilder extends Module {
         // A confirmed dry home can bypass the entire failed-route/scaffold cycle.
         if(useHomes.get()&&homes.ready()&&homes.work(target,options)){resetAfterHome();status="Returning through checked build home";return true;}
         if(useHomes.get()&&homes.checkingRoutes()){walker.release();status="Checking confirmed home access";return true;}
-        options.sort(Comparator.<BlockPos>comparingInt(p->p.equals(accessStand)?-1:directStands.contains(p)?0:1)
+        options.sort(Comparator.<BlockPos>comparingInt(p->p.equals(accessStand)?-1:roofOpenings.containsKey(p)?1:directStands.contains(p)?0:2)
             .thenComparingInt(p->scaffoldDistance.getOrDefault(p,0)).thenComparingDouble(p->p.getSquaredDistance(mc.player.getBlockPos())));standGoal=null;
         long routeDeadline=System.nanoTime()+6_000_000;
         while(search.routeCursor<options.size()){
-            if(!directStands.contains(options.get(search.routeCursor))&&!search.doorChecked){
+            if((!directStands.contains(options.get(search.routeCursor))||roofOpenings.containsKey(options.get(search.routeCursor)))&&!search.doorChecked){
                 if(prepareDoorAccess(target,options.stream().filter(p->directStands.contains(p)&&!roofOpenings.containsKey(p)).toList(),routingWork,search))return true;
                 search.doorChecked=true;
             }
@@ -2003,6 +2009,14 @@ public final class AutoBuilder extends Module {
     /** Prove native placement through a roof opening; retain its ledge, attachments and basin walls. */
     private Set<BlockPos> liquidTopOpening(BlockPos target,BlockPos stand,Vec3d eye){
         if(!unstuck.get()||stand.getX()==target.getX()&&stand.getZ()==target.getZ())return null;
+        var vertical=verticalTopOpening(target,stand,eye);if(vertical!=null)return vertical;
+        int cell=schematic.indexAt(target.subtract(anchor()),turns(),mirror.get());
+        if(cell<0||desired(cell).getBlock() instanceof FluidBlock)return null;
+        return offsetRoofOpening(target,stand,eye,cell);
+    }
+    /** Keep the original above-source proof separate from dry offset-beam access. */
+    private Set<BlockPos> verticalTopOpening(BlockPos target,BlockPos stand,Vec3d eye){
+        if(!unstuck.get()||stand.getX()==target.getX()&&stand.getZ()==target.getZ())return null;
         var removed=new LinkedHashSet<BlockPos>();
         for(int up=1;up<=4;up++){
             var pos=target.up(up);var state=mc.world.getBlockState(pos);
@@ -2025,6 +2039,33 @@ public final class AutoBuilder extends Module {
             var body=mc.player.getBoundingBox().offset(eye.subtract(mc.player.getEyePos()));
             if(placement(target,wanted,item,cell,false,eye,body,view)==null)return null;
         }
+        return Collections.unmodifiableSet(removed);
+    }
+    /** Only remove the few upper cubes crossed by a proved native placement ray. */
+    private Set<BlockPos> offsetRoofOpening(BlockPos target,BlockPos stand,Vec3d eye,int cell){
+        var wanted=desired(cell);var item=Schematic.material(wanted);if(!(item instanceof BlockItem))return null;
+        var attachment=attachmentSide(wanted);var retained=attachment==null?null:target.offset(attachment);
+        var candidates=new LinkedHashSet<BlockPos>();
+        for(int up=1;up<=4;up++)for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++){
+            var pos=target.add(dx,up,dz);
+            if(pos.equals(stand.down())||pos.equals(retained)||!passageCell(pos)||!safeToRecycle(pos))continue;
+            candidates.add(pos);
+        }
+        if(candidates.isEmpty()||candidates.size()>24)return null;
+        var body=mc.player.getBoundingBox().offset(eye.subtract(mc.player.getEyePos()));
+        var plan=placement(target,wanted,item,cell,false,eye,body,clearedView(candidates));if(plan==null)return null;
+        var point=plan.hit.getPos();var end=point.add(point.subtract(eye).normalize().multiply(.003));
+        var removed=new LinkedHashSet<BlockPos>();boolean reached=false;
+        for(int cut=0;cut<=4;cut++){
+            var view=removed.isEmpty()?mc.world:clearedView(removed);
+            var ray=view.raycast(new RaycastContext(eye,end,RaycastContext.ShapeType.OUTLINE,RaycastContext.FluidHandling.NONE,mc.player));
+            if(ray.getType()!=HitResult.Type.BLOCK)return null;
+            if(ray.getBlockPos().equals(plan.hit.getBlockPos())&&ray.getSide()==plan.hit.getSide()){reached=true;break;}
+            if(!candidates.contains(ray.getBlockPos())||!removed.add(ray.getBlockPos().toImmutable()))return null;
+        }
+        if(!reached||removed.isEmpty()||removed.size()>4||!safeToRecycle(removed)
+            ||removed.stream().noneMatch(pos->visibleHit(pos,eye)!=null)
+            ||placement(target,wanted,item,cell,false,eye,body,clearedView(removed))==null)return null;
         return Collections.unmodifiableSet(removed);
     }
     private boolean liquidTopTick(){

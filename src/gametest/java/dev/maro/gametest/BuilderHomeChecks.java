@@ -100,6 +100,8 @@ final class BuilderHomeChecks {
         repairOwnerOrder(context,world,builder,home2);
         sectionDependencyChain(context,world,builder,home2);
         buriedHopperRoofAccess(context,world,builder,start);
+        offsetPistonRoofAccess(context,world,builder,start);
+        existingViewBeforeRoof(context,world,builder,start);
         closedDoorAccess(context,world,builder,start);
         restockRoundTrip(context,world,builder,home2,chest);
         temporaryFootingReturn(context,world,builder,home2,chest);
@@ -184,6 +186,46 @@ final class BuilderHomeChecks {
         require(world.getServer().computeOnServer(server->{for(int y=0;y<7;y++)for(int z=-4;z<9;z++)for(int x=-4;x<9;x++)if(server.getOverworld().getBlockState(origin.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Typed roof access left raw scaffold dirt");
         teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+4)+" "+(origin.getY()+2)+" "+(origin.getZ()+4)+" air");context.waitTicks(4);
         System.out.println("[builder-home] Typed native hopper placed facing north through its registered roof opening; all 75 blocks restored, zero dirt, bounded look and full health in "+elapsed+" ticks");
+    }
+    private static void offsetPistonRoofAccess(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-home] Open only proved offset roof beams for an oriented piston; preserve its neighbouring container");
+        var origin=start.add(-2,0,10);var cells=new BlockState[75];Arrays.fill(cells,Blocks.STONE.getDefaultState());
+        for(int y=0;y<3;y++)for(int z=0;z<5;z++)for(int x=0;x<5;x++)command(world,"setblock",origin.add(x,y,z),"stone");
+        int target=(1*5+2)*5+1;var pos=origin.add(1,1,2);cells[target]=Blocks.STICKY_PISTON.getDefaultState().with(PistonBlock.FACING,Direction.EAST);command(world,"setblock",pos,"air");
+        for(var gap:List.of(new BlockPos(1,2,2),new BlockPos(3,2,3))){cells[(gap.getY()*5+gap.getZ())*5+gap.getX()]=Blocks.AIR.getDefaultState();command(world,"setblock",origin.add(gap),"air");}
+        var container=origin.add(2,1,2);cells[(1*5+2)*5+2]=Blocks.YELLOW_SHULKER_BOX.getDefaultState();command(world,"setblock",container,"yellow_shulker_box");
+        for(String item:List.of("sticky_piston 1","stone 16","dirt 32","diamond_pickaxe","diamond_shovel"))world.getServer().runCommand("give @a "+item);
+        teleport(world,origin.add(3,2,3));context.waitTicks(12);
+        context.runOnClient(client->{setting(builder,"Temporary Supports",true);setting(builder,"Prepare Whole Build",false);builder.install(new Schematic("offset-piston-roof.nbt","test",5,3,5,BlockPos.ORIGIN,cells));builder.setOrigin(origin);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();});
+        boolean opened=false;int elapsed=0;
+        for(;elapsed<1600&&context.computeOnClient(client->builder.building()||((BuilderHomes)field(builder,"homes")).busy());elapsed++){
+            require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(container).isOf(Blocks.YELLOW_SHULKER_BOX)),"Offset piston access removed its protected container");
+            opened|=context.computeOnClient(client->{var repairs=(Map<?,?>)field(builder,"floorAccessWork");return Objects.equals(repairs.get(origin.add(2,2,2)),target)||Objects.equals(repairs.get(origin.add(2,2,3)),target);});
+            if(elapsed%200==0)System.out.println((String)context.computeOnClient(client->"[builder-piston-roof-progress] "+builder.status()+" player="+client.player.getEntityPos()+" target="+builder.state(target)+" correct="+field(builder,"correct")+" solid="+field(builder,"solid")+" ignored="+field(builder,"ignoredSolid")+" restoring="+field(builder,"openingRestoration")+" repairs="+field(builder,"floorAccessWork")+" roof="+field(builder,"liquidTopBlocks")+" passage="+field(builder,"passageBlocks")+" mining="+field(builder,"mining")));
+            context.waitTick();
+        }
+        require(opened,"Oriented piston never registered an offset roof opening: "+context.computeOnClient(client->builder.status()));
+        String mismatch=world.getServer().computeOnServer(server->{for(int i=0;i<cells.length;i++){var at=origin.add(i%5,i/25,i/5%5);var actual=server.getOverworld().getBlockState(at);if(!AutoBuilder.matchesBuildState(actual,cells[i]))return at+" expected="+cells[i]+" actual="+actual;}return "";});
+        require(mismatch.isEmpty(),"Native east-facing piston or offset roof was not restored: "+mismatch);
+        context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Offset piston access left work, dirt, damage or menu: "+builder.status());BuilderPacketChecks.verify(2);builder.pause("offset piston roof checked");});
+        require(world.getServer().computeOnServer(server->{for(int y=0;y<7;y++)for(int z=-4;z<9;z++)for(int x=-4;x<9;x++)if(server.getOverworld().getBlockState(origin.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Offset piston access left raw dirt");
+        teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+4)+" "+(origin.getY()+2)+" "+(origin.getZ()+4)+" air");context.waitTicks(4);
+        System.out.println("[builder-home] Native east-facing piston through registered offset roof beams; all cells restored, protected container retained, zero dirt, full health and bounded look in "+elapsed+" ticks");
+    }
+    private static void existingViewBeforeRoof(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-home] Walk to an existing native view before opening an intact glass roof");
+        var origin=start.add(-1,0,10);var cells=new BlockState[8];
+        for(int y=0;y<2;y++)for(int z=0;z<2;z++)for(int x=0;x<2;x++){int i=(y*2+z)*2+x;cells[i]=(y==0?Blocks.STONE:Blocks.GLASS).getDefaultState();command(world,"setblock",origin.add(x,y,z),i==0?"air":y==0?"stone":"glass");}
+        world.getServer().runCommand("give @a stone 1");world.getServer().runCommand("give @a glass 8");teleport(world,origin.add(1,2,1));context.waitTicks(12);
+        int glass=context.computeOnClient(client->builder.inventoryCount(Items.GLASS));
+        context.runOnClient(client->{setting(builder,"Temporary Supports",false);setting(builder,"Prepare Whole Build",false);builder.install(new Schematic("existing-view-before-roof.nbt","test",2,2,2,BlockPos.ORIGIN,cells));builder.setOrigin(origin);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();});
+        for(int tick=0;tick<500&&context.computeOnClient(client->builder.building()||((BuilderHomes)field(builder,"homes")).busy());tick++){
+            require(world.getServer().computeOnServer(server->{for(int z=0;z<2;z++)for(int x=0;x<2;x++)if(!server.getOverworld().getBlockState(origin.add(x,1,z)).isOf(Blocks.GLASS))return false;return true;}),"Opened glass despite a reachable existing placement view");context.waitTick();
+        }
+        require(world.getServer().computeOnServer(server->{for(int i=0;i<cells.length;i++)if(!AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(origin.add(i%2,i/4,i/2%2)),cells[i]))return false;return true;}),"Existing-view repair did not complete every native cell");
+        context.runOnClient(client->{require(!builder.building()&&builder.inventoryCount(Items.GLASS)==glass&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Existing view consumed glass, left work, dirt, damage or menu: "+builder.status());BuilderPacketChecks.verify(1);builder.pause("existing view checked");setting(builder,"Temporary Supports",true);});
+        teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+1)+" "+(origin.getY()+1)+" "+(origin.getZ()+1)+" air");context.waitTicks(4);
+        System.out.println("[builder-home] Missing native stone repaired from an existing view; intact glass roof and inventory, zero dirt, full health and bounded look");
     }
     private static void closedDoorAccess(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-home] Open an existing wooden door for dry basin assembly, then restore both closed halves without mining it");
