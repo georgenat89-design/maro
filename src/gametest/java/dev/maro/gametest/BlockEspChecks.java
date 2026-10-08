@@ -53,6 +53,7 @@ final class BlockEspChecks {
         float[] angles = context.computeOnClient(c -> new float[] {c.player.getYaw(), c.player.getPitch()});
         var perspective = context.computeOnClient(c -> c.options.getPerspective());
         boolean flying = context.computeOnClient(c -> c.player.getAbilities().flying);
+        boolean hudHidden = context.computeOnClient(c -> c.options.hudHidden);
         var gameMode = world.getServer().computeOnServer(s -> s.getPlayerManager().getPlayerList().getFirst().interactionManager.getGameMode());
         try {
             world.getServer().runCommand("gamemode creative @a");
@@ -72,9 +73,11 @@ final class BlockEspChecks {
                 c.player.getAbilities().flying = true;
                 c.player.setVelocity(0, 0, 0);
                 c.options.setPerspective(Perspective.FIRST_PERSON);
+                // As F1: no hand, chat or hotbar, so between screenshots only the ESP can change.
+                c.options.hudHidden = true;
                 module.getSettings().forEach(Setting::reset);
             });
-            // The same view with nothing drawn: the sky and grass of the test world are coloured too.
+            // The same view with nothing drawn, to compare every screenshot after with.
             context.waitTicks(5);
             BufferedImage plain = read(context.takeScreenshot("maro-block-esp-off"));
             context.runOnClient(c -> module.setEnabled(true));
@@ -128,6 +131,7 @@ final class BlockEspChecks {
                 module.setEnabled(false);
                 module.getSettings().forEach(Setting::reset);
                 c.options.setPerspective(perspective);
+                c.options.hudHidden = hudHidden;
                 c.player.getAbilities().flying = flying;
             });
             for (BlockPos pos : List.of(SPAWNER, CHEST, DIAMOND, HIGH_SPAWNER)) world.getServer().runCommand("setblock " + at(pos) + " minecraft:air");
@@ -149,14 +153,11 @@ final class BlockEspChecks {
         }
     }
 
-    /**
-     * Pixels clearly different from the same view with Block ESP off: what its boxes, tracers and
-     * glow drew. The bottom fifth, where the hotbar and chat are, is left out.
-     */
+    /** Pixels clearly different from the same view with Block ESP off: what its boxes, tracers and glow drew. */
     private static int changed(BufferedImage before, BufferedImage after) {
         int count = 0;
         int width = Math.min(before.getWidth(), after.getWidth()), height = Math.min(before.getHeight(), after.getHeight());
-        for (int y = 0; y < height * 4 / 5; y += 2) {
+        for (int y = 0; y < height; y += 2) {
             for (int x = 0; x < width; x += 2) {
                 int a = before.getRGB(x, y), b = after.getRGB(x, y);
                 int d = Math.abs((a >> 16 & 0xFF) - (b >> 16 & 0xFF)) + Math.abs((a >> 8 & 0xFF) - (b >> 8 & 0xFF))
