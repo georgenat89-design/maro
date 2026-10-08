@@ -109,8 +109,10 @@ public abstract class GameRendererMixin {
         // round. Either order works; this one is the one that matches how the
         // two controls read when they are both turned up.
         //
-        // Player ESP goes on before either, so its fill and glow bloom and grade with the world.
+        // Player ESP and Block ESP go on before either, so their fills, tracers and glow bloom and
+        // grade with the world.
         PlayerEspRenderer.composite();
+        dev.maro.render.esp.BlockEspRenderer.composite();
         Bloom.applyTo(MinecraftClient.getInstance().getFramebuffer(), pool);
         ColorCorrect.applyTo(MinecraftClient.getInstance().getFramebuffer(), pool, point);
     }
