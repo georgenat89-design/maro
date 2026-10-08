@@ -756,6 +756,12 @@ public final class AutoBuilder extends Module {
             escapeSupports.clear();escapeSupportWork.clear();recycleSearchFeet=null;
         }
         if(building&&restockTarget==null&&mc.currentScreen==null&&accessPickupId>=0&&collectAccessDrop())return;
+        // Recover mined build material before another walk or scaffold job can
+        // leave it behind. Spare inventory is not a reservation: later build
+        // work can consume it while the replacement drop despawns.
+        if(building&&!buying&&!depositing&&!pasting&&restockTarget==null&&mc.currentScreen==null
+            &&accessPickupId<0&&placement==null&&mining==null&&recoveryPhase==0
+            &&(!mode.is("Semi Auto")||mc.options.useKey.isPressed())&&collectAccessDrop())return;
         if(homeSetupResume&&homes.ready()){homeSetupResume=false;startBuild();return;}
         if(building&&!buying&&!depositing&&recoverUnexpectedBuildMenu())return;
         if(building&&!buying&&!depositing&&!pasting&&!loading&&restockTarget==null&&mc.currentScreen==null
@@ -1247,6 +1253,12 @@ public final class AutoBuilder extends Module {
             if(waitingForBuiltNeighbour(target,desired))continue;
             if(desired.isAir()&&supports.contains(target)&&correct!=solid)continue;
             if(desired.isAir()&&!mineOut.get()||Schematic.companion(desired))continue;
+            // Obtain the actual material before a distant placement starts
+            // cutting entrances. Mining access cannot resolve missing stock.
+            if(!desired.isAir()&&actual.isReplaceable()){
+                var material=potted(desired)&&!actual.isOf(Blocks.FLOWER_POT)?Items.FLOWER_POT:Schematic.material(desired);
+                if(material!=Items.AIR&&inventoryCount(material)==0){if(needed==null)needed=material;continue;}
+            }
             if(!withinReach(target,mc.player.getEyePos())){
                 // A scaffold view reaches its first piece, not necessarily the
                 // final block. Complete that native job before routing away again.
@@ -3508,7 +3520,7 @@ public final class AutoBuilder extends Module {
             var item=Schematic.material(desired(cell));if(item==Items.AIR)continue;
             required.merge(item,1,Integer::sum);openings.computeIfAbsent(item,key->new ArrayList<>()).add(entry.getKey());repairCells.putIfAbsent(item,cell);
         }
-        required.entrySet().removeIf(entry->inventoryCount(entry.getKey())>=entry.getValue());if(required.isEmpty())return false;
+        required.entrySet().removeIf(entry->!canReceive(entry.getKey()));if(required.isEmpty())return false;
         accessPickupRetry.values().removeIf(until->until<=ticks);
         var drops=mc.world.getEntitiesByClass(net.minecraft.entity.ItemEntity.class,mc.player.getBoundingBox().expand(12,10,12),
             drop->drop.isAlive()&&required.containsKey(drop.getStack().getItem())&&!accessPickupRetry.containsKey(drop.getId())
@@ -3525,6 +3537,7 @@ public final class AutoBuilder extends Module {
                 .thenComparingDouble(stand->stand.getSquaredDistance(mc.player.getBlockPos())));
             for(var stand:views){
                 if(System.nanoTime()>=deadline)break;if(!walker.canReachStand(stand))continue;
+                var searches=new LinkedHashMap<>(viewSearches);resetAccessRouting();viewSearches.putAll(searches);
                 accessPickupId=drop.getId();accessPickupStand=stand;accessPickupItem=drop.getStack().getItem();accessPickupWork=repairCells.get(accessPickupItem);accessPickupCount=inventoryCount(accessPickupItem);accessPickupUntil=ticks+100;
                 walker.stop();walker.standAt(stand);status="Collecting access repair material";return true;
             }
@@ -3532,6 +3545,7 @@ public final class AutoBuilder extends Module {
             // alone must not retry until it despawns: prove a bounded native
             // column or registered entrance using its unfinished repair owner.
             if(!views.isEmpty()&&support.get()&&unstuck.get()){
+                var searches=new LinkedHashMap<>(viewSearches);resetAccessRouting();viewSearches.putAll(searches);
                 accessPickupId=drop.getId();accessPickupItem=drop.getStack().getItem();accessPickupWork=repairCells.get(accessPickupItem);
                 accessPickupViews=List.copyOf(views);accessPickupStand=views.getFirst();accessPickupSearch=new ViewSearch();accessPickupFeet=mc.player.getBlockPos().toImmutable();
                 accessPickupCount=inventoryCount(accessPickupItem);accessPickupUntil=ticks+600;walker.stop();status="Checking access to repair material";return true;

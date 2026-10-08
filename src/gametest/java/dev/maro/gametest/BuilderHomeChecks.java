@@ -95,6 +95,7 @@ final class BuilderHomeChecks {
         context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(homes.ready()&&!builder.building(),"Storage setup failed or unexpectedly started building: "+builder.status());var entry=homes.saveData().get(0).getAsJsonObject();var feet=BlockPos.ofFloored(entry.get("x").getAsDouble(),entry.get("y").getAsDouble(),entry.get("z").getAsDouble());for(var reserved:List.of(feet,feet.up())){require((boolean)call(builder,"reservedSupplyAccess",new Class<?>[]{BlockPos.class},reserved),"Storage-home arrival cell was available to scaffolding");require(call(builder,"placement",new Class<?>[]{BlockPos.class,BlockState.class,Item.class,int.class,boolean.class},reserved,Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true)==null,"Scaffold could block native storage arrival");}});require(saveCommands==before+1,"Absent home 1 did not save exactly once");
         longCheckedWalk(context,world,builder,start);
         unproductiveHomeEscape(context,world,builder,start);
+        missingMaterialBeforeAccess(context,world,builder,start);
         blockedRepairReceivers(context,world,builder,start,chest);
         crouchedChestPlacementView(context,world,builder,start);
         scaffoldObstructedSign(context,world,builder,start);
@@ -375,6 +376,7 @@ final class BuilderHomeChecks {
         int repair=(3*8+1)*7+1;var opening=origin.add(1,3,1);cells[repair]=Blocks.CRACKED_POLISHED_BLACKSTONE_BRICKS.getDefaultState();command(world,"setblock",opening,"air");
         int owner=(2*8+7)*7+2;var ownerPos=origin.add(2,2,7);cells[owner]=Blocks.GLASS.getDefaultState();
         world.getServer().runCommand("clear @a cracked_polished_blackstone_bricks");
+        world.getServer().runCommand("give @a cracked_polished_blackstone_bricks 1");
         world.getServer().runCommand("clear @a glass");
         for(String item:List.of("stone 16","dirt 64","diamond_pickaxe","diamond_shovel","cooked_beef 16"))world.getServer().runCommand("give @a "+item);
         // The case starts with a settled drop on this one-block-deep ledge.
@@ -383,7 +385,7 @@ final class BuilderHomeChecks {
         teleport(world,origin.add(3,1,3));context.waitTicks(12);
         require(world.getServer().computeOnServer(server->server.getOverworld().getEntitiesByClass(net.minecraft.entity.ItemEntity.class,new Box(origin.getX()+2,origin.getY()+2,origin.getZ()+7,origin.getX()+5,origin.getY()+3,origin.getZ()+8),drop->drop.getStack().isOf(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)).size()==1),"Sealed repair drop did not remain on its intended upper ledge");
         context.runOnClient(client->{
-            require(builder.inventoryCount(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)==0,"Sealed drop fixture supplied the missing repair material directly");
+            require(builder.inventoryCount(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)==1,"Stocked repair-drop fixture has the wrong initial inventory");
             var walker=(BuilderWalk)field(builder,"walker");require(!walker.canReachStand(origin.add(3,2,7)),"Sealed drop fixture already had walking access");
             setting(builder,"Temporary Supports",true);setting(builder,"Prepare Whole Build",false);setting(builder,"Restock When Empty",false);setting(builder,"Auto Buy When Missing",false);builder.install(new Schematic("sealed-repair-drop.nbt","test",7,5,8,BlockPos.ORIGIN,cells));builder.setOrigin(origin);
             @SuppressWarnings("unchecked")var owners=(Map<BlockPos,Integer>)field(builder,"floorAccessWork");owners.put(opening,owner);
@@ -397,17 +399,21 @@ final class BuilderHomeChecks {
             setField(builder,"accessPickupUntil",field(builder,"ticks"));
             require(!(boolean)call(builder,"collectAccessDrop",new Class<?>[]{}),"Expired pickup kept its access intent");
             require((int)field(builder,"accessPickupId")==-1&&receipts.entrySet().stream().allMatch(entry->searches.get(entry.getKey())==entry.getValue()),"Expired pickup erased the unfinished native roof route and restarted planning");
-            require(client.world.getEntityById(dropId) instanceof net.minecraft.entity.ItemEntity drop&&drop.isAlive()&&builder.inventoryCount(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)==0,"Expired pickup forged or removed the real repair material");
+            require(client.world.getEntityById(dropId) instanceof net.minecraft.entity.ItemEntity drop&&drop.isAlive()&&builder.inventoryCount(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)==1,"Expired pickup forged or removed the real repair material");
             // Resume the deliberately expired fixture attempt immediately; the
             // complete native pickup/repair flow below still has to finish.
             ((Map<?,?>)field(builder,"accessPickupRetry")).remove(dropId);
-            require((boolean)call(builder,"collectAccessDrop",new Class<?>[]{}),"Native pickup did not resume after its forced timeout");
+            var travel=origin.add(3,1,1);require(walker.canReachStand(travel),"Repair pickup priority fixture has no native travel route");
+            setField(builder,"standGoal",travel);setField(builder,"standStarted",field(builder,"ticks"));setField(builder,"standProgressAt",field(builder,"ticks"));setField(builder,"standProgressPos",client.player.getEntityPos());
             System.out.println("[builder-home] Expired native ledge pickup retained the unfinished roof route; real drop and inventory unchanged");
         });
+        context.waitTick();
+        context.runOnClient(client->require((int)field(builder,"accessPickupId")>=0&&field(builder,"accessPickupSearch")!=null&&field(builder,"standGoal")==null,
+            "Stocked repair material did not preempt the unrelated native walk on the next tick"));
         boolean planned=false,secured=false;int elapsed=0;
         for(;elapsed<2000&&context.computeOnClient(client->builder.building());elapsed++){
             planned|=context.computeOnClient(client->field(builder,"accessPickupSearch")!=null);
-            if(!secured&&context.computeOnClient(client->builder.inventoryCount(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)>0)){
+            if(!secured&&context.computeOnClient(client->builder.inventoryCount(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)>1)){
                 require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(ownerPos).isAir()),"Repair material was not secured before its unfinished owner");
                 world.getServer().runCommand("give @a glass 1");secured=true;
             }
@@ -418,6 +424,7 @@ final class BuilderHomeChecks {
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Sealed drop left work, supports, damage or menu: "+builder.status());BuilderPacketChecks.verify(1);builder.pause("sealed drop checked");setting(builder,"Restock When Empty",true);setting(builder,"Auto Buy When Missing",true);});
         teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+6)+" "+(origin.getY()+4)+" "+(origin.getZ()+7)+" air");context.waitTicks(4);
         System.out.println("[builder-home] Sealed upper repair drop collected through native access; all openings restored, zero dirt, full health and bounded look in "+elapsed+" ticks");
+        System.out.println("[builder-home] Mined native repair drop collected despite spare matching inventory; unrelated walk preempted on the next tick; unfinished owner waited for real pickup");
     }
     private static void unproductiveHomeEscape(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-home] Leave an exhausted enclosed route through safe storage home 1, then complete the next native placement");
@@ -452,6 +459,22 @@ final class BuilderHomeChecks {
         teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+room.down().toShortString().replace(",","")+" "+room.add(2,2,2).toShortString().replace(",","")+" air");world.getServer().runCommand("fill "+room.down().toShortString().replace(",","")+" "+room.add(2,-1,2).toShortString().replace(",","")+" end_stone");command(world,"setblock",target,"air");context.waitTicks(4);
         System.out.println("[builder-home] Exhausted route escaped through one native home 1 arrival and completed placement in "+elapsed+" ticks; enclosure/other homes intact, zero supports and full health");
         System.out.println("[builder-home] Confirmed native storage arrival retired abandoned escape columns before owner placement; pending travel retained protection; real three-block cleanup completed");
+    }
+    private static void missingMaterialBeforeAccess(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        var origin=start.south(24);var cells=new BlockState[27];Arrays.fill(cells,Blocks.STONE.getDefaultState());cells[13]=Blocks.GLASS.getDefaultState();
+        for(int i=0;i<cells.length;i++)command(world,"setblock",origin.add(i%3,i/9,i/3%3),i==13?"air":"stone");
+        world.getServer().runCommand("clear @a glass");teleport(world,start);context.waitTicks(12);int first=commands.size();
+        context.runOnClient(client->{setting(builder,"Temporary Supports",true);setting(builder,"Prepare Whole Build",false);setting(builder,"Restock When Empty",false);setting(builder,"Auto Buy When Missing",false);
+            builder.install(new Schematic("missing-material-before-access.nbt","test",3,3,3,BlockPos.ORIGIN,cells));builder.setOrigin(origin);builder.startBuild();});
+        context.waitTicks(40);
+        context.runOnClient(client->{require(builder.inventoryCount(Items.GLASS)==0&&field(builder,"needed")==Items.GLASS&&(int)field(builder,"navigatingCell")==-1&&field(builder,"standGoal")==null,
+                "Missing native glass started a distant access route instead of requesting stock");
+            require(client.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(start))<.04&&builder.temporarySupports().isEmpty()&&((Map<?,?>)field(builder,"floorAccessWork")).isEmpty()&&client.player.getHealth()==20,
+                "Missing material moved the player or created scaffold/access cuts");builder.pause("missing material checked");setting(builder,"Restock When Empty",true);setting(builder,"Auto Buy When Missing",true);});
+        require(commands.size()==first,"Missing material issued an unrelated home command");
+        require(world.getServer().computeOnServer(server->{for(int i=0;i<cells.length;i++)if(!server.getOverworld().getBlockState(origin.add(i%3,i/9,i/3%3)).isOf(i==13?Blocks.AIR:Blocks.STONE))return false;return true;}),"Missing material damaged the native enclosed build");
+        world.getServer().runCommand("fill "+origin.toShortString().replace(",","")+" "+origin.add(2,2,2).toShortString().replace(",","")+" air");context.waitTicks(4);
+        System.out.println("[builder-home] Missing native material requested before distant travel; enclosed build intact, no access cuts/supports/home commands and full health");
     }
     private static void longCheckedWalk(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-home] Finish a long proved native walk without cancelling it at the old 240-tick deadline");
