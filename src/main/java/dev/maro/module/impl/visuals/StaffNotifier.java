@@ -28,10 +28,17 @@ import java.util.*;
 public final class StaffNotifier extends Module implements HudElement {
     public static final List<String> DEFAULT_STAFF = List.of("0gsummer", "archivepedro", "bautiedgar",
         "fluffymaster07", "frwost", "itszdeath", "pastagamer08", "showered", "w1zox_",
-        "Frenk_Btw", "Napooo_", "BobisFound", "CryptoDaveYt", "MunkerLich", "u_vv", "Fallerfly", "Dough4");
-    private static final List<String> NEW_STAFF=DEFAULT_STAFF.subList(9,DEFAULT_STAFF.size());
+        "Frenk_Btw", "Napooo_", "BobisFound", "CryptoDaveYt", "MunkerLich", "u_vv", "Fallerfly", "Dough4",
+        "CaptainMoose35", "Owen1212055");
+    /** Names added to the defaults later, by the list revision they came with; a saved list gets each batch once. */
+    private static final Map<Integer,List<String>> ADDED=Map.of(
+        2,DEFAULT_STAFF.subList(9,17),
+        3,List.of("CaptainMoose35","Owen1212055"));
+    private static final int LIST_REVISION=3;
     private static final Set<String> FACE_STAFF=Set.copyOf(DEFAULT_STAFF.subList(0,9));
-    private static final int WIDTH = 216, MARGIN = 4;
+    private static final int WIDTH = 176, MARGIN = 4, HEAD = 24, PAD = 8;
+    /** What each staff member is doing, by colour: close by, hidden from tab, spectating, in tab; and nobody about. */
+    private static final int NEARBY = 0xFFFF5D6C, HIDDEN = 0xFFB28CFF, SPECTATING = 0xFF6FB6FF, IN_TAB = 0xFFFFB547, CLEAR = 0xFF3DDC97;
     private final SettingGroup general = settings.getDefaultGroup();
     private final SettingGroup hud = settings.createGroup("HUD");
     private final Setting<List<String>> names = general.add(new StringListSetting.Builder().name("staff-names")
@@ -84,7 +91,7 @@ public final class StaffNotifier extends Module implements HudElement {
     private Set<String> configured = Set.of();
     private boolean initialized, rebaseline;
     public record HudStaff(UUID id,String name,int ping,boolean listed,boolean spectator,float distance) {
-        public String status(){return distance>=0?"Nearby · "+Math.round(distance)+"m":spectator?"Spectator":listed?"Listed in tab":"Hidden from tab";}
+        public String status(){return distance>=0?"Nearby · "+Math.round(distance)+"m":spectator?"Spectating":listed?"In tab":"Hidden from tab";}
     }
     private List<HudStaff> hudDisplay=List.of();
     private final Map<UUID,PlayerListEntry> profiles=new HashMap<>();
@@ -137,14 +144,16 @@ public final class StaffNotifier extends Module implements HudElement {
             }
         }
     }
-    @Override public com.google.gson.JsonObject saveExtra(){var data=super.saveExtra();data.addProperty("staff-list-revision",2);return data;}
+    @Override public com.google.gson.JsonObject saveExtra(){var data=super.saveExtra();data.addProperty("staff-list-revision",LIST_REVISION);return data;}
     @Override public void loadExtra(com.google.gson.JsonObject data){
         var copy=data.deepCopy();copy.remove("staff-list-revision");super.loadExtra(copy);
-        if(!data.has("staff-list-revision")) {
-            var updated=new ArrayList<>(names.get());var existing=normalize(updated);
-            for(String name:NEW_STAFF)if(!existing.contains(name.toLowerCase(Locale.ROOT)))updated.add(name);
-            names.set(updated);
-        }
+        int saved=data.has("staff-list-revision")?data.get("staff-list-revision").getAsInt():1;
+        if(saved>=LIST_REVISION)return;
+        // Names added since this list was saved; ones removed by hand since are not brought back.
+        var updated=new ArrayList<>(names.get());var existing=normalize(updated);
+        for(int revision=saved+1;revision<=LIST_REVISION;revision++)
+            for(String name:ADDED.getOrDefault(revision,List.of()))if(!existing.contains(name.toLowerCase(Locale.ROOT)))updated.add(name);
+        names.set(updated);
     }
     public List<Change> recentChanges() { return List.copyOf(recent); }
     @Override public String getInfoString() { return Integer.toString(display.size()); }
@@ -233,8 +242,12 @@ public final class StaffNotifier extends Module implements HudElement {
         button.action=() -> { list.set(true); setEnabled(true); mc.setScreen(new HudPlacementScreen(mc.currentScreen,this)); };
         return button;
     }
-    private int rowHeight(){return layout.get()==Layout.Compact?28:33;}
-    private int height() { return 52+Math.max(1,Math.min(rows.get(),hudDisplay.size()))*rowHeight()+18; }
+    private int rowHeight(){return layout.get()==Layout.Compact?18:26;}
+    private int shownRows(){return Math.min(rows.get(),hudDisplay.size());}
+    private int height() {
+        int n=shownRows();
+        return HEAD+(n>0?3+n*rowHeight()+3:0)+(hudDisplay.size()>n?11:0);
+    }
     @Override public String hudName() { return "Staff Notifier"; }
     @Override public float hudScale() { return (float)Math.min(scale.get(),Math.min((mc.getWindow().getScaledWidth()-8)/(double)WIDTH,(mc.getWindow().getScaledHeight()-8)/(double)height())); }
     @Override public float hudWidth() { return WIDTH*hudScale(); }
@@ -260,48 +273,101 @@ public final class StaffNotifier extends Module implements HudElement {
     private String trim(DrawContext ctx,String value,float width,boolean bold,float size) {
         return smoothText.get()?SmoothHudText.trim(ctx,value,width,bold,size):Fonts.trim(value,width,bold,size);
     }
+    private static int statusColor(HudStaff staff){
+        return staff.distance>=0?NEARBY:!staff.listed?HIDDEN:staff.spectator?SPECTATING:IN_TAB;
+    }
+    /** Text placed by its left edge and vertical centre. */
+    private void drawV(DrawContext ctx,String value,float x,float cy,int color,boolean bold,float size) {
+        if(smoothText.get()) SmoothHudText.draw(ctx,value,x,cy-size*2.9f,color,bold,size); else Fonts.drawV(ctx,value,x,cy,color,bold,size);
+    }
+    /** Four bars for the connection, coloured by how good it is. */
+    private void signal(DrawContext ctx,float right,float cy,int ping) {
+        int bars=ping<=0?0:ping<80?4:ping<150?3:ping<250?2:1;
+        int color=bars>=3?CLEAR:bars==2?IN_TAB:NEARBY;
+        for(int i=0;i<4;i++) {
+            float h=3+i*2,x=right-(4-i)*3f;
+            Render2D.roundRect(ctx,x,cy+4.5f-h,2,h,.8f,i<bars?color:0x2EFFFFFF);
+        }
+    }
     @Override public void onRender2D(DrawContext ctx,float delta) {
         if (!inGame() || !list.get() || mc.options.hudHidden || (!empty.get() && hudDisplay.isEmpty())) return;
         if(smoothText.get()) SmoothHudText.beginFrame();
         ctx.getMatrices().pushMatrix(); Fonts.beginRaw();
         try {
             ctx.getMatrices().translate(hudLeft(),hudTop()); ctx.getMatrices().scale(hudScale(),hudScale());
-            Render2D.roundRect(ctx,1,2,WIDTH,height(),10,0x30101723);
-            Render2D.roundRect(ctx,0,0,WIDTH,height(),10,0xF0131722);
-            Render2D.roundOutline(ctx,0,0,WIDTH,height(),10,.6f,0x80525B6C);
-            Render2D.roundRect(ctx,10,10,3,17,1.5f,0xFFE6C18A);
-            draw(ctx,"STAFF LIST",19,10,0xFFF8F3EB,true,text(.96f));
-            draw(ctx,"Presence & proximity",19,25,0xFFBAC6D8,false,text(.67f));
-            Render2D.roundRect(ctx,WIDTH-37,10,26,20,6,0x403F4C66);
-            drawRight(ctx,Integer.toString(hudDisplay.size()),WIDTH-18,20,0xFFF0D9B3,true,text(.95f));
+            long now=System.currentTimeMillis();
+            int h=height(),n=shownRows();
+            boolean clear=hudDisplay.isEmpty();
+            // The most pressing status sets the colour of the panel's light: someone close by beats
+            // someone hidden, who beats someone merely in tab.
+            int state=clear?CLEAR:statusColor(hudDisplay.getFirst());
             long near=hudDisplay.stream().filter(s->s.distance>=0).count();
-            draw(ctx,display.size()+" in tab",11,40,0xFFBFD9EE,false,text(.67f));
-            draw(ctx,near+" nearby",77,40,0xFFB6EBD0,false,text(.67f));
-            drawRight(ctx,(hudDisplay.size()-hudDisplay.stream().filter(HudStaff::listed).count())+" hidden",WIDTH-11,43,0xFFE8CBA6,false,text(.67f));
-            if (hudDisplay.isEmpty()) {
-                Render2D.roundRect(ctx,7,51,WIDTH-14,rowHeight()-2,6,0x352F3D52);
-                draw(ctx,"All clear",13,55,0xFFF0F4FC,true,text(.95f));
-                draw(ctx,"No staff reported by server",13,69,0xFFB9C7DB,false,text(.65f));
-            }
-            for (int i=0;i<Math.min(rows.get(),hudDisplay.size());i++) {
-                HudStaff staff=hudDisplay.get(i); int top=51+i*rowHeight();
-                int color=staff.distance>=0?0xFF8EDDB4:staff.spectator?0xFFC3AEF6:!staff.listed?0xFFEBC190:0xFF9EC7E7;
-                float flash=(float)Math.max(0,1-(System.currentTimeMillis()-highlights.getOrDefault(staff.id,0L))/3500.0);
-                Render2D.roundRect(ctx,7,top,WIDTH-14,rowHeight()-3,6,((int)(40+flash*35)<<24)|0x40536E);
-                Render2D.roundRect(ctx,8,top+7,2,rowHeight()-17,1,color);
-                PlayerListEntry entry=profiles.get(staff.id);int textX=avatars.get()?39:15;
+            float pulse=near>0?.55f+.45f*(float)Math.sin(now/220.0):1f;
+
+            Render2D.shadow(ctx,0,1.5f,WIDTH,h,8,10,0x55000000);
+            Render2D.roundRect(ctx,0,0,WIDTH,h,8,0xE80D0F14);
+            Render2D.roundOutline(ctx,0,0,WIDTH,h,8,.6f,0x24FFFFFF);
+            // A thin line of that colour along the top edge, fading out at both ends.
+            int line=(state&0xFFFFFF)|0xB0000000,none=state&0xFFFFFF;
+            Render2D.rectGradient(ctx,WIDTH*.15f,.3f,WIDTH*.35f,1f,none,line,line,none);
+            Render2D.rectGradient(ctx,WIDTH*.5f,.3f,WIDTH*.35f,1f,line,none,none,line);
+
+            // Header: a status light, the title, and a one-line summary on the right.
+            float cy=HEAD/2f;
+            Render2D.shadow(ctx,PAD,cy-3,6,6,3,4,(Math.round(0x70*pulse)<<24)|(state&0xFFFFFF));
+            Render2D.circle(ctx,PAD+3,cy,3,state);
+            drawV(ctx,"STAFF",PAD+11,cy,0xFFF2F4F8,true,text(.8f));
+            String summary=clear?"All clear":near>0?near+" nearby":hudDisplay.size()+" online";
+            drawRight(ctx,summary,WIDTH-PAD,cy,clear?0xFF8FE3BE:near>0?NEARBY:0xFFA8B0BF,false,text(.68f));
+            if(n>0) Render2D.rect(ctx,PAD,HEAD,WIDTH-PAD*2,.6f,0x18FFFFFF);
+
+            boolean compact=layout.get()==Layout.Compact;
+            int rh=rowHeight(),head=compact?12:16;
+            for (int i=0;i<n;i++) {
+                HudStaff staff=hudDisplay.get(i);
+                float top=HEAD+3+i*rh,rcy=top+rh/2f;
+                int color=statusColor(staff);
+                // Close by stays tinted; anyone who just came or went flashes for a moment.
+                float flash=(float)Math.max(0,1-(now-highlights.getOrDefault(staff.id,0L))/3500.0);
+                int tint=Math.round((staff.distance>=0?0x18:0)+flash*0x30);
+                if(tint>0) Render2D.roundRect(ctx,4,top+1,WIDTH-8,rh-2,5,(Math.min(255,tint)<<24)|(color&0xFFFFFF));
+
+                PlayerListEntry entry=profiles.get(staff.id);
+                float textX=PAD;
                 if(avatars.get()) {
-                    Render2D.roundRect(ctx,14,top+5,20,20,5,0xFF343D50);
+                    int hx=PAD,hy=Math.round(rcy-head/2f);
+                    Render2D.roundRect(ctx,hx-1,hy-1,head+2,head+2,3,0xFF1B1F27);
                     if (FACE_STAFF.contains(staff.name.toLowerCase(Locale.ROOT))) {
-                        ctx.drawTexture(RenderPipelines.GUI_TEXTURED,Identifier.of("maro","textures/staff/"+staff.name.toLowerCase(Locale.ROOT)+".png"),16,top+7,0,0,16,16,8,8,8,8);
-                    } else if (entry!=null) PlayerSkinDrawer.draw(ctx,entry.getSkinTextures(),16,top+7,16);
+                        ctx.drawTexture(RenderPipelines.GUI_TEXTURED,Identifier.of("maro","textures/staff/"+staff.name.toLowerCase(Locale.ROOT)+".png"),hx,hy,0,0,head,head,8,8,8,8);
+                    } else if (entry!=null) PlayerSkinDrawer.draw(ctx,entry.getSkinTextures(),hx,hy,head);
+                    // Its status, as a dot on the corner of the head.
+                    Render2D.circle(ctx,hx+head,hy+head,3.3f,0xFF0D0F14);
+                    Render2D.circle(ctx,hx+head,hy+head,2.3f,color);
+                    textX=hx+head+7;
+                } else {
+                    Render2D.circle(ctx,PAD+2,rcy,2.3f,color);
+                    textX=PAD+9;
                 }
-                draw(ctx,trim(ctx,staff.name,WIDTH-textX-(ping.get()?42:16),true,text(1.04f)),textX,top+3,0xFFFAFCFF,true,text(1.04f));
-                draw(ctx,trim(ctx,staff.status(),WIDTH-textX-15,false,text(.68f)),textX,top+(layout.get()==Layout.Compact?16:18),color,false,text(.68f));
-                if (ping.get()&&entry!=null) drawRight(ctx,Math.max(0,staff.ping)+"ms",WIDTH-13,top+10,0xFFBDCADC,false,text(.66f));
+
+                // Right: the distance when close by, then the connection bars.
+                float right=WIDTH-PAD;
+                if (ping.get()&&entry!=null&&staff.listed) { signal(ctx,right,rcy,staff.ping); right-=16; }
+                if (staff.distance>=0) {
+                    String far=Math.round(staff.distance)+"m";
+                    drawRight(ctx,far,right,rcy,NEARBY,true,text(.7f));
+                    right-=Fonts.width(far,true,text(.7f))+6;
+                }
+                float room=right-textX-2;
+                if (compact) {
+                    drawV(ctx,trim(ctx,staff.name,room,true,text(.86f)),textX,rcy,0xFFF2F4F8,true,text(.86f));
+                } else {
+                    drawV(ctx,trim(ctx,staff.name,room,true,text(.86f)),textX,rcy-4.5f,0xFFF2F4F8,true,text(.86f));
+                    String status=staff.distance>=0?"Close by":staff.spectator?"Spectating":staff.listed?"In tab":"Hidden from tab";
+                    drawV(ctx,trim(ctx,status,room,false,text(.64f)),textX,rcy+5f,(color&0xFFFFFF)|0xD0000000,false,text(.64f));
+                }
             }
-            draw(ctx,configured.size()+" tracked accounts",11,height()-12,0xFFB8C5D8,false,text(.63f));
-            drawRight(ctx,hudDisplay.size()>rows.get()?"+"+(hudDisplay.size()-rows.get())+" more":"LIVE",WIDTH-11,height()-8,0xFFD5E1EF,true,text(.63f));
+            if (hudDisplay.size()>n)
+                drawV(ctx,"+"+(hudDisplay.size()-n)+" more",PAD,h-7,0xFF7F8796,false,text(.62f));
         } finally { Fonts.endRaw(); ctx.getMatrices().popMatrix(); }
     }
 }
