@@ -20,7 +20,12 @@ never created, used or deleted. Already being beside storage needs no round trip
 Restocking saves the return point before any storage approach starts. The
 confirmed home-1 arrival body stays reserved against temporary dirt, keeping the
 builder from blocking its own storage teleport while scaffolding nearby.
-Temporary dirt beneath the return point stays protected while away. Confirmed
+Return safety checks the standing body at the exact saved position and records
+the block actually supporting it. An off-centre roof-edge pose can therefore
+save safely even when the block directly beneath its nominal feet cell is air.
+That supporting block, including temporary dirt, stays protected while away.
+The supporting coordinate survives save/load; older saved homes still load
+using their original floor coordinate. Confirmed
 return metadata survives pause and saved-placement reload; a rejected return
 keeps home 2 for retry. Travel stays still through warmup and checks actual
 arrival and safe footing. Servers without these commands can disable Builder Homes.

@@ -8,7 +8,7 @@ import java.util.function.Consumer;
 
 /** Confirmed server homes. Travel never changes blocks or assumes a command succeeded. */
 public final class BuilderHomes {
-    private record Point(Vec3d position,String floor,String dimension,boolean work) {
+    private record Point(Vec3d position,String floor,String dimension,boolean work,BlockPos footing) {
         BlockPos feet(){return new BlockPos((int)Math.floor(position.x),(int)Math.ceil(position.y-.001),(int)Math.floor(position.z));}
     }
     private enum Stage { IDLE, APPROACH, STORAGE_TRAVEL, DELETE, SAVE, TRAVEL, RESTOCK_WAIT, RETURN_WAIT, RETURN_DELETE }
@@ -41,7 +41,19 @@ public final class BuilderHomes {
     public void invalidateRoutes(){checkingRoutes=false;routeTarget=routeFeet=null;routeViews=List.of();routeHomes=List.of();routeRetryAt=0;}
     public void reset(){cancel();Arrays.fill(points,null);returnTrip=false;retryAt=0;}
     private Point current(){return current(false);}
-    private Point current(boolean work){var position=mc.player.getEntityPos();var feet=new BlockPos((int)Math.floor(position.x),(int)Math.ceil(position.y-.001),(int)Math.floor(position.z));return new Point(position,mc.world.getBlockState(feet.down()).toString(),mc.world.getRegistryKey().getValue().toString(),work);}
+    private Box standingBody(Vec3d position){var dimensions=mc.player.getDimensions(net.minecraft.entity.EntityPose.STANDING);double half=dimensions.width()/2;return new Box(position.x-half,position.y,position.z-half,position.x+half,position.y+dimensions.height(),position.z+half).contract(.000001);}
+    private Box footingContact(Vec3d position){var body=standingBody(position);return new Box(body.minX,position.y-.05,body.minZ,body.maxX,position.y+.001,body.maxZ);}
+    private boolean supportsPosition(BlockPos floor,Vec3d position){var contact=footingContact(position);return mc.world.getBlockState(floor).getCollisionShape(mc.world,floor).getBoundingBoxes().stream().anyMatch(box->box.offset(floor).intersects(contact));}
+    private Point pointAt(Vec3d position,boolean work){
+        var contact=footingContact(position);BlockPos footing=null;double best=Double.MAX_VALUE;
+        for(var cell:BlockPos.iterate(BlockPos.ofFloored(contact.minX,contact.minY,contact.minZ),BlockPos.ofFloored(contact.maxX,contact.maxY,contact.maxZ))){
+            if(!mc.world.isChunkLoaded(cell)||!mc.world.getFluidState(cell).isEmpty()||!supportsPosition(cell,position))continue;
+            double distance=Vec3d.ofCenter(cell).squaredDistanceTo(position);if(distance<best){best=distance;footing=cell.toImmutable();}
+        }
+        if(footing==null)footing=BlockPos.ofFloored(position.x,Math.ceil(position.y-.001)-1,position.z);
+        return new Point(position,mc.world.getBlockState(footing).toString(),mc.world.getRegistryKey().getValue().toString(),work,footing);
+    }
+    private Point current(boolean work){return pointAt(mc.player.getEntityPos(),work);}
     public boolean safeHere(){
         if(mc.player==null||mc.world==null||!mc.player.isOnGround()||mc.player.getVelocity().horizontalLengthSquared()>.0004)return false;
         return safe(current());
@@ -49,10 +61,10 @@ public final class BuilderHomes {
     private boolean safe(Point point){
         if(mc.world==null||mc.player==null||!point.dimension.equals(mc.world.getRegistryKey().getValue().toString()))return false;
         var feet=point.feet();
-        if(!mc.world.isChunkLoaded(feet)||!mc.world.getBlockState(feet.down()).toString().equals(point.floor)||!walker.canStand(feet))return false;
-        var state=mc.world.getBlockState(feet.down());
+        if(!mc.world.isChunkLoaded(feet)||!mc.world.isChunkLoaded(point.footing)||!mc.world.getBlockState(point.footing).toString().equals(point.floor)||!supportsPosition(point.footing,point.position))return false;
+        var state=mc.world.getBlockState(point.footing);
         if(state.isOf(net.minecraft.block.Blocks.DIRT)&&!point.work||!state.getFluidState().isEmpty())return false;
-        var body=mc.player.getBoundingBox().offset(point.position.subtract(mc.player.getEntityPos())).contract(.000001);
+        var body=standingBody(point.position);
         if(!mc.world.isSpaceEmpty(mc.player,body))return false;
         for(var pos:BlockPos.iterate(BlockPos.ofFloored(body.minX,body.minY,body.minZ),BlockPos.ofFloored(body.maxX,body.maxY,body.maxZ)))if(!mc.world.getFluidState(pos).isEmpty())return false;
         return true;
@@ -72,7 +84,7 @@ public final class BuilderHomes {
         if(!returnTrip||points[1]==null||busy())return false;
         slot=1;pending=points[1];begin(Stage.RETURN_WAIT);return true;
     }
-    public boolean protectsFooting(BlockPos floor){return returnTrip&&points[1]!=null&&points[1].feet().down().equals(floor);}
+    public boolean protectsFooting(BlockPos floor){return returnTrip&&points[1]!=null&&points[1].footing.equals(floor);}
     /** Keep the confirmed storage arrival body clear of the builder's own scaffolding. */
     public boolean reservesStorageSpace(BlockPos pos){
         if(points[0]==null||mc.player==null)return false;
@@ -114,7 +126,7 @@ public final class BuilderHomes {
             var views=new ArrayList<BlockPos>();
             for(int dx=-3;dx<=3;dx++)for(int dz=-3;dz<=3;dz++)for(int dy=-2;dy<=2;dy++){
                 var feet=storageChest.add(dx,dy,dz);if(!walker.canStand(feet)||mc.world.getBlockState(feet.down()).hasBlockEntity())continue;
-                var point=new Point(walker.standingPoint(feet),mc.world.getBlockState(feet.down()).toString(),mc.world.getRegistryKey().getValue().toString(),false);
+                var point=pointAt(walker.standingPoint(feet),false);
                 if(besideStorage(point))views.add(feet);
             }
             views.sort(Comparator.comparingDouble(feet->feet.getSquaredDistance(mc.player.getBlockPos())));storageViews=List.copyOf(views);
@@ -228,10 +240,12 @@ public final class BuilderHomes {
         slot=index;pending=points[index];begin(Stage.TRAVEL);mc.getNetworkHandler().sendChatCommand("home "+(slot+1));return true;
     }
     public JsonArray saveData(){
-        var data=new JsonArray();for(int i=0;i<points.length;i++){var point=points[i];if(point==null){data.add(JsonNull.INSTANCE);continue;}var entry=new JsonObject();entry.addProperty("x",point.position.x);entry.addProperty("y",point.position.y);entry.addProperty("z",point.position.z);entry.addProperty("floor",point.floor);entry.addProperty("dimension",point.dimension);if(i==1&&returnTrip)entry.addProperty("restock-return",true);data.add(entry);}return data;
+        var data=new JsonArray();for(int i=0;i<points.length;i++){var point=points[i];if(point==null){data.add(JsonNull.INSTANCE);continue;}var entry=new JsonObject();entry.addProperty("x",point.position.x);entry.addProperty("y",point.position.y);entry.addProperty("z",point.position.z);entry.addProperty("floor",point.floor);entry.addProperty("dimension",point.dimension);var support=new JsonArray();support.add(point.footing.getX());support.add(point.footing.getY());support.add(point.footing.getZ());entry.add("footing",support);if(i==1&&returnTrip)entry.addProperty("restock-return",true);data.add(entry);}return data;
     }
     public void loadData(JsonArray data){
         reset();if(data==null||data.size()<2||data.size()>3)return;
-        for(int i=0;i<2;i++){if(data.get(i).isJsonNull())continue;var entry=data.get(i).getAsJsonObject();if(i==1&&(!entry.has("restock-return")||!entry.get("restock-return").getAsBoolean()))continue;double x=entry.get("x").getAsDouble(),y=entry.get("y").getAsDouble(),z=entry.get("z").getAsDouble();if(!Double.isFinite(x)||!Double.isFinite(y)||!Double.isFinite(z)||Math.abs(x)>30_000_000||Math.abs(z)>30_000_000||Math.abs(y)>4096)throw new IllegalArgumentException("Home position");points[i]=new Point(new Vec3d(x,y,z),entry.get("floor").getAsString(),entry.get("dimension").getAsString(),i==1);if(i==1)returnTrip=true;}
+        for(int i=0;i<2;i++){if(data.get(i).isJsonNull())continue;var entry=data.get(i).getAsJsonObject();if(i==1&&(!entry.has("restock-return")||!entry.get("restock-return").getAsBoolean()))continue;double x=entry.get("x").getAsDouble(),y=entry.get("y").getAsDouble(),z=entry.get("z").getAsDouble();if(!Double.isFinite(x)||!Double.isFinite(y)||!Double.isFinite(z)||Math.abs(x)>30_000_000||Math.abs(z)>30_000_000||Math.abs(y)>4096)throw new IllegalArgumentException("Home position");
+            var footing=BlockPos.ofFloored(x,Math.ceil(y-.001)-1,z);if(entry.has("footing")){var support=entry.getAsJsonArray("footing");if(support.size()!=3)throw new IllegalArgumentException("Home footing");footing=new BlockPos(support.get(0).getAsInt(),support.get(1).getAsInt(),support.get(2).getAsInt());if(Math.abs(footing.getX()-Math.floor(x))>1||Math.abs(footing.getZ()-Math.floor(z))>1||Math.abs(footing.getY()-(Math.ceil(y-.001)-1))>1)throw new IllegalArgumentException("Home footing");}
+            points[i]=new Point(new Vec3d(x,y,z),entry.get("floor").getAsString(),entry.get("dimension").getAsString(),i==1,footing);if(i==1)returnTrip=true;}
     }
 }

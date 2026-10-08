@@ -1,9 +1,28 @@
 # Builder recovery work in progress
 
-Updated: 2026-10-06. Branch: `codex/builder-ghost-and-look-recovery`.
+Updated: 2026-10-07. Branch: `codex/builder-ghost-and-look-recovery`.
 Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
+
+Current: native704 replay placed all four source fluids and the observer,
+removed all126 original temporary posts, and reached706 during final repairs.
+It then timed out waiting to save a restock home. The actual position was
+grounded on the neighbouring blackstone roof block, while the nominal feet
+cell had air below. Home validation wrongly tested the centre of that cell.
+The new fix checks the full standing body at the exact position, records its
+actual collision support, protects that support while away and persists it.
+The focused native home suite now reproduces the exact roof-edge offsets on
+stone and dirt and checks save/load, command order, grounded return and deletion.
+Home-edge4 passed the entire focused suite in2m3s, including exact requested-item
+pickup, unfinished bucket retention, prompt repairs, enclosed/elevated access,
+crouched vertical cleanup and eased visible camera rotation. Home-edge1 aborted
+in its launcher on compiler stderr;2 was deliberately stopped before tests to
+correct the new fixture's permanent-versus-temporary floor assertion;3 exposed
+an overlap with the existing home3 platform, fixed by moving the test fixture.
+CI424 passed all general in-game, builder and auction checks on52a60c9. The new
+home-footing patch still needs current CI and the final fresh0 run. No710
+completion or finished release has been established.
 
 Latest, 21:47: native704 replay1 placed the previously blocked lava source and
 advanced to observer phase after removing its single owned dirt obstruction.

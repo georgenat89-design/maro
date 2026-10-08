@@ -93,6 +93,7 @@ final class BuilderHomeChecks {
         int before=saveCommands;
         context.runOnClient(client->button(builder,"Set Storage Home").press());waitHome(context,builder,80);
         context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(homes.ready()&&!builder.building(),"Storage setup failed or unexpectedly started building: "+builder.status());var entry=homes.saveData().get(0).getAsJsonObject();var feet=BlockPos.ofFloored(entry.get("x").getAsDouble(),entry.get("y").getAsDouble(),entry.get("z").getAsDouble());for(var reserved:List.of(feet,feet.up())){require((boolean)call(builder,"reservedSupplyAccess",new Class<?>[]{BlockPos.class},reserved),"Storage-home arrival cell was available to scaffolding");require(call(builder,"placement",new Class<?>[]{BlockPos.class,BlockState.class,Item.class,int.class,boolean.class},reserved,Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true)==null,"Scaffold could block native storage arrival");}});require(saveCommands==before+1,"Absent home 1 did not save exactly once");
+        roofEdgeRoundTrip(context,world,builder,home2,chest);
         restockRoundTrip(context,world,builder,home2,chest);
         temporaryFootingReturn(context,world,builder,home2,chest);
         teleport(world,start);context.waitTicks(12);
@@ -194,6 +195,23 @@ final class BuilderHomeChecks {
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Elevated room left work, dirt, damage or menu");BuilderPacketChecks.verify(1);builder.pause("elevated entry checked");});
         teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+4)+" "+(origin.getY()+3)+" "+(origin.getZ()+4)+" air");context.waitTicks(4);
         System.out.println("[builder-home] Exterior-column opening retained, mined and replaced; elevated work and zero-support cleanup completed in "+elapsed+" ticks");
+    }
+    private static void roofEdgeRoundTrip(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work,BlockPos chest){
+        var feet=work.south(4).up(4);var footing=feet.north().down();
+        // Exact offsets from the 706-block native roof save failure: the
+        // player's body overlaps the neighbouring floor while its feet cell
+        // has air below. A centre-cell standing query rejects this safe pose.
+        var position=Vec3d.ofBottomCenter(feet).add(-.168610556495,0,-.40800152568);
+        for(String material:List.of("stone","dirt")){
+            command(world,"setblock",footing,material);world.getServer().runCommand("tp @a "+position.x+" "+position.y+" "+position.z+" 0 0");context.waitTicks(12);int first=commands.size();
+            context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(client.player.isOnGround()&&client.world.isSpaceEmpty(client.player,client.player.getBoundingBox()),"Roof-edge fixture did not establish a real grounded body");require(client.world.getBlockState(feet.down()).isAir()&&!new BuilderWalk().canStand(feet),"Roof-edge fixture's nominal centre unexpectedly has footing");require(homes.safeHere()==material.equals("stone"),"Roof-edge storage safety did not distinguish permanent and temporary footing");require(homes.restock(chest),"Native roof-edge body refused a restock save");});
+            waitHome(context,builder,100);
+            context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(homes.protectsFooting(footing)&&!homes.protectsFooting(feet.down()),"Home return protected the air cell instead of its actual supporting block");var savedData=homes.saveData();homes.loadData(savedData);require(homes.protectsFooting(footing)&&homes.returnToWork(),"Roof-edge footing was lost across save/load");});waitHome(context,builder,100);
+            require(commands.subList(first,commands.size()).equals(List.of("delhome 2","sethome 2","home 1","home 2","delhome 2")),"Roof-edge restock command order changed");
+            context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(client.player.isOnGround()&&client.player.getEntityPos().squaredDistanceTo(position)<.04&&client.player.getHealth()==20&&!homes.protectsFooting(footing)&&homes.saveData().get(1).isJsonNull(),"Roof-edge restock did not safely return and clear home 2");});
+            command(world,"setblock",footing,"air");teleport(world,work);context.waitTicks(12);
+        }
+        System.out.println("[builder-home] Native off-centre roof footing: stone and dirt saved/protected/persisted, exact restock round trips, grounded returns and home 2 deletion");
     }
     private static void restockRoundTrip(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work,BlockPos chest){
         String previousSupply=builder.sectionSupply()?"Nearby Sections":builder.layerSupply()?"Layer by Layer":"Whole Schematic";
