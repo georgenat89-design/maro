@@ -410,9 +410,13 @@ final class BuilderHomeChecks {
         world.getServer().runCommand("fill "+from.add(0,-1,-1).toShortString().replace(",","")+" "+destination.add(0,-1,2).toShortString().replace(",","")+" stone");
         world.getServer().runCommand("fill "+from.north().toShortString().replace(",","")+" "+destination.add(0,2,2).toShortString().replace(",","")+" air");
         world.getServer().runCommand("clear @a stone");world.getServer().runCommand("give @a stone 1");teleport(world,from);context.waitTicks(12);int first=commands.size();
+        // The production solver deliberately yields after three milliseconds.
+        // Let the native client warm/settle before requiring the full long-route proof.
+        boolean proved=false;for(int tick=0;tick<100&&!proved;tick++){proved=context.computeOnClient(client->((BuilderWalk)field(builder,"walker")).canReachStand(destination));context.waitTick();}
+        require(proved,"Long route fixture has no proved native walk");
         context.runOnClient(client->{
             setting(builder,"Temporary Supports",false);setting(builder,"Prepare Whole Build",false);builder.install(new Schematic("long-checked-walk.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);
-            var walker=(BuilderWalk)field(builder,"walker");require(walker.canReachStand(destination),"Long route fixture has no proved native walk");BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
+            var walker=(BuilderWalk)field(builder,"walker");BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
             setField(builder,"standGoal",destination);setField(builder,"standStarted",field(builder,"ticks"));setField(builder,"standProgressAt",field(builder,"ticks"));setField(builder,"standProgressPos",client.player.getEntityPos());setField(builder,"navigatingCell",0);
         });
         int elapsed=0;
