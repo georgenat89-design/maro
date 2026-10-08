@@ -21,6 +21,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.player.AutoTrident());
         register(new dev.maro.module.impl.misc.ScreenHider());
         register(new dev.maro.module.impl.misc.BlockDisconnect());
+        register(new dev.maro.module.impl.misc.CoordSnapper());
         register(new dev.maro.module.impl.player.FastPlace());
         register(new dev.maro.module.impl.player.AutoMine());
         register(new dev.maro.module.impl.player.AutoBuilder());

@@ -100,6 +100,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             TotemChecks.run(context, singleplayer);
             ScreenChecks.run(context, singleplayer);
             EmoteChecks.run(context, singleplayer);
+            CoordSnapperChecks.run(context);
             StaffNotifierChecks.run(context);
             HudReadabilityChecks.run(context);
             AntiVanishChecks.run(context);
