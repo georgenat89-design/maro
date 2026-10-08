@@ -89,6 +89,18 @@ final class CrosshairChecks {
             context.runOnClient(client -> module.selectPreset("Star of David"));
             context.waitTicks(3);
             context.takeScreenshot("maro-crosshair-star-of-david");
+            // Spin: the crosshair keeps turning while it is on, and stays put while it is off.
+            require(module.spinAngle() == 0, "Crosshair turned with Spin off");
+            context.runOnClient(client -> {
+                module.selectPreset("T Cross");
+                ((dev.maro.setting.BooleanSetting) setting(module, "Spin")).set(true);
+            });
+            float before = context.computeOnClient(client -> module.spinAngle());
+            context.waitTicks(5);
+            float after = context.computeOnClient(client -> module.spinAngle());
+            require(before != after, "Spin is on but the crosshair did not turn: " + before + " -> " + after);
+            context.takeScreenshot("maro-crosshair-spin");
+            context.runOnClient(client -> ((dev.maro.setting.BooleanSetting) setting(module, "Spin")).set(false));
             context.runOnClient(client -> {
                 client.options.getGuiScale().setValue(4); client.onResolutionChanged();
                 module.selectPreset("Dot");

@@ -54,6 +54,11 @@ public final class CustomCrosshair extends Module {
     private final BooleanSetting centerDot = add(new BooleanSetting("Center Dot", "Add a dot to any shape", false));
     private final ColorSetting color = add(new ColorSetting("Color", "Crosshair color and opacity", 0xFFEAF4FF, true)
         .visible(() -> !pngMode() || tintPng.get()));
+    private final BooleanSetting spin = add(new BooleanSetting("Spin", "Keep the crosshair turning round", false));
+    private final NumberSetting spinSpeed = add(new NumberSetting("Spin Speed", "How fast it turns, in degrees a second", 180, 10, 1440, 10)
+        .suffix("°/s").visible(spin::get));
+    private final ModeSetting spinDirection = add(new ModeSetting("Spin Direction", "Which way it turns", "Clockwise",
+        "Clockwise", "Anticlockwise").visible(spin::get));
     private final BooleanSetting targetHighlight = add(new BooleanSetting("Target Highlight", "Change color when aiming at a living entity", false));
     private final ColorSetting targetColor = add(new ColorSetting("Target Color", "Crosshair color on a living target", 0xFFFF718C, true)
         .visible(targetHighlight::get));
@@ -84,7 +89,8 @@ public final class CustomCrosshair extends Module {
         shape.add(size); shape.add(gap); shape.add(thickness); shape.add(dotSize); shape.add(centerDot);
         var colors = new SettingSection("Colors"); colors.add(color); colors.add(targetHighlight); colors.add(targetColor);
         var edges = new SettingSection("Outline"); edges.add(outline); edges.add(outlineWidth); edges.add(outlineColor);
-        return List.of(styles, words, png, shape, colors, edges);
+        var turning = new SettingSection("Spin"); turning.add(spin); turning.add(spinSpeed); turning.add(spinDirection);
+        return List.of(styles, words, png, shape, turning, colors, edges);
     }
 
     public String preset() { return preset.get(); }
@@ -150,10 +156,37 @@ public final class CustomCrosshair extends Module {
 
     /** Called in vanilla's crosshair draw, so F1, perspective and spectator rules still apply. */
     public void renderCrosshair(DrawContext ctx) {
-        int tint = targetHighlight.get() && mc.targetedEntity instanceof LivingEntity target && target.isAlive()
-            ? targetColor.get() : color.get();
         float x = screenCenter(mc.getWindow().getFramebufferWidth(), mc.getWindow().getScaleFactor());
         float y = screenCenter(mc.getWindow().getFramebufferHeight(), mc.getWindow().getScaleFactor());
+        var matrices = ctx.getMatrices();
+        matrices.pushMatrix();
+        try {
+            // Spinning turns the whole crosshair - shape, text or PNG - round the screen centre.
+            float angle = spinAngle();
+            if (angle != 0) {
+                matrices.translate(x, y);
+                matrices.rotate(angle);
+                matrices.translate(-x, -y);
+            }
+            drawCrosshair(ctx, x, y);
+        } finally {
+            matrices.popMatrix();
+        }
+    }
+
+    /** How far round the crosshair has turned, in radians, clockwise on screen: 0 unless Spin is on. */
+    public float spinAngle() {
+        if (!spin.get()) return 0;
+        // Count from the hour so the number stays small; speeds are whole tens of degrees, so an
+        // hour is always whole turns and there is no jump.
+        double seconds = System.nanoTime() % 3_600_000_000_000L / 1e9;
+        double degrees = seconds * spinSpeed.get() % 360.0;
+        return (float) Math.toRadians(spinDirection.is("Clockwise") ? degrees : -degrees);
+    }
+
+    private void drawCrosshair(DrawContext ctx, float x, float y) {
+        int tint = targetHighlight.get() && mc.targetedEntity instanceof LivingEntity target && target.isAlive()
+            ? targetColor.get() : color.get();
         if (pngMode() && pngImage.loaded()) {
             boolean target = targetHighlight.get() && mc.targetedEntity instanceof LivingEntity living && living.isAlive();
             int pngTint = target ? targetColor.get() : tintPng.get() ? color.get() : 0xFFFFFFFF;
