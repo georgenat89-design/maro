@@ -93,6 +93,10 @@ final class BuilderHomeChecks {
         int before=saveCommands;
         context.runOnClient(client->button(builder,"Set Storage Home").press());waitHome(context,builder,80);
         context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(homes.ready()&&!builder.building(),"Storage setup failed or unexpectedly started building: "+builder.status());var entry=homes.saveData().get(0).getAsJsonObject();var feet=BlockPos.ofFloored(entry.get("x").getAsDouble(),entry.get("y").getAsDouble(),entry.get("z").getAsDouble());for(var reserved:List.of(feet,feet.up())){require((boolean)call(builder,"reservedSupplyAccess",new Class<?>[]{BlockPos.class},reserved),"Storage-home arrival cell was available to scaffolding");require(call(builder,"placement",new Class<?>[]{BlockPos.class,BlockState.class,Item.class,int.class,boolean.class},reserved,Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true)==null,"Scaffold could block native storage arrival");}});require(saveCommands==before+1,"Absent home 1 did not save exactly once");
+        if(Boolean.getBoolean("maro.gametest.builderRepairCycleOnly")){
+            repairDependencyCycles(context,world,builder,home2);
+            System.out.println("[builder-cycle] PASS: native repair cycles, delayed material and scaffold cleanup");return;
+        }
         longCheckedWalk(context,world,builder,start);
         unproductiveHomeEscape(context,world,builder,start);
         missingMaterialBeforeAccess(context,world,builder,start);
@@ -766,8 +770,12 @@ final class BuilderHomeChecks {
         require(repaired&&(!attachment||anchorSeen),"Native dependency cycle did not repair: "+context.computeOnClient(client->builder.status()));
         require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(post).isOf(Blocks.DIRT)&&server.getOverworld().getBlockState(origin.east(4)).isAir()),"Cycle repairs waited for cleanup or completed unrelated work without its material");
         world.getServer().runCommand("give @a observer 1");
-        for(int tick=0;tick<900&&context.computeOnClient(client->builder.building());tick++)context.waitTick();
-        require(world.getServer().computeOnServer(server->{for(int i=0;i<cells.length;i++)if(!cells[i].isOf(Blocks.STRUCTURE_VOID)&&!AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(origin.add(i%5,i/10,i/5%2)),cells[i]))return false;return server.getOverworld().getBlockState(post).isAir();}),"Cycle repair left a wrong native cell, open hole or temporary post");
+        for(int tick=0;tick<900&&context.computeOnClient(client->builder.building());tick++){
+            if(tick%100==0)System.out.println("[builder-cycle] "+context.computeOnClient(client->"status="+builder.status()+" player="+client.player.getEntityPos()+" phase="+field(builder,"activePhase")+" section="+field(builder,"sectionCells")+" needed="+field(builder,"needed")+" supports="+builder.temporarySupports()));
+            context.waitTick();
+        }
+        String mismatch=world.getServer().computeOnServer(server->{for(int i=0;i<cells.length;i++)if(!cells[i].isOf(Blocks.STRUCTURE_VOID)&&!AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(origin.add(i%5,i/10,i/5%2)),cells[i]))return i+"="+server.getOverworld().getBlockState(origin.add(i%5,i/10,i/5%2));return server.getOverworld().getBlockState(post).isAir()?"":"post="+server.getOverworld().getBlockState(post);});
+        require(mismatch.isEmpty(),"Cycle repair left "+mismatch+"; "+context.computeOnClient(client->builder.status()));
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Cycle repair left work, dirt, damage or menu: "+builder.status());BuilderPacketChecks.verify(attachment?4:3);builder.pause("repair dependency cycle checked");setting(builder,"Restock When Empty",true);setting(builder,"Auto Buy Tools",true);setting(builder,"Stockpile In Chests",true);});
         teleport(world,work);context.waitTicks(12);for(var pos:BlockPos.iterate(origin,origin.add(4,1,1)))command(world,"setblock",pos,"air");context.waitTicks(4);
         System.out.println("[builder-home] "+(attachment?"Native torch attachment cycle repaired prerequisite, then owner and lower hole":"Native mutual repair-owner cycle closed both holes")+" before scaffold cleanup in "+elapsed+" ticks; missing unrelated material respected, all cells/posts completed, full health and bounded look");
