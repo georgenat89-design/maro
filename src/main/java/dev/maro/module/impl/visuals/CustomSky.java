@@ -33,7 +33,8 @@ public class CustomSky extends Module {
             .onChange(v -> skyChanged()));
     private final NumberSetting speed = add(new NumberSetting("Speed", "How fast the sky moves", 100, 0, 300, 5).suffix("%"));
     private final NumberSetting brightness = add(new NumberSetting("Brightness", "How bright the sky is", 100, 20, 150, 5).suffix("%"));
-    private final BooleanSetting cycle = add(new BooleanSetting("Cycle", "Move on to the next sky every so often", false));
+    private final BooleanSetting cycle = add(new BooleanSetting("Cycle", "Move on to the next sky every so often", false)
+            .onChange(on -> pickedAt = System.nanoTime()));
     private final NumberSetting cycleTime = add(new NumberSetting("Cycle Time", "How long each sky stays before the next", 60, 10, 600, 5)
             .suffix("s").visible(cycle::get));
     private final BooleanSetting matchFog = add(new BooleanSetting("Match Fog", "Far-away land fades into the sky's colour instead of the normal fog", true));

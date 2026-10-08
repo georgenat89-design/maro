@@ -13,12 +13,15 @@ import dev.maro.setting.ModeSetting;
 import dev.maro.setting.NumberSetting;
 import dev.maro.setting.Setting;
 import dev.maro.setting.SettingSection;
+import dev.maro.setting.TextSetting;
 import dev.maro.util.ColorUtil;
 import dev.maro.util.Sounds;
 import net.minecraft.client.gui.DrawContext;
 
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -29,6 +32,7 @@ public class SettingsList {
     private static final float GAP = 4f;
     private static final float PICKER_H = 78f;
     private final Set<ColorSetting> expanded = new HashSet<>();
+    private final Map<TextSetting, TextField> textFields = new IdentityHashMap<>();
 
     /**
      * @return total content height
@@ -95,6 +99,7 @@ public class SettingsList {
         if (s instanceof BooleanSetting b) bool(gui, ctx, b, x, y, w, hv);
         else if (s instanceof NumberSetting n) number(gui, ctx, n, x, y, w);
         else if (s instanceof ModeSetting m) mode(gui, ctx, m, x, y, w);
+        else if (s instanceof TextSetting t) text(gui, ctx, t, x, y, w);
         else if (s instanceof ColorSetting c) color(gui, ctx, c, x, y, w, h);
         else if (s instanceof KeybindSetting k) {
             float cw = Fonts.width(gui.listening == k ? "Press a key" : k.getKeyName(), false, 0.72f) + 9;
@@ -155,6 +160,18 @@ public class SettingsList {
         });
         if (hovered && !dragging) gui.tooltip("Drag to change • Scroll on value • Right-click to reset");
         gui.scrollHit(vx, y + 4, vw, 15, amount -> n.set(n.get() + n.getStep() * Math.signum(amount)));
+    }
+
+    // ---- text ---------------------------------------------------------------------------
+
+    private void text(ClickGuiScreen gui, DrawContext ctx, TextSetting t, float x, float y, float w) {
+        TextField field = textFields.computeIfAbsent(t, k -> new TextField(k.getPlaceholder(), k.getMaxLength())
+                .filter(TextSetting::allowed).counter().onChange(k::set));
+        // Follow the setting while it is not being typed in, after a reset or a config load.
+        if (gui.focused != field && !field.getText().equals(t.get())) field.setText(t.get());
+        field.onEnter(() -> gui.focused = null);
+        float fw = Math.min(140f, w * 0.38f);
+        field.render(gui, ctx, x + w - 10 - fw, y + 6, fw, 18, null, null);
     }
 
     // ---- mode ---------------------------------------------------------------------------
