@@ -67,6 +67,18 @@ final class PlayerEspChecks {
             require(on[0] > 1500 && on[0] > baseline[0] * 10, "Player ESP did not draw the silhouette: " + on[0] + " vs " + baseline[0]);
             require(Math.abs(on[1] - on[2] / 2) < on[2] * 0.12, "Player ESP silhouette is not where the player is: centre x " + on[1] + " of " + on[2]);
 
+            // An elytra on your back is part of the silhouette too; armour-style layers have no
+            // outline of their own, so it used to be left out and stuck out of the ESP.
+            world.getServer().runCommand("item replace entity @a armor.chest with minecraft:elytra");
+            context.runOnClient(c -> esp.setEnabled(true));
+            context.waitTicks(6);
+            int[] winged = magenta(context.takeScreenshot("maro-player-esp-elytra"));
+            context.runOnClient(c -> esp.setEnabled(false));
+            world.getServer().runCommand("item replace entity @a armor.chest with minecraft:air");
+            context.waitTicks(3);
+            System.out.println("PLAYER ESP elytra magenta=" + winged[0] + " without=" + on[0]);
+            require(winged[0] > on[0] * 1.03, "Player ESP left the elytra out of the silhouette: " + winged[0] + " vs " + on[0] + " without it");
+
             // The preview: with the module and Self both off, it still shows you, facing the camera.
             context.runOnClient(c -> {
                 c.options.setPerspective(Perspective.FIRST_PERSON);

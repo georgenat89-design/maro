@@ -39,6 +39,7 @@
     "EntityRenderManagerMixin",
     "OrderedRenderCommandQueueImplAccessor",
     "PlayerEspWorldRendererMixin",
+    "EquipmentLayersMixin",
     "CustomSkyMixins$Sky",
     "CustomSkyMixins$World",
     "CustomSkyMixins$Fog",
