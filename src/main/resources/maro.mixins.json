@@ -43,7 +43,9 @@
     "CustomSkyMixins$Sky",
     "CustomSkyMixins$World",
     "CustomSkyMixins$Fog",
-    "PotatoTexturesMixin"
+    "PotatoTexturesMixin",
+    "CustomTotemSpriteMixin",
+    "CustomTotemPopMixin"
   ],
   "injectors": {
     "defaultRequire": 1
