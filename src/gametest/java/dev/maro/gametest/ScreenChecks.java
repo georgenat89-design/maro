@@ -201,7 +201,10 @@ final class ScreenChecks {
     }
 
     private static void setting(Module module, String name, com.google.gson.JsonElement value) {
-        module.getSettings().stream().filter(s -> s.getName().equals(name)).findFirst().orElseThrow().fromJson(value);
+        // The addon's settings show under their names with spaces: "grade-menus" is "grade menus".
+        String wanted = name.replace('-', ' ');
+        module.getSettings().stream().filter(s -> s.getName().replace('-', ' ').equalsIgnoreCase(wanted)).findFirst()
+                .orElseThrow(() -> new AssertionError("No setting " + name + " on " + module.getName())).fromJson(value);
     }
 
     private static double colourfulness(BufferedImage image) {

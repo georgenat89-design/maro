@@ -29,12 +29,13 @@ public final class StaffNotifier extends Module implements HudElement {
     public static final List<String> DEFAULT_STAFF = List.of("0gsummer", "archivepedro", "bautiedgar",
         "fluffymaster07", "frwost", "itszdeath", "pastagamer08", "showered", "w1zox_",
         "Frenk_Btw", "Napooo_", "BobisFound", "CryptoDaveYt", "MunkerLich", "u_vv", "Fallerfly", "Dough4",
-        "CaptainMoose35", "Owen1212055");
+        "CaptainMoose35", "Owen1212055", "splaterd", "auzzitech");
     /** Names added to the defaults later, by the list revision they came with; a saved list gets each batch once. */
     private static final Map<Integer,List<String>> ADDED=Map.of(
         2,DEFAULT_STAFF.subList(9,17),
-        3,List.of("CaptainMoose35","Owen1212055"));
-    private static final int LIST_REVISION=3;
+        3,List.of("CaptainMoose35","Owen1212055"),
+        4,List.of("splaterd","auzzitech"));
+    private static final int LIST_REVISION=4;
     private static final Set<String> FACE_STAFF=Set.copyOf(DEFAULT_STAFF.subList(0,9));
     private static final int WIDTH = 150, MARGIN = 4, HEAD = 24, PAD = 8;
     /** What each staff member is doing, by colour: close by, hidden from tab, spectating, in tab; and nobody about. */
