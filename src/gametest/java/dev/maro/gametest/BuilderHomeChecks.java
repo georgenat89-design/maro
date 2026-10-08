@@ -94,6 +94,8 @@ final class BuilderHomeChecks {
         context.runOnClient(client->button(builder,"Set Storage Home").press());waitHome(context,builder,80);
         context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(homes.ready()&&!builder.building(),"Storage setup failed or unexpectedly started building: "+builder.status());var entry=homes.saveData().get(0).getAsJsonObject();var feet=BlockPos.ofFloored(entry.get("x").getAsDouble(),entry.get("y").getAsDouble(),entry.get("z").getAsDouble());for(var reserved:List.of(feet,feet.up())){require((boolean)call(builder,"reservedSupplyAccess",new Class<?>[]{BlockPos.class},reserved),"Storage-home arrival cell was available to scaffolding");require(call(builder,"placement",new Class<?>[]{BlockPos.class,BlockState.class,Item.class,int.class,boolean.class},reserved,Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true)==null,"Scaffold could block native storage arrival");}});require(saveCommands==before+1,"Absent home 1 did not save exactly once");
         roofEdgeRoundTrip(context,world,builder,home2,chest);
+        obstructedStorageRoundTrip(context,world,builder,home2,chest);
+        immediateWorkBeforeAccess(context,world,builder,home2);
         restockRoundTrip(context,world,builder,home2,chest);
         temporaryFootingReturn(context,world,builder,home2,chest);
         teleport(world,start);context.waitTicks(12);
@@ -213,7 +215,36 @@ final class BuilderHomeChecks {
         }
         System.out.println("[builder-home] Native off-centre roof footing: stone and dirt saved/protected/persisted, exact restock round trips, grounded returns and home 2 deletion");
     }
+    private static void obstructedStorageRoundTrip(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work,BlockPos chest){
+        var arrival=chest.west(3);teleport(world,arrival);context.waitTicks(12);
+        context.runOnClient(client->button(builder,"Set Storage Home").press());waitHome(context,builder,100);
+        var obstacle=chest.west(2);command(world,"setblock",obstacle,"dirt");command(world,"setblock",obstacle.up(),"dirt");context.waitTicks(6);
+        context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(homes.readyFor(chest)&&client.player.getBlockPos().equals(arrival)&&client.world.isSpaceEmpty(client.player,client.player.getBoundingBox()),"Obstructed storage fixture did not retain a safe three-cell home arrival");require(call(builder,"chestHit",new Class<?>[]{BlockPos.class,Vec3d.class},chest,client.player.getEyePos())==null,"Obstructed storage fixture still sees the chest");});
+        restockRoundTrip(context,world,builder,work,chest,true);
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(obstacle).isOf(Blocks.DIRT)&&server.getOverworld().getBlockState(obstacle.up()).isOf(Blocks.DIRT)),"Chest route removed an unrelated obstacle");
+        command(world,"setblock",obstacle,"air");command(world,"setblock",obstacle.up(),"air");context.waitTicks(6);
+        System.out.println("[builder-home] Obstructed three-cell storage arrival walked to a real chest view, collected exact stock and returned with one home 1 travel; obstacle intact");
+    }
+    private static void immediateWorkBeforeAccess(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work){
+        String previousSupply=builder.sectionSupply()?"Nearby Sections":builder.layerSupply()?"Layer by Layer":"Whole Schematic";
+        var ready=work.south(2);command(world,"setblock",work,"air");command(world,"setblock",ready,"air");world.getServer().runCommand("give @a stone 2");teleport(world,work);context.waitTicks(12);
+        context.runOnClient(client->{setting(builder,"Prepare Whole Build",false);setting(builder,"Restock When Empty",false);setting(builder,"Auto Buy Tools",false);setting(builder,"Temporary Supports",false);setting(builder,"Stockpile In Chests",false);setting(builder,"Material Supply","Whole Schematic");builder.install(new Schematic("ready-before-access.nbt","test",1,1,3,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState(),Blocks.STRUCTURE_VOID.getDefaultState(),Blocks.STONE.getDefaultState()}));builder.setOrigin(work);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();});
+        boolean placed=false;
+        for(int tick=0;tick<80;tick++){
+            placed=world.getServer().computeOnServer(server->server.getOverworld().getBlockState(ready).isOf(Blocks.STONE));if(placed)break;
+            context.runOnClient(client->require(client.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(work))<.0004,"Started access movement while another full cube was immediately placeable"));context.waitTick();
+        }
+        require(placed&&world.getServer().computeOnServer(server->server.getOverworld().getBlockState(work).isAir()),"Immediate cube did not precede the occupied nearer target");
+        for(int tick=0;tick<300&&context.computeOnClient(client->builder.building());tick++)context.waitTick();
+        require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(work).isOf(Blocks.STONE)&&server.getOverworld().getBlockState(ready).isOf(Blocks.STONE)),"Ready-first selection did not finish both native blocks");
+        context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20,"Ready-first selection left work, supports or damage");BuilderPacketChecks.verify(2);builder.pause("ready-first order checked");setting(builder,"Temporary Supports",true);setting(builder,"Restock When Empty",true);setting(builder,"Stockpile In Chests",true);setting(builder,"Material Supply",previousSupply);});
+        teleport(world,work.west(3));context.waitTicks(12);command(world,"setblock",work,"air");command(world,"setblock",ready,"air");context.waitTicks(4);
+        System.out.println("[builder-home] Ready native cube placed before access movement; nearer occupied target then completed; bounded look packets, zero supports and full health");
+    }
     private static void restockRoundTrip(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work,BlockPos chest){
+        restockRoundTrip(context,world,builder,work,chest,false);
+    }
+    private static void restockRoundTrip(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work,BlockPos chest,boolean reloadAtStorage){
         String previousSupply=builder.sectionSupply()?"Nearby Sections":builder.layerSupply()?"Layer by Layer":"Whole Schematic";
         var target=work.south(2);command(world,"setblock",target,"air");world.getServer().runCommand("clear @a stone");world.getServer().runCommand("clear @a water_bucket");world.getServer().runCommand("give @a water_bucket 1");
         world.getServer().runOnServer(server->{((net.minecraft.block.entity.ChestBlockEntity)server.getOverworld().getBlockEntity(chest)).setStack(0,new ItemStack(Items.STONE,8));saved[1]=new Home(Vec3d.ofBottomCenter(work.west(10)),0,0);});
@@ -227,9 +258,19 @@ final class BuilderHomeChecks {
             catch(ReflectiveOperationException error){throw new AssertionError(error);}
             require((boolean)call(builder,"beginRestock",new Class<?>[]{}),"Requested material with an empty section did not begin restock");
         });
-        boolean placed=false;for(int tick=0;tick<500;tick++){placed=world.getServer().computeOnServer(server->server.getOverworld().getBlockState(target).isOf(Blocks.STONE));if(placed)break;context.waitTick();}
+        boolean placed=false,reloaded=false;for(int tick=0;tick<500;tick++){
+            if(reloadAtStorage&&!reloaded)reloaded=context.computeOnClient(client->{
+                var homes=(BuilderHomes)field(builder,"homes");var data=homes.saveData();
+                if(homes.busy()||client.currentScreen!=null||data.get(1).isJsonNull())return false;
+                var storage=data.get(0).getAsJsonObject();var arrival=new Vec3d(storage.get("x").getAsDouble(),storage.get("y").getAsDouble(),storage.get("z").getAsDouble());
+                if(client.player.getEntityPos().squaredDistanceTo(arrival)>.04)return false;
+                homes.loadData(data);return true;
+            });
+            placed=world.getServer().computeOnServer(server->server.getOverworld().getBlockState(target).isOf(Blocks.STONE));if(placed)break;context.waitTick();
+        }
         require(placed,"Restock round trip did not resume native placement: "+context.computeOnClient(client->builder.status()+" pos="+client.player.getEntityPos()+" health="+client.player.getHealth()+" grounded="+client.player.isOnGround()+" velocity="+client.player.getVelocity()+" homes="+((BuilderHomes)field(builder,"homes")).saveData()+" stage="+field(field(builder,"homes"),"stage")+" clock="+field(field(builder,"homes"),"clock")+" started="+field(field(builder,"homes"),"started")));
         require(commands.subList(first,commands.size()).equals(List.of("delhome 2","sethome 2","home 1","home 2","delhome 2")),"Incorrect restock command order: "+commands.subList(first,commands.size()));
+        require(!reloadAtStorage||reloaded,"Obstructed restock did not exercise saved-return reload at storage");
         require(saved[1]==null&&saved[2]==third&&!movedDuringWarmup,"Home 2 was retained, home 3 changed or warmup moved");
         require(world.getServer().computeOnServer(server->((net.minecraft.block.entity.ChestBlockEntity)server.getOverworld().getBlockEntity(chest)).getStack(0).getCount()==7),"Native chest restock took an incorrect quantity");
         context.runOnClient(client->{require(client.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(work))<9&&client.player.getHealth()==20&&client.currentScreen==null,"Restock did not return safely to the work area");require(builder.inventoryCount(Items.WATER_BUCKET)==1,"Restock returned an unfinished source bucket while repairing another section");BuilderPacketChecks.verify(1);builder.pause("restock order checked");setting(builder,"Temporary Supports",true);setting(builder,"Material Supply",previousSupply);});

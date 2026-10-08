@@ -20,6 +20,9 @@ never created, used or deleted. Already being beside storage needs no round trip
 Restocking saves the return point before any storage approach starts. The
 confirmed home-1 arrival body stays reserved against temporary dirt, keeping the
 builder from blocking its own storage teleport while scaffolding nearby.
+After confirmed storage arrival, local walking to a chest view cannot trigger
+another home-1 trip. This arrival state survives saved-return reload and clears
+when home 2 is removed after returning to work.
 Return safety checks the standing body at the exact saved position and records
 the block actually supporting it. An off-centre roof-edge pose can therefore
 save safely even when the block directly beneath its nominal feet cell is air.
@@ -31,6 +34,10 @@ keeps home 2 for retry. Travel stays still through warmup and checks actual
 arrival and safe footing. Servers without these commands can disable Builder Homes.
 
 With homes enabled, ordinary walking and confirmed home routes are checked first.
+Before selecting a new access job, a bounded look-ahead checks dry, immediately
+placeable full cubes in the current phase/layer. Committed walks and columns
+keep their existing target. Liquid, attachment and native placement checks
+remain in the normal placement path.
 When those routes and short columns cannot reach unfinished work, a proved dry
 passage or floor/ceiling opening can temporarily reopen completed blocks. Mining
 requires a registered access job and rechecks attachments, fluids and footing;

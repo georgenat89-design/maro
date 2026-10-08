@@ -1149,6 +1149,24 @@ public final class AutoBuilder extends Module {
         if(navigatingCell>=0&&(states[navigatingCell]==CORRECT||!candidates.contains(navigatingCell)||ticks-navigationStarted>240)){navigatingCell=-1;walker.stop();}
         candidates.sort(Comparator.<Integer>comparingInt(i->i==navigatingCell?0:1).thenComparingDouble(i->taskLayer(i)*(sectionSupply()?8:100)+position(i).getSquaredDistance(mc.player.getBlockPos())));
         needed=null;Integer distant=null;List<Integer> blocked=new ArrayList<>();
+        // A nearer blocked cell must not start a walk or another column while
+        // ordinary cubes can already be placed from this exact native pose.
+        // Keep committed access intact; this look-ahead selects only new jobs.
+        if(navigatingCell<0){
+            long immediateDeadline=System.nanoTime()+2_000_000;int sampled=0;
+            for(int i:candidates){
+                if(sampled++>=96||System.nanoTime()>immediateDeadline)break;
+                updateState(i);if(states[i]==CORRECT||states[i]==UNKNOWN)continue;
+                var target=position(i);var wanted=desired(i);var actual=mc.world.getBlockState(target);
+                if(wanted.isAir()||wanted.getBlock() instanceof FluidBlock||Schematic.companion(wanted)
+                    ||!actual.isReplaceable()||!actual.getFluidState().isEmpty()
+                    ||!Block.isShapeFullCube(wanted.getCollisionShape(mc.world,target))
+                    ||!withinReach(target,mc.player.getEyePos())||waitingForBuiltNeighbour(target,wanted))continue;
+                var item=Schematic.material(wanted);if(inventoryCount(item)==0)continue;
+                var plan=placement(target,wanted,item,i,false);
+                if(plan!=null){placement=plan;placeTick();return;}
+            }
+        }
         long deadline=System.nanoTime()+2_000_000;int checked=0;
         for(int i:candidates){
             if(checked++>=96||System.nanoTime()>deadline)break;

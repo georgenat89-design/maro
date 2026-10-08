@@ -18,7 +18,7 @@ public final class BuilderHomes {
     private Stage stage=Stage.IDLE;
     private Point pending;
     private int slot,started,clock,settled,retryAt;
-    private boolean receipt,savingReturn,returnTrip,travellingBack;
+    private boolean receipt,savingReturn,returnTrip,travellingBack,storageArrived;
     private BlockPos storageChest,storageStand;
     private List<BlockPos> storageViews=List.of();
     private int storageCursor,storageProgressAt;
@@ -39,7 +39,7 @@ public final class BuilderHomes {
     }
     public boolean checkingRoutes(){return checkingRoutes;}
     public void invalidateRoutes(){checkingRoutes=false;routeTarget=routeFeet=null;routeViews=List.of();routeHomes=List.of();routeRetryAt=0;}
-    public void reset(){cancel();Arrays.fill(points,null);returnTrip=false;retryAt=0;}
+    public void reset(){cancel();Arrays.fill(points,null);returnTrip=storageArrived=false;retryAt=0;}
     private Point current(){return current(false);}
     private Box standingBody(Vec3d position){var dimensions=mc.player.getDimensions(net.minecraft.entity.EntityPose.STANDING);double half=dimensions.width()/2;return new Box(position.x-half,position.y,position.z-half,position.x+half,position.y+dimensions.height(),position.z+half).contract(.000001);}
     private Box footingContact(Vec3d position){var body=standingBody(position);return new Box(body.minX,position.y-.05,body.minZ,body.maxX,position.y+.001,body.maxZ);}
@@ -77,7 +77,8 @@ public final class BuilderHomes {
     }
     /** Save the current work area once before a storage journey; slot 2 is transient. */
     public boolean restock(BlockPos chest){
-        if(!readyFor(chest)||busy()||mc.currentScreen!=null||chest.getSquaredDistance(mc.player.getBlockPos())<=9)return false;
+        if(!readyFor(chest)||busy()||mc.currentScreen!=null||returnTrip&&storageArrived||chest.getSquaredDistance(mc.player.getBlockPos())<=9)return false;
+        if(!returnTrip)storageArrived=false;
         slot=1;savingReturn=!returnTrip;begin(Stage.RESTOCK_WAIT);return true;
     }
     public boolean returnToWork(){
@@ -92,7 +93,7 @@ public final class BuilderHomes {
         return new Box(point.x-half,point.y,point.z-half,point.x+half,point.y+dimensions.height(),point.z+half).intersects(new Box(pos));
     }
     private void clearReturn(){
-        slot=1;pending=points[1];points[1]=null;returnTrip=false;begin(Stage.RETURN_DELETE);mc.getNetworkHandler().sendChatCommand("delhome 2");
+        slot=1;pending=points[1];points[1]=null;returnTrip=storageArrived=false;begin(Stage.RETURN_DELETE);mc.getNetworkHandler().sendChatCommand("delhome 2");
     }
     private void begin(Stage next){walker.stop();stage=next;started=clock;receipt=false;failure="";settled=0;}
     private void save(){begin(Stage.SAVE);mc.getNetworkHandler().sendChatCommand("sethome");}
@@ -198,6 +199,9 @@ public final class BuilderHomes {
         status.accept("Waiting for /home "+(slot+1)+" arrival");
         if(mc.player.getEntityPos().squaredDistanceTo(pending.position)<=.6*.6&&settledToTravel()&&safe(pending)){
             if(++settled>=4){
+                // Local chest routing may leave the three-cell radius while
+                // walking around an obstruction. It must not restart home 1.
+                if(returnTrip&&slot==0)storageArrived=true;
                 if(stage==Stage.STORAGE_TRAVEL){storageProgress=mc.player.getEntityPos();storageProgressAt=clock;begin(Stage.APPROACH);}
                 else if(travellingBack&&slot==1)clearReturn();
                 else{retryAt=clock+40;cancel();}
@@ -240,12 +244,12 @@ public final class BuilderHomes {
         slot=index;pending=points[index];begin(Stage.TRAVEL);mc.getNetworkHandler().sendChatCommand("home "+(slot+1));return true;
     }
     public JsonArray saveData(){
-        var data=new JsonArray();for(int i=0;i<points.length;i++){var point=points[i];if(point==null){data.add(JsonNull.INSTANCE);continue;}var entry=new JsonObject();entry.addProperty("x",point.position.x);entry.addProperty("y",point.position.y);entry.addProperty("z",point.position.z);entry.addProperty("floor",point.floor);entry.addProperty("dimension",point.dimension);var support=new JsonArray();support.add(point.footing.getX());support.add(point.footing.getY());support.add(point.footing.getZ());entry.add("footing",support);if(i==1&&returnTrip)entry.addProperty("restock-return",true);data.add(entry);}return data;
+        var data=new JsonArray();for(int i=0;i<points.length;i++){var point=points[i];if(point==null){data.add(JsonNull.INSTANCE);continue;}var entry=new JsonObject();entry.addProperty("x",point.position.x);entry.addProperty("y",point.position.y);entry.addProperty("z",point.position.z);entry.addProperty("floor",point.floor);entry.addProperty("dimension",point.dimension);var support=new JsonArray();support.add(point.footing.getX());support.add(point.footing.getY());support.add(point.footing.getZ());entry.add("footing",support);if(i==1&&returnTrip){entry.addProperty("restock-return",true);if(storageArrived)entry.addProperty("restock-storage",true);}data.add(entry);}return data;
     }
     public void loadData(JsonArray data){
         reset();if(data==null||data.size()<2||data.size()>3)return;
         for(int i=0;i<2;i++){if(data.get(i).isJsonNull())continue;var entry=data.get(i).getAsJsonObject();if(i==1&&(!entry.has("restock-return")||!entry.get("restock-return").getAsBoolean()))continue;double x=entry.get("x").getAsDouble(),y=entry.get("y").getAsDouble(),z=entry.get("z").getAsDouble();if(!Double.isFinite(x)||!Double.isFinite(y)||!Double.isFinite(z)||Math.abs(x)>30_000_000||Math.abs(z)>30_000_000||Math.abs(y)>4096)throw new IllegalArgumentException("Home position");
             var footing=BlockPos.ofFloored(x,Math.ceil(y-.001)-1,z);if(entry.has("footing")){var support=entry.getAsJsonArray("footing");if(support.size()!=3)throw new IllegalArgumentException("Home footing");footing=new BlockPos(support.get(0).getAsInt(),support.get(1).getAsInt(),support.get(2).getAsInt());if(Math.abs(footing.getX()-Math.floor(x))>1||Math.abs(footing.getZ()-Math.floor(z))>1||Math.abs(footing.getY()-(Math.ceil(y-.001)-1))>1)throw new IllegalArgumentException("Home footing");}
-            points[i]=new Point(new Vec3d(x,y,z),entry.get("floor").getAsString(),entry.get("dimension").getAsString(),i==1,footing);if(i==1)returnTrip=true;}
+            points[i]=new Point(new Vec3d(x,y,z),entry.get("floor").getAsString(),entry.get("dimension").getAsString(),i==1,footing);if(i==1){returnTrip=true;storageArrived=entry.has("restock-storage")&&entry.get("restock-storage").getAsBoolean();}}
     }
 }

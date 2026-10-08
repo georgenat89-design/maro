@@ -1,9 +1,34 @@
 # Builder recovery work in progress
 
-Updated: 2026-10-07. Branch: `codex/builder-ghost-and-look-recovery`.
+Updated: 2026-10-08. Branch: `codex/builder-ghost-and-look-recovery`.
 Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
+
+Current: CI441 passed all checks on a7d62c8. True fresh9 started at0 and reached
+647, but timed out after one hour at644 with full health. The actual646 scene
+was saved, with126 owned posts, unchanged supplies and idle homes. Its chest
+still contained two oak signs and player inventory had22 empty slots. Dirt
+beside home1 blocked the chest view; walking around it crossed the three-cell
+distance test and approachChest repeatedly initiated home1 again. The new
+controller retains confirmed storage arrival for the active return trip, saves
+that state with home2 metadata and clears it when returning/deleting home2.
+The native obstruction regression failed on the unchanged old a7 JAR at the
+same edge offsets and repeated home1 state as the real scene. The fixed suite
+then collected exact stock and returned with one home1 trip, even after a
+mid-storage save/load. This actual646 snapshot is now an available replay.
+
+A read-only native probe also found14 immediately placeable blocks while a new
+route started, and three during a later route. A bounded2ms/96-cell look-ahead
+now selects dry full cubes before starting a new access job, leaving committed
+walks/columns intact. Its native ordering regression failed on the verified old
+production JAR, as intended: the old builder moved before placing a reachable
+cube. Both fixes passed the full focused suite in2m21s, including roof-edge
+returns, exact requested stock, unfinished bucket retention, repaired enclosed/
+elevated access, crouched column cleanup and eased visible camera rotation.
+Current CI, actual646 replay and a complete fresh0 run remain pending at this
+source snapshot. The one-hour fresh deadline is unchanged;
+no710 completion or finished release has been established.
 
 Current: native704 replay placed all four source fluids and the observer,
 removed all126 original temporary posts, and reached706 during final repairs.
