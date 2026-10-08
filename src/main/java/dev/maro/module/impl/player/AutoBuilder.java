@@ -1291,7 +1291,9 @@ public final class AutoBuilder extends Module {
         boolean clearingLiquidSupport=target.equals(liquidSupportTarget)&&liquidSupportWork>=0;
         int routingWork=clearingLiquidSupport?liquidSupportWork:cell;
         boolean liquid=wanted!=null&&wanted.getBlock() instanceof FluidBlock;
-        boolean topWork=liquid||wanted!=null&&liquidBoundary(target);
+        // Dry basin walls/floors need ordinary placement views while assembling.
+        // Only bucket work requires entry from above; boundary mining stays forbidden.
+        boolean topWork=liquid;
         // Mining and cleanup need a reachable hit on the existing block.
         // A view of a hypothetical scaffold is useful only to place missing
         // work; cleanup never places that scaffold after arriving there.
@@ -1304,7 +1306,7 @@ public final class AutoBuilder extends Module {
         // A retry timeout must not restart earlier planners while a later,
         // bounded recovery search is still running. Geometry receipts already
         // invalidate these views; exhausted passes remain eligible for retry.
-        if(search==null||search.expires>0&&ticks>search.expires&&(search.recoveryStage==0||search.recoveryStage>=7)){search=new ViewSearch();viewSearches.put(key,search);}
+        if(search==null||search.expires>0&&ticks>search.expires&&(search.recoveryStage==0&&(search.doorChecked||search.doorScanCursor==0)||search.recoveryStage>=7)){search=new ViewSearch();viewSearches.put(key,search);}
         while(viewSearches.size()>24)viewSearches.remove(viewSearches.keySet().iterator().next());
         var options=search.options;var directStands=search.direct;var scaffoldDistance=search.scaffoldDistance;
         if(viewPlanningDeadline==0)viewPlanningDeadline=System.nanoTime()+2_000_000;

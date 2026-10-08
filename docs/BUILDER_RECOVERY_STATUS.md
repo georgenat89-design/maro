@@ -5,6 +5,27 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+The first668 replay on97fbc09 was deliberately stopped at668, not passed.
+Native traces showed that the door planner never scanned: its placement-view
+list was empty. Dispenser583 is a planned liquid boundary, so the shared
+above-only rule incorrectly discarded all three valid same-height native
+views even though the dispenser and basin were still dry. A native precise
+opened-door query from the outside floor to the inside view returned true.
+The pending correction reserves above-only entry for actual bucket work.
+Boundary mining protection and native fluid containment remain unchanged.
+The door regression now requires dry basin assembly and a real contained water
+source. Its separate roof access becomes available only after the server
+confirms the floor was placed through the door; the builder must then fill
+from above and restore both door halves, with unchanged basin walls, full
+health and zero scaffolds. An earlier ignored-source test exposed an unrelated
+repair-counting interaction and was replaced with this complete native case.
+The door planner also retains its cursors past the ordinary120-tick view retry
+while its exterior-entry search is still progressing. The unchanged97fbc09
+production failed the complete regression as expected in2m21s. The fixed full
+native home/restock/repair/crouch/camera suite passed in3m3s; the dry basin and
+real roof fill case took615 ticks. Dedicated liquid checks are running next,
+followed by the unchanged668 capture and a true fresh build. No full710 pass.
+
 The third646 replay on6fe7dd0 progressed to668, then was deliberately stopped
 after more than20 minutes without placement progress. It did not pass. The
 exact idle-home scene is preserved as `stash-fresh-668.json` with127 owned posts
