@@ -206,6 +206,8 @@ public final class AutoBuilder extends Module {
     private List<BlockPos> stairPlacementViews=List.of();
     private int stairPlacementCursor;
     private BlockPos standGoal;
+    private DoorApproach approachingDoor;
+    private int approachingDoorWork=-2;
     private BlockPos accessStand,accessBase;
     private BlockPos entrySearchFeet;
     private int entrySearchWork=-2,entrySearchHash,entrySearchCursor,entryRetryAt;
@@ -295,6 +297,7 @@ public final class AutoBuilder extends Module {
         BlockPos doorFeet,doorTuning;
         boolean doorChecked,homeChecked;
         final List<BlockPos> closedDoors=new ArrayList<>(),doorApproaches=new ArrayList<>();
+        final Map<BlockPos,BlockPos> doorByApproach=new HashMap<>();
         final List<DoorApproach> doorCandidates=new ArrayList<>();
         final EntrySearch entry=new EntrySearch();
         final DescentSearch descent=new DescentSearch();
@@ -692,7 +695,7 @@ public final class AutoBuilder extends Module {
         preparationStage=0;depositQueue.clear();
         if(partialSource>=0&&ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler&&!ownedHandler.getCursorStack().isEmpty())mc.interactionManager.clickSlot(ownedHandler.syncId,partialSource,0,SlotActionType.PICKUP,mc.player);
         partialSource=-1;partialItem=null;
-        building=false;pasting=false;depositing=false;depositTarget=null;depositSlot=-1;resumeShoppingAfterDeposit=false;depositedShopping.clear();placement=pendingPlacement=null;pendingServerState=null;routeMining=null;mining=null;tuningTarget=tuningSession=null;tuningClicks=0;standGoal=null;descentPost=descentView=null;descentLanding=false;cleanupTarget=null;accessStand=accessBase=null;recycleTarget=null;accessFloor=false;accessSupports.clear();accessStairs=Set.of();viewSearches.clear();digging=false;walker.stop();releaseSneak();endRecovery();
+        building=false;pasting=false;depositing=false;depositTarget=null;depositSlot=-1;resumeShoppingAfterDeposit=false;depositedShopping.clear();placement=pendingPlacement=null;pendingServerState=null;routeMining=null;mining=null;tuningTarget=tuningSession=null;tuningClicks=0;standGoal=null;approachingDoor=null;approachingDoorWork=-2;descentPost=descentView=null;descentLanding=false;cleanupTarget=null;accessStand=accessBase=null;recycleTarget=null;accessFloor=false;accessSupports.clear();accessStairs=Set.of();viewSearches.clear();digging=false;walker.stop();releaseSneak();endRecovery();
         if(mc.interactionManager!=null)mc.interactionManager.cancelBlockBreaking();
         if(ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler&&ownedHandler.getCursorStack().isEmpty())mc.player.closeHandledScreen();
         ownedHandler=null;restockTarget=null;recoveringAccessStock=false;routeOpening=null;restockBatch=Map.of();chestAccessRetryAt.clear();buying=false;pendingOffer=null;shopping.clear();status=reason;
@@ -816,6 +819,7 @@ public final class AutoBuilder extends Module {
     /** Follow the same verified stand/descent intent during building and chest trips. */
     private boolean followStandGoal(){
         if(standGoal!=null){
+            if(approachingDoor!=null&&!standGoal.equals(approachingDoor.stand))approachingDoor=null;
             if(descentLanding){
                 var feet=BlockPos.ofFloored(mc.player.getEntityPos().add(0,.4,0));
                 // The route search allows two-block walking drops. Do not reject
@@ -836,6 +840,18 @@ public final class AutoBuilder extends Module {
             }
             if(standProgressPos==null||mc.player.getEntityPos().subtract(standProgressPos).horizontalLengthSquared()>.04||mc.player.isOnGround()&&Math.abs(mc.player.getY()-standProgressPos.y)>.2){standProgressPos=mc.player.getEntityPos();standProgressAt=ticks;}
             if(walker.standAt(standGoal)){
+                // A proved door approach owns its interaction as well as its
+                // walk. Changing feet can retire the original view search;
+                // keep this intent until the native panel actually opens.
+                if(approachingDoor!=null&&approachingDoorWork>=0&&approachingDoorWork<states.length
+                    &&states[approachingDoorWork]!=CORRECT&&states[approachingDoorWork]!=IGNORED&&usableWorkDoor(approachingDoor.door)){
+                    var door=approachingDoor.door;var hit=visibleHit(door);if(hit==null)hit=visibleHit(door.up());
+                    if(hit!=null){
+                        floorAccessWork.put(door,approachingDoorWork);floorAccessWork.put(door.up(),approachingDoorWork);
+                        tuneConfiguration(hit.getBlockPos(),configuration(mc.world.getBlockState(hit.getBlockPos()).with(DoorBlock.OPEN,true)));return true;
+                    }
+                }
+                approachingDoor=null;approachingDoorWork=-2;
                 if(recycleTarget!=null){
                     var target=recycleTarget;recycleTarget=null;standGoal=null;walker.stop();
                     if(supports.contains(target)&&!servesActiveScaffold(target)&&safeToRecycle(target)&&visibleHit(target)!=null){
@@ -859,7 +875,7 @@ public final class AutoBuilder extends Module {
             else if(ticks-standProgressAt>50||ticks-standStarted>walker.routeTimeoutTicks()||walker.routeUnavailable()){
                 if(navigatingCell>=0){retryAt.put(navigatingCell,ticks+10);triedStands.computeIfAbsent(navigatingCell,i->new HashMap<>()).put(standGoal,ticks+600);}
                 if(recycleTarget!=null){recycleTarget=null;standGoal=null;walker.stop();status="Replanning temporary support pickup";return true;}
-                navigatingCell=-1;standGoal=null;descentPost=descentView=null;accessStand=accessBase=null;accessFloor=false;accessSupports.clear();accessStairs=Set.of();walker.stop();status="Replanning blocked build position";
+                navigatingCell=-1;standGoal=null;approachingDoor=null;approachingDoorWork=-2;descentPost=descentView=null;accessStand=accessBase=null;accessFloor=false;accessSupports.clear();accessStairs=Set.of();walker.stop();status="Replanning blocked build position";
             }else status=walker.status;
             return true;
         }
@@ -1587,12 +1603,14 @@ public final class AutoBuilder extends Module {
             if(visibleHit(door,eye)==null&&visibleHit(door.up(),eye)==null){search.doorApproachCursor++;search.doorViewCursor=0;continue;}
             while(search.doorViewCursor<views.size()&&System.nanoTime()<deadline){
                 var view=views.get(search.doorViewCursor++);
-                if(walker.canReachWithOpenedDoors(stand,view,Set.of(door,door.up()))){if(!search.doorApproaches.contains(stand))search.doorApproaches.add(stand);search.doorViewCursor=views.size();break;}
+                if(walker.canReachWithOpenedDoors(stand,view,Set.of(door,door.up()))){if(!search.doorApproaches.contains(stand))search.doorApproaches.add(stand);search.doorByApproach.putIfAbsent(stand,door);search.doorViewCursor=views.size();break;}
             }
             if(search.doorViewCursor==views.size()){search.doorApproachCursor++;search.doorViewCursor=0;}
         }
         if(search.doorApproachCursor<search.doorCandidates.size()){walker.release();status="Checking door approaches";return true;}
         for(var stand:search.doorApproaches)if(walker.canReachStand(stand)){
+            var door=search.doorByApproach.get(stand);if(door==null||!usableWorkDoor(door))continue;
+            approachingDoor=new DoorApproach(door,stand);approachingDoorWork=work;
             standGoal=stand;standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();status="Walking to existing wooden door";return true;
         }
         return prepareElevatedEntry(search.doorApproaches,work,search.doorEntry);
@@ -3327,6 +3345,7 @@ public final class AutoBuilder extends Module {
         resetAccessRouting();
     }
     private void resetAccessRouting(){
+        approachingDoor=null;approachingDoorWork=-2;
         clearEntryPassage();
         queuedLookAction=null;queuedAimPoint=aimPoint=null;lookWaitStarted=-1;
         endRecovery();
