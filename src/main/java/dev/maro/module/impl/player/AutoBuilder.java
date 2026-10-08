@@ -339,6 +339,11 @@ public final class AutoBuilder extends Module {
     private BlockPos routeMining;
     private final Map<BlockPos,Integer> floorAccessWork=new HashMap<>();
     private final Map<BlockPos,Set<BlockPos>> accessDropSources=new HashMap<>();
+    private final Map<Item,Set<BlockPos>> accessStockSources=new HashMap<>();
+    private int accessPickupId=-1,accessPickupUntil,accessPickupCount;
+    private Item accessPickupItem;
+    private BlockPos accessPickupStand;
+    private final Map<Integer,Integer> accessPickupRetry=new HashMap<>();
     private boolean openingRestoration;
     private boolean waterDeparture;
     private BlockPos waterWorkTarget;
@@ -502,7 +507,7 @@ public final class AutoBuilder extends Module {
             }));
     }
     private static String rootMessage(Throwable error){while(error.getCause()!=null)error=error.getCause();return error.getMessage()==null?error.getClass().getSimpleName():error.getMessage();}
-    public void install(Schematic data){if(!restoringPlacement){checkpoint();activeBuildSlot=-1;placementName="";}pause("Schematic loaded");floorAccessWork.clear();openingRepairDepth.clear();accessDropSources.clear();schematic=data;unconfirmedPlacements.clear();latePlacements.clear();supports.clear();escapeSupports.clear();escapeSupportWork.clear();cleanupStands.clear();recoveryAttempts=0;replan();}
+    public void install(Schematic data){if(!restoringPlacement){checkpoint();activeBuildSlot=-1;placementName="";}pause("Schematic loaded");floorAccessWork.clear();openingRepairDepth.clear();accessDropSources.clear();accessStockSources.clear();schematic=data;unconfirmedPlacements.clear();latePlacements.clear();supports.clear();escapeSupports.clear();escapeSupportWork.clear();cleanupStands.clear();recoveryAttempts=0;replan();}
     public Schematic schematic(){return schematic;}
     public String status(){return status;}
     public boolean loading(){return loading;}
@@ -588,7 +593,7 @@ public final class AutoBuilder extends Module {
     public int inventoryCount(Item item){if(mc.player==null)return 0;int count=0;for(int i=0;i<36;i++){var stack=mc.player.getInventory().getStack(i);if(stack.isOf(item))count+=stack.getCount();}return count;}
     public void setOrigin(BlockPos pos){
         if(pos==null||!inGame())return;pause("Origin moved");
-        if(!pos.equals(origin)){floorAccessWork.clear();openingRepairDepth.clear();accessDropSources.clear();}
+        if(!pos.equals(origin)){floorAccessWork.clear();openingRepairDepth.clear();accessDropSources.clear();accessStockSources.clear();}
         String nextDimension=mc.world.getRegistryKey().getValue().toString();
         String nextScope=scope();
         if(!dimension.isEmpty()&&(!dimension.equals(nextDimension)||!worldScope.equals(nextScope))){homes.reset();containers.clear();supports.clear();escapeSupports.clear();escapeSupportWork.clear();}
@@ -676,7 +681,7 @@ public final class AutoBuilder extends Module {
         lookWaitStarted=-1;queuedAimPoint=aimPoint=null;
         bridgeTarget=null;
         clearEntryPassage();
-        supportPickup=null;supportPickupUntil=supportRecycleAt=0;
+        supportPickup=null;supportPickupUntil=supportRecycleAt=0;accessPickupId=-1;accessPickupStand=null;accessPickupItem=null;accessPickupRetry.clear();
         walker.resetLook();cameraLocked=false;
         placementAttemptTarget=null;failedPlacementUntil.clear();unexpectedBuildHandler=null;resetChestJourney();
         stopEating();navigatingCell=-1;foodRestock=foodShopping=supportRestock=supportShopping=false;
@@ -738,6 +743,7 @@ public final class AutoBuilder extends Module {
         if(mc.currentScreen==null&&autoMove.get()&&(depositing||building&&(!mode.is("Semi Auto")||mc.options.useKey.isPressed()))&&waterDepartureTick())return;
         if((building||buying||pasting||depositing||homes.busy())&&mc.player.getHealth()<minHealth.get()*2){walker.release();status="Paused — low health";return;}
         if(useHomes.get()&&homes.tick(value->status=value,this::pause))return;
+        if(building&&restockTarget==null&&mc.currentScreen==null&&accessPickupId>=0&&collectAccessDrop())return;
         if(homeSetupResume&&homes.ready()){homeSetupResume=false;startBuild();return;}
         if(building&&!buying&&!depositing&&recoverUnexpectedBuildMenu())return;
         if(building&&!buying&&!depositing&&!pasting&&!loading&&restockTarget==null&&mc.currentScreen==null
@@ -1114,6 +1120,7 @@ public final class AutoBuilder extends Module {
     }
     private void findWork(){
         if(completedScans==0){status="Checking schematic: "+(100L*scanCursor/Math.max(1,states.length))+"%";return;}
+        if(collectAccessDrop())return;
         // Access repairs are a small, known set. Refresh them directly instead
         // of waiting for another whole-schematic scan after the last post goes.
         var repairs=new ArrayList<Integer>();
@@ -2942,7 +2949,13 @@ public final class AutoBuilder extends Module {
         }
         if(opened>=0&&!desired(opened).isAir()&&matchesBuildState(state,desired(opened))&&!supports.contains(mining)){
             floorAccessWork.putIfAbsent(mining,navigatingCell);openingRepairDepth.putIfAbsent(mining,-mining.getY());
-            if(!accessDropSources.containsKey(mining)){var receivers=accessPipeBelow(mining);if(!receivers.isEmpty())accessDropSources.put(mining,receivers);}
+            if(!accessDropSources.containsKey(mining)){
+                var receivers=accessPipeBelow(mining);if(!receivers.isEmpty()){
+                    accessDropSources.put(mining,receivers);var material=Schematic.material(state);
+                    accessStockSources.computeIfAbsent(material,item->new LinkedHashSet<>()).addAll(receivers);
+                    for(var receiver:receivers){var empty=emptyChestItems.get(receiver);if(empty!=null)empty.remove(material);triedContainers.remove(receiver);}
+                }
+            }
         }
         if(state.isAir()){supports.remove(mining);mining=null;digging=false;if(peekTarget!=null)releaseSneak();mc.interactionManager.cancelBlockBreaking();delay=actionDelay();return;}
         if(protectContainers.get()&&state.hasBlockEntity()||state.getHardness(mc.world,mining)<0||!state.getFluidState().isEmpty()){mining=null;return;}
@@ -3299,6 +3312,49 @@ public final class AutoBuilder extends Module {
     }
     private boolean safePeekMining(BlockPos target){return target.equals(peekTarget)&&peekFloor!=null&&!target.equals(peekFloor)&&mc.player.isSneaking()&&walker.hasPeekFooting(peekFloor);}
     private void releaseSneak(){peekTarget=peekFloor=null;if(ownsSneak){mc.options.sneakKey.setPressed(false);ownsSneak=false;}}
+    /** Collect reachable replacement drops before committing another access job. */
+    private boolean collectAccessDrop(){
+        if(accessPickupId>=0){
+            var entity=mc.world.getEntityById(accessPickupId);
+            if(!(entity instanceof net.minecraft.entity.ItemEntity drop)||!drop.isAlive()||inventoryCount(accessPickupItem)>accessPickupCount
+                ||ticks>=accessPickupUntil||!walker.canStand(accessPickupStand)){
+                accessPickupRetry.put(accessPickupId,ticks+100);accessPickupId=-1;accessPickupStand=null;accessPickupItem=null;walker.stop();return false;
+            }
+            walker.standAt(accessPickupStand);status="Collecting access repair material";return true;
+        }
+        if(!autoMove.get()||!mc.player.isOnGround()||floorAccessWork.isEmpty())return false;
+        var required=new HashMap<Item,Integer>();var openings=new HashMap<Item,List<BlockPos>>();
+        for(var entry:floorAccessWork.entrySet()){
+            int owner=entry.getValue(),cell=schematic.indexAt(entry.getKey().subtract(anchor()),turns(),mirror.get());
+            if(cell<0||owner>=0&&owner<states.length&&!matchesBuildState(mc.world.getBlockState(position(owner)),desired(owner))
+                ||!mc.world.getBlockState(entry.getKey()).isAir())continue;
+            var item=Schematic.material(desired(cell));if(item==Items.AIR)continue;
+            required.merge(item,1,Integer::sum);openings.computeIfAbsent(item,key->new ArrayList<>()).add(entry.getKey());
+        }
+        required.entrySet().removeIf(entry->inventoryCount(entry.getKey())>=entry.getValue());if(required.isEmpty())return false;
+        accessPickupRetry.values().removeIf(until->until<=ticks);
+        var drops=mc.world.getEntitiesByClass(net.minecraft.entity.ItemEntity.class,mc.player.getBoundingBox().expand(12,10,12),
+            drop->drop.isAlive()&&required.containsKey(drop.getStack().getItem())&&!accessPickupRetry.containsKey(drop.getId())
+                &&openings.get(drop.getStack().getItem()).stream().anyMatch(pos->drop.squaredDistanceTo(Vec3d.ofCenter(pos))<=64));
+        drops.sort(Comparator.comparingDouble(drop->drop.squaredDistanceTo(mc.player)));long deadline=System.nanoTime()+3_000_000;int tried=0;
+        for(var drop:drops){
+            if(tried++>=3||System.nanoTime()>=deadline)break;var views=new ArrayList<BlockPos>();
+            for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++){
+                var stand=drop.getBlockPos().add(dx,dy,dz);if(!walker.canStand(stand))continue;
+                var body=mc.player.getBoundingBox().offset(walker.standingPoint(stand).subtract(mc.player.getEntityPos()));
+                if(body.expand(1,0,1).intersects(drop.getBoundingBox()))views.add(stand);
+            }
+            views.sort(Comparator.<BlockPos>comparingDouble(stand->walker.standingPoint(stand).squaredDistanceTo(drop.getEntityPos()))
+                .thenComparingDouble(stand->stand.getSquaredDistance(mc.player.getBlockPos())));
+            for(var stand:views){
+                if(System.nanoTime()>=deadline)break;if(!walker.canReachStand(stand))continue;
+                accessPickupId=drop.getId();accessPickupStand=stand;accessPickupItem=drop.getStack().getItem();accessPickupCount=inventoryCount(accessPickupItem);accessPickupUntil=ticks+100;
+                walker.stop();walker.standAt(stand);status="Collecting access repair material";return true;
+            }
+            accessPickupRetry.put(drop.getId(),ticks+40);
+        }
+        return false;
+    }
     private boolean beginRestock(){
         chestAccessRetryAt.values().removeIf(until->until<=ticks);
         if(needed!=restockAttemptItem){triedContainers.clear();restockAttemptItem=needed;}
@@ -3325,6 +3381,7 @@ public final class AutoBuilder extends Module {
     /** Only follow item pipes below our recorded missing access blocks. */
     private Set<BlockPos> accessRecoverySources(Item item){
         var result=new LinkedHashSet<BlockPos>();if(item==null)return result;
+        result.addAll(accessStockSources.getOrDefault(item,Set.of()));
         for(var opening:floorAccessWork.keySet()){
             int cell=schematic.indexAt(opening.subtract(anchor()),turns(),mirror.get());
             if(cell<0||Schematic.material(desired(cell))!=item||!mc.world.getBlockState(opening).isAir())continue;
@@ -3847,12 +3904,15 @@ public final class AutoBuilder extends Module {
         var result=new JsonObject();result.addProperty("file",selected);result.addProperty("dimension",dimension);result.addProperty("world-scope",worldScope);result.addProperty("active-build-slot",activeBuildSlot);
         var ignored=new JsonArray();for(var item:ignoredMaterials)ignored.add(Registries.ITEM.getId(item).toString());result.add("ignored-materials",ignored);
         var openings=new JsonArray();for(var entry:floorAccessWork.entrySet()){var opening=new JsonObject();opening.add("pos",posJson(entry.getKey()));opening.addProperty("work",entry.getValue());opening.addProperty("depth",openingRepairDepth.getOrDefault(entry.getKey(),0));var receivers=new JsonArray();for(var receiver:accessDropSources.getOrDefault(entry.getKey(),Set.of()))receivers.add(posJson(receiver));opening.add("drop-receivers",receivers);openings.add(opening);}result.add("access-openings",openings);
+        var sources=new JsonArray();for(var entry:accessStockSources.entrySet()){var source=new JsonObject();source.addProperty("item",Registries.ITEM.getId(entry.getKey()).toString());var receivers=new JsonArray();for(var receiver:entry.getValue())receivers.add(posJson(receiver));source.add("receivers",receivers);sources.add(source);}result.add("access-stock-sources",sources);
         result.add("builder-homes",homes.saveData());if(selectedSupplyChest()!=null)result.add("supply-chest",posJson(selectedSupplyChest()));if(origin!=null)result.add("origin",posJson(origin));var marks=new JsonArray();for(var pos:containers)marks.add(posJson(pos));result.add("restock",marks);return result;
     }
     private static JsonArray posJson(BlockPos pos){var a=new JsonArray();a.add(pos.getX());a.add(pos.getY());a.add(pos.getZ());return a;}
     private static BlockPos jsonPos(JsonElement value){var a=value.getAsJsonArray();if(a.size()!=3)throw new IllegalArgumentException("Position");return new BlockPos(a.get(0).getAsInt(),a.get(1).getAsInt(),a.get(2).getAsInt());}
     private void loadOpenings(JsonObject data){
-        floorAccessWork.clear();openingRepairDepth.clear();accessDropSources.clear();if(!data.has("access-openings"))return;
+        floorAccessWork.clear();openingRepairDepth.clear();accessDropSources.clear();accessStockSources.clear();
+        if(data.has("access-stock-sources"))for(var value:data.getAsJsonArray("access-stock-sources")){var source=value.getAsJsonObject();var item=Registries.ITEM.get(net.minecraft.util.Identifier.of(source.get("item").getAsString()));if(item==Items.AIR)continue;var receivers=new LinkedHashSet<BlockPos>();if(source.getAsJsonArray("receivers").size()>1024)throw new IllegalArgumentException("Access stock receivers");for(var receiver:source.getAsJsonArray("receivers"))receivers.add(jsonPos(receiver));accessStockSources.put(item,receivers);}
+        if(!data.has("access-openings"))return;
         var entries=data.getAsJsonArray("access-openings");if(entries.size()>1024)throw new IllegalArgumentException("Access openings");
         for(var value:entries){var opening=value.getAsJsonObject();var pos=jsonPos(opening.get("pos"));
             floorAccessWork.put(pos,opening.get("work").getAsInt());openingRepairDepth.put(pos,opening.get("depth").getAsInt());

@@ -5,6 +5,24 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+The807c37e actual695-c089 replay reached701/710, then stalled on a polished
+repair brick. Native701 capture proves that brick still in dispenser
+(-26219,65,-150579). Removing a completed opening also removed the only
+receiver receipt, although its pipe still held material for later repairs.
+Pending changes retain a per-material receiver ledger across individual
+repairs and saved-build reloads. Reachable loose replacement drops are
+collected with bounded route queries before continuing ready access repairs.
+Home9 passed the full native suite in4m13s, including a loose-drop two-beam
+repair (240 ticks), dispenser207 ticks and double chest189 ticks. All preserve
+four original bricks/seven diamonds, full health and zero posts; the pipe
+cases verify retained/saved material receiver records after both repairs.
+Replay3 was deliberately
+stopped at701; it did not pass. Full710 replay and true fresh0 remain required.
+CI462 on09287fa passed build, general and builder/auction suites. CI464 on807
+passed build/general but failed the new pipe-stock assertion (three original
+bricks remaining instead of four); the updated Home9 cases passed locally,
+and the new production still requires CI verification.
+
 Pending on top of09287fa: the second actual695 replay passed the retired-passage
 failure and reached697, then lacked a cracked repair brick. Native container
 capture proves that brick and a polished brick in dispenser(-26219,65,-150579),
