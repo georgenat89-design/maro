@@ -5,6 +5,26 @@ Pull request: https://github.com/georgenat89-design/maro/pull/37 (draft).
 
 ## Resume here
 
+The second668 replay on9ce70d2 advanced to683, then repeated access recovery
+without completing another block for12 minutes. It was deliberately stopped;
+this is not a completion pass. An idle native683 snapshot preserves the exact
+server blocks, inventories, storage home,126 posts and access repairs, without
+a transient home2 transaction. Its fixture SHA256 is
+`CFFB11AC3AE51DFA79E6135F947BD2BE8E54AB866EDFC4576CC5A88274C45732`.
+
+The next correction extends optional roof access to buried dry components.
+It proves the native support hit, requested orientation, attachment and body
+clearance using the existing read-only cleared view before registering or
+mining an opening. The real placement still revalidates the unmasked native
+world. A75-cell sealed hopper fixture requires facing north, all roof blocks
+restored, zero raw/owned dirt, full health and bounded look packets. The9ce
+production baseline failed this regression in2m52s without opening the roof.
+The fixed hopper case completed in96 ticks with all native assertions passing.
+The full home/access suite passed in3m11s, including door/dry-basin/native water,
+prompt repair, elevated entry, crouch mining and visible eased camera checks.
+Compilation passed. Actual683 completion, true fresh0 completion and
+final-head CI remain pending.
+
 The dedicated liquid suite on3b08e4a caught a coupled condition: removing the
 above-only restriction for dry walls also removed their optional verified
 roof-opening fallback. The sealed native basin stalled with its buried

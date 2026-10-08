@@ -98,6 +98,7 @@ final class BuilderHomeChecks {
         immediateWorkBeforeAccess(context,world,builder,home2);
         verticalRepairOrder(context,world,builder,home2);
         sectionDependencyChain(context,world,builder,home2);
+        buriedHopperRoofAccess(context,world,builder,start);
         closedDoorAccess(context,world,builder,start);
         restockRoundTrip(context,world,builder,home2,chest);
         temporaryFootingReturn(context,world,builder,home2,chest);
@@ -158,6 +159,30 @@ final class BuilderHomeChecks {
         require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(post).isOf(Blocks.DIRT)),"Fixture did not repair before cleanup");
         context.runOnClient(client->{require(client.player.getHealth()==20&&client.currentScreen==null,"Repair caused damage or left menu");BuilderPacketChecks.verify(1);builder.pause("rotation test");});
         System.out.println("[builder-home] Access restored in "+repaired+" ticks with other temporary posts still present");
+    }
+    private static void buriedHopperRoofAccess(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-home] Prove typed buried hopper placement through a roof opening, then restore the whole roof");
+        var origin=start.add(-2,0,10);var cells=new BlockState[75];Arrays.fill(cells,Blocks.STONE.getDefaultState());
+        for(int y=0;y<3;y++)for(int z=0;z<5;z++)for(int x=0;x<5;x++)command(world,"setblock",origin.add(x,y,z),"stone");
+        int target=37;var pos=origin.add(2,1,2);var roof=pos.up();
+        cells[target]=Blocks.HOPPER.getDefaultState().with(HopperBlock.FACING,Direction.NORTH);command(world,"setblock",pos,"air");
+        for(String item:List.of("hopper 1","stone 16","dirt 32","diamond_pickaxe","diamond_shovel"))world.getServer().runCommand("give @a "+item);
+        teleport(world,origin.add(2,3,3));context.waitTicks(12);
+        context.runOnClient(client->{setting(builder,"Temporary Supports",true);setting(builder,"Prepare Whole Build",false);builder.install(new Schematic("buried-hopper-roof.nbt","test",5,3,5,BlockPos.ORIGIN,cells));builder.setOrigin(origin);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();});
+        boolean opened=false,registered=false;int elapsed=0;
+        for(;elapsed<1800&&context.computeOnClient(client->builder.building()||((BuilderHomes)field(builder,"homes")).busy());elapsed++){
+            opened|=world.getServer().computeOnServer(server->server.getOverworld().getBlockState(roof).isAir());
+            registered|=context.computeOnClient(client->Objects.equals(((Map<?,?>)field(builder,"floorAccessWork")).get(roof),target));
+            if(elapsed%200==0)System.out.println((String)context.computeOnClient(client->"[builder-hopper-roof-progress] "+builder.status()+" player="+client.player.getEntityPos()+" target="+builder.state(target)));
+            context.waitTick();
+        }
+        require(opened&&registered,"Typed buried hopper never opened its proved roof view: "+context.computeOnClient(client->builder.status()));
+        String mismatch=world.getServer().computeOnServer(server->{for(int i=0;i<cells.length;i++){var at=origin.add(i%5,i/25,i/5%5);var actual=server.getOverworld().getBlockState(at);if(!AutoBuilder.matchesBuildState(actual,cells[i]))return at+" expected="+cells[i]+" actual="+actual;}return "";});
+        require(mismatch.isEmpty(),"Buried native hopper or roof restoration failed: "+mismatch);
+        context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Typed roof access left work, supports, damage or menu: "+builder.status());BuilderPacketChecks.verify(2);builder.pause("buried hopper roof checked");});
+        require(world.getServer().computeOnServer(server->{for(int y=0;y<7;y++)for(int z=-4;z<9;z++)for(int x=-4;x<9;x++)if(server.getOverworld().getBlockState(origin.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Typed roof access left raw scaffold dirt");
+        teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+4)+" "+(origin.getY()+2)+" "+(origin.getZ()+4)+" air");context.waitTicks(4);
+        System.out.println("[builder-home] Typed native hopper placed facing north through its registered roof opening; all 75 blocks restored, zero dirt, bounded look and full health in "+elapsed+" ticks");
     }
     private static void closedDoorAccess(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-home] Open an existing wooden door for dry basin assembly, then restore both closed halves without mining it");

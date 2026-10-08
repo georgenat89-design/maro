@@ -1294,7 +1294,7 @@ public final class AutoBuilder extends Module {
         // Dry basin walls/floors need ordinary placement views while assembling.
         // Only bucket work requires entry from above; boundary mining stays forbidden.
         boolean topWork=liquid;
-        boolean roofAccess=liquid||wanted!=null&&liquidBoundary(target);
+        boolean roofAccess=liquid||wanted!=null&&!wanted.isAir()&&mc.world.getBlockState(target).isReplaceable();
         // Mining and cleanup need a reachable hit on the existing block.
         // A view of a hypothetical scaffold is useful only to place missing
         // work; cleanup never places that scaffold after arriving there.
@@ -1996,7 +1996,7 @@ public final class AutoBuilder extends Module {
         if(!repositionTarget(post,cleanupStands.computeIfAbsent(post,p->new HashMap<>()))){walker.release();status="Checking access to the obsolete liquid-view support";}
         return true;
     }
-    /** Open only the roof above the source; retain the dry viewing ledge and every basin wall. */
+    /** Prove native placement through a roof opening; retain its ledge, attachments and basin walls. */
     private Set<BlockPos> liquidTopOpening(BlockPos target,BlockPos stand,Vec3d eye){
         if(!unstuck.get()||stand.getX()==target.getX()&&stand.getZ()==target.getZ())return null;
         var removed=new LinkedHashSet<BlockPos>();
@@ -2011,20 +2011,27 @@ public final class AutoBuilder extends Module {
         }
         if(removed.isEmpty()||!safeToRecycle(removed))return null;
         var view=clearedView(removed);
-        var hit=visibleHit(target.down(),eye,Direction.UP,view);
-        if(hit==null||!bucketTarget(Schematic.material(desired(schematic.indexAt(target.subtract(anchor()),turns(),mirror.get()))),hit).equals(target)
-            ||removed.stream().noneMatch(pos->visibleHit(pos,eye)!=null))return null;
+        int cell=schematic.indexAt(target.subtract(anchor()),turns(),mirror.get());
+        if(cell<0||removed.stream().noneMatch(pos->visibleHit(pos,eye)!=null))return null;
+        var wanted=desired(cell);var item=Schematic.material(wanted);
+        if(wanted.getBlock() instanceof FluidBlock){
+            var hit=visibleHit(target.down(),eye,Direction.UP,view);
+            if(hit==null||!bucketTarget(item,hit).equals(target))return null;
+        }else{
+            var body=mc.player.getBoundingBox().offset(eye.subtract(mc.player.getEyePos()));
+            if(placement(target,wanted,item,cell,false,eye,body,view)==null)return null;
+        }
         return Collections.unmodifiableSet(removed);
     }
     private boolean liquidTopTick(){
         if(liquidTopStand==null)return false;
         if(!walker.canStand(liquidTopStand)){liquidTopStand=null;liquidTopBlocks.clear();return false;}
-        if(!walker.standAt(liquidTopStand)){status="Walking to dry access above the liquid";return true;}
+        if(!walker.standAt(liquidTopStand)){status="Walking to checked roof access";return true;}
         liquidTopBlocks.removeIf(pos->mc.world.getBlockState(pos).isAir());
         if(liquidTopBlocks.isEmpty()){liquidTopStand=null;walker.stop();return false;}
         var next=liquidTopBlocks.stream().filter(pos->visibleHit(pos)!=null).findFirst().orElse(null);
         if(next==null||!safeToRecycle(liquidTopBlocks)||!removableRouteFloor(next)){
-            liquidTopStand=null;liquidTopBlocks.clear();walker.stop();status="Rechecking liquid roof access";return true;
+            liquidTopStand=null;liquidTopBlocks.clear();walker.stop();status="Rechecking roof access";return true;
         }
         passageBlocks.add(next);routeMining=mining=next;walker.release();mineTick();return true;
     }
@@ -2054,22 +2061,25 @@ public final class AutoBuilder extends Module {
     private Place placement(BlockPos target,BlockState wanted,Item item,int index,boolean temporary){return placement(target,wanted,item,index,temporary,mc.player.getEyePos(),mc.player.getBoundingBox());}
     private static boolean potted(BlockState state){return state.getBlock() instanceof FlowerPotBlock pot&&pot.getContent()!=Blocks.AIR;}
     private Place placement(BlockPos target,BlockState wanted,Item item,int index,boolean temporary,Vec3d eye,Box body){
+        return placement(target,wanted,item,index,temporary,eye,body,mc.world);
+    }
+    private Place placement(BlockPos target,BlockState wanted,Item item,int index,boolean temporary,Vec3d eye,Box body,net.minecraft.world.WorldView view){
         if(temporary&&reservedSupplyAccess(target))return null;
         if(failedPlacementUntil.getOrDefault(target,0)>ticks&&eye.squaredDistanceTo(mc.player.getEyePos())<.0001)return null;
         if(potted(wanted)){
-            if(mc.world.getBlockState(target).isOf(Blocks.FLOWER_POT)){var hit=visibleHit(target,eye);return hit==null?null:new Place(target,wanted,hit,Schematic.material(wanted),index,false);}
-            return placement(target,Blocks.FLOWER_POT.getDefaultState(),Items.FLOWER_POT,index,temporary,eye,body);
+            if(view.getBlockState(target).isOf(Blocks.FLOWER_POT)){var hit=visibleHit(target,eye,null,view);return hit==null?null:new Place(target,wanted,hit,Schematic.material(wanted),index,false);}
+            return placement(target,Blocks.FLOWER_POT.getDefaultState(),Items.FLOWER_POT,index,temporary,eye,body,view);
         }
         if(item==Items.WATER_BUCKET||item==Items.LAVA_BUCKET){
             if(body.minY<target.getY()+1-.001||new Box(target).intersects(body)||!fluidContained(target,wanted))return null;
-            var hit=visibleHit(target.down(),eye,Direction.UP);
-            return hit!=null&&bucketTarget(item,hit).equals(target)&&mc.world.getBlockState(target).isReplaceable()?new Place(target,wanted,hit,item,index,false):null;
+            var hit=visibleHit(target.down(),eye,Direction.UP,view);
+            return hit!=null&&bucketTarget(item,hit).equals(target)&&view.getBlockState(target).isReplaceable()?new Place(target,wanted,hit,item,index,false):null;
         }
         if(!(item instanceof BlockItem blockItem))return null;
         ItemStack stack=new ItemStack(item);double range=effectiveReach();float oldYaw=mc.player.getYaw(),oldPitch=mc.player.getPitch();
         try{
             for(int direct=0;direct<2;direct++)for(var side:Direction.values()){
-                BlockPos neighbor=direct==1?target:target.offset(side.getOpposite());var supportState=mc.world.getBlockState(neighbor);
+                BlockPos neighbor=direct==1?target:target.offset(side.getOpposite());var supportState=view.getBlockState(neighbor);
                 if(direct==1&&supportState.getBlock()!=wanted.getBlock())continue;
                 if(supportState.isAir()||supportState.isReplaceable()||!supportState.getFluidState().isEmpty())continue;
                 // Prefer points away from the centre boundary used by door hinges and
@@ -2083,11 +2093,11 @@ public final class AutoBuilder extends Module {
                     Vec3d point=Vec3d.ofCenter(neighbor).add(side.getOffsetX()*.5,side.getOffsetY()*.5,side.getOffsetZ()*.5);
                     if(side.getAxis()==Direction.Axis.Y)point=new Vec3d(neighbor.getX()+sample[0],point.y,neighbor.getZ()+sample[1]);
                     if(side.getAxis()!=Direction.Axis.Y)point=new Vec3d(side.getAxis()==Direction.Axis.Z?neighbor.getX()+sample[1]:point.x,neighbor.getY()+height,side.getAxis()==Direction.Axis.X?neighbor.getZ()+sample[1]:point.z);
-                    if(side==Direction.UP&&!supportState.getOutlineShape(mc.world,neighbor).isEmpty())point=new Vec3d(point.x,neighbor.getY()+supportState.getOutlineShape(mc.world,neighbor).getMax(Direction.Axis.Y),point.z);
+                    if(side==Direction.UP&&!supportState.getOutlineShape(view,neighbor).isEmpty())point=new Vec3d(point.x,neighbor.getY()+supportState.getOutlineShape(view,neighbor).getMax(Direction.Axis.Y),point.z);
                     if(eye.squaredDistanceTo(point)>range*range)continue;
                     boolean shapedSupport=direct==0&&clickable(supportState.getBlock());
                     Vec3d rayEnd=shapedSupport?point.add(point.subtract(eye).normalize().multiply(1.1)):point.add(Vec3d.of(side.getVector()).multiply(-.002));
-                    var ray=mc.world.raycast(new RaycastContext(eye,rayEnd,RaycastContext.ShapeType.OUTLINE,RaycastContext.FluidHandling.NONE,mc.player));
+                    var ray=view.raycast(new RaycastContext(eye,rayEnd,RaycastContext.ShapeType.OUTLINE,RaycastContext.FluidHandling.NONE,mc.player));
                     if(ray.getType()!=HitResult.Type.BLOCK||!ray.getBlockPos().equals(neighbor)||ray.getSide()!=side)continue;
                     if(shapedSupport)point=ray.getPos();
                     float[] angles=angles(eye,point);mc.player.setYaw(angles[0]);mc.player.setPitch(angles[1]);
@@ -2096,10 +2106,10 @@ public final class AutoBuilder extends Module {
                     // Hypothetical standing positions use the supplied body box. The
                     // item-level check instead sees the player's current body and rejects
                     // every alternate view when the player needs to step out of the target.
-                    BlockState predicted=eye.squaredDistanceTo(mc.player.getEyePos())>.0001?wanted.getBlock().getPlacementState(context)
+                    BlockState predicted=view!=mc.world||eye.squaredDistanceTo(mc.player.getEyePos())>.0001?wanted.getBlock().getPlacementState(context)
                         :((BlockItemAccessor)(Object)blockItem).maro$placementState(context);
-                    if(predicted==null||!context.getBlockPos().equals(target)||!compatible(predicted,wanted)||!predicted.canPlaceAt(mc.world,target))continue;
-                    if(predicted.getCollisionShape(mc.world,target).getBoundingBoxes().stream().anyMatch(box->box.offset(target).intersects(body)))continue;
+                    if(predicted==null||!context.getBlockPos().equals(target)||!compatible(predicted,wanted)||!predicted.canPlaceAt(view,target))continue;
+                    if(predicted.getCollisionShape(view,target).getBoundingBoxes().stream().anyMatch(box->box.offset(target).intersects(body)))continue;
                     return new Place(target,wanted,hit,item,index,temporary);
                 }
             }

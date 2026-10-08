@@ -277,7 +277,7 @@ When a closed wooden schematic door blocks unfinished dry work, access planning 
 
 Dry basin walls and floors use ordinary placement viewpoints during assembly. The above-only access rule applies to actual bucket placement, so a future water or lava cell cannot prevent its own retaining blocks from being built from the side. Retaining blocks remain protected against temporary access mining. A native two-phase fixture requires the dry floor through a wooden door before roof access becomes available, then checks a real contained water source, both closed door halves, unchanged walls, health and cleanup.
 
-Buried retaining blocks also keep the verified roof-opening fallback when no existing side view is available. Optional roof access and mandatory above-only bucket placement are separate checks. A door route must lead to a real placement view, excluding views that still require a roof opening.
+Buried dry blocks also keep a verified roof-opening fallback when no existing side view is available. For oriented components such as hoppers, the future ray must hit a native support face that predicts the requested state, with valid attachment and body clearance in the cleared view. The builder registers removed roof blocks for restoration and rechecks native placement after mining. Optional roof access and mandatory above-only bucket placement are separate checks. A door route must lead to a real placement view, excluding views that still require a roof opening.
 
 Nearby-section restocking includes ready registered repairs outside the current section. It counts each work cell once, so a chest trip collects repair materials even when ordinary section work is exhausted.
 
