@@ -372,8 +372,11 @@ final class BuilderHomeChecks {
         world.getServer().runCommand("clear @a cracked_polished_blackstone_bricks");
         world.getServer().runCommand("clear @a glass");
         for(String item:List.of("stone 16","dirt 64","diamond_pickaxe","diamond_shovel","cooked_beef 16"))world.getServer().runCommand("give @a "+item);
-        world.getServer().runOnServer(server->{var drop=new net.minecraft.entity.ItemEntity(server.getOverworld(),origin.getX()+3.5,origin.getY()+2,origin.getZ()+7.5,new ItemStack(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS));drop.setPickupDelay(0);server.getOverworld().spawnEntity(drop);});
+        // The case starts with a settled drop on this one-block-deep ledge.
+        // ItemEntity's random spawn impulse can otherwise throw it off the fixture.
+        world.getServer().runOnServer(server->{var drop=new net.minecraft.entity.ItemEntity(server.getOverworld(),origin.getX()+3.5,origin.getY()+2,origin.getZ()+7.5,new ItemStack(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS));drop.setVelocity(Vec3d.ZERO);drop.setPickupDelay(0);server.getOverworld().spawnEntity(drop);});
         teleport(world,origin.add(3,1,3));context.waitTicks(12);
+        require(world.getServer().computeOnServer(server->server.getOverworld().getEntitiesByClass(net.minecraft.entity.ItemEntity.class,new Box(origin.getX()+2,origin.getY()+2,origin.getZ()+7,origin.getX()+5,origin.getY()+3,origin.getZ()+8),drop->drop.getStack().isOf(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)).size()==1),"Sealed repair drop did not remain on its intended upper ledge");
         context.runOnClient(client->{
             require(builder.inventoryCount(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)==0,"Sealed drop fixture supplied the missing repair material directly");
             var walker=(BuilderWalk)field(builder,"walker");require(!walker.canReachStand(origin.add(3,2,7)),"Sealed drop fixture already had walking access");
@@ -390,7 +393,7 @@ final class BuilderHomeChecks {
             }
             context.waitTick();
         }
-        require(planned&&secured,"Sealed repair drop never secured material through native pickup access before its owner");
+        require(planned&&secured,"Sealed repair drop never secured material through native pickup access before its owner: planned="+planned+", secured="+secured+", "+context.computeOnClient(client->builder.status()+" at "+client.player.getEntityPos()));
         require(world.getServer().computeOnServer(server->{var w=server.getOverworld();for(int i=0;i<cells.length;i++)if(!cells[i].isOf(Blocks.STRUCTURE_VOID)&&!AutoBuilder.matchesBuildState(w.getBlockState(origin.add(i%7,i/56,i/7%8)),cells[i]))return false;for(int y=0;y<8;y++)for(int z=-3;z<11;z++)for(int x=-3;x<10;x++)if(w.getBlockState(origin.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Sealed repair drop access did not collect and restore every block/temporary post");
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Sealed drop left work, supports, damage or menu: "+builder.status());BuilderPacketChecks.verify(1);builder.pause("sealed drop checked");setting(builder,"Restock When Empty",true);setting(builder,"Auto Buy When Missing",true);});
         teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+6)+" "+(origin.getY()+4)+" "+(origin.getZ()+7)+" air");context.waitTicks(4);
