@@ -29,7 +29,7 @@ public final class CustomCrosshair extends Module {
         .onChange(value -> { if (value.equals("PNG")) loadStoredPng(); }));
     private final ModeSetting preset = add(new ModeSetting("Preset", "Choose a crosshair shape", "Cross + Dot",
         CrosshairRenderer.PRESETS.toArray(String[]::new)).visible(this::presetMode));
-    private final ButtonSetting gallery = add(new ButtonSetting("Preset Gallery", "See all 24 shapes and click to select", "Browse",
+    private final ButtonSetting gallery = add(new ButtonSetting("Preset Gallery", "See all " + CrosshairRenderer.PRESETS.size() + " shapes and click to select", "Browse",
         () -> mc.setScreen(new CrosshairPresetsScreen(mc.currentScreen, this))).visible(this::presetMode));
     private final ButtonSetting importImage = add(new ButtonSetting("Import PNG", "Choose or drag in your own crosshair image", "Import",
         () -> mc.setScreen(new CrosshairImageScreen(mc.currentScreen, this))));
@@ -66,7 +66,7 @@ public final class CustomCrosshair extends Module {
     private String pngStatus = "Choose a PNG to import";
 
     public CustomCrosshair() {
-        super("Custom Crosshair", "24 crisp crosshair shapes, your own PNG or your own text", Category.VISUALS);
+        super("Custom Crosshair", CrosshairRenderer.PRESETS.size() + " crisp crosshair shapes, your own PNG or your own text", Category.VISUALS);
         size.visible(this::presetMode); gap.visible(this::presetMode); thickness.visible(this::presetMode);
         dotSize.visible(() -> !pngMode()); centerDot.visible(() -> !pngMode()); outline.visible(() -> !pngMode());
         outlineWidth.visible(() -> !pngMode() && outline.get());

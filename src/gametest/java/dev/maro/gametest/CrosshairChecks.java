@@ -45,7 +45,7 @@ final class CrosshairChecks {
     }
     static void run(ClientGameTestContext context) {
         var module = ModuleManager.get(CustomCrosshair.class);
-        require(module != null && CrosshairRenderer.PRESETS.size() == 24, "Crosshair presets were not registered");
+        require(module != null && CrosshairRenderer.PRESETS.size() == 25, "Crosshair presets were not registered");
         int originalScale = context.computeOnClient(client -> client.options.getGuiScale().getValue());
         try {
             context.runOnClient(client -> {
@@ -86,6 +86,9 @@ final class CrosshairChecks {
             });
             context.waitTicks(3);
             context.takeScreenshot("maro-crosshair-reticle");
+            context.runOnClient(client -> module.selectPreset("Star of David"));
+            context.waitTicks(3);
+            context.takeScreenshot("maro-crosshair-star-of-david");
             context.runOnClient(client -> {
                 client.options.getGuiScale().setValue(4); client.onResolutionChanged();
                 module.selectPreset("Dot");
