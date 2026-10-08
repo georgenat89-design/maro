@@ -5,6 +5,7 @@ import dev.maro.runtime.gui.GuiTheme;
 import dev.maro.runtime.gui.widgets.WWidget;
 import dev.maro.runtime.gui.widgets.containers.WHorizontalList;
 import dev.maro.runtime.gui.widgets.pressable.WButton;
+import dev.maro.runtime.settings.BoolSetting;
 import dev.maro.runtime.settings.ColorSetting;
 import dev.maro.runtime.settings.DoubleSetting;
 import dev.maro.runtime.settings.Setting;
@@ -12,6 +13,7 @@ import dev.maro.runtime.settings.SettingGroup;
 import dev.maro.runtime.systems.modules.Module;
 import dev.maro.runtime.systems.modules.Modules;
 import dev.maro.runtime.utils.render.color.SettingColor;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.gl.PostEffectPipeline;
 import net.minecraft.client.gl.UniformValue;
@@ -37,12 +39,23 @@ import dev.maro.nathan.render.PostEffect;
  * target and comes back through the game's own blit shader.
  *
  * <p>It runs after the world and before the HUD, so chat, the inventory and
- * everything else Meteor draws stay the colour they were meant to be.
+ * everything else Meteor draws stay the colour they were meant to be. It runs
+ * before any of the interface is even recorded, too, so a mod that copies the
+ * world to draw behind a menu copies it graded. Grade Menus is for a mod that
+ * gets round even that: with a menu open, the grade goes over the whole frame,
+ * menu and all, once it is finished.
  */
 public class ColorCorrect extends Module {
     private static final Identifier SCRATCH = PostEffect.ours("scratch");
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
+
+    private final Setting<Boolean> gradeMenus = sgGeneral.add(new BoolSetting.Builder()
+        .name("grade-menus")
+        .description("While a menu is open (a chest, /shop, settings), grade the whole screen, menu and all. Turn it on if the world loses its colour behind menus, which another mod redrawing the world there can cause.")
+        .defaultValue(false)
+        .build()
+    );
     private final SettingGroup sgColor = settings.createGroup("Color");
     private final SettingGroup sgLight = settings.createGroup("Light");
     private final SettingGroup sgTint = settings.createGroup("Tint");
@@ -184,19 +197,46 @@ public class ColorCorrect extends Module {
         return null;
     }
 
+    /** Whether this frame's grade waits for the menu to be drawn: decided once a frame, before the interface. */
+    private static boolean overMenu;
+    /** Where the grade last ran in the frame, for the in-game test: "hud", "screen", "gui" or "over-menu". */
+    private static String lastPoint = "";
+
     /**
-     * Called from the frame, after the world is drawn and before the HUD is.
+     * Called from the frame, after the world is drawn and before the HUD is:
+     * as the first of the HUD, the screen or the interface pass begins.
      * Static because the mixin has no other way to reach the module, and
      * tolerant of the module being absent or off.
      */
-    public static void applyTo(Framebuffer target, ObjectAllocator allocator) {
-        Modules modules = Modules.get();
-        if (modules == null) return;
-
-        ColorCorrect module = modules.get(ColorCorrect.class);
-        if (module == null || !module.isActive()) return;
+    public static void applyTo(Framebuffer target, ObjectAllocator allocator, String point) {
+        ColorCorrect module = active();
+        overMenu = module != null && module.gradeMenus.get() && MinecraftClient.getInstance().currentScreen != null;
+        if (module == null || overMenu) return;
 
         module.process(target, allocator);
+        lastPoint = point;
+    }
+
+    /** Called once the interface is drawn: with Grade Menus on and a menu open, grades the whole frame. */
+    public static void applyOverMenu(Framebuffer target, ObjectAllocator allocator) {
+        ColorCorrect module = active();
+        if (!overMenu || module == null) return;
+        overMenu = false;
+
+        module.process(target, allocator);
+        lastPoint = "over-menu";
+    }
+
+    public static String lastPoint() {
+        return lastPoint;
+    }
+
+    private static ColorCorrect active() {
+        Modules modules = Modules.get();
+        if (modules == null) return null;
+
+        ColorCorrect module = modules.get(ColorCorrect.class);
+        return module == null || !module.isActive() ? null : module;
     }
 
     @Override

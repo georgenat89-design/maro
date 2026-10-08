@@ -5,6 +5,7 @@ import dev.maro.module.Module;
 import dev.maro.module.ModuleManager;
 import dev.maro.module.impl.visuals.CustomTotem;
 import dev.maro.module.impl.visuals.PotatoGraphics;
+import dev.maro.nathan.modules.ColorCorrect;
 import dev.maro.setting.Setting;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
@@ -147,32 +148,70 @@ final class ScreenChecks {
         return missing.isEmpty() ? List.of() : List.of(name + " " + missing);
     }
 
-    /** Color Correct turned to grey, then the pause menu that tabbing out opens: the world behind it stays grey. */
+    /**
+     * Color Correct turned to grey, then menus over the world: the pause menu that tabbing out
+     * opens, a chest like a server's /shop, and the options. The world behind each stays grey, graded
+     * before the menu is even recorded; and with Grade Menus on, the menu is grey too.
+     */
     private static void pauseMenu(ClientGameTestContext context, Module grade) {
         context.runOnClient(c -> {
             grade.getSettings().forEach(Setting::reset);
-            grade.getSettings().stream().filter(s -> s.getName().equals("saturation")).findFirst().orElseThrow()
-                    .fromJson(new com.google.gson.JsonPrimitive(0));
+            setting(grade, "saturation", new com.google.gson.JsonPrimitive(0));
             grade.setEnabled(true);
         });
         context.waitTicks(10);
         double inGame = colourfulness(read(context.takeScreenshot("maro-color-correct-grey")));
-        context.runOnClient(c -> c.setScreen(new GameMenuScreen(true)));
+        String inGamePoint = context.computeOnClient(c -> ColorCorrect.lastPoint());
+        double paused = 0;
+        List<String> menus = new ArrayList<>();
+        for (String menu : List.of("paused", "chest", "options")) {
+            context.runOnClient(c -> c.setScreen(menu(c, menu)));
+            context.waitTicks(10);
+            double colour = colourfulness(read(context.takeScreenshot("maro-color-correct-grey-" + menu)));
+            if (menu.equals("paused")) paused = colour;
+            menus.add(String.format(Locale.ROOT, "%s %.1f (graded at %s)", menu, colour, context.computeOnClient(c -> ColorCorrect.lastPoint())));
+            context.runOnClient(c -> c.setScreen(null));
+        }
+        // Grade Menus: the chest itself, and the hotbar under it, go grey with the world.
+        context.runOnClient(c -> {
+            setting(grade, "grade-menus", new com.google.gson.JsonPrimitive(true));
+            c.setScreen(menu(c, "chest"));
+        });
         context.waitTicks(10);
-        double paused = colourfulness(read(context.takeScreenshot("maro-color-correct-grey-paused")));
+        BufferedImage overMenu = read(context.takeScreenshot("maro-color-correct-grey-over-menu"));
+        String overMenuPoint = context.computeOnClient(c -> ColorCorrect.lastPoint());
         context.runOnClient(c -> {
             c.setScreen(null);
             grade.setEnabled(false);
             grade.getSettings().forEach(Setting::reset);
         });
-        System.out.printf(Locale.ROOT, "COLOR CORRECT greyscale colourfulness: in game %.1f, paused %.1f%n", inGame, paused);
+        System.out.printf(Locale.ROOT, "COLOR CORRECT greyscale colourfulness: in game %.1f (graded at %s); %s; Grade Menus whole screen %.1f (graded at %s)%n",
+                inGame, inGamePoint, String.join("; ", menus), colourfulness(overMenu, 1), overMenuPoint);
         System.out.println("COLOR CORRECT RESULT: " + (inGame >= 8 ? "not grey in game" : paused >= 8 ? "lost behind the pause menu" : "kept behind the pause menu"));
     }
 
-    /** How far from grey the top quarter of the screen (the sky, clear of any buttons) is, on average. */
+    private static net.minecraft.client.gui.screen.Screen menu(MinecraftClient c, String menu) {
+        return switch (menu) {
+            case "paused" -> new GameMenuScreen(true);
+            case "chest" -> new net.minecraft.client.gui.screen.ingame.GenericContainerScreen(
+                    net.minecraft.screen.GenericContainerScreenHandler.createGeneric9x3(1, c.player.getInventory()),
+                    c.player.getInventory(), net.minecraft.text.Text.literal("Quick Buy"));
+            default -> new net.minecraft.client.gui.screen.option.OptionsScreen(null, c.options);
+        };
+    }
+
+    private static void setting(Module module, String name, com.google.gson.JsonElement value) {
+        module.getSettings().stream().filter(s -> s.getName().equals(name)).findFirst().orElseThrow().fromJson(value);
+    }
+
     private static double colourfulness(BufferedImage image) {
+        return colourfulness(image, 0.25);
+    }
+
+    /** How far from grey the top {@code share} of the screen (a quarter: the sky, clear of any buttons) is, on average. */
+    private static double colourfulness(BufferedImage image, double share) {
         long sum = 0, count = 0;
-        for (int y = 0; y < image.getHeight() / 4; y += 2) {
+        for (int y = 0; y < image.getHeight() * share; y += 2) {
             for (int x = 0; x < image.getWidth(); x += 2) {
                 int rgb = image.getRGB(x, y);
                 int r = rgb >> 16 & 0xFF, g = rgb >> 8 & 0xFF, b = rgb & 0xFF;

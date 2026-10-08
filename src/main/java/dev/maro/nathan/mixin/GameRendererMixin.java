@@ -3,6 +3,7 @@ package dev.maro.nathan.mixin;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -27,13 +28,16 @@ import net.minecraft.client.util.Pool;
  * hand the shader a depth of "far" for everything. The hand and held item are
  * drawn after the blur, sharp, on top of it.
  *
- * <p><b>Colour correction</b> runs in {@code render}, at the call that
- * rasterises the GUI. In 1.21.11 the HUD, chat, any screen, toasts and the
- * debug overlay are only recorded before that call and drawn by it, so at that
- * instant the frame holds the world and the hand and nothing 2D. Grading
- * there tints the world and not the interface. The same goes for the blur:
- * both passes are over before a single pixel of interface exists, and
- * Meteor's own click GUI is drawn later still.
+ * <p><b>Colour correction</b> runs in {@code render}, as the HUD begins to be
+ * recorded - or, with no HUD this frame, the screen, or failing both, the call
+ * that rasterises the GUI. In 1.21.11 the HUD, chat, any screen, toasts and
+ * the debug overlay are only recorded and then drawn by that last call, so at
+ * any of these instants the frame holds the world and the hand and nothing 2D.
+ * Grading there tints the world and not the interface. The same goes for the
+ * blur: both passes are over before a single pixel of interface exists. The
+ * earliest of the three is taken because another mod may copy the frame while
+ * a menu is recorded, to draw the world behind it, and that copy must already
+ * be graded. The passes run once a frame, at whichever point comes first.
  *
  * <p>Neither can be the end of the method. The frame's resource pool has its
  * {@code endFrame} called a few instructions later, and the passes need that
@@ -53,10 +57,50 @@ public abstract class GameRendererMixin {
         MotionBlur.applyTo(MinecraftClient.getInstance().getFramebuffer(), pool);
     }
 
+    /** Whether this frame's world passes have run yet. */
+    @Unique
+    private boolean nameeprotect$framePassesDone;
+
+    @Inject(method = "render(Lnet/minecraft/client/render/RenderTickCounter;Z)V", at = @At("HEAD"))
+    private void nameeprotect$newFrame(CallbackInfo ci) {
+        nameeprotect$framePassesDone = false;
+    }
+
+    @Inject(
+        method = "render(Lnet/minecraft/client/render/RenderTickCounter;Z)V",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/hud/InGameHud;render(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/client/render/RenderTickCounter;)V"),
+        require = 0)
+    private void nameeprotect$beforeHud(CallbackInfo ci) {
+        nameeprotect$framePasses("hud");
+    }
+
+    @Inject(
+        method = "render(Lnet/minecraft/client/render/RenderTickCounter;Z)V",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/screen/Screen;renderWithTooltip(Lnet/minecraft/client/gui/DrawContext;IIF)V"),
+        require = 0)
+    private void nameeprotect$beforeScreen(CallbackInfo ci) {
+        nameeprotect$framePasses("screen");
+    }
+
     @Inject(
         method = "render(Lnet/minecraft/client/render/RenderTickCounter;Z)V",
         at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/render/GuiRenderer;render(Lcom/mojang/blaze3d/buffers/GpuBufferSlice;)V"))
     private void nameeprotect$colorCorrect(CallbackInfo ci) {
+        nameeprotect$framePasses("gui");
+    }
+
+    @Inject(
+        method = "render(Lnet/minecraft/client/render/RenderTickCounter;Z)V",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/render/GuiRenderer;render(Lcom/mojang/blaze3d/buffers/GpuBufferSlice;)V", shift = At.Shift.AFTER))
+    private void nameeprotect$overMenu(CallbackInfo ci) {
+        // With Grade Menus on and a menu open, the grade waited for the menu to be drawn.
+        ColorCorrect.applyOverMenu(MinecraftClient.getInstance().getFramebuffer(), pool);
+    }
+
+    @Unique
+    private void nameeprotect$framePasses(String point) {
+        if (nameeprotect$framePassesDone) return;
+        nameeprotect$framePassesDone = true;
         // The world and the hand are drawn; the HUD, chat and any screen are not yet.
         //
         // Bloom first, then the grade. Light bleeding is something the lens
@@ -68,6 +112,6 @@ public abstract class GameRendererMixin {
         // Player ESP goes on before either, so its fill and glow bloom and grade with the world.
         PlayerEspRenderer.composite();
         Bloom.applyTo(MinecraftClient.getInstance().getFramebuffer(), pool);
-        ColorCorrect.applyTo(MinecraftClient.getInstance().getFramebuffer(), pool);
+        ColorCorrect.applyTo(MinecraftClient.getInstance().getFramebuffer(), pool, point);
     }
 }
