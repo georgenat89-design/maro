@@ -3326,8 +3326,11 @@ public final class AutoBuilder extends Module {
     }
     private BlockHitResult approachChest(BlockPos chest){
         if(!recoveringAccessStock&&useHomes.get()&&(restockTarget!=null&&!depositing?homes.restock(chest):homes.storage(chest))){resetAfterHome();status=restockTarget!=null&&!depositing?"Saving work return before restocking through /home 1":"Returning to storage through /home 1";return null;}
-        if(standGoal!=null){followStandGoal();chestProgressAt=ticks;chestJourneyFailed=false;return null;}
         if(chestProgressPosition==null||mc.player.getEntityPos().squaredDistanceTo(chestProgressPosition)>.04){chestProgressPosition=mc.player.getEntityPos();chestProgressAt=ticks;}
+        if(standGoal!=null){followStandGoal();chestJourneyFailed=false;return null;}
+        // A receiver is only a possible source of our mined material. Planning
+        // the same blocked route must not postpone real storage indefinitely.
+        if(recoveringAccessStock&&ticks-chestProgressAt>160){chestJourneyFailed=true;walker.stop();status="Repair receiver blocked — checking remaining supplies";return null;}
         if(chestStand!=null){
             if(walker.standAt(chestStand)){chestStand=null;walker.stop();}
             else if(ticks-chestProgressAt>60||walker.routeUnavailable()){chestTriedStands.put(chestStand,ticks+200);chestStand=null;walker.stop();chestProgressAt=ticks;}
@@ -3347,8 +3350,8 @@ public final class AutoBuilder extends Module {
         options.sort(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos())));
         long deadline=System.nanoTime()+6_000_000;
         for(var stand:options){chestTriedStands.put(stand,ticks+200);if(walker.canReachStand(stand)){chestStand=stand;chestProgressAt=ticks;walker.stop();status="Walking around an obstructed chest";return null;}if(System.nanoTime()>deadline)break;}
-        if(prepareSupportDescent(options)){chestProgressAt=ticks;chestJourneyFailed=false;return null;}
-        if(prepareFloorOpening(options,-1)){chestProgressAt=ticks;chestJourneyFailed=false;return null;}
+        if(prepareSupportDescent(options)){chestJourneyFailed=false;return null;}
+        if(prepareFloorOpening(options,-1)){chestJourneyFailed=false;return null;}
         chestJourneyFailed=ticks-chestProgressAt>100||ticks-chestSessionStarted>1200;
         walker.release();status="Replanning route to selected chest";return null;
     }
@@ -3529,7 +3532,14 @@ public final class AutoBuilder extends Module {
                 else triedContainers.add(restockTarget);
                 chestAccessRetryAt.remove(restockTarget);
             }
-            else chestAccessRetryAt.put(restockTarget,ticks+100);
+            else {
+                chestAccessRetryAt.put(restockTarget,ticks+100);
+                // Retire a failed receiver for this material search so two
+                // blocked pipes cannot alternate forever ahead of storage.
+                // Keep its stock receipt: failure to reach it says nothing
+                // about its contents, and later work can make it accessible.
+                if(recovered)triedContainers.add(restockTarget);
+            }
         }
         ownedHandler=null;restockTarget=null;recoveringAccessStock=false;restockBatch=Map.of();partialSource=-1;partialItem=null;restockWait=0;
         resetChestJourney();walker.stop();delay=6;status=reason;

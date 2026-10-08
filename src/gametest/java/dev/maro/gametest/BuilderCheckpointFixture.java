@@ -20,12 +20,17 @@ final class BuilderCheckpointFixture {
     final int progress;
     BuilderCheckpointFixture(){
         var stage=System.getProperty("maro.gametest.builderStashCheckpointStage","423");
-        if(!List.of("423","549","556","646","668","683","685","695","695-c089","697-092","698","702","704","705-6dcb","708-371").contains(stage))throw new AssertionError("Unsupported captured stall: "+stage);
+        if(!List.of("423","549","556","621-0bab","646","668","683","685","695","695-c089","697-092","698","702","704","705-6dcb","708-371").contains(stage))throw new AssertionError("Unsupported captured stall: "+stage);
         // Distinct native scenes can have the same compatible progress count.
         progress=Integer.parseInt(stage.split("-",2)[0]);
         try(var stream=getClass().getResourceAsStream("/fixtures/stash-fresh-"+stage+".json")){
             if(stream==null)throw new AssertionError("Missing real server checkpoint");
             data=JsonParser.parseReader(new InputStreamReader(stream,StandardCharsets.UTF_8)).getAsJsonObject();
+            // The original world capture remains byte-exact. A separate
+            // read-only client receipt preserves its possible item receivers.
+            try(var receipts=getClass().getResourceAsStream("/fixtures/stash-fresh-"+stage+"-receivers.json")){
+                if(receipts!=null)data.add("accessStockSources",JsonParser.parseReader(new InputStreamReader(receipts,StandardCharsets.UTF_8)));
+            }
             if(data.has("homeBusy")&&(data.get("homeBusy").getAsBoolean()||data.get("returnTrip").getAsBoolean()||!data.get("serverHome2Empty").getAsBoolean()))throw new AssertionError("Checkpoint interrupted a transient home transaction");
             if(data.has("compatibleBlocks")&&data.get("compatibleBlocks").getAsInt()!=progress)throw new AssertionError("Checkpoint progress differs from captured compatible server states");
         }catch(IOException error){throw new AssertionError(error);}
@@ -78,6 +83,13 @@ final class BuilderCheckpointFixture {
             for(var element:data.getAsJsonArray("accessOpenings")){var row=element.getAsJsonArray();var opening=pos(row.get(0).getAsJsonArray());openings.put(opening,row.get(1).getAsInt());depths.put(opening,row.get(2).getAsInt());}
             try{var restoration=builder.getClass().getDeclaredField("openingRestoration");restoration.setAccessible(true);restoration.setBoolean(builder,data.get("openingRestoration").getAsBoolean());}
             catch(ReflectiveOperationException error){throw new AssertionError(error);}
+        }
+        if(data.has("accessStockSources")){
+            var sources=(Map<net.minecraft.item.Item,Set<BlockPos>>)AutoBuilderChecks.field(builder,"accessStockSources");
+            for(var entry:data.getAsJsonObject("accessStockSources").entrySet()){
+                var receivers=new LinkedHashSet<BlockPos>();for(var receiver:entry.getValue().getAsJsonArray())receivers.add(pos(receiver.getAsJsonArray()));
+                sources.put(Registries.ITEM.get(Identifier.of(entry.getKey())),receivers);
+            }
         }
     }
 }

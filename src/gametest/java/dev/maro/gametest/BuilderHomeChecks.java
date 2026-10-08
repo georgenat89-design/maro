@@ -94,6 +94,7 @@ final class BuilderHomeChecks {
         context.runOnClient(client->button(builder,"Set Storage Home").press());waitHome(context,builder,80);
         context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(homes.ready()&&!builder.building(),"Storage setup failed or unexpectedly started building: "+builder.status());var entry=homes.saveData().get(0).getAsJsonObject();var feet=BlockPos.ofFloored(entry.get("x").getAsDouble(),entry.get("y").getAsDouble(),entry.get("z").getAsDouble());for(var reserved:List.of(feet,feet.up())){require((boolean)call(builder,"reservedSupplyAccess",new Class<?>[]{BlockPos.class},reserved),"Storage-home arrival cell was available to scaffolding");require(call(builder,"placement",new Class<?>[]{BlockPos.class,BlockState.class,Item.class,int.class,boolean.class},reserved,Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true)==null,"Scaffold could block native storage arrival");}});require(saveCommands==before+1,"Absent home 1 did not save exactly once");
         longCheckedWalk(context,world,builder,start);
+        blockedRepairReceivers(context,world,builder,start,chest);
         roofEdgeRoundTrip(context,world,builder,home2,chest);
         obstructedStorageRoundTrip(context,world,builder,home2,chest);
         immediateWorkBeforeAccess(context,world,builder,home2);
@@ -420,6 +421,40 @@ final class BuilderHomeChecks {
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20,"Long route left active work, supports or damage");BuilderPacketChecks.verify(1);builder.pause("long walk checked");setting(builder,"Temporary Supports",true);});
         teleport(world,start);context.waitTicks(12);
         System.out.println("[builder-home] Long proved native walk retained past 240 ticks and finished its placement without a restart/home/support/damage in "+elapsed+" walking ticks");
+    }
+    private static void blockedRepairReceivers(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,BlockPos chest){
+        System.out.println("[builder-home] Skip two unreachable repair receivers and patch the hole from actual selected storage");
+        var origin=start.south(7);var first=origin.east(5).up(3);var second=first.south(3);
+        for(var receiver:List.of(first,second)){
+            command(world,"setblock",receiver,"dispenser");
+            for(var direction:Direction.values())command(world,"setblock",receiver.offset(direction),"bedrock");
+        }
+        world.getServer().runOnServer(server->{
+            var level=server.getOverworld();var stock=(net.minecraft.inventory.Inventory)level.getBlockEntity(chest);stock.clear();stock.setStack(0,new ItemStack(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS));stock.markDirty();
+            var caught=(net.minecraft.inventory.Inventory)level.getBlockEntity(first);caught.setStack(0,new ItemStack(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS));caught.markDirty();
+        });
+        command(world,"setblock",origin,"air");world.getServer().runCommand("clear @a cracked_polished_blackstone_bricks");teleport(world,start);context.waitTicks(12);
+        context.runOnClient(client->{
+            setting(builder,"Temporary Supports",false);setting(builder,"Prepare Whole Build",false);
+            builder.install(new Schematic("blocked-repair-receivers.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.CRACKED_POLISHED_BLACKSTONE_BRICKS.getDefaultState()}));builder.setOrigin(origin);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
+            @SuppressWarnings("unchecked")var openings=(Map<BlockPos,Integer>)field(builder,"floorAccessWork");openings.put(origin,-1);
+            @SuppressWarnings("unchecked")var sources=(Map<Item,Set<BlockPos>>)field(builder,"accessStockSources");sources.put(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS,new LinkedHashSet<>(List.of(first,second)));
+        });
+        var attempted=new HashSet<BlockPos>();int elapsed=0;
+        for(;elapsed<1000&&context.computeOnClient(client->builder.building());elapsed++){
+            var target=context.computeOnClient(client->(BlockPos)field(builder,"restockTarget"));if(target!=null)attempted.add(target);context.waitTick();
+        }
+        require(attempted.containsAll(List.of(first,second,chest)),"Receiver search starved native selected storage: "+attempted+"; "+context.computeOnClient(client->builder.status()));
+        require(world.getServer().computeOnServer(server->{var level=server.getOverworld();return level.getBlockState(origin).isOf(Blocks.CRACKED_POLISHED_BLACKSTONE_BRICKS)&&((net.minecraft.inventory.Inventory)level.getBlockEntity(first)).getStack(0).getCount()==1&&((net.minecraft.inventory.Inventory)level.getBlockEntity(chest)).getStack(0).isEmpty();}),"Storage did not patch the hole or unreachable caught stock changed");
+        context.runOnClient(client->{
+            require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Blocked receiver repair left work, supports, damage or menu: "+builder.status());
+            @SuppressWarnings("unchecked")var sources=(Map<Item,Set<BlockPos>>)field(builder,"accessStockSources");require(sources.get(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS).containsAll(List.of(first,second)),"Failed access discarded possible caught material");
+            @SuppressWarnings("unchecked")var empty=(Map<BlockPos,Set<Item>>)field(builder,"emptyChestItems");for(var receiver:List.of(first,second))require(!empty.getOrDefault(receiver,Set.of()).contains(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS),"Unopened receiver was declared empty");
+            BuilderPacketChecks.verify(1);builder.pause("blocked repair receivers checked");setting(builder,"Temporary Supports",true);
+        });
+        teleport(world,start);context.waitTicks(12);command(world,"setblock",origin,"air");
+        for(var receiver:List.of(first,second)){command(world,"setblock",receiver,"air");for(var direction:Direction.values())command(world,"setblock",receiver.offset(direction),"air");}
+        context.waitTicks(4);System.out.println("[builder-home] Both blocked receivers retired fairly; native storage patched the hole, unopened stock retained and full health in "+elapsed+" ticks");
     }
     private static void offsetRepairReceiver(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-home] Recover deflected repair stock through an adjacent native hopper column");
