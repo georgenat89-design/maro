@@ -406,7 +406,7 @@ final class BuilderHomeChecks {
         // case leaves its mined dirt loose; a newly enabled hopper must not
         // collect that unrelated item after this case seeds its exact stock.
         world.getServer().runOnServer(server->{
-            var drops=server.getOverworld().getEntitiesByClass(net.minecraft.entity.ItemEntity.class,new Box(origin,origin.add(4,3,2)).expand(2),item->true);
+            var drops=server.getOverworld().getEntitiesByClass(net.minecraft.entity.ItemEntity.class,new Box(origin.getX()-2,origin.getY()-2,origin.getZ()-2,origin.getX()+6,origin.getY()+5,origin.getZ()+4),item->true);
             drops.forEach(net.minecraft.entity.Entity::discard);
             System.out.println("[builder-home] Cleared "+drops.size()+" prior native loose items before hopper fixture setup");
         });
