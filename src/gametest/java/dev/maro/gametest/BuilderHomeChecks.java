@@ -7,6 +7,7 @@ import dev.maro.module.impl.player.AutoBuilder;
 import dev.maro.setting.ButtonSetting;
 import net.fabricmc.fabric.api.client.gametest.v1.context.*;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.block.*;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.inventory.SimpleInventory;
@@ -32,6 +33,14 @@ final class BuilderHomeChecks {
     private static BlockPos storage;
     private static Vec3d warmupStart;
     private static boolean movedDuringWarmup,rejectTravel,rejectDelete,silentDelete,commandsAwayFromStorage;
+    private static AutoBuilder looseTraceBuilder;
+    private static BlockPos looseTraceOrigin;
+    private static Object looseTraceChest;
+    static {ClientTickEvents.END_CLIENT_TICK.register(client->{
+        var builder=looseTraceBuilder;if(builder==null||client.world==null)return;
+        var chest=field(builder,"restockTarget");if(chest==null){looseTraceChest=null;return;}if(Objects.equals(chest,looseTraceChest))return;looseTraceChest=chest;
+        System.out.println("[builder-loose-restock-decision] ticks="+field(builder,"ticks")+" status="+builder.status()+" needed="+field(builder,"needed")+" held-bricks="+builder.inventoryCount(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)+" held-glass="+builder.inventoryCount(Items.GLASS)+" pickup="+field(builder,"accessPickupId")+" pickup-deadline="+field(builder,"accessPickupUntil")+" pickup-retry="+field(builder,"accessPickupRetry")+" openings="+field(builder,"floorAccessWork")+" restock="+chest+" recovery="+field(builder,"recoveringAccessStock")+" player="+client.player.getEntityPos()+" drops="+client.world.getEntitiesByClass(net.minecraft.entity.ItemEntity.class,new Box(looseTraceOrigin).expand(8),item->true).stream().map(item->item.getStack()+" at "+item.getEntityPos()).toList());
+    });}
     static {ServerTickEvents.END_SERVER_TICK.register(server->{
         if(waiting==null)return;
         if(waiting.getEntityPos().squaredDistanceTo(warmupStart)>.04)movedDuringWarmup=true;
@@ -115,8 +124,8 @@ final class BuilderHomeChecks {
         }
         if(Boolean.getBoolean("maro.gametest.builderHopperOnly")){
             hopperCutProtection(context,world,builder,start);hopperRepairStock(context,world,builder,start);
-            for(int sample=1;sample<8;sample++){
-                System.out.println("[builder-home] Native loose repair sample "+(sample+1)+"/8");
+            for(int sample=1;sample<32;sample++){
+                System.out.println("[builder-home] Native loose repair sample "+(sample+1)+"/32");
                 hopperRepairStock(context,world,builder,start,false,true);
             }
             buriedHopperRoofAccess(context,world,builder,start);existingViewBeforeRoof(context,world,builder,start);
@@ -381,7 +390,7 @@ final class BuilderHomeChecks {
         if(!looseReceiver){command(world,"setblock",beam,"air");command(world,"setblock",upper,"air");}
         world.getServer().runOnServer(server->{var inventory=(net.minecraft.inventory.Inventory)server.getOverworld().getBlockEntity(origin);inventory.setStack(0,new net.minecraft.item.ItemStack(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS,looseReceiver?4:6));inventory.setStack(1,new net.minecraft.item.ItemStack(Items.DIAMOND,7));inventory.markDirty();});
         world.getServer().runCommand("clear @a cracked_polished_blackstone_bricks");world.getServer().runCommand("clear @a glass");world.getServer().runCommand("give @a glass 1");teleport(world,origin.add(looseReceiver?3:2,1,1));context.waitTicks(12);int first=commands.size();
-        context.runOnClient(client->{setting(builder,"Temporary Supports",false);setting(builder,"Prepare Whole Build",false);builder.install(new Schematic("hopper-access-stock.nbt","test",4,3,2,BlockPos.ORIGIN,cells));builder.setOrigin(origin);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
+        context.runOnClient(client->{if(looseReceiver){looseTraceBuilder=builder;looseTraceOrigin=origin;looseTraceChest=null;}setting(builder,"Temporary Supports",false);setting(builder,"Prepare Whole Build",false);builder.install(new Schematic("hopper-access-stock.nbt","test",4,3,2,BlockPos.ORIGIN,cells));builder.setOrigin(origin);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
             @SuppressWarnings("unchecked")var openings=(Map<BlockPos,Integer>)field(builder,"floorAccessWork");openings.put(beam,10);openings.put(upper,10);
             @SuppressWarnings("unchecked")var depths=(Map<BlockPos,Integer>)field(builder,"openingRepairDepth");depths.put(beam,-beam.getY());depths.put(upper,-upper.getY());
             if(looseReceiver){@SuppressWarnings("unchecked")var passage=(Set<BlockPos>)field(builder,"passageBlocks");passage.add(upper);passage.add(beam);setField(builder,"passageStand",client.player.getBlockPos());}
@@ -394,16 +403,13 @@ final class BuilderHomeChecks {
         });
         boolean mined=false,recovered=false,persisted=looseReceiver;int elapsed=0;
         for(;elapsed<800&&context.computeOnClient(client->builder.building());elapsed++){
-            if(looseReceiver&&elapsed%20==0){
-                System.out.println((String)context.computeOnClient(client->"[builder-loose-stock-progress] "+builder.status()+" player="+client.player.getEntityPos()+" needed="+field(builder,"needed")+" held="+builder.inventoryCount(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)+" pickup="+field(builder,"accessPickupId")+" mining="+field(builder,"mining")+" passage="+field(builder,"passageBlocks")+" restock="+field(builder,"restockTarget")));
-                System.out.println((String)world.getServer().computeOnServer(server->"[builder-loose-stock-drops] "+server.getOverworld().getEntitiesByClass(net.minecraft.entity.ItemEntity.class,new Box(origin).expand(8),item->true).stream().map(item->item.getStack()+" at "+item.getEntityPos()).toList()));
-            }
             mined|=world.getServer().computeOnServer(server->server.getOverworld().getBlockState(beam).isAir());
             recovered|=context.computeOnClient(client->looseReceiver?(int)field(builder,"accessPickupId")>=0:(boolean)field(builder,"recoveringAccessStock"));
             if(!persisted&&context.computeOnClient(client->!((Map<?,?>)field(builder,"accessDropSources")).isEmpty())){context.runOnClient(client->{var savedBuild=builder.saveExtra();call(builder,"loadOpenings",new Class<?>[]{com.google.gson.JsonObject.class},savedBuild);require(!((Map<?,?>)field(builder,"accessDropSources")).isEmpty()&&!((Map<?,?>)field(builder,"accessStockSources")).isEmpty(),"Saved access openings lost their native pipe/material receipts");});persisted=true;}context.waitTick();
         }
         require(mined&&recovered&&persisted,"Native access did not recover its replacement stock: "+context.computeOnClient(client->builder.status()));
         String stockResult=world.getServer().computeOnServer(server->{var level=server.getOverworld();for(int i=0;i<cells.length;i++)if(!cells[i].isOf(Blocks.STRUCTURE_VOID)&&!AutoBuilder.matchesBuildState(level.getBlockState(origin.add(i%4,i/8,i/4%2)),cells[i]))return "block mismatch at "+i+" actual="+level.getBlockState(origin.add(i%4,i/8,i/4%2));var inventory=(net.minecraft.inventory.Inventory)level.getBlockEntity(origin);int stone=0,diamonds=0;for(int i=0;i<inventory.size();i++){var stack=inventory.getStack(i);if(stack.isOf(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS))stone+=stack.getCount();else if(stack.isOf(Items.DIAMOND))diamonds+=stack.getCount();else if(!stack.isEmpty())return "unexpected stock "+stack;}return stone==4&&diamonds==7?"":"brick stock="+stone+" diamonds="+diamonds;});require(stockResult.isEmpty(),"Access recovery changed native pipe blocks or unrelated/pre-existing stock: "+stockResult);
+        context.runOnClient(client->looseTraceBuilder=null);
         require(commands.size()==first,"Local access-stock recovery travelled through storage homes");
         context.runOnClient(client->{require(!builder.building()&&builder.inventoryCount(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)==0&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Native access recovery left materials, work, supports, damage or a menu: "+builder.status());if(!looseReceiver){require(!((Map<?,?>)field(builder,"accessStockSources")).isEmpty(),"Completed openings discarded their material receiver ledger");var saved=builder.saveExtra();call(builder,"loadOpenings",new Class<?>[]{com.google.gson.JsonObject.class},saved);require(!((Map<?,?>)field(builder,"accessStockSources")).isEmpty(),"Completed material receivers did not survive reload");}BuilderPacketChecks.verify(3);builder.pause("hopper repair stock checked");setting(builder,"Temporary Supports",true);});
         teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+3)+" "+(origin.getY()+2)+" "+(origin.getZ()+1)+" air");context.waitTicks(4);
