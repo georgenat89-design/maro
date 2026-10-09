@@ -888,6 +888,9 @@ public final class AutoBuilder extends Module {
                         standGoal=lower;descentLanding=true;routeMining=mining=post;walker.stop();status="Descending temporary scaffold";return true;
                     }
                 }
+                // The walk to the proved column base hands off to the climb on
+                // the next tick. Its actual arrival is fresh access progress.
+                if(accessStand!=null&&standGoal.equals(accessBase))accessProgressAt=ticks;
                 if(standGoal.equals(accessStand)){accessStand=accessBase=null;accessFloor=false;accessSupports.clear();accessStairs=Set.of();}
                 // Lower pieces still belong to the committed route. Reclaiming
                 // them during an intermediate climb forces us to rebuild them.
@@ -1083,6 +1086,11 @@ public final class AutoBuilder extends Module {
             escapeSupportWork.put(pos,navigatingCell);
     }
     private double effectiveReach(){return Math.min(reach.get(),mc.player.getBlockInteractionRange()-.1);}
+    private boolean cleanupOpeningPending(BlockPos pos){
+        var posts=cleanupOpeningSupports.get(pos);
+        return cleanup.get()&&posts!=null&&posts.stream().anyMatch(post->supports.contains(post)
+            &&(!mc.world.isChunkLoaded(post)||mc.world.getBlockState(post).isOf(Blocks.DIRT)));
+    }
     private boolean floorDeferred(BlockPos pos){
         var work=floorAccessWork.get(pos);if(work==null)return false;
         // A proved roof can contain several beams. Keep every beam registered
@@ -1099,8 +1107,7 @@ public final class AutoBuilder extends Module {
         // a missing schematic owner must not make that exit ready to close.
         var cleanupPosts=cleanupOpeningSupports.get(pos);
         if(cleanup.get()&&cleanupPosts!=null){
-            if(cleanupPosts.stream().anyMatch(post->supports.contains(post)
-                &&(!mc.world.isChunkLoaded(post)||mc.world.getBlockState(post).isOf(Blocks.DIRT))))return true;
+            if(cleanupOpeningPending(pos))return true;
             cleanupOpeningSupports.remove(pos);
         }
         // Confirmed homes provide the return route. Restore each completed
@@ -1138,6 +1145,9 @@ public final class AutoBuilder extends Module {
             var depth=openingRepairDepth.get(pos);
             if(depth!=null)for(var other:floorAccessWork.keySet()){
                 if(openingRepairDepth.getOrDefault(other,0)<=depth)continue;
+                // An exit retained for its cleanup column is not a ready repair.
+                // It must not block a separate opening's lower attachment cube.
+                if(cleanupOpeningPending(other))continue;
                 // Depth orders ready repairs. An opening whose owner is still
                 // unfinished must not block the very block it was opened for.
                 var owner=floorAccessWork.get(other);
@@ -1944,7 +1954,9 @@ public final class AutoBuilder extends Module {
         if(!feet.equals(entrySearchFeet)||entrySearchWork!=work||entrySearchHash!=hash){
             entrySearchFeet=feet.toImmutable();entrySearchWork=work;entrySearchHash=hash;entrySearchCursor=entryRetryAt=entryDoorCursor=0;entryProbeBase=null;
             search.reachableBases.clear();
-            var destinations=views.stream().filter(p->p.getY()>mc.player.getY()+.5&&p.getY()<=mc.player.getY()+7)
+            // Returning to ground must not strand a roof repair. The configured
+            // column budget and native route proof bound these exterior climbs.
+            var destinations=views.stream().filter(p->p.getY()>mc.player.getY()+.5)
                 .sorted(Comparator.comparingDouble(p->p.getSquaredDistance(feet))).limit(8).toList();
             var unique=new LinkedHashSet<EntryCandidate>();
             // An entrance above the final view can retain its wall footing and
@@ -1976,7 +1988,7 @@ public final class AutoBuilder extends Module {
             var tried=cleanupTarget!=null?cleanupStands.get(cleanupTarget):triedStands.get(work);if(tried!=null&&tried.getOrDefault(top,0)>ticks)continue;
             if(!walker.hasStandingClearance(top)||!mc.world.getBlockState(top.down()).isReplaceable()||plannedSolid(top.down()))continue;
             BlockPos base=null;boolean clear=true;
-            for(int down=1;down<=8;down++){
+            for(int down=1;down<=tempDirt.getInt();down++){
                 var next=top.down(down);
                 if(walker.canPillar(next)){base=next;break;}
                 if(plannedSolid(next)||!mc.world.isChunkLoaded(next)||!mc.world.getBlockState(next).isReplaceable()||!mc.world.getFluidState(next).isEmpty()){clear=false;break;}
