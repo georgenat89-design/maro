@@ -87,6 +87,7 @@ tasks.register('runProductionClientGameTest', net.fabricmc.loom.task.prod.Client
     jvmArgs.add("-Dmaro.gametest.builderCleanupOnly=" + providers.gradleProperty("builderCleanupTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.builderSealedEscapeOnly=" + providers.gradleProperty("builderSealedEscapeTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.builderHomeOnly=" + providers.gradleProperty("builderHomeTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderCleanupCeilingOnly=" + providers.gradleProperty("builderCleanupCeilingTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.builderRepairCycleOnly=" + providers.gradleProperty("builderRepairCycleTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.builderDoorOnly=" + providers.gradleProperty("builderDoorTestOnly").getOrElse("false"))
       jvmArgs.add("-Dmaro.gametest.builderReceiverOnly=" + providers.gradleProperty("builderReceiverTestOnly").getOrElse("false"))

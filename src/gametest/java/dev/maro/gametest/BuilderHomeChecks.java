@@ -93,6 +93,10 @@ final class BuilderHomeChecks {
         int before=saveCommands;
         context.runOnClient(client->button(builder,"Set Storage Home").press());waitHome(context,builder,80);
         context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(homes.ready()&&!builder.building(),"Storage setup failed or unexpectedly started building: "+builder.status());var entry=homes.saveData().get(0).getAsJsonObject();var feet=BlockPos.ofFloored(entry.get("x").getAsDouble(),entry.get("y").getAsDouble(),entry.get("z").getAsDouble());for(var reserved:List.of(feet,feet.up())){require((boolean)call(builder,"reservedSupplyAccess",new Class<?>[]{BlockPos.class},reserved),"Storage-home arrival cell was available to scaffolding");require(call(builder,"placement",new Class<?>[]{BlockPos.class,BlockState.class,Item.class,int.class,boolean.class},reserved,Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true)==null,"Scaffold could block native storage arrival");}});require(saveCommands==before+1,"Absent home 1 did not save exactly once");
+        if(Boolean.getBoolean("maro.gametest.builderCleanupCeilingOnly")){
+            cleanupCeilingOwnership(context,world,builder,start);
+            System.out.println("[builder-cleanup-ceiling] PASS: native pickup, retained exit, owned-post cleanup and roof repair");return;
+        }
         if(Boolean.getBoolean("maro.gametest.builderDoorOnly")){
             closedDoorAccess(context,world,builder,start);rotations(context,builder,start);
             System.out.println("[builder-door] PASS: native door route, contained water and brisk visible aim");return;
@@ -150,6 +154,53 @@ final class BuilderHomeChecks {
         cameraContinuity(context,world,builder,start);
         context.runOnClient(client->{builder.setEnabled(false);setting(builder,"Builder Homes",false);setting(builder,"Head Spoofing",false);});
         System.out.println("[builder-home] PASS: storage home 1; exact transient home 2 restock order with native chest supply; deletion only after return; home 3 untouched; saved return resumes on temporary footing; rejected commands bounded; prompt repairs/crouch cleanup/smooth independent camera");
+    }
+    private static void cleanupCeilingOwnership(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-home] Keep a cleanup ceiling open across real dropped-material pickup, then restore it after route cleanup");
+        var origin=start.south(10);var cells=new BlockState[125];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());
+        var roof=origin.add(2,4,2);var target=origin.add(6,2,2);var ledge=origin.add(5,2,2);var view=ledge.up();
+        for(int y=0;y<5;y++)for(int z=0;z<5;z++)for(int x=0;x<5;x++){
+            boolean wall=y==0||y==4||x==0||x==4||z==0||z==4;
+            if(wall)cells[(y*5+z)*5+x]=Blocks.BEDROCK.getDefaultState();
+            command(world,"setblock",origin.add(x,y,z),wall?"bedrock":"air");
+        }
+        cells[112]=Blocks.CRACKED_POLISHED_BLACKSTONE_BRICKS.getDefaultState();command(world,"setblock",roof,"cracked_polished_blackstone_bricks");
+        command(world,"setblock",ledge,"stone");command(world,"setblock",target,"dirt");command(world,"setblock",target.down(),"dirt");
+        world.getServer().runCommand("clear @a cracked_polished_blackstone_bricks");
+        for(String item:List.of("dirt 32","diamond_pickaxe","diamond_shovel"))world.getServer().runCommand("give @a "+item);
+        teleport(world,origin.add(2,1,2));context.waitTicks(12);int firstCommand=commands.size();
+        context.runOnClient(client->{
+            setting(builder,"Temporary Supports",true);setting(builder,"Prepare Whole Build",false);setting(builder,"Restock When Empty",false);
+            builder.install(new Schematic("cleanup-ceiling-owner.nbt","test",5,5,5,BlockPos.ORIGIN,cells));builder.setOrigin(origin);builder.preview();
+            @SuppressWarnings("unchecked")var owned=(Set<BlockPos>)field(builder,"supports");owned.add(target);owned.add(target.down());
+        });context.waitTicks(12);
+        Object search;
+        try{var type=Class.forName("dev.maro.module.impl.player.AutoBuilder$ViewSearch");var constructor=type.getDeclaredConstructor();constructor.setAccessible(true);search=constructor.newInstance();}
+        catch(ReflectiveOperationException e){throw new AssertionError(e);}
+        context.runOnClient(client->{BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();setField(builder,"cleanupTarget",target);});
+        boolean proved=false;
+        for(int tick=0;tick<40;tick++){
+            context.runOnClient(client->call(builder,"prepareCeilingEntry",new Class<?>[]{List.class,int.class,search.getClass()},List.of(view),-1,search));
+            proved=context.computeOnClient(client->roof.equals(field(builder,"ceilingTop")));if(proved)break;context.waitTick();
+        }
+        require(proved,"Native cleanup fixture could not prove its ceiling exit: "+context.computeOnClient(client->builder.status()));
+        boolean opened=false,reloaded=false;int elapsed=0;
+        for(;elapsed<1800&&context.computeOnClient(client->builder.building());elapsed++){
+            var pair=world.getServer().computeOnServer(server->List.of(server.getOverworld().getBlockState(roof).isAir(),server.getOverworld().getBlockState(target).isOf(Blocks.DIRT)));
+            opened|=pair.get(0);
+            require(!opened||!pair.get(1)||pair.get(0),"Repaired cleanup ceiling before removing owned target");
+            if(opened&&!reloaded){context.runOnClient(client->{var data=builder.saveExtra();call(builder,"loadOpenings",new Class<?>[]{com.google.gson.JsonObject.class},data);});reloaded=true;}
+            if(elapsed%200==0)System.out.println((String)context.computeOnClient(client->"[builder-cleanup-ceiling-progress] "+builder.status()+" player="+client.player.getEntityPos()+" supports="+builder.temporarySupports().size()));
+            context.waitTick();
+        }
+        require(opened&&reloaded,"Cleanup fixture did not remove and reload its actual ceiling opening");
+        String mismatch=world.getServer().computeOnServer(server->{for(int i=0;i<cells.length;i++){if(cells[i].isOf(Blocks.STRUCTURE_VOID))continue;var at=origin.add(i%5,i/25,i/5%5);var actual=server.getOverworld().getBlockState(at);if(!AutoBuilder.matchesBuildState(actual,cells[i]))return at+" expected="+cells[i]+" actual="+actual;}return "";});
+        require(mismatch.isEmpty(),"Cleanup ceiling or permanent room was not restored: "+mismatch);
+        require(world.getServer().computeOnServer(server->{for(int y=0;y<8;y++)for(int z=-3;z<8;z++)for(int x=-3;x<9;x++)if(server.getOverworld().getBlockState(origin.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Cleanup ceiling left native owned scaffold dirt");
+        context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&builder.inventoryCount(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)==0&&client.player.getHealth()==20&&client.currentScreen==null,"Cleanup ceiling retained work, lost its recovered repair block or caused damage: "+builder.status());BuilderPacketChecks.verify(1);builder.pause("cleanup ceiling checked");setting(builder,"Restock When Empty",true);});
+        require(commands.size()==firstCommand,"Cleanup ceiling issued unnecessary home commands");
+        teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+6)+" "+(origin.getY()+4)+" "+(origin.getZ()+4)+" air");context.waitTicks(4);
+        System.out.println("[builder-home] Cleanup exit survived native pickup and saved-opening reload; target and access columns removed, all permanent blocks restored, zero dirt, exact recovered material and full health in "+elapsed+" ticks");
     }
     private static void storageReplacement(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,BlockPos chest,BlockPos home2,BlockPos home3){
         var old=new Home(Vec3d.ofBottomCenter(start.west(12)),0,0);var second=new Home(Vec3d.ofBottomCenter(home2),15,3);var third=new Home(Vec3d.ofBottomCenter(home3),30,6);
