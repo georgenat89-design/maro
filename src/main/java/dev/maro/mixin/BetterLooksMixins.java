@@ -1,6 +1,9 @@
 package dev.maro.mixin;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import dev.maro.module.impl.visuals.BetterLooks;
+import net.minecraft.block.enums.CameraSubmersionType;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -11,6 +14,9 @@ import net.minecraft.client.render.SkyRendering;
 import net.minecraft.client.render.entity.EntityRenderer;
 import net.minecraft.client.render.entity.state.EntityRenderState;
 import net.minecraft.client.render.fog.FogData;
+import net.minecraft.client.render.fog.FogRenderer;
+import net.minecraft.client.render.fog.LavaFogModifier;
+import net.minecraft.client.render.fog.StatusEffectFogModifier;
 import net.minecraft.client.render.fog.WaterFogModifier;
 import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.client.toast.Toast;
@@ -19,11 +25,14 @@ import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.world.World;
+import org.joml.Vector4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+import java.nio.ByteBuffer;
 
 /** The hooks behind {@link BetterLooks}; each changes only what is drawn, and only while its switch is on. */
 public final class BetterLooksMixins {
@@ -116,6 +125,46 @@ public final class BetterLooksMixins {
             data.environmentalEnd = Math.max(data.environmentalEnd, Math.max(96f, viewDistance));
             data.skyEnd = data.environmentalEnd;
             data.cloudEnd = data.environmentalEnd;
+        }
+    }
+
+    /** Clear Lava: see through lava as far as with fire resistance and then some. */
+    @Mixin(LavaFogModifier.class)
+    public abstract static class LavaFog {
+        @Inject(method = "applyStartEndModifier", at = @At("TAIL"))
+        private void maro$clearLava(FogData data, Camera camera, ClientWorld world, float viewDistance, RenderTickCounter tickCounter, CallbackInfo ci) {
+            if (!BetterLooks.clearLava()) return;
+            data.environmentalStart = 0;
+            data.environmentalEnd = Math.max(data.environmentalEnd, 24f);
+            data.skyEnd = data.environmentalEnd;
+            data.cloudEnd = data.environmentalEnd;
+        }
+    }
+
+    /** No Blindness Fog: Blindness and Darkness leave the fog alone. */
+    @Mixin(StatusEffectFogModifier.class)
+    public abstract static class EffectFog {
+        @Inject(method = "shouldApply", at = @At("HEAD"), cancellable = true)
+        private void maro$noBlindFog(CameraSubmersionType submersion, Entity entity, CallbackInfoReturnable<Boolean> cir) {
+            if (BetterLooks.noBlindFog()) cir.setReturnValue(false);
+        }
+    }
+
+    /** No Fog: in the open air, far land is drawn with no haze over it. */
+    @Mixin(FogRenderer.class)
+    public abstract static class NoFog {
+        @WrapOperation(method = "applyFog(Lnet/minecraft/client/render/Camera;ILnet/minecraft/client/render/RenderTickCounter;FLnet/minecraft/client/world/ClientWorld;)Lorg/joml/Vector4f;",
+                at = @At(value = "INVOKE", target = "Lnet/minecraft/client/render/fog/FogRenderer;applyFog(Ljava/nio/ByteBuffer;ILorg/joml/Vector4f;FFFFFF)V"))
+        private void maro$noFog(FogRenderer self, ByteBuffer buffer, int index, Vector4f color, float envStart, float envEnd, float rdStart, float rdEnd,
+                                float skyEnd, float cloudEnd, Operation<Void> original) {
+            if (BetterLooks.noFog() && MinecraftClient.getInstance().gameRenderer.getCamera().getSubmersionType() == CameraSubmersionType.NONE) {
+                float far = 1.0e6f;
+                envStart = far;
+                envEnd = far;
+                rdStart = far;
+                rdEnd = far;
+            }
+            original.call(self, buffer, index, color, envStart, envEnd, rdStart, rdEnd, skyEnd, cloudEnd);
         }
     }
 

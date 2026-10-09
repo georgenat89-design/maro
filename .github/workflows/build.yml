@@ -88,22 +88,3 @@ jobs:
         with:
           name: test-screenshots-build-${{ github.run_number }}
           path: "**/screenshots/*.png"
-
-      # Temporary: prints the signatures of game classes new hooks are written against. Last, so it
-      # is in the tail of the log that the API hands back.
-      - name: Inspect game classes
-        if: always()
-        continue-on-error: true
-        run: |
-          JAR=$(find ~/.gradle/caches .gradle -path '*yarn*' -name 'minecraft-*.jar' ! -name '*sources*' 2>/dev/null | grep -v intermediary | head -1)
-          echo "INSPECT JAR $JAR"
-          for c in net.minecraft.client.render.fog.FogRenderer net.minecraft.client.render.fog.FogData \
-              net.minecraft.client.render.fog.LavaFogModifier net.minecraft.client.render.fog.StatusEffectFogModifier \
-              net.minecraft.client.render.fog.BlindnessEffectFogModifier net.minecraft.client.render.fog.AtmosphericFogModifier \
-              net.minecraft.client.network.AbstractClientPlayerEntity net.minecraft.client.network.OtherClientPlayerEntity \
-              net.minecraft.client.render.entity.state.PlayerEntityRenderState net.minecraft.client.render.entity.state.EntityRenderState \
-              net.minecraft.client.item.ItemModelManager net.minecraft.client.render.chunk.RenderedChunk; do
-            echo "INSPECT === $c"; javap -p -cp "$JAR" $c | grep -v "lambda\$" | sed 's/^/INSPECT /'
-          done
-          echo "INSPECT --- FogRenderer.applyFog"
-          javap -p -c -cp "$JAR" net.minecraft.client.render.fog.FogRenderer | grep -E "^  [a-z].*\(|invoke.*applyFog|putfield|getfield.*FogData" | sed 's/^/INSPECT /'

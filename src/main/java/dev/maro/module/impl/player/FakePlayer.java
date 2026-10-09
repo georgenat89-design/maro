@@ -211,6 +211,7 @@ public class FakePlayer extends Module {
             super(world, profile);
         }
 
+        @Override
         public PlayerListEntry getPlayerListEntry() {
             return mc.getNetworkHandler() == null ? null : mc.getNetworkHandler().getPlayerListEntry(mc.player.getUuid());
         }
