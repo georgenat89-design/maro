@@ -3029,9 +3029,24 @@ public final class AutoBuilder extends Module {
         else if(block instanceof ShulkerBoxBlock)side=wanted.get(ShulkerBoxBlock.FACING).getOpposite();
         else if(block instanceof WallTorchBlock||block instanceof WallSignBlock||block instanceof WallBannerBlock||block instanceof LadderBlock)side=wanted.get(net.minecraft.state.property.Properties.HORIZONTAL_FACING).getOpposite();
         else if(block instanceof PlantBlock||block instanceof RedstoneWireBlock||block instanceof FlowerPotBlock)side=Direction.DOWN;
-        if(side==null)return null;
-        var neighbour=target.offset(side);
-        return plannedSolid(neighbour)&&mc.world.getBlockState(neighbour).isReplaceable()?neighbour:null;
+        if(side!=null){
+            var neighbour=target.offset(side);
+            if(plannedSolid(neighbour)&&mc.world.getBlockState(neighbour).isReplaceable())return neighbour;
+        }
+        // A horizontal piston is placed while looking back from its front.
+        // Keep that adjacent standing/ray cell open until the piston exists;
+        // a container placed there first can seal every legal view above a
+        // hopper, where cutting the finished structure would lose its drops.
+        // Piston pairs do not reserve each other and create dependency cycles.
+        if(!(block instanceof PistonBlock)&&!wanted.getCollisionShape(mc.world,target).isEmpty())for(var facing:Direction.Type.HORIZONTAL){
+            var neighbour=target.offset(facing.getOpposite());
+            int cell=schematic.indexAt(neighbour.subtract(anchor()),turns(),mirror.get());
+            if(cell<0||!layerAllows(cell))continue;
+            var piston=desired(cell);
+            if(piston.getBlock() instanceof PistonBlock&&piston.get(PistonBlock.FACING)==facing
+                &&!materialIgnored(piston)&&mc.world.getBlockState(neighbour).isReplaceable())return neighbour;
+        }
+        return null;
     }
     private BlockPos visibleCleanupTip(){
         var floor=mc.player.getBoundingBox().offset(0,-1,0);
