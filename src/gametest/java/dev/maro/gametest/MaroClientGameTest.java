@@ -48,7 +48,6 @@ public class MaroClientGameTest implements FabricClientGameTest {
             AutoBuilderChecks.imports();
             if (Boolean.getBoolean("maro.gametest.staffOnly")) {
                 StaffNotifierChecks.run(context);
-                AntiVanishChecks.run(context);
                 return;
             }
             if (Boolean.getBoolean("maro.gametest.spotifyOnly")) {
@@ -105,7 +104,6 @@ public class MaroClientGameTest implements FabricClientGameTest {
             BetterTexturesChecks.run(context);
             StaffNotifierChecks.run(context);
             HudReadabilityChecks.run(context);
-            AntiVanishChecks.run(context);
             String before = context.computeOnClient(client -> describe(client));
             context.takeScreenshot("maro-00-world");
 

@@ -86,6 +86,9 @@ public final class PanelsView {
     private final Map<Category, float[]> panelRects = new HashMap<>();
     private Popover popover;
     private long popoverSince;
+    /** A dock page with no settings (Configs, Socials), in a box under its button so the panels stay the view. */
+    private PageLink pageBox;
+    private long pageBoxSince;
     private final Scroll popoverScroll = new Scroll();
     private final CompactSettings compact = new CompactSettings();
     private float popoverContent = 40f;
@@ -104,10 +107,11 @@ public final class PanelsView {
         return popover != null ? popover.module() : null;
     }
 
-    /** Closes the settings box; false if none was open. */
+    /** Closes the settings box or page box; false if none was open. */
     boolean closePopover() {
-        if (popover == null) return false;
+        if (popover == null && pageBox == null) return false;
         popover = null;
+        pageBox = null;
         gui.focused = null;
         gui.listening = null;
         Sounds.click();
@@ -117,6 +121,7 @@ public final class PanelsView {
     private void openPopover(Popover next) {
         boolean same = popover != null && popover.key().equals(next.key());
         popover = same ? null : next;
+        pageBox = null;
         popoverSince = System.currentTimeMillis();
         popoverScroll.reset();
         gui.focused = null;
@@ -129,8 +134,24 @@ public final class PanelsView {
             if (!page.label().equals(label)) continue;
             float[] at = dockAnchors.getOrDefault(page, new float[] {gui.width / 2f, MARGIN + DOCK_H + 6f});
             if (page.sections() != null) openPopover(new Popover(page, page.label(), null, page.sections(), at[0], at[1]));
-            else gui.openPage(page.index());
+            else openPageBox(page);
         }
+    }
+
+    /** Opens a page in its box under the dock, or closes it if it is the one open. */
+    private void openPageBox(PageLink page) {
+        boolean same = pageBox == page;
+        popover = null;
+        gui.focused = null;
+        pageBox = same ? null : page;
+        pageBoxSince = System.currentTimeMillis();
+        if (!same) gui.pageAt(page.index()).onOpen();
+        Sounds.click();
+    }
+
+    /** The dock page open in its box, if any; for tests. */
+    String pageBoxLabel() {
+        return pageBox != null ? pageBox.label() : null;
     }
 
     /** A module's settings box beside its row, or the Auto Builder's own screen. */
@@ -196,7 +217,7 @@ public final class PanelsView {
         rowPanels.clear();
         panelRects.clear();
         // A click on nothing closes the settings box.
-        if (popover != null) gui.hit(0, 0, width, height, (button, mx, my) -> closePopover());
+        if (popover != null || pageBox != null) gui.hit(0, 0, width, height, (button, mx, my) -> closePopover());
         float base = Render2D.getAlpha();
         float top = MARGIN + DOCK_H + 10f;
         List<Category> visible = shownCategories();
@@ -231,6 +252,11 @@ public final class PanelsView {
             ctx.createNewRootLayer();
             Render2D.setAlpha(base * shown);
             renderPopover(ctx, width, height);
+        }
+        if (pageBox != null) {
+            ctx.createNewRootLayer();
+            Render2D.setAlpha(base * shown);
+            renderPageBox(ctx, width, height);
         }
         // How to use it, along the bottom.
         Render2D.setAlpha(base * shown);
@@ -313,10 +339,12 @@ public final class PanelsView {
         });
         if (hov) gui.tooltip("Drag to move  •  right click to fold");
 
-        // The category's icon, lit in the accent while any of its modules are on.
-        float ix = x + 11f;
-        if (Theme.glow() && lit > 0.01f) Render2D.shadow(ctx, ix - 5, cy - 5, 10, 10, 5, 4, Theme.accent(Math.round(0x40 * lit)));
-        panel.category.getIcon().draw(ctx, ix, cy, 8.5f, ColorUtil.lerp(ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT, hv), Theme.accent(), lit), hv);
+        // The category's icon on a small tile, lit in the accent while any of its modules are on.
+        float ix = x + 12f;
+        if (Theme.glow() && lit > 0.01f) Render2D.shadow(ctx, ix - 6, cy - 6, 12, 12, 4, 4, Theme.accent(Math.round(0x40 * lit)));
+        Render2D.roundRect(ctx, ix - 6.5f, cy - 6.5f, 13f, 13f, 3.5f, Theme.accent(Math.round(0x1C + 0x24 * Math.max(hv, lit))),
+                Theme.accent2(Math.round(0x10 + 0x18 * Math.max(hv, lit))), Theme.accent2(Math.round(0x08 + 0x10 * lit)), Theme.accent(Math.round(0x10 + 0x18 * lit)));
+        panel.category.getIcon().draw(ctx, ix, cy, 8.5f, ColorUtil.lerp(ColorUtil.lerp(Theme.TEXT_DIM, Theme.TEXT, hv), 0xFFFFFFFF, lit), hv);
         float caretX = x + w - 9f;
         // A badge: how many match the search, or how many are on; nothing when none are.
         float titleRight = caretX - 6f;
@@ -332,7 +360,7 @@ public final class PanelsView {
         }
         // The name, a little smaller rather than cut short when the panel is narrow.
         String title = panel.category.getDisplayName();
-        float tx = ix + 9f, room = titleRight - tx, scale = 0.86f;
+        float tx = ix + 10.5f, room = titleRight - tx, scale = 0.86f;
         float full = Fonts.width(title, true, scale);
         if (full > room) scale = Math.max(0.68f, scale * room / full);
         Fonts.drawV(ctx, Fonts.trim(title, room, true, scale), tx, cy, Theme.TEXT, true, scale);
@@ -533,6 +561,46 @@ public final class PanelsView {
         Render2D.setAlpha(prev);
     }
 
+    /** A dock page (Socials, Configs) in a box of its own under its button, over the panels. */
+    private void renderPageBox(DrawContext ctx, float width, float height) {
+        PageLink page = pageBox;
+        float[] at = dockAnchors.getOrDefault(page, new float[] {width / 2f, MARGIN + DOCK_H + 6f});
+        float w = Math.min(320f, width - 12f), h = Math.min(290f, height - at[1] - 8f);
+        float x = Math.max(6f, Math.min(width - w - 6f, at[0] - w / 2f)), y = at[1];
+        float t = Easing.outCubic((System.currentTimeMillis() - pageBoxSince) / (180f / ClientSettings.animationSpeed()));
+        float prev = Render2D.getAlpha();
+        Render2D.setAlpha(prev * t);
+        y += (1f - t) * 4f;
+        float r = Theme.radius() + 1f;
+
+        gui.hit(x, y, w, h, (button, mx, my) -> {
+        });
+        if (ClientSettings.shadow.get()) Render2D.shadow(ctx, x, y + 2, w, h, r, 14f, 0x80000000);
+        if (Theme.glow()) Render2D.shadow(ctx, x, y, w, h, r, 14f, Theme.accent(0x16));
+        Render2D.roundRect(ctx, x, y, w, h, r, Theme.windowBg());
+        Render2D.roundRect(ctx, x, y, w, Math.min(40f, h), r, Theme.accent(0x18), Theme.accent2(0x18), 0x00000000, 0x00000000);
+        Render2D.roundOutline(ctx, x, y, w, h, r, 1f, Theme.accent(0x50), Theme.accent2(0x30), 0xFF15151B, 0xFF15151B);
+
+        float hy = y + POP_HEAD / 2f, right = x + w - 6f;
+        boolean closeHov = gui.hovered(right - 9f, hy - 5f, 10f, 10f);
+        float ch = Anims.of(page, "pageBoxClose", closeHov);
+        Icons.CLOSE.draw(ctx, right - 4f, hy, 6.5f, ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT, ch), ch);
+        gui.hit(right - 10f, hy - 6f, 12f, 12f, (button, mx, my) -> closePopover());
+        page.icon().draw(ctx, x + 11f, hy, 8f, Theme.accent(), 0f);
+        Fonts.beginRaw();
+        Fonts.drawV(ctx, page.label(), x + 20f, hy, Theme.TEXT, true, 0.84f);
+        Fonts.endRaw();
+        Render2D.rectGradient(ctx, x + 6f, y + POP_HEAD, w - 12f, 1f, Theme.accent(0x60), Theme.accent2(0x10), Theme.accent2(0x10), Theme.accent(0x60));
+
+        float bx = x + 9f, by = y + POP_HEAD + 6f, bw = w - 18f, bh = h - POP_HEAD - 12f;
+        dev.maro.gui.page.Page shownPage = gui.pageAt(page.index());
+        gui.scrollHit(x, by, w, bh, shownPage::onScroll);
+        gui.pushClip(x + 2f, by - 2f, w - 4f, bh + 4f);
+        shownPage.render(ctx, bx, by, bw, bh);
+        gui.popClip();
+        Render2D.setAlpha(prev);
+    }
+
     /** The Theme box's accent presets as a row of dots. */
     private void presets(DrawContext ctx, float x, float y, float w) {
         int n = Theme.PRESETS.length;
@@ -592,7 +660,7 @@ public final class PanelsView {
             dockAnchors.put(page, new float[] {ax, ay});
             dockButton(ctx, page, page.label(), page.icon(), bx, by, bs, () -> {
                 if (page.sections() != null) openPopover(new Popover(page, page.label(), null, page.sections(), ax, ay));
-                else gui.openPage(page.index());
+                else openPageBox(page);
             });
             bx += bs + 3f;
         }
@@ -605,7 +673,7 @@ public final class PanelsView {
 
     private void dockButton(DrawContext ctx, Object key, String label, Icons.Icon icon, float x, float y, float s, Runnable action) {
         boolean hov = gui.hovered(x, y, s, s);
-        float hv = Math.max(Anims.of(key, "dockHover", hov), Anims.of(key, "dockOpen", popover != null && popover.key() == key));
+        float hv = Math.max(Anims.of(key, "dockHover", hov), Anims.of(key, "dockOpen", popover != null && popover.key() == key || pageBox == key));
         if (Theme.glow() && hv > 0.01f) Render2D.shadow(ctx, x, y, s, s, s / 2f, 5, Theme.accent(Math.round(0x30 * hv)));
         Render2D.roundRect(ctx, x, y, s, s, s / 2f, ColorUtil.lerp(0x00000000, Theme.accent(0x38), hv));
         icon.draw(ctx, x + s / 2f, y + s / 2f, 8f, ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT, hv), hv);

@@ -304,6 +304,11 @@ public class ClickGuiScreen extends Screen {
         panels.openDockPage(label);
     }
 
+    /** The dock page open in its box over the panels (Socials, Configs), if any; for tests. */
+    public String panelPageBox() {
+        return panels.pageBoxLabel();
+    }
+
     /** The module whose settings box is open over the panels, if any; for tests. */
     public dev.maro.module.Module panelSettingsModule() {
         return panels.popoverModule();
@@ -312,6 +317,11 @@ public class ClickGuiScreen extends Screen {
     /** Where a module's row or a category's header was drawn in the panels last frame, as {x, y}; for tests. */
     public float[] panelPlace(Object moduleOrCategory) {
         return panels.placeOf(moduleOrCategory);
+    }
+
+    /** The page at an index of the dock and tabs, for the panels' page box. */
+    Page pageAt(int index) {
+        return entries.get(index).page();
     }
 
     private Page currentPage() {
@@ -393,6 +403,9 @@ public class ClickGuiScreen extends Screen {
         interactive = true;
 
         ctx.createNewRootLayer(); // overlays always above the menu
+        // A mode setting's open list, over every panel, box and the window.
+        dev.maro.gui.widget.Dropdown.render(this, ctx, width, height);
+        ctx.createNewRootLayer();
         renderTooltip(ctx, p);
         Render2D.setAlpha(1f);
         Notifications.render(ctx);
@@ -749,6 +762,10 @@ public class ClickGuiScreen extends Screen {
             return true;
         }
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            if (dev.maro.gui.widget.Dropdown.anyOpen()) {
+                dev.maro.gui.widget.Dropdown.close();
+                return true;
+            }
             if (showingPanels() && panels.closePopover()) return true;
             if (!search.getText().isEmpty()) {
                 search.clear();

@@ -225,13 +225,19 @@ public class SettingsList {
             float hv = Anims.of(m, "pill", hov);
             Render2D.roundRect(ctx, px, cy - h / 2, pw, h, Math.min(h / 2, Theme.radius()), ColorUtil.lerp(0xFF15141D, 0xFF22202C, hv));
             Render2D.roundOutline(ctx, px, cy - h / 2, pw, h, Math.min(h / 2, Theme.radius()), 1f, ColorUtil.lerp(Theme.BORDER, Theme.accent(0x90), hv));
-            Icons.BACK.draw(ctx, px + 8, cy, 6, Theme.TEXT_MUTED, 0);
-            Icons.CHEVRON_RIGHT.draw(ctx, px + pw - 8, cy, 6, Theme.TEXT_MUTED, 0);
-            Fonts.drawCentered(ctx, v, px + pw / 2f, cy, Theme.TEXT, false, scale);
+            // A click opens every choice in a list beside it.
+            Dropdown.anchor(m, px, px + pw, cy - h / 2, h);
+            boolean open = Dropdown.isOpen(m);
+            Fonts.drawV(ctx, v, px + 8, cy, open ? Theme.accent() : Theme.TEXT, false, scale);
+            Icons.CHEVRON_RIGHT.draw(ctx, px + pw - 8, cy, 6, open ? Theme.accent() : Theme.TEXT_MUTED, open ? 1 : 0);
             Fonts.drawRight(ctx, (m.index() + 1) + "/" + modes.size(), px - 6, cy, Theme.TEXT_MUTED, false, 0.65f);
             gui.hit(px, cy - h / 2, pw, h, (button, mx, my) -> {
-                m.cycle(button == 1 || mx < px + pw / 3f ? -1 : 1);
-                Sounds.click();
+                if (button == 1) {
+                    m.cycle(-1);
+                    Sounds.click();
+                } else {
+                    Dropdown.toggle(m);
+                }
             });
             gui.scrollHit(px, cy - h / 2, pw, h, amount -> m.cycle(amount > 0 ? -1 : 1));
         }

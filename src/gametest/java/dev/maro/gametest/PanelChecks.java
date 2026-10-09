@@ -40,8 +40,16 @@ final class PanelChecks {
         float[] row = context.computeOnClient(c -> screen(c).panelPlace(example));
         require(row != null, "The Example module has no row in the panels");
 
+        // Clicking makes the UI click sound, heard through the game's own sound system.
+        List<String> heard = new java.util.concurrent.CopyOnWriteArrayList<>();
+        net.minecraft.client.sound.SoundInstanceListener listener = (sound, set, range) -> heard.add(sound.getId().toString());
+        context.runOnClient(c -> c.getSoundManager().registerListener(listener));
         context.runOnClient(c -> screen(c).clickAt(row[0], row[1], GLFW.GLFW_MOUSE_BUTTON_LEFT));
         require(context.computeOnClient(c -> example.isEnabled()) != wasOn, "Clicking a module's row did not turn it on or off");
+        context.waitTicks(3);
+        context.runOnClient(c -> c.getSoundManager().unregisterListener(listener));
+        System.out.println("PANELS sounds heard on a click: " + heard);
+        require(heard.stream().anyMatch(id -> id.endsWith("ui.button.click")), "Clicking a module made no UI click sound: " + heard);
         List<Module> lit = new ArrayList<>();
         context.runOnClient(c -> {
             for (String name : List.of("Fullbright", "Keystrokes", "Custom Sky")) {
@@ -61,6 +69,18 @@ final class PanelChecks {
         require(context.computeOnClient(c -> screen(c).showingPanels() && screen(c).panelSettingsModule() == example),
                 "Right clicking a module did not open its settings box beside it");
         context.takeScreenshot("maro-panels-settings");
+
+        // A mode setting opens every choice in a list beside its row; Escape closes the list first.
+        dev.maro.setting.ModeSetting mode = (dev.maro.setting.ModeSetting) example.getSettings().stream()
+                .filter(s -> s.getName().equals("Mode")).findFirst().orElseThrow();
+        context.runOnClient(c -> dev.maro.gui.widget.Dropdown.toggle(mode));
+        settle(context);
+        require(context.computeOnClient(c -> dev.maro.gui.widget.Dropdown.isOpen(mode)), "A mode setting's list did not stay open beside its row");
+        context.takeScreenshot("maro-panels-dropdown");
+        context.getInput().pressKey(GLFW.GLFW_KEY_ESCAPE);
+        settle(context);
+        require(context.computeOnClient(c -> !dev.maro.gui.widget.Dropdown.anyOpen() && screen(c).panelSettingsModule() == example),
+                "Escape did not close just the mode list");
         context.getInput().pressKey(GLFW.GLFW_KEY_ESCAPE);
         settle(context);
         require(context.computeOnClient(c -> c.currentScreen instanceof ClickGuiScreen && screen(c).showingPanels()
@@ -74,6 +94,17 @@ final class PanelChecks {
         settle(context);
         require(context.computeOnClient(c -> c.currentScreen instanceof ClickGuiScreen && screen(c).showingPanels()),
                 "Escape from the Theme box left the panels");
+
+        // Socials opens in a box over the panels; the panels stay the view.
+        context.runOnClient(c -> screen(c).openPanelPage("Socials"));
+        settle(context);
+        require(context.computeOnClient(c -> screen(c).showingPanels() && "Socials".equals(screen(c).panelPageBox())),
+                "Socials did not open in a box over the panels");
+        context.takeScreenshot("maro-panels-socials");
+        context.getInput().pressKey(GLFW.GLFW_KEY_ESCAPE);
+        settle(context);
+        require(context.computeOnClient(c -> c.currentScreen instanceof ClickGuiScreen && screen(c).showingPanels() && screen(c).panelPageBox() == null),
+                "Escape did not close the Socials box");
 
         // A right click on a header folds the panel, and another opens it again.
         float[] head = context.computeOnClient(c -> screen(c).panelPlace(Category.VISUALS));

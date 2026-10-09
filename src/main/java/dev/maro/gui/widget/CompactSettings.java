@@ -162,18 +162,27 @@ public final class CompactSettings {
     // ---- mode -----------------------------------------------------------------------------
 
     private void mode(ClickGuiScreen gui, DrawContext ctx, ModeSetting m, float x, float y, float w, float h, float right, float cy, float hv) {
-        // The choice in the accent, with arrows; click for the next, right click for the one before.
+        // The choice in the accent with a caret; a click opens every choice in a list beside the row.
+        boolean open = Dropdown.isOpen(m);
+        Dropdown.anchor(m, x, x + w, y, h);
         String value = m.get();
-        int arrows = ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT_DIM, hv);
-        chevron(ctx, right - 1.5f, cy, 1, arrows);
+        float caret = open ? 1f : 0f;
+        int arrows = open ? Theme.accent() : ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT_DIM, hv);
         Fonts.beginRaw();
         float vw = Fonts.width(value, false, 0.72f);
-        Fonts.drawRight(ctx, value, right - 7f, cy, ColorUtil.lerp(Theme.accent(), 0xFFFFFFFF, hv * 0.3f), false, 0.72f);
+        float pw = vw + 16f, px = right - pw;
+        Render2D.roundRect(ctx, px, cy - 5.5f, pw, 11f, 3f, open ? Theme.accent(0x30) : ColorUtil.lerp(0xFF15141D, 0xFF1F1E2A, hv));
+        Render2D.roundOutline(ctx, px, cy - 5.5f, pw, 11f, 3f, 1f, open ? Theme.accent(0x90) : Theme.BORDER);
+        Fonts.drawV(ctx, value, px + 4f, cy, ColorUtil.lerp(Theme.accent(), 0xFFFFFFFF, Math.max(hv * 0.3f, caret)), false, 0.72f);
         Fonts.endRaw();
-        chevron(ctx, right - 11.5f - vw, cy, -1, arrows);
+        chevron(ctx, right - 5f, cy, 1, arrows);
         gui.hit(x, y, w, h, (button, mx, my) -> {
-            m.cycle(button == 1 ? -1 : 1);
-            Sounds.click();
+            if (button == 1) {
+                m.cycle(-1);
+                Sounds.click();
+            } else {
+                Dropdown.toggle(m);
+            }
         });
         gui.scrollHit(x, y, w, h, amount -> m.cycle(amount > 0 ? -1 : 1));
     }

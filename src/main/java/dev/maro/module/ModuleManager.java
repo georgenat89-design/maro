@@ -46,7 +46,6 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.CustomTotem());
         register(new dev.maro.module.impl.visuals.Emotes());
         register(new dev.maro.module.impl.visuals.StaffNotifier());
-        register(new dev.maro.anubis.module.impl.misc.AntiVanishModule());
         dev.maro.nathan.NameeProtectAddon.init();
 
         // Register your modules here, e.g.
@@ -63,9 +62,11 @@ public final class ModuleManager {
         return Collections.unmodifiableList(MODULES);
     }
 
+    /** A category's modules in alphabetical order. */
     public static List<Module> byCategory(Category category) {
         List<Module> list = new ArrayList<>();
         for (Module m : MODULES) if (m.getCategory() == category) list.add(m);
+        list.sort((a, b) -> String.CASE_INSENSITIVE_ORDER.compare(a.getName(), b.getName()));
         return list;
     }
 
