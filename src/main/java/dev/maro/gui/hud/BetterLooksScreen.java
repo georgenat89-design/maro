@@ -114,11 +114,22 @@ public final class BetterLooksScreen extends Screen {
         for (SettingSection s : m.getSettingSections()) {
             for (Setting<?> setting : s.getSettings()) {
                 if (setting instanceof BooleanSetting || setting instanceof NumberSetting || setting instanceof ModeSetting || setting instanceof ColorSetting) {
-                    rows.add(new Row(setting.getName(), setting.getDescription(), setting, null, null));
+                    rows.add(new Row(label(setting.getName()), setting.getDescription(), setting, null, null));
                 }
             }
         }
         cards.add(new Card(title, subtitle, rows));
+    }
+
+    /** A setting's name as a label, each word capitalised ("grade menus" reads "Grade Menus"). */
+    private static String label(String name) {
+        StringBuilder b = new StringBuilder(name.length());
+        boolean start = true;
+        for (char ch : name.replace('-', ' ').replace('_', ' ').toCharArray()) {
+            b.append(start ? Character.toUpperCase(ch) : ch);
+            start = ch == ' ';
+        }
+        return b.toString();
     }
 
     // ---- for tests -------------------------------------------------------------------------------
