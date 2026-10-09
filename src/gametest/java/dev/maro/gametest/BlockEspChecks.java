@@ -146,6 +146,14 @@ final class BlockEspChecks {
             });
             context.waitTicks(5);
             context.takeScreenshot("maro-block-esp-picker");
+            // Blocks with no item of their own still get a picture: potted plants are the plant in a pot.
+            context.runOnClient(c -> {
+                var picker = (dev.maro.gui.hud.BlockEspScreen) c.currentScreen;
+                picker.search("potted");
+                require(picker.results().contains(Blocks.POTTED_MANGROVE_PROPAGULE), "Searching potted did not find potted plants");
+            });
+            context.waitTicks(4);
+            context.takeScreenshot("maro-block-esp-picker-potted");
             context.runOnClient(c -> {
                 var picker = (dev.maro.gui.hud.BlockEspScreen) c.currentScreen;
                 picker.search("");

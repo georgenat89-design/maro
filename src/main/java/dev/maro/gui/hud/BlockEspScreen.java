@@ -17,6 +17,7 @@ import net.minecraft.client.input.KeyInput;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -42,7 +43,11 @@ public final class BlockEspScreen extends Screen {
     private final BlockESP module;
     private final List<Block> all = new ArrayList<>();
     private final Map<Block, String> names = new IdentityHashMap<>();
-    private final Map<Block, ItemStack> icons = new IdentityHashMap<>();
+    /** Each block's picture: an item, and for some a small second item in the corner (a pot, a cake). */
+    private record Icon(ItemStack item, ItemStack badge) {
+    }
+
+    private final Map<Block, Icon> icons = new IdentityHashMap<>();
     private List<Block> shown = new ArrayList<>();
     private String query = "";
 
@@ -468,15 +473,81 @@ public final class BlockEspScreen extends Screen {
     }
 
     private void icon(DrawContext ctx, Block block, float x, float y) {
-        ItemStack stack = icons.computeIfAbsent(block, b -> new ItemStack(b.asItem()));
-        if (!stack.isEmpty()) {
-            ctx.drawItem(stack, Math.round(x), Math.round(y));
+        Icon icon = icons.computeIfAbsent(block, BlockEspScreen::iconFor);
+        if (!icon.item().isEmpty()) {
+            ctx.drawItem(icon.item(), Math.round(x), Math.round(y));
+            if (!icon.badge().isEmpty()) {
+                // The pot or cake, half size, in the bottom corner.
+                var matrices = ctx.getMatrices();
+                matrices.pushMatrix();
+                matrices.translate(Math.round(x) + 8.5f, Math.round(y) + 8.5f);
+                matrices.scale(0.55f, 0.55f);
+                ctx.drawItem(icon.badge(), 0, 0);
+                matrices.popMatrix();
+            }
             return;
         }
-        // Blocks with no item of their own (fire, portals, wall signs): a tile in their colour.
+        // The very few with nothing to show: a tile in their colour with their initial.
         Render2D.roundRect(ctx, x, y, 16, 16, 4, ColorUtil.withAlpha(module.colorOf(block), 0xC0));
         String name = names.getOrDefault(block, "?");
         Fonts.drawCentered(ctx, name.isEmpty() ? "?" : name.substring(0, 1), x + 8, y + 8, 0xFF0B0D12, true, 0.7f);
+    }
+
+    /** Blocks with no item of their own, and the item that shows them best. */
+    private static final Map<String, String> STAND_INS = Map.ofEntries(
+            Map.entry("fire", "flint_and_steel"), Map.entry("soul_fire", "soul_soil"),
+            Map.entry("water", "water_bucket"), Map.entry("lava", "lava_bucket"), Map.entry("bubble_column", "water_bucket"),
+            Map.entry("powder_snow", "powder_snow_bucket"), Map.entry("nether_portal", "obsidian"),
+            Map.entry("end_portal", "end_portal_frame"), Map.entry("end_gateway", "ender_pearl"),
+            Map.entry("moving_piston", "piston"), Map.entry("piston_head", "piston"), Map.entry("tripwire", "string"),
+            Map.entry("cocoa", "cocoa_beans"), Map.entry("sweet_berry_bush", "sweet_berries"), Map.entry("carrots", "carrot"),
+            Map.entry("potatoes", "potato"), Map.entry("beetroots", "beetroot_seeds"), Map.entry("frosted_ice", "ice"),
+            Map.entry("big_dripleaf_stem", "big_dripleaf"), Map.entry("bamboo_sapling", "bamboo"),
+            Map.entry("pitcher_crop", "pitcher_pod"), Map.entry("torchflower_crop", "torchflower_seeds"),
+            Map.entry("redstone_wire", "redstone"), Map.entry("cave_vines", "glow_berries"), Map.entry("cave_vines_plant", "glow_berries"),
+            Map.entry("tall_seagrass", "seagrass"), Map.entry("melon_stem", "melon_seeds"), Map.entry("attached_melon_stem", "melon_seeds"),
+            Map.entry("pumpkin_stem", "pumpkin_seeds"), Map.entry("attached_pumpkin_stem", "pumpkin_seeds"),
+            Map.entry("wheat", "wheat_seeds"), Map.entry("candle_cake", "candle"));
+
+    /**
+     * The picture for a block: its own item if it has one, otherwise the item it comes from. Potted
+     * plants are the plant with a pot in the corner, candle cakes the candle with a cake, wall signs,
+     * heads, banners and coral fans their standing kind, plants' stems the plant, and the rest from
+     * a short list (fire, portals, crops, liquids).
+     */
+    private static Icon iconFor(Block block) {
+        ItemStack own = new ItemStack(block.asItem());
+        if (!own.isEmpty()) return new Icon(own, ItemStack.EMPTY);
+        String path = Registries.BLOCK.getId(block).getPath();
+        ItemStack badge = ItemStack.EMPTY;
+        String guess = STAND_INS.get(path);
+        if (guess == null) {
+            if (path.startsWith("potted_")) {
+                guess = path.substring("potted_".length());
+                badge = item("flower_pot");
+            } else if (path.endsWith("_candle_cake")) {
+                guess = path.substring(0, path.length() - "_cake".length());
+                badge = item("cake");
+            } else if (path.contains("_wall_")) {
+                guess = path.replace("_wall_", "_");
+            } else if (path.endsWith("_plant")) {
+                guess = path.substring(0, path.length() - "_plant".length());
+            } else if (path.endsWith("_crop")) {
+                guess = path.substring(0, path.length() - "_crop".length());
+            }
+        } else if (path.equals("candle_cake")) {
+            badge = item("cake");
+        }
+        ItemStack stand = guess == null ? ItemStack.EMPTY : item(guess);
+        // A potted azalea is "potted_azalea_bush"; a potted cactus or bamboo is the plain one.
+        if (stand.isEmpty() && guess != null && guess.endsWith("_bush")) stand = item(guess.substring(0, guess.length() - "_bush".length()));
+        if (stand.isEmpty() && guess != null && guess.startsWith("flowering_azalea")) stand = item("flowering_azalea");
+        return new Icon(stand, stand.isEmpty() ? ItemStack.EMPTY : badge);
+    }
+
+    private static ItemStack item(String path) {
+        Identifier id = Identifier.ofVanilla(path);
+        return Registries.ITEM.containsId(id) ? new ItemStack(Registries.ITEM.get(id)) : ItemStack.EMPTY;
     }
 
     private void scrollbar(DrawContext ctx, float x, float y, float h, float scroll, float content) {
