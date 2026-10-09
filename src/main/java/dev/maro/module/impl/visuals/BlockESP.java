@@ -10,6 +10,7 @@ import dev.maro.render.esp.ShapeMode;
 import dev.maro.runtime.MeteorClient;
 import dev.maro.runtime.event.EventHandler;
 import dev.maro.runtime.events.world.BlockUpdateEvent;
+import dev.maro.runtime.events.world.ChunkLoadEvent;
 import dev.maro.runtime.utils.render.color.Color;
 import com.google.gson.JsonObject;
 import dev.maro.gui.hud.BlockEspScreen;
@@ -57,9 +58,10 @@ import java.util.function.Predicate;
  * with clean glowing tracers running out to them and bloom over both, and a Y limit so it shows only
  * what is at or below a height, or only while you are.
  *
- * <p>Finding them: the loaded chunks round you are scanned nearest first, on a worker thread, from
- * copies of only those chunk sections that hold a wanted block at all (each section's palette says
- * so without looking at its blocks). After that the block changes the game reports keep the list
+ * <p>Finding them: each chunk is scanned the moment it arrives from the server, before it is drawn,
+ * and the loaded chunks round you are swept nearest first for any missed; scans run on worker
+ * threads, from copies of only those chunk sections that hold a wanted block at all (each section's
+ * palette says so without looking at its blocks). After that the block changes the game reports keep the list
  * up to date, so a chunk is only scanned again if it is reloaded or what you look for changes.
  */
 public class BlockESP extends Module {
@@ -105,7 +107,10 @@ public class BlockESP extends Module {
     }
 
     /** Chunks scanned in a tick at most, and waiting for the worker at once. */
-    private static final int PER_TICK = 32, QUEUE_LIMIT = 96;
+    /** Chunks looked at each tick and scans waiting at once: high, so a teleport's worth of chunks is done in a moment. */
+    private static final int PER_TICK = 256, QUEUE_LIMIT = 1024;
+    /** The list is redrawn at most this often while scans stream in (about every other frame). */
+    private static final long REBUILD_NANOS = 30_000_000L;
     /** The nearest boxes on screen that get a soft edge and a glow; past these, the cost is not worth it. */
     private static final int SOFT_EDGES = 300, GLOWING = 400;
 
@@ -190,6 +195,7 @@ public class BlockESP extends Module {
     private int[] offsetsX = new int[0], offsetsZ = new int[0];
     private int offsetsRadius = -1;
     private int ticks, listTick;
+    private long listNanos;
     private boolean dirty;
 
     /** What is drawn: the nearest wanted blocks within the limits, nearest first. */
@@ -223,7 +229,7 @@ public class BlockESP extends Module {
     @Override
     protected void onEnable() {
         // A few scanners side by side: each chunk is scanned on its own, from its own copy.
-        int threads = Math.max(1, Math.min(3, Runtime.getRuntime().availableProcessors() / 2));
+        int threads = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 1));
         worker = Executors.newFixedThreadPool(threads, task -> {
             Thread thread = new Thread(task, "Maro Block ESP");
             thread.setDaemon(true);
@@ -397,10 +403,7 @@ public class BlockESP extends Module {
     public void onTick() {
         if (!inGame() || worker == null) return;
         ticks++;
-        if (mc.world != world) {
-            world = mc.world;
-            clearScans();
-        }
+        syncWorld();
         refreshTargets();
         if (targets.isEmpty()) {
             shownCount = 0;
@@ -412,6 +415,33 @@ public class BlockESP extends Module {
         if (ticks % 10 == 0) prune(origin, radius);
         submit(origin);
         if (dirty || ticks - listTick >= 5) rebuildList();
+    }
+
+    private void syncWorld() {
+        if (mc.world != world) {
+            world = mc.world;
+            clearScans();
+        }
+    }
+
+    /**
+     * A chunk just arrived from the server: scanned at once, before it is even drawn, so its blocks
+     * and tracers show up with it instead of on a later sweep.
+     */
+    @EventHandler
+    private void onChunkLoad(ChunkLoadEvent event) {
+        if (!inGame() || worker == null) return;
+        syncWorld();
+        refreshTargets();
+        if (targets.isEmpty()) return;
+        WorldChunk chunk = event.chunk;
+        ChunkPos at = chunk.getPos(), origin = mc.player.getChunkPos();
+        int dx = at.x - origin.x, dz = at.z - origin.z, radius = range.getInt();
+        if (dx * dx + dz * dz > (radius + 0.5) * (radius + 0.5)) return;
+        long key = at.toLong();
+        // One already being scanned is from before this load; the sweep scans this one when it is back.
+        if (queued.contains(key)) return;
+        scan(chunk, key);
     }
 
     /** Chunk offsets within the radius, nearest first. */
@@ -551,6 +581,7 @@ public class BlockESP extends Module {
     /** The nearest wanted blocks within range and the Y limit, at most Max Blocks of them. */
     private void rebuildList() {
         listTick = ticks;
+        listNanos = System.nanoTime();
         dirty = false;
         double px = mc.player.getX(), py = mc.player.getEyeY(), pz = mc.player.getZ();
         double reach = (range.get() + 0.5) * 16, reachSq = reach * reach;
@@ -662,6 +693,8 @@ public class BlockESP extends Module {
 
     /** Draws the boxes, queues the tracers and, with bloom on, fills the glow target. */
     public void render(Renderer3D renderer) {
+        // Scans finished since the last tick are drawn this frame, not on the next tick.
+        if (dirty && worker != null && inGame() && System.nanoTime() - listNanos >= REBUILD_NANOS) rebuildList();
         if (!inGame() || shownCount == 0) return;
         if (yLimit.is("You") && mc.player.getY() > maxY.get()) return;
 
