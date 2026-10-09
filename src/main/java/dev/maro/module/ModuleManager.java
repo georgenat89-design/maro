@@ -28,6 +28,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.player.FakePlayer());
         register(new dev.maro.module.impl.player.AutoMine());
         register(new dev.maro.module.impl.player.AutoBuilder());
+        register(new dev.maro.module.impl.player.MaroRelog());
         register(new dev.maro.module.impl.player.CrafterDisabler());
         register(new dev.maro.module.impl.visuals.StretchRes());
         register(new dev.maro.module.impl.visuals.InventoryHud());

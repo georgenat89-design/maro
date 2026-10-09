@@ -35,6 +35,7 @@
     "ModuleEventsMixin",
     "PerspectiveEventsMixin",
     "PacketEventsMixin",
+    "RelogTeleportMixin",
     "StaffPacketsMixin",
     "StaffConnectionMixin",
     "BlockEventsMixin",

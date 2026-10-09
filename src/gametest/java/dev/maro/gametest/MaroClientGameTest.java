@@ -36,6 +36,10 @@ public class MaroClientGameTest implements FabricClientGameTest {
             // make sure nothing (pause menu, toasts...) is in the way before testing the keybind
             context.setScreen(() -> null);
             context.waitTicks(5);
+            if (Boolean.getBoolean("maro.gametest.relogOnly")) {
+                MaroRelogChecks.run(context, singleplayer);
+                return;
+            }
             // Optional startup probe for an externally supplied companion addon.
             if (Boolean.getBoolean("maro.gametest.launchOnly")) {
                 context.waitTicks(100);
@@ -110,6 +114,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             DiscordPresenceChecks.run(context);
             StaffNotifierChecks.run(context);
             HudReadabilityChecks.run(context);
+            MaroRelogChecks.run(context, singleplayer);
             String before = context.computeOnClient(client -> describe(client));
             context.takeScreenshot("maro-00-world");
 
