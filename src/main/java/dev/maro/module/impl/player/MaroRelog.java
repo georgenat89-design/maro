@@ -85,7 +85,7 @@ public final class MaroRelog extends Module {
         }
         if (!mc.player.isAlive()) { stop("Player died; the relog sequence was stopped"); return; }
         var builder = ModuleManager.get(AutoBuilder.class);
-        if (builder != null && (builder.building() || builder.buying() || builder.depositing())) {
+        if (builder != null && builder.isEnabled()) {
             if (phase != Phase.IDLE) stop("Builder started; relog stopped with the saved home kept");
             else status = "Waiting for Auto Builder";
             return;

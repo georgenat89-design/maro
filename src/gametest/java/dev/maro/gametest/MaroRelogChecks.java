@@ -49,10 +49,17 @@ final class MaroRelogChecks {
         var mode = world.getServer().computeOnServer(s -> s.getPlayerManager().getPlayerList().getFirst().interactionManager.getGameMode());
         install(world);
         world.getServer().runCommand("gamemode creative @a");
+        world.getServer().runOnServer(server -> {
+            for (int x = 13; x <= 16; x++) for (int z = 13; z <= 14; z++) server.getOverworld().getChunk(x, z);
+        });
         world.getServer().runCommand("fill 215 -11 215 225 -11 225 stone");
         world.getServer().runCommand("fill 215 -10 215 225 -7 225 air");
         world.getServer().runCommand("fill 247 9 215 257 9 225 stone");
         world.getServer().runCommand("fill 247 10 215 257 13 225 air");
+        world.getServer().runOnServer(server -> require(
+                server.getOverworld().getBlockState(net.minecraft.util.math.BlockPos.ofFloored(START).down()).isOf(net.minecraft.block.Blocks.STONE)
+                        && server.getOverworld().getBlockState(net.minecraft.util.math.BlockPos.ofFloored(AWAY).down()).isOf(net.minecraft.block.Blocks.STONE),
+                "Relog fixture platforms did not load"));
         try {
             teleport(world, AWAY);
             context.waitTicks(12);
