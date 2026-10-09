@@ -100,6 +100,8 @@ public final class BuilderHomes {
     }
     private void begin(Stage next){walker.stop();stage=next;started=clock;receipt=false;failure="";settled=0;}
     private void save(){begin(Stage.SAVE);mc.getNetworkHandler().sendChatCommand("sethome");}
+    /** A native server position receipt also confirms teleports to the current position. */
+    public void positionConfirmed(){if(stage==Stage.TRAVEL||stage==Stage.STORAGE_TRAVEL)receipt=true;}
     private boolean besideStorage(Point point){
         if(storageChest==null||!(mc.world.getBlockState(storageChest).getBlock() instanceof net.minecraft.block.ChestBlock)||storageChest.getSquaredDistance(point.feet())>9||!safe(point))return false;
         var hit=mc.world.raycast(new net.minecraft.world.RaycastContext(point.position.add(0,mc.player.getStandingEyeHeight(),0),Vec3d.ofCenter(storageChest),net.minecraft.world.RaycastContext.ShapeType.OUTLINE,net.minecraft.world.RaycastContext.FluidHandling.NONE,mc.player));
@@ -177,7 +179,6 @@ public final class BuilderHomes {
             status.accept("Returning to the saved work area through /home 2");
             if(!safe(pending)){cancel();pause.accept("Saved work footing changed — home 2 was kept");return true;}
             if(!settledToTravel()||mc.player.currentScreenHandler!=mc.player.playerScreenHandler)return true;
-            if(mc.player.getEntityPos().squaredDistanceTo(pending.position)<=.36){clearReturn();return true;}
             travellingBack=true;travel(1);return true;
         }
         if(stage==Stage.DELETE){
@@ -200,7 +201,7 @@ public final class BuilderHomes {
             if(receipt&&clock-started>=4)cancel();return true;
         }
         status.accept("Waiting for /home "+(slot+1)+" arrival");
-        if(mc.player.getEntityPos().squaredDistanceTo(pending.position)<=.6*.6&&settledToTravel()&&safe(pending)){
+        if(receipt&&mc.player.getEntityPos().squaredDistanceTo(pending.position)<=.6*.6&&settledToTravel()&&safe(pending)){
             if(++settled>=4){
                 // Local chest routing may leave the three-cell radius while
                 // walking around an obstruction. It must not restart home 1.

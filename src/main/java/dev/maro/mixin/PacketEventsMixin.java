@@ -7,6 +7,10 @@ import org.spongepowered.asm.mixin.injection.*;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ClientPlayNetworkHandler.class)
 public abstract class PacketEventsMixin {
+    @Inject(method="onPlayerPositionLook",at=@At("RETURN"))
+    private void maro$homeArrival(PlayerPositionLookS2CPacket packet,CallbackInfo info){
+        dev.maro.module.impl.player.AutoBuilder.serverHomeArrival();
+    }
     @Inject(method="onInventory",at=@At("RETURN"))
     private void maro$inventory(InventoryS2CPacket packet,CallbackInfo info){
         var builder=dev.maro.module.ModuleManager.get(dev.maro.module.impl.player.AutoBuilder.class);

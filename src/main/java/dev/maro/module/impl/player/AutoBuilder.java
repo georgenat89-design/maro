@@ -476,6 +476,10 @@ public final class AutoBuilder extends Module {
         groups.forEach((name,section)->{if(!name.equals("Start"))result.add(section);});return result;
     }
     public static boolean holdingBreak(){return digging;}
+    public static void serverHomeArrival(){
+        var builder=ModuleManager.get(AutoBuilder.class);
+        if(builder!=null&&mc.player!=null&&mc.world!=null)builder.homes.positionConfirmed();
+    }
     public static void serverBlockUpdate(BlockPos pos,BlockState state){
         var builder=ModuleManager.get(AutoBuilder.class);
         if(builder==null||builder.world!=mc.world)return;
