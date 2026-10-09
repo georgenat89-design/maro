@@ -51,7 +51,9 @@ final class FakePlayerChecks {
             context.waitTicks(2);
             float after = context.computeOnClient(c -> fake.getHealth());
             System.out.println("FAKE PLAYER health " + before + " -> " + after);
-            require(after < before, "Hitting the fake player took no health: " + before + " -> " + after);
+            // At 1 health a single hit can be the last: then a totem pops and it is healed instead.
+            require(after < before || context.computeOnClient(c -> module.totemPops()) > 0,
+                    "Hitting the fake player took no health and popped no totem: " + before + " -> " + after);
             for (int i = 0; i < 20 && context.computeOnClient(c -> module.totemPops()) == 0; i++) {
                 context.runOnClient(c -> c.interactionManager.attackEntity(c.player, fake));
                 context.waitTicks(12);
