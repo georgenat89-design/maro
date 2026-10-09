@@ -35,6 +35,8 @@ final class BuilderAuctionChecks {
     private static final AtomicInteger chestOpens=new AtomicInteger(),watchedSync=new AtomicInteger(-1);
     private static final AtomicInteger lastListingSync=new AtomicInteger(-1),lastConfirmationSync=new AtomicInteger(-1);
     private static final AtomicInteger stackScenario=new AtomicInteger(),invalidNext=new AtomicInteger(),deniedChest=new AtomicInteger(),chestAttempts=new AtomicInteger();
+    private static final AtomicInteger changingScenario=new AtomicInteger(),changingSearches=new AtomicInteger();
+    private static final List<Double> changingPayments=new CopyOnWriteArrayList<>();
     private static final List<Integer> quantities=new CopyOnWriteArrayList<>(),pages=new CopyOnWriteArrayList<>();
     private record Delayed(int tick,Runnable action){}
     private static final List<Delayed> delayed=new ArrayList<>();
@@ -49,10 +51,11 @@ final class BuilderAuctionChecks {
         changed.set(false);purchases.set(0);noReceipt.set(false);rateScenario.set(0);soldScenario.set(0);soldAttempts.set(0);delayed.clear();
         singleplayer.getServer().computeOnServer(server->{
             server.getCommandManager().getDispatcher().register(CommandManager.literal("ah").then(CommandManager.argument("query",StringArgumentType.greedyString()).executes(command->{
-                var player=command.getSource().getPlayer();Item item=switch(command.getArgument("query",String.class)){case "dirt"->Items.DIRT;case "glass"->Items.GLASS;case "steak"->Items.COOKED_BEEF;case "diamond pickaxe"->Items.DIAMOND_PICKAXE;case "diamond shovel"->Items.DIAMOND_SHOVEL;default->Items.STONE;};if(player!=null)open(player,false,item);return 1;
+                var player=command.getSource().getPlayer();Item item=switch(command.getArgument("query",String.class)){case "dirt"->Items.DIRT;case "glass"->Items.GLASS;case "steak"->Items.COOKED_BEEF;case "diamond pickaxe"->Items.DIAMOND_PICKAXE;case "diamond shovel"->Items.DIAMOND_SHOVEL;default->Items.STONE;};if(player!=null){if(changingScenario.get()>0){if(item==Items.STONE)changingSearches.incrementAndGet();openChanging(player,item,1);}else open(player,false,item);}return 1;
             })));
             server.getPlayerManager().getPlayerList().forEach(server.getCommandManager()::sendCommandTree);return true;
         });
+        changingListings(context,singleplayer,builder);
         shoppingRegression(context,singleplayer,builder);
         if(Boolean.getBoolean("maro.gametest.builderShoppingOnly"))return;
         context.runOnClient(client->builder.getSettings().stream().filter(s->s.getName().equals("Material Supply")).findFirst().orElseThrow().fromJson(new JsonPrimitive("Layer by Layer")));
@@ -104,6 +107,49 @@ final class BuilderAuctionChecks {
         supportSupply(context,singleplayer,builder);
     }
     private static void waitDone(ClientGameTestContext context,AutoBuilder builder){for(int i=0;i<600&&context.computeOnClient(client->builder.buying());i++)context.waitTick();require(!context.computeOnClient(client->builder.buying()),"Auction state machine did not finish: "+context.computeOnClient(client->builder.status()));}
+    private static void changingListings(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder){
+        var base=context.computeOnClient(client->client.player.getBlockPos());var chest=base.add(2,0,0);
+        world.getServer().runCommand("setblock "+coords(chest)+" chest[facing=north,type=left]");world.getServer().runCommand("setblock "+coords(chest.east())+" chest[facing=north,type=right]");
+        for(int scenario=1;scenario<=4;scenario++){
+            changingScenario.set(scenario);changingSearches.set(0);changingPayments.clear();purchases.set(0);fillAfterGlass.set(scenario==1);
+            world.getServer().runCommand("clear @a");context.waitTicks(6);
+            int selected=scenario;
+            context.runOnClient(client->{
+                builder.setEnabled(false);builder.clearContainers();setting(builder,"Prepare Whole Build",false);setting(builder,"Auto Buy Tools",false);setting(builder,"Auto Eat",false);setting(builder,"Support Dirt Reserve",0);setting(builder,"Temporary Supports",false);setting(builder,"Max Price Per Item",25);builder.auctionBudget(300);
+                var cells=selected==1?new net.minecraft.block.BlockState[]{Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState(),Blocks.GLASS.getDefaultState(),Blocks.GLASS.getDefaultState()}:new net.minecraft.block.BlockState[]{Blocks.STONE.getDefaultState(),Blocks.STONE.getDefaultState()};
+                builder.install(new Schematic("changing-auction.nbt","test",cells.length,1,1,BlockPos.ORIGIN,cells));builder.setOrigin(base.add(0,0,2));builder.preview();if(selected==1)selectChest(client,builder,chest);
+            });
+            context.waitTicks(5);context.runOnClient(client->builder.buyMaterials());
+            for(int i=0;i<900&&context.computeOnClient(client->builder.buying()||builder.depositing());i++)context.waitTick();
+            require(purchases.get()==(scenario==1?4:1),"Changing live listing stopped or duplicated the shopping queue: scenario="+scenario+" purchases="+purchases+" "+context.computeOnClient(client->builder.status()));
+            double paid=changingPayments.stream().mapToDouble(Double::doubleValue).sum();
+            context.runOnClient(client->require(!builder.buying()&&!builder.depositing()&&builder.status().startsWith("Buying finished")&&builder.inventoryCount(Items.STONE)==(selected==1?4:2)&&builder.sessionSpend()==paid&&paid<=300,"Changed listing receipt, queue or spending failed: "+builder.status()));
+            if(scenario==1)require(chestCount(world,chest,Items.GLASS)==2&&chestCount(world,chest,Items.COBBLESTONE)==35*64,"Changing listing fixture never deposited the earlier purchases and full inventory");
+            if(scenario==2)require(purchasedPage.get()==1,"Removed auction page was still required for purchase");
+            if(scenario==3||scenario==4)require(purchasedPage.get()==2&&paid==40,"Disappeared/over-limit offer did not move to the valid live listing");
+            System.out.println("[changing-auction-proof] scenario="+scenario+" purchases="+purchases+" searches="+changingSearches+" actual paid="+paid+" deposit="+(scenario==1));
+        }
+        changingScenario.set(0);fillAfterGlass.set(false);purchases.set(0);context.runOnClient(client->{builder.setEnabled(false);builder.clearContainers();});
+        world.getServer().runCommand("setblock "+coords(chest)+" air");world.getServer().runCommand("setblock "+coords(chest.east())+" air");world.getServer().runCommand("kill @e[type=item]");
+    }
+    private static void openChanging(ServerPlayerEntity player,Item item,int page){
+        int scenario=changingScenario.get(),search=changingSearches.get();
+        int total=item!=Items.STONE?1:scenario==2?(search==1?3:1):2;
+        double price=item!=Items.STONE?10:scenario==2?(search==1?(page==2?20:40):24):page==2?40:scenario==1?10+search*2:scenario==4&&search>1?200:10;
+        int count=item==Items.STONE?2:1;
+        boolean present=!(item==Items.STONE&&scenario==3&&page==1&&search%2==0);
+        var inventory=new SimpleInventory(27);
+        if(present){var listing=new ItemStack(item,count);listing.set(DataComponentTypes.LORE,new LoreComponent(List.of(Text.literal("Price: $"+price))));inventory.setStack(0,listing);}
+        if(page<total){var next=new ItemStack(Items.ARROW);next.set(DataComponentTypes.CUSTOM_NAME,Text.literal("Next page"));inventory.setStack(26,next);}
+        player.openHandledScreen(new SimpleNamedScreenHandlerFactory((sync,inv,owner)->new GenericContainerScreenHandler(ScreenHandlerType.GENERIC_9X3,sync,inv,inventory,3){
+            private boolean clicked;
+            @Override public void onSlotClick(int slot,int button,SlotActionType action,PlayerEntity entity){
+                after(player,1,()->player.currentScreenHandler.syncState());
+                if(slot==26&&page<total){openChanging(player,item,page+1);return;}
+                if(slot==0&&present&&!clicked){clicked=true;purchases.incrementAndGet();purchasedPage.set(page);changingPayments.add(price);player.closeHandledScreen();after(player,45,()->receive(player,item,count));}
+            }
+        },Text.literal("Auction House — Page "+page+"/"+total)));
+    }
     private static void shoppingRegression(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder){
         var base=context.computeOnClient(client->client.player.getBlockPos());
         context.runOnClient(client->{setting(builder,"Max Total Spend",1000);setting(builder,"Max Price Per Item",25);setting(builder,"Support Dirt Reserve",0);setting(builder,"Temporary Supports",false);setting(builder,"Auto Buy Tools",false);setting(builder,"Auto Eat",false);builder.getSettings().stream().filter(s->s.getName().equals("Material Supply")).findFirst().orElseThrow().fromJson(new JsonPrimitive("Nearby Sections"));});

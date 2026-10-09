@@ -414,7 +414,7 @@ public final class AutoBuilder extends Module {
     private int soldSkips;
     private AuctionMarket.Offer bestMarketOffer;
     private String bestMarketKey="";
-    private int bestMarketPage,marketRechecks;
+    private int bestMarketPage,marketRechecks,marketRefreshDeadline;
     private boolean returningToOffer;
     private boolean marketInventoryBlocked;
     private boolean depositing;
@@ -4164,13 +4164,17 @@ public final class AutoBuilder extends Module {
         boughtListings.clear();
         mc.getNetworkHandler().sendChatCommand(command+" "+key);marketWait=10;marketStage=1;marketDeadline=ticks+160;status="Searching "+buyingItem.getName().getString();
     }
+    private void refreshMarket(){
+        if(ticks>=marketRefreshDeadline){finishBuying("No eligible auction listing stayed available — refresh later");return;}
+        marketRechecks++;searchMarket();status="Auction changed — checking current listings";
+    }
     private void marketTick(){
         if(marketWait>0){marketWait--;return;}
         if(marketStage==-1){if(completedScans==0){status="Scanning material requirements";return;}var needs=foodShopping?Map.of(Items.COOKED_BEEF,Math.max(0,steakReserve.getInt()-inventoryCount(Items.COOKED_BEEF))):supportShopping?Map.of(Items.DIRT,Math.max(0,supportReserve()-inventoryCount(Items.DIRT))):preparationStage==2?wholeBuildNeeds():shoppingNeeds(buyDirt.getInt());needs.entrySet().stream().filter(e->e.getValue()>0).sorted(Comparator.comparing(e->Registries.ITEM.getId(e.getKey()).toString())).forEach(e->shopping.put(e.getKey(),e.getValue()));marketStage=0;}
         if(buyingItem==null){
             if(!estimating&&!shopping.isEmpty()&&maxSpend.get()<=spent){finishBuying("AH budget exhausted — increase the budget for missing supplies");return;}
             if(shopping.isEmpty()){boolean preparing=preparationStage==2;boolean resume=resumeAfterMarket&&!estimating;boolean deposit=!estimating&&depositWhen.is("After Buying");finishBuying(estimating?"Estimated material cost: "+Math.round(estimate):"Buying finished — spent "+Math.round(spent));if(preparing)return;if(deposit)depositAll();else if(resume){building=true;delay=6;status="Continuing build after buying";}return;}
-            buyingItem=shopping.keySet().iterator().next();marketPage=1;searchMarket();return;
+            buyingItem=shopping.keySet().iterator().next();marketPage=1;marketRechecks=0;marketRefreshDeadline=ticks+600;searchMarket();return;
         }
         // Some AH servers buy on the listing click; others reuse the same handler for confirmation.
         // Observe actual inventory receipt before deciding which menu transition happened.
@@ -4246,15 +4250,25 @@ public final class AutoBuilder extends Module {
             marketInventoryBlocked|=allChoice!=null&&choice==null;
             if(returningToOffer&&marketPage<bestMarketPage){
                 if(nextMarketPage(handler))return;
-                if(++marketRechecks>3){finishBuying("Auction pages changed — try again");return;}searchMarket();return;
+                // The saved page vanished. Treat this actual last page as a fresh scan.
+                returningToOffer=false;bestMarketOffer=null;bestMarketKey="";bestMarketPage=0;marketInventoryBlocked=allChoice!=null&&choice==null;
             }
             if(!returningToOffer){
                 if(choice!=null&&AuctionMarket.better(choice,bestMarketOffer,requested)){bestMarketOffer=choice;bestMarketKey=listingKey(handler,choice);bestMarketPage=marketPage;}
                 if(nextMarketPage(handler))return;
                 if(bestMarketOffer!=null&&bestMarketPage!=marketPage){searchMarket(true);status="Returning to cheapest listing";return;}
                 if(bestMarketOffer==null&&marketInventoryBlocked){handleFullInventory();return;}
-            }else if(choice==null||AuctionMarket.better(bestMarketOffer,choice,requested)){
-                if(++marketRechecks>3){finishBuying("Cheapest listing changed — try again");return;}searchMarket();return;
+            }else{
+                if(choice==null){
+                    if(allChoice!=null){handleFullInventory();return;}
+                    unavailableListings.add(bestMarketKey);refreshMarket();return;
+                }
+                int stackSize=buyingItem.getMaxCount();
+                boolean lostStack=stackSize>1&&requested>=stackSize&&bestMarketOffer.count()>=stackSize&&choice.count()<stackSize;
+                if(lostStack){unavailableListings.add(bestMarketKey);refreshMarket();return;}
+                // A historical cheaper price is no longer a purchase requirement.
+                // Rescan once, then use the current offer that passed every limit above.
+                if(marketRechecks==0&&AuctionMarket.better(bestMarketOffer,choice,requested)){refreshMarket();return;}
             }
             if(choice!=null){
                 pendingOffer=choice;pendingListing=listingKey(handler,choice);soldNotice=false;inventoryBefore=inventoryCount(buyingItem);boughtListings.add(handler.syncId+":"+choice.slot()+":"+choice.total()+":"+choice.count());
