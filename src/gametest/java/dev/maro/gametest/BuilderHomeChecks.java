@@ -199,7 +199,8 @@ final class BuilderHomeChecks {
         require(mismatch.isEmpty(),"Cleanup ceiling or permanent room was not restored: "+mismatch);
         require(world.getServer().computeOnServer(server->{for(int y=0;y<8;y++)for(int z=-3;z<8;z++)for(int x=-3;x<9;x++)if(server.getOverworld().getBlockState(origin.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Cleanup ceiling left native owned scaffold dirt");
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&builder.inventoryCount(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)==0&&client.player.getHealth()==20&&client.currentScreen==null,"Cleanup ceiling retained work, lost its recovered repair block or caused damage: "+builder.status());BuilderPacketChecks.verify(1);builder.pause("cleanup ceiling checked");setting(builder,"Restock When Empty",true);});
-        require(commands.size()==firstCommand,"Cleanup ceiling issued unnecessary home commands");
+        var cleanupCommands=commands.subList(firstCommand,commands.size());
+        require((cleanupCommands.isEmpty()||cleanupCommands.equals(List.of("home 1")))&&!movedDuringWarmup,"Cleanup ceiling changed home slots or repeated its storage escape: "+cleanupCommands);
         teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+6)+" "+(origin.getY()+4)+" "+(origin.getZ()+4)+" air");context.waitTicks(4);
         System.out.println("[builder-home] Cleanup exit survived native pickup and saved-opening reload; target and access columns removed, all permanent blocks restored, zero dirt, exact recovered material and full health in "+elapsed+" ticks");
     }
