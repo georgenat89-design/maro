@@ -54,7 +54,7 @@ import java.util.function.Predicate;
 
 /**
  * Block ESP: the blocks you pick (spawners, storage, ores and any you type in) boxed through walls,
- * with glowing laser tracers running out to them and bloom over both, and a Y limit so it shows only
+ * with clean glowing tracers running out to them and bloom over both, and a Y limit so it shows only
  * what is at or below a height, or only while you are.
  *
  * <p>Finding them: the loaded chunks round you are scanned nearest first, on a worker thread, from
@@ -139,7 +139,10 @@ public class BlockESP extends Module {
     private final NumberSetting maxBlocks = add(new NumberSetting("Max Blocks", "Draw at most this many, nearest first", 400, 25, 2000, 25));
 
     // ---- tracers
-    private final BooleanSetting tracers = add(new BooleanSetting("Tracers", "Glowing laser lines from your crosshair to each block", true));
+    private final BooleanSetting tracers = add(new BooleanSetting("Tracers", "Clean glowing lines from your crosshair to the blocks", true));
+    private final ModeSetting tracerTo = add(new ModeSetting("Tracer To",
+            "Each Group: one line to each cluster of the same block (a row of chests gets one), to its nearest. Each Block: a line to every block",
+            "Each Group", "Each Group", "Each Block").visible(tracers::get));
     private final ModeSetting tracerStart = add(new ModeSetting("Tracer Start", "Where the lines start", "Crosshair", "Crosshair", "Bottom")
             .visible(tracers::get));
     private final ModeSetting tracerColor = add(new ModeSetting("Tracer Color",
@@ -147,16 +150,16 @@ public class BlockESP extends Module {
             .visible(tracers::get));
     private final ColorSetting tracerCustom = add(new ColorSetting("Tracer Custom", "Line colour in Custom mode", 0xFFFFFFFF)
             .visible(() -> tracers.get() && tracerColor.is("Custom")));
-    private final NumberSetting tracerWidth = add(new NumberSetting("Tracer Width", "Line thickness at 1080p (scales with resolution)", 2, 0.5, 5, 0.25)
+    private final NumberSetting tracerWidth = add(new NumberSetting("Tracer Width", "Line thickness at 1080p (scales with resolution)", 1.5, 0.5, 5, 0.25)
             .suffix("px").visible(tracers::get));
-    private final NumberSetting tracerGlow = add(new NumberSetting("Tracer Glow", "How strong the soft halo round each line is", 70, 0, 150, 1)
+    private final NumberSetting tracerGlow = add(new NumberSetting("Tracer Glow", "How strong the soft glow round each line is", 40, 0, 150, 1)
             .suffix("%").visible(tracers::get));
-    private final BooleanSetting pulses = add(new BooleanSetting("Light Pulses", "Pulses of light shoot along each line to its block", true)
+    private final BooleanSetting pulses = add(new BooleanSetting("Light Pulses", "Pulses of light travel along each line to its block", false)
             .visible(tracers::get));
     private final NumberSetting pulseSpeed = add(new NumberSetting("Pulse Speed", "How fast the pulses travel", 1, 0.25, 3, 0.05)
             .suffix("x").visible(() -> tracers.get() && pulses.get()));
-    private final NumberSetting maxTracers = add(new NumberSetting("Max Tracers", "Lines to at most this many blocks, nearest first",
-            24, 1, BlockEspRenderer.MAX_TRACERS, 1).visible(tracers::get));
+    private final NumberSetting maxTracers = add(new NumberSetting("Max Tracers", "At most this many lines, nearest first",
+            32, 1, BlockEspRenderer.MAX_TRACERS, 1).visible(tracers::get));
 
     // ---- bloom
     private final BooleanSetting espBloom = add(new BooleanSetting("ESP Bloom", "The boxes glow, their light bleeding out round them", true));
@@ -190,6 +193,9 @@ public class BlockESP extends Module {
     private long[] shown = new long[0];
     private Block[] shownBlocks = new Block[0];
     private int shownCount;
+    /** Which of the shown blocks get a tracer: indices into {@link #shown}, nearest first. */
+    private int[] tracerTargets = new int[0];
+    private int tracerTargetCount;
 
     private final Map<Block, Box> shapes = new IdentityHashMap<>();
     private final long start = System.nanoTime();
@@ -202,7 +208,7 @@ public class BlockESP extends Module {
                 SettingSection.of("Blocks", blocksButton),
                 SettingSection.of("Y Level", yLimit, maxY),
                 SettingSection.of("Look", range, style, colorMode, oneColor, fillOpacity, lineWidth, throughWalls, maxBlocks),
-                SettingSection.of("Tracers", tracers, tracerStart, tracerColor, tracerCustom, tracerWidth, tracerGlow, pulses, pulseSpeed, maxTracers),
+                SettingSection.of("Tracers", tracers, tracerTo, tracerStart, tracerColor, tracerCustom, tracerWidth, tracerGlow, pulses, pulseSpeed, maxTracers),
                 SettingSection.of("Bloom", espBloom, tracerBloom, bloomStrength, bloomSize));
     }
 
@@ -579,6 +585,72 @@ public class BlockESP extends Module {
             shownBlocks[i] = blocks[at];
         }
         shownCount = keep;
+        pickTracerTargets();
+    }
+
+    /**
+     * The blocks the tracers go to. Each Block: the nearest ones. Each Group: blocks of one kind
+     * within three blocks of each other are a group, and each group gets one line, to its nearest
+     * block, so a row of chests is one line and not twenty.
+     */
+    private void pickTracerTargets() {
+        int limit = Math.min(maxTracers.getInt(), BlockEspRenderer.MAX_TRACERS);
+        if (tracerTargets.length < limit) tracerTargets = new int[limit];
+        int count = 0;
+        if (tracerTo.is("Each Block")) {
+            for (int i = 0; i < shownCount && count < limit; i++) tracerTargets[count++] = i;
+            tracerTargetCount = count;
+            return;
+        }
+        // Union-find over the shown blocks, neighbours found through 4-block cells.
+        int[] parent = new int[shownCount];
+        Long2ObjectOpenHashMap<it.unimi.dsi.fastutil.ints.IntArrayList> cells = new Long2ObjectOpenHashMap<>();
+        for (int i = 0; i < shownCount; i++) {
+            parent[i] = i;
+            long pos = shown[i];
+            int cx = BlockPos.unpackLongX(pos) >> 2, cy = BlockPos.unpackLongY(pos) >> 2, cz = BlockPos.unpackLongZ(pos) >> 2;
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        var cell = cells.get(BlockPos.asLong(cx + dx, cy + dy, cz + dz));
+                        if (cell == null) continue;
+                        for (int k = 0; k < cell.size(); k++) {
+                            int j = cell.getInt(k);
+                            if (shownBlocks[j] != shownBlocks[i] && drawColorOf(shownBlocks[j]) != drawColorOf(shownBlocks[i])) continue;
+                            long other = shown[j];
+                            if (Math.abs(BlockPos.unpackLongX(other) - BlockPos.unpackLongX(pos)) <= 3
+                                    && Math.abs(BlockPos.unpackLongY(other) - BlockPos.unpackLongY(pos)) <= 3
+                                    && Math.abs(BlockPos.unpackLongZ(other) - BlockPos.unpackLongZ(pos)) <= 3) {
+                                union(parent, i, j);
+                            }
+                        }
+                    }
+                }
+            }
+            cells.computeIfAbsent(BlockPos.asLong(cx, cy, cz), k -> new it.unimi.dsi.fastutil.ints.IntArrayList()).add(i);
+        }
+        // The shown blocks are nearest first, so a group's first member is its nearest.
+        boolean[] taken = new boolean[shownCount];
+        for (int i = 0; i < shownCount && count < limit; i++) {
+            int root = find(parent, i);
+            if (taken[root]) continue;
+            taken[root] = true;
+            tracerTargets[count++] = i;
+        }
+        tracerTargetCount = count;
+    }
+
+    private static int find(int[] parent, int i) {
+        while (parent[i] != i) {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        return i;
+    }
+
+    private static void union(int[] parent, int a, int b) {
+        int ra = find(parent, a), rb = find(parent, b);
+        if (ra != rb) parent[Math.max(ra, rb)] = Math.min(ra, rb);
     }
 
     // ---- drawing --------------------------------------------------------------------------------
@@ -595,7 +667,6 @@ public class BlockESP extends Module {
         ShapeMode mode = style.is("Outline") ? ShapeMode.Lines : style.is("Fill") ? ShapeMode.Sides : ShapeMode.Both;
         int fillAlpha = Math.round(fillOpacity.getFloat() * 2.55f);
         int glowFillAlpha = Math.min(255, Math.round(fillAlpha * 1.6f) + 30);
-        int lines = tracers.get() ? maxTracers.getInt() : 0;
         Vec3d camera = renderer.camera();
         double reach = range.get() * 16;
         float seconds = seconds();
@@ -615,11 +686,21 @@ public class BlockESP extends Module {
                 renderer.box(x1, y1, z1, x2, y2, z2, new Color(ColorUtil.withAlpha(color, glowFillAlpha)), line, mode, 0);
                 renderer.glow(false);
             }
-            if (i < lines) {
-                double cx = x + 0.5, cy = y + 0.5, cz = z + 0.5;
+        }
+        // Tracers, to the very blocks drawn this frame: they come and go with the boxes.
+        if (tracers.get()) {
+            for (int t = 0; t < tracerTargetCount; t++) {
+                int i = tracerTargets[t];
+                if (i >= shownCount) continue;
+                long pos = shown[i];
+                Box shape = shapeOf(shownBlocks[i]);
+                double cx = BlockPos.unpackLongX(pos) + (shape.minX + shape.maxX) / 2;
+                double cy = BlockPos.unpackLongY(pos) + (shape.minY + shape.maxY) / 2;
+                double cz = BlockPos.unpackLongZ(pos) + (shape.minZ + shape.maxZ) / 2;
                 double distance = Math.sqrt(mc.player.squaredDistanceTo(cx, cy, cz));
                 float weight = (float) Math.max(0.4, 1 - distance / Math.max(1, reach) * 0.6);
-                BlockEspRenderer.addTracer(cx, cy, cz, camera, tracerColorOf(color, distance / Math.max(1, reach), i, seconds), weight);
+                int color = drawColorOf(shownBlocks[i]);
+                BlockEspRenderer.addTracer(cx, cy, cz, camera, tracerColorOf(color, distance / Math.max(1, reach), t, seconds), weight);
             }
         }
         renderer.throughWalls(true);

@@ -244,7 +244,7 @@ public final class BlockEspRenderer {
             bytes.putFloat(12, m.seconds());
             bytes.putFloat(16, m.tracerPackets() ? 1f : 0f);
             bytes.putFloat(20, m.packetSpeed());
-            bytes.putFloat(24, 40f * height / 1080f);
+            bytes.putFloat(24, 14f * height / 1080f);
             bytes.putFloat(28, coreOnly ? 1f : 0f);
             for (int i = 0; i < n; i++) {
                 for (int k = 0; k < 4; k++) bytes.putFloat(LINES_AT + i * 16 + k * 4, lines[i][k]);
@@ -274,7 +274,7 @@ public final class BlockEspRenderer {
         }
     }
 
-    /** A quad round tracer {@code i}, wide enough for its halo and the ring at its end. */
+    /** A quad round tracer {@code i}, wide enough for its glow and the dot at its end. */
     private static void writeTracerQuad(int i, float[] line, float width, int screenWidth, int screenHeight) {
         float dx = line[2] - line[0], dy = line[3] - line[1];
         float length = (float) Math.hypot(dx, dy);
@@ -282,8 +282,8 @@ public final class BlockEspRenderer {
         if (length < 1f) {
             corners = new float[8];
         } else {
-            float sigma = width * 1.8f + 2f;
-            float pad = Math.max(sigma * 3f, width * 1.6f + 16f) + 2f;
+            float sigma = width * 1.4f + 1.5f;
+            float pad = Math.max(sigma * 3f, width * 3.75f + 2f) + 2f;
             float ux = dx / length, uy = dy / length;
             float nx = -uy * pad, ny = ux * pad, ex = ux * pad, ey = uy * pad;
             corners = new float[] {

@@ -2,11 +2,10 @@
 
 // Block ESP tracers, worked out exactly for each pixel from the distance to the line.
 //
-// Each one is a laser: a white-hot core inside a line in the block's colour inside a soft halo,
-// with packets of light shooting along it to the block like comets, a sharp head and a long tail.
-// It fades in over the first stretch from the start so the crosshair stays clear, and where it
-// ends a glowing marker sits with a ring rippling out from it. Nearer blocks get fuller, wider
-// lines. With Style.w set only the bright core and packets are drawn, for the bloom pass to spread.
+// Clean lines: each is a crisp anti-aliased line in its block's colour with a soft glow round it,
+// starting just clear of the crosshair, and a small dot where it ends. Optionally, pulses of light
+// travel along it to the block. Nearer blocks get fuller, wider lines. With Style.w set only the
+// line and its dot are drawn, for the bloom pass to spread.
 
 in vec2 texCoord;
 flat in float quadTag;
@@ -15,8 +14,8 @@ const int MAX_TRACERS = 64;
 
 // Only vec4s, so std140 lays it out exactly as BlockEspRenderer writes it.
 layout(std140) uniform TracerData {
-    vec4 Info;    // x tracer count, y line width (px), z halo strength, w seconds
-    vec4 Style;   // x packets on, y packet speed, z start fade length (px), w 1 = core only (bloom source)
+    vec4 Info;    // x tracer count, y line width (px), z glow strength, w seconds
+    vec4 Style;   // x pulses on, y pulse speed, z gap at the start (px), w 1 = line only (bloom source)
     vec4 Lines[MAX_TRACERS];   // x0, y0, x1, y1 in framebuffer pixels: from the start to the block
     vec4 Colors[MAX_TRACERS];  // rgb, a weight: 1 near, less far away
 };
@@ -45,53 +44,41 @@ void main() {
     float along = clamp(dot(px - a, dir), 0.0, len);
     float d = length(px - (a + dir * along));
 
-    float width = Info.y * mix(0.6, 1.0, weight);
+    float width = Info.y * mix(0.7, 1.0, weight);
     float halfWidth = width * 0.5;
-    float core = falloff(halfWidth - 0.5, halfWidth + 0.5, d);
-    float hot = falloff(0.0, max(halfWidth * 0.6, 0.7), d);
-    float sigma = width * 1.8 + 2.0;
-    float halo = exp(-0.5 * d * d / (sigma * sigma));
+    float core = falloff(halfWidth - 0.6, halfWidth + 0.6, d);
+    float sigma = width * 1.4 + 1.5;
+    float glow = exp(-0.5 * d * d / (sigma * sigma));
 
-    float fadeIn = smoothstep(Style.z * 0.25, Style.z, along);
-    // Brighter towards the block, so the eye follows each line out to what it points at.
-    float toward = mix(0.7, 1.0, along / len);
+    // A short gap at the crosshair so the lines do not pile up on it, then full strength.
+    float start = smoothstep(Style.z * 0.5, Style.z, along);
 
-    // Comets: one every 140 px, moving to the block. s is how far ahead of the head this pixel is.
-    float packet = 0.0;
+    float pulse = 0.0;
     if (Style.x > 0.5) {
-        float spacing = 140.0;
-        float s = (fract(along / spacing - Info.w * Style.y * 1.4) - 0.5) * spacing;
-        float spread = s > 0.0 ? 5.0 : 34.0;
-        packet = exp(-0.5 * s * s / (spread * spread)) * fadeIn;
+        float spacing = 160.0;
+        float s = (fract(along / spacing - Info.w * Style.y * 1.2) - 0.5) * spacing;
+        float spread = s > 0.0 ? 6.0 : 30.0;
+        pulse = exp(-0.5 * s * s / (spread * spread));
     }
 
-    // The marker at the block: a bright dot, a halo, and a ring rippling out once a second.
+    // The dot at the block.
     float de = length(px - b);
-    float dotRadius = width * 1.6 + 0.8;
-    float marker = falloff(dotRadius - 0.5, dotRadius + 0.5, de);
-    float ripple = fract(Info.w * 0.9);
-    float ringRadius = dotRadius + 2.0 + ripple * 11.0 * mix(0.7, 1.0, weight);
-    float ring = falloff(0.5, 1.3, abs(de - ringRadius)) * (1.0 - ripple);
-    float markerHalo = exp(-0.5 * de * de / (sigma * sigma * 2.0));
-
-    vec3 bright = mix(color, vec3(1.0), 0.75);
+    float dotRadius = width * 1.25 + 0.6;
+    float marker = falloff(dotRadius - 0.6, dotRadius + 0.6, de);
 
     if (Style.w > 0.5) {
-        float source = (core * (0.65 + 0.9 * packet) + packet * 0.35) * fadeIn * toward + marker;
-        source = clamp(source, 0.0, 1.0);
+        float source = clamp(core * start * (0.75 + 0.5 * pulse) + marker, 0.0, 1.0);
         if (source <= 0.002) discard;
-        fragColor = vec4(mix(color, bright, packet * 0.5), source);
+        fragColor = vec4(color, source);
         return;
     }
 
-    float lineAlpha = core * mix(0.75, 1.0, weight) * toward;
-    float haloAlpha = halo * Info.z * 0.45 * weight;
-    float packetAlpha = packet * (core + halo * (0.35 + Info.z * 0.6));
-    float alpha = (max(lineAlpha, haloAlpha) + packetAlpha) * fadeIn;
-    alpha += marker + ring * 0.85 * weight + markerHalo * Info.z * 0.5;
-    alpha = clamp(alpha, 0.0, 1.0);
+    float lineAlpha = core * mix(0.8, 1.0, weight);
+    float glowAlpha = glow * Info.z * 0.35 * weight;
+    float alpha = (max(lineAlpha, glowAlpha) + pulse * core * 0.6) * start;
+    alpha = clamp(alpha + marker + falloff(dotRadius, dotRadius * 3.0, de) * Info.z * 0.25, 0.0, 1.0);
     if (alpha <= 0.002) discard;
 
-    vec3 shade = mix(color, bright, clamp(hot * 0.8 + packet * 0.7 + marker * 0.6, 0.0, 1.0));
-    fragColor = vec4(shade, alpha);
+    // The block's own colour, a touch lighter where a pulse passes.
+    fragColor = vec4(mix(color, vec3(1.0), pulse * 0.45 * core), alpha);
 }
