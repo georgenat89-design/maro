@@ -11,6 +11,7 @@ import java.util.regex.*;
 /** Reads server lore; parsing failures never become zero-price offers. */
 public final class AuctionMarket {
     private static final Pattern AMOUNT=Pattern.compile("(?i)^\\s*[:=]?\\s*[$€£]?\\s*([0-9]+(?:,[0-9]{3})*(?:\\.[0-9]+)?)\\s*([kmb])?(?![\\p{Alnum}.,])");
+    private static final Pattern PAGE=Pattern.compile("(?i)\\bpage\\s*[:#]?\\s*(\\d+)\\s*(?:/|of)\\s*(\\d+)\\b");
     public record Offer(int slot,Item item,int count,double total){public double each(){return total/count;}}
     private AuctionMarket(){}
     public static double price(String text,String keyword){
@@ -50,9 +51,31 @@ public final class AuctionMarket {
     public static Offer choose(List<Offer> offers,int needed,int overbuy,double perItem,double budget,boolean preferStacks,double tolerance){
         var valid=offers.stream().filter(o->o.count>0&&o.count<=needed+overbuy&&o.total<=budget&&(!Double.isFinite(perItem)||perItem<=0||o.each()<=perItem)).toList();
         Offer cheapest=valid.stream().min(Comparator.comparingDouble(Offer::each).thenComparingDouble(Offer::total)).orElse(null);
+        // Bulk requests buy full stacks first, including across different pages.
+        if(cheapest!=null&&needed>=cheapest.item.getMaxCount()&&cheapest.item.getMaxCount()>1)
+            return valid.stream().filter(o->o.count>=o.item.getMaxCount())
+                .min(Comparator.comparingDouble(Offer::each).thenComparingDouble(Offer::total)).orElse(cheapest);
         if(cheapest==null||!preferStacks)return cheapest;
         return valid.stream().filter(o->o.count>=Math.min(64,needed)&&o.each()<=cheapest.each()*(1+tolerance/100))
             .min(Comparator.comparingDouble(Offer::each).thenComparingDouble(Offer::total)).orElse(cheapest);
+    }
+    public static boolean better(Offer candidate,Offer current,int needed){
+        if(current==null)return true;
+        int size=candidate.item.getMaxCount();
+        if(size>1&&needed>=size&&(candidate.count>=size)!=(current.count>=size))return candidate.count>=size;
+        return candidate.each()<current.each()||candidate.each()==current.each()&&candidate.total<current.total;
+    }
+    /** Zero means the server did not publish a usable page count. */
+    public static int pageCount(String text){
+        if(text==null)return 0;var match=PAGE.matcher(text.replaceAll("§.",""));
+        if(!match.find())return 0;
+        try{int current=Integer.parseInt(match.group(1)),total=Integer.parseInt(match.group(2));return current>=1&&current<=total?total:0;}
+        catch(NumberFormatException ignored){return 0;}
+    }
+    public static boolean disabledNext(ItemStack stack){
+        String text=stack.getName().getString();var lore=stack.get(DataComponentTypes.LORE);
+        if(lore!=null)for(var line:lore.lines())text+=" "+line.getString();
+        return word(text,"no next page;no more pages;last page;final page;next page unavailable;next page is unavailable;disabled");
     }
     public static boolean word(String label,String words){
         if(label==null)return false;String value=label.toLowerCase(Locale.ROOT);

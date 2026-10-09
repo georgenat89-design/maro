@@ -59,6 +59,13 @@ final class AutoBuilderChecks {
             require(AuctionMarket.choose(List.of(single,stack),64,0,20,1000,true,15).slot()==2,"Preferred stack price tolerance failed");
             require(AuctionMarket.choose(List.of(stack),10,16,20,1000,false,0)==null,"Overbuy cap ignored");
             require(AuctionMarket.choose(List.of(stack),64,0,20,600,false,0)==null,"Spend cap ignored");
+            var bulk=new AuctionMarket.Offer(3,Items.STONE,64,128);var cheap=new AuctionMarket.Offer(4,Items.STONE,1,1);
+            require(AuctionMarket.choose(List.of(cheap,bulk),129,16,10,1000,false,0)==bulk&&AuctionMarket.better(bulk,cheap,129)&&!AuctionMarket.better(cheap,bulk,129),"Bulk stack preference differs across pages");
+            require(AuctionMarket.choose(List.of(cheap,bulk),1,16,10,1000,false,0)==cheap,"Remainder bought an unnecessary stack");
+            require(AuctionMarket.choose(List.of(cheap,bulk),129,16,1,1000,false,0)==cheap&&AuctionMarket.choose(List.of(cheap,bulk),129,16,10,100,false,0)==cheap,"Bulk preference bypassed price or budget cap");
+            var pearls=new AuctionMarket.Offer(5,Items.ENDER_PEARL,16,32);var pearl=new AuctionMarket.Offer(6,Items.ENDER_PEARL,1,1);
+            require(AuctionMarket.choose(List.of(pearl,pearls),33,0,10,100,false,0)==pearls,"Item-specific stack size ignored");
+            require(AuctionMarket.pageCount("Auction House (Page 1/2)")==2&&AuctionMarket.pageCount("Page: 1 of 1")==1&&AuctionMarket.pageCount("Page 3/2")==0&&AuctionMarket.pageCount("Price: $1/2")==0,"Auction page count parsing failed");
             try{var bad=old.copy();bad.putByteArray("Blocks",new byte[]{1});SchematicIO.decode("bad.schematic",bad);throw new AssertionError("Truncated arrays accepted");}catch(java.io.IOException expected){}
             try{Schematic.volume(2048,2048,2048);throw new AssertionError("Volume limit ignored");}catch(IllegalArgumentException expected){}
             var eta=new BuilderEta();eta.tick(0,true);
@@ -84,6 +91,8 @@ final class AutoBuilderChecks {
         AutoBuilder builder=ModuleManager.get(AutoBuilder.class);
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
+            if(Boolean.getBoolean("maro.gametest.builderNetworkOnly")){fixture(context,singleplayer,builder,start);BuilderHomeChecks.run(context,singleplayer,builder,start);ghostMining(context,singleplayer,builder,start);fixture(context,singleplayer,builder,start);rejectedPlacement(context,singleplayer,builder,start);retainedPredictions(context,singleplayer,builder,start);return;}
+            if(Boolean.getBoolean("maro.gametest.builderShoppingOnly")||Boolean.getBoolean("maro.gametest.builderAuctionOnly")){fixture(context,singleplayer,builder,start);BuilderAuctionChecks.run(context,singleplayer,builder);return;}
             if(Boolean.getBoolean("maro.gametest.builderSealedEscapeOnly")){sealedBuildEscape(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderHomeOnly")){fixture(context,singleplayer,builder,start);BuilderHomeChecks.run(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderStashHomesOnly")||Boolean.getBoolean("maro.gametest.builderStashOnly")||Boolean.getBoolean("maro.gametest.builderStashUpperOnly")||Boolean.getBoolean("maro.gametest.builderStashFinalOnly")){stashBuild(context,singleplayer,builder,start);return;}
@@ -142,6 +151,7 @@ final class AutoBuilderChecks {
             rejectedPlacement(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             retainedPredictions(context,singleplayer,builder,start);
+            ghostMining(context,singleplayer,builder,start);
             observerAssembly(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             stalledInteractions(context,singleplayer,builder,start);
@@ -155,7 +165,6 @@ final class AutoBuilderChecks {
             sealedDirectionalAccess(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             if(Boolean.getBoolean("maro.gametest.builderNavigationOnly")){cancellation(context,builder,context.computeOnClient(client->builder.schematic()));return;}
-            if(Boolean.getBoolean("maro.gametest.builderAuctionOnly")){BuilderAuctionChecks.run(context,singleplayer,builder);return;}
             largeSupply(context,singleplayer,builder,start);
             fixture(context,singleplayer,builder,start);
             longRestockRoute(context,singleplayer,builder,start);
@@ -393,6 +402,32 @@ final class AutoBuilderChecks {
             context.runOnClient(client->{builder.install(new Schematic("rejected-placement.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);builder.startBuild();});
             await(context,builder,350);require(rejected.get(),"Server rejection fixture did not intercept the placement");verify(world,target,1,1,1,y->Blocks.STONE);
         }finally{gate.set(false);}
+    }
+    private static void ghostMining(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        var target=start.south(2);
+        for(String scenario:List.of("delayed","rejected","paused","timed out")){
+            fixture(context,world,builder,start);command(world,"setblock",target,"dirt");world.getServer().runCommand("give @a stone 1");world.getServer().runCommand("give @a diamond_shovel 1");context.waitTicks(6);
+            var rejected=new java.util.concurrent.atomic.AtomicBoolean();var gate=new java.util.concurrent.atomic.AtomicBoolean(scenario.equals("rejected"));
+            net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents.BEFORE.register((level,player,pos,state,entity)->!gate.get()||!pos.equals(target)||!rejected.compareAndSet(false,true));
+            try{
+                context.runOnClient(client->{set(builder,"Replace Wrong Blocks",true);builder.install(new Schematic("ghost-mining.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);BuilderBlockDelay.begin(target);builder.startBuild();});
+                for(int i=0;i<160&&context.computeOnClient(client->field(builder,"pendingBreak")==null);i++)context.waitTick();
+                context.runOnClient(client->require(field(builder,"pendingBreak")!=null&&client.world.getBlockState(target).isOf(Blocks.DIRT),"Unconfirmed native mining did not retain safe collision: "+scenario+" "+builder.status()));
+                context.waitTicks(5);
+                context.runOnClient(client->require(builder.building()&&builder.inventoryCount(Items.STONE)==1&&field(builder,"pendingBreak")!=null&&client.world.getBlockState(target).isOf(Blocks.DIRT),"Builder placed, completed or exposed a hole before server confirmation: "+scenario+" "+builder.status()));
+                if(scenario.equals("paused"))context.runOnClient(client->{builder.pause("Pause ghost mining");require(client.world.getBlockState(target).isOf(Blocks.DIRT),"Pause did not restore unconfirmed mined collision");});
+                if(scenario.equals("timed out")){
+                    for(int i=0;i<100&&context.computeOnClient(client->field(builder,"pendingBreak")!=null);i++)context.waitTick();
+                    context.runOnClient(client->require(field(builder,"pendingBreak")==null&&client.world.getBlockState(target).isOf(Blocks.DIRT),"Mining timeout retained unconfirmed client air"));
+                }
+                require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(target).isOf(scenario.equals("rejected")?Blocks.DIRT:Blocks.AIR)),"Fixture did not retain actual server mining outcome: "+scenario);
+                context.runOnClient(client->{BuilderBlockDelay.release();if(scenario.equals("paused"))builder.startBuild();});
+                await(context,builder,500);verify(world,target,1,1,1,y->Blocks.STONE);
+                require(!scenario.equals("rejected")||rejected.get(),"Rejected mining fixture did not execute");
+                System.out.println("[ghost-proof] native "+scenario+" mining recovered, final server block=stone");
+            }finally{gate.set(false);context.runOnClient(client->BuilderBlockDelay.release());}
+        }
+        context.runOnClient(client->set(builder,"Replace Wrong Blocks",false));
     }
     private static Schematic stashFixture(){
         try{

@@ -342,6 +342,9 @@ public final class AutoBuilder extends Module {
     private final Map<BlockPos,LatePlacement> latePlacements=new HashMap<>();
     private BlockState pendingBefore,pendingServerState;
     private int placementDeadline;
+    private BlockPos pendingBreak;
+    private BlockState breakBefore,breakServerState;
+    private int breakDeadline;
     private BlockPos routeMining;
     private final Map<BlockPos,Integer> floorAccessWork=new HashMap<>();
     private final Map<BlockPos,Set<BlockPos>> cleanupOpeningSupports=new HashMap<>();
@@ -400,7 +403,8 @@ public final class AutoBuilder extends Module {
     private boolean resumeAfterMarket;
     private String worldScope="";
     private Item buyingItem;
-    private int marketPage,marketWait,marketStage,marketDeadline,inventoryBefore;
+    private int marketPage,marketWait,marketStage,marketDeadline,inventoryBefore,chestOpenAttempts;
+    private boolean wholeMarket;
     private double spent,estimate;
     private AuctionMarket.Offer pendingOffer;
     private final Set<String> boughtListings=new HashSet<>();
@@ -438,8 +442,8 @@ public final class AutoBuilder extends Module {
         button("Materials","Mark Restock Container","R adds or refreshes the double chest you are looking at; Shift + R removes it","Add",this::markContainer);
         button("Travel","Set Storage Home","Walk to marked storage, replace home 1 and confirm the save","Set Home 1",()->setupHomes(false));
         button("Materials","Clear Restock Marks","Clear this world's selected supply chests","Clear",()->{pause("Supply chests cleared");preparationReady=false;containers.clear();triedContainers.clear();emptyChestItems.clear();chestStocks.clear();preparedStock.clear();});
-        button("Materials","Buy Materials","Buy missing materials within your configured budget","Buy",()->startBuying(false));
-        button("Materials","Estimate Cost","Read current auction listings without buying","Estimate",()->startBuying(true));
+        button("Materials","Buy Materials","Buy all missing schematic materials within your configured budget","Buy",()->startBuying(false,true));
+        button("Materials","Estimate Cost","Read current auction listings without buying","Estimate",()->startBuying(true,true));
         button("Materials","Cancel Buying","Stop the shopping session","Cancel",()->finishBuying("Buying cancelled"));
         button("Materials","Deposit All","Move inventory and hotbar items into your selected double chests","Deposit",this::depositAll);
         ClientTickEvents.START_CLIENT_TICK.register(client->{digging=false;queuedLookAction=null;if(isEnabled())tickWork();});
@@ -494,6 +498,7 @@ public final class AutoBuilder extends Module {
             builder.descentEscapes.clear();builder.hatchSearchFeet=null;
         }
         if(builder.pendingPlacement!=null&&builder.pendingPlacement.target.equals(pos))builder.pendingServerState=state;
+        if(pos.equals(builder.pendingBreak))builder.breakServerState=state;
         var job=builder.unconfirmedPlacements.get(pos);
         var late=builder.latePlacements.remove(pos);if(job==null&&late!=null)job=late.job;
         if(job!=null){
@@ -535,7 +540,7 @@ public final class AutoBuilder extends Module {
     public void auctionBudget(double value){maxSpend.set(value);}
     public String buildMode(){return mode.get();}
     public void cycleBuildMode(){mode.cycle(1);}
-    public void buyMaterials(){startBuying(false);}
+    public void buyMaterials(){startBuying(false,true);}
     public void togglePreview(){boolean show=!previewVisible();showPreview.set(show);if(show&&!isEnabled())preview();}
     public boolean previewVisible(){return isEnabled()&&preview&&showPreview.get()&&schematic!=null&&origin!=null&&world==mc.world;}
     public BlockPos origin(){return origin;}
@@ -694,6 +699,8 @@ public final class AutoBuilder extends Module {
         buildEta.tick(System.nanoTime()/1_000_000,false);
         if(pendingPlacement!=null&&inGame()&&world==mc.world&&(pendingServerState==null||!compatible(pendingServerState,pendingPlacement.state)))
             reconcilePrediction(pendingPlacement,pendingServerState);
+        if(pendingBreak!=null&&inGame()&&world==mc.world)reconcileBreak(breakServerState);
+        pendingBreak=null;breakBefore=breakServerState=null;
         queuedLookAction=null;
         lookWaitStarted=-1;queuedAimPoint=aimPoint=null;
         bridgeTarget=null;
@@ -718,7 +725,7 @@ public final class AutoBuilder extends Module {
         openingRestoration=false;
     }
     private void notify(String message){Notifications.push("Auto Builder",message,Notifications.Type.INFO,5000);if(mc.player!=null)mc.player.sendMessage(Text.literal("[Auto Builder] "+message),false);}
-    public void onActionBind(int key){if(markBind.matches(key)&&(isEnabled()||schematic!=null)){markContainer();return;}if(isEnabled()&&buyBind.matches(key))startBuying(false);}
+    public void onActionBind(int key){if(markBind.matches(key)&&(isEnabled()||schematic!=null)){markContainer();return;}if(isEnabled()&&buyBind.matches(key))startBuying(false,true);}
     public void markContainer(){
         if(!inGame()||!(mc.crosshairTarget instanceof BlockHitResult hit)||hit.getType()!=HitResult.Type.BLOCK)return;
         BlockPos pos=hit.getBlockPos();var block=mc.world.getBlockState(pos).getBlock();
@@ -756,6 +763,7 @@ public final class AutoBuilder extends Module {
         scan();captureTick();
         if(staffStopAt>0){if(logoff.get()&&System.currentTimeMillis()-staffStopAt>=logoffDelay.get()*1000){mc.world.disconnect(Text.literal(logoffMessage.get()));setEnabled(false);}return;}
         if((building||buying||pasting||depositing||homes.busy())&&unsafe()){walker.release();return;}
+        if(pendingBreak!=null){miningReceiptTick();return;}
         if(pendingPlacement!=null){placementReceiptTick();return;}
         if(mc.currentScreen==null&&autoMove.get()&&(depositing||building&&(!mode.is("Semi Auto")||mc.options.useKey.isPressed()))&&waterDepartureTick())return;
         if((building||buying||pasting||depositing||homes.busy())&&mc.player.getHealth()<minHealth.get()*2){walker.release();status="Paused — low health";return;}
@@ -3319,9 +3327,30 @@ public final class AutoBuilder extends Module {
             if(peekTarget!=null&&!safePeekMining(target)){digging=false;return;}
             var actual=(BlockHitResult)mc.player.raycast(effectiveReach(),1,false);
             if(actual.getType()!=HitResult.Type.BLOCK||!actual.getBlockPos().equals(target)){digging=false;return;}
+            var before=mc.world.getBlockState(target);
             mc.interactionManager.updateBlockBreakingProgress(target,actual.getSide());mc.player.swingHand(Hand.MAIN_HAND);lastAction=ticks;
+            if(!before.isAir()&&mc.world.getBlockState(target).isAir()){
+                pendingBreak=target.toImmutable();breakBefore=before;breakServerState=null;breakDeadline=ticks+80;
+                // Retain real collision until the server confirms removal. A delayed
+                // or refused break must not create a walkable hole on this client.
+                mc.world.setBlockState(target,before,Block.NOTIFY_ALL);
+            }
             status=supports.contains(target)?"Removing temporary scaffold":target.equals(routeOpening)||passageBlocks.contains(target)?"Opening checked access route":"Clearing mismatching block";
         });
+    }
+    private void reconcileBreak(BlockState authoritative){
+        var actual=mc.world.getBlockState(pendingBreak);var confirmed=authoritative!=null?authoritative:breakBefore;
+        if(confirmed!=null&&(actual.isAir()||actual.equals(breakBefore))&&!actual.equals(confirmed))
+            mc.world.setBlockState(pendingBreak,confirmed,Block.NOTIFY_ALL);
+    }
+    private void miningReceiptTick(){
+        walker.release();
+        if(breakServerState==null&&ticks<breakDeadline){status="Waiting for server mining confirmation";return;}
+        reconcileBreak(breakServerState);
+        boolean confirmed=breakServerState!=null&&breakServerState.isAir();
+        pendingBreak=null;breakBefore=breakServerState=null;
+        if(!confirmed){mc.interactionManager.cancelBlockBreaking();delay=6;status="Mining not confirmed — rechecking server blocks";}
+        else status="Mining confirmed";
     }
     private void abandonHopperCut(BlockPos blocked){
         resetAccessRouting();routeOpening=null;
@@ -3529,7 +3558,7 @@ public final class AutoBuilder extends Module {
     private void resetChestJourney(){
         receivedChestInventory=null;
         chestStand=null;chestTriedStands.clear();chestProgressPosition=null;chestProgressAt=chestSessionStarted=chestInventoryProgressAt=ticks;
-        chestInventoryFingerprint=Long.MIN_VALUE;cursorReturns=0;chestJourneyFailed=false;
+        chestInventoryFingerprint=Long.MIN_VALUE;cursorReturns=chestOpenAttempts=0;chestJourneyFailed=false;
     }
     public void chestInventoryReceived(int syncId){
         if(!inGame()||!mc.isOnThread())return;
@@ -3563,7 +3592,7 @@ public final class AutoBuilder extends Module {
             var actual=(BlockHitResult)mc.player.raycast(effectiveReach(),1,false);
             boolean selected=actual.getBlockPos().equals(chest)||doubleChest(chest)&&actual.getBlockPos().equals(chest.offset(ChestBlock.getFacing(mc.world.getBlockState(chest))));
             if(actual.getType()!=HitResult.Type.BLOCK||!selected)return false;
-            lastBuildInteraction=ticks;mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,actual);mc.player.swingHand(Hand.MAIN_HAND);return true;
+            lastBuildInteraction=ticks;if(!mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,actual).isAccepted())return false;chestOpenAttempts++;mc.player.swingHand(Hand.MAIN_HAND);return true;
         }
         if(chest==null||!doubleChest(chest)||mc.player.isSneaking()||mc.player.isUsingItem())return false;
         var partner=chest.offset(ChestBlock.getFacing(mc.world.getBlockState(chest)));
@@ -3584,8 +3613,17 @@ public final class AutoBuilder extends Module {
             status="Re-aiming at selected double chest";return false;
         }
         lastBuildInteraction=ticks;
-        mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,actual);
+        if(!mc.interactionManager.interactBlock(mc.player,Hand.MAIN_HAND,actual).isAccepted())return false;
+        chestOpenAttempts++;
         mc.player.swingHand(Hand.MAIN_HAND);return true;
+    }
+    private void retrySupplyChest(BlockPos chest,Runnable requested){
+        // Keep the original request pending while turning: its delayed open/content
+        // packets may arrive before this retry is sent and must still be accepted.
+        var hit=chestHit(chest,mc.player.getEyePos());if(hit==null)return;
+        releaseSneak();if(mc.player.isSneaking()||!aim(hit.getPos()))return;
+        status="Retrying double chest interaction";
+        withPublishedLook(()->{if(openSupplyChest(chest))requested.run();});
     }
     private BlockHitResult approachChest(BlockPos chest){
         if(!recoveringAccessStock&&useHomes.get()&&(restockTarget!=null&&!depositing?homes.restock(chest):homes.storage(chest))){resetAfterHome();status=restockTarget!=null&&!depositing?"Saving work return before restocking through /home 1":"Returning to storage through /home 1";return null;}
@@ -3909,7 +3947,7 @@ public final class AutoBuilder extends Module {
             if(restockWait>0){ownedHandler=screen.getScreenHandler();finishRestock("Unexpected supply menu - checking another chest");return;}
             walker.release();status="Close the current menu to restock";return;
         }
-        if(restockWait>0){if(++restockWait>80)finishRestock("Chest did not open - continuing supply search");return;}
+        if(restockWait>0){if(++restockWait>80)finishRestock("Chest did not open - continuing supply search");else if(restockWait>=20&&chestOpenAttempts<3)retrySupplyChest(restockTarget,()->restockWait=1);return;}
         if(!recoveringAccessStock&&!doubleChest(restockTarget)){finishRestock("Supply chest unavailable - checking other supplies");return;}
         var hit=approachChest(restockTarget);if(hit==null){if(chestJourneyFailed)finishRestock("No route to this chest - checking other supplies");return;}
         if(!aim(hit.getPos()))return;
@@ -4032,7 +4070,7 @@ public final class AutoBuilder extends Module {
             if(depositOpenWait>0){ownedHandler=screen.getScreenHandler();if(!nextDepositChest())finishDeposit("Unexpected storage menu - remaining items kept");return;}
             status="Close the current menu to deposit";walker.release();return;
         }
-        if(depositOpenWait>0){if(++depositOpenWait>80)finishDeposit("Could not open double chest");return;}
+        if(depositOpenWait>0){if(++depositOpenWait>80)finishDeposit("Could not open double chest");else if(depositOpenWait>=20&&chestOpenAttempts<3)retrySupplyChest(depositTarget,()->depositOpenWait=1);return;}
         var hit=approachChest(depositTarget);if(hit==null){if(chestJourneyFailed){if(!nextDepositChest())finishDeposit("No route to selected storage - remaining items kept");}return;}
         if(!aim(hit.getPos())){status="Aiming at double chest";return;}
         releaseSneak();if(mc.player.isSneaking())return;
@@ -4084,16 +4122,19 @@ public final class AutoBuilder extends Module {
             .whenComplete((result,error)->mc.execute(()->{if(generation!=ioGeneration)return;if(error!=null)notify("Snapshot save failed: "+rootMessage(error));else{load(path);notify("Saved "+name+" (block states)");}}));
     }
     private Map<Item,Integer> shoppingNeeds(int dirt){
-        Map<Item,Integer> result=new HashMap<>(requiredMaterials());if(support.get())result.merge(Items.DIRT,dirt,Integer::sum);result.keySet().removeAll(ignoredMaterials);addRequiredTools(result);
+        Map<Item,Integer> result=new HashMap<>(wholeMarket?remaining:requiredMaterials());if(support.get())result.merge(Items.DIRT,dirt,Integer::sum);result.keySet().removeAll(ignoredMaterials);addRequiredTools(result);
         if(!buySteak.get())result.remove(Items.COOKED_BEEF);
         result.replaceAll((item,count)->Math.max(0,count-inventoryCount(item)));result.values().removeIf(count->count<=0);return result;
     }
     private void startBuying(boolean estimateOnly){
+        startBuying(estimateOnly,false);
+    }
+    private void startBuying(boolean estimateOnly,boolean wholeSchematic){
         if(!inGame()||schematic==null){notify("Load a schematic first");return;}
         if(!estimateOnly&&maxSpend.get()<=0&&preparationStage!=2){notify("Set Max Total Spend before buying");return;}
         if(mc.player.currentScreenHandler!=mc.player.playerScreenHandler){notify("Close the current container before buying");return;}
         boolean resume=building&&!estimateOnly&&autoBuy.get();
-        int prep=preparationStage;pause(estimateOnly?"Estimating auction cost":"Buying materials");preparationStage=prep;setEnabled(true);building=false;buying=true;resumeAfterMarket=resume;estimating=estimateOnly;shopping.clear();
+        int prep=preparationStage;pause(estimateOnly?"Estimating auction cost":"Buying materials");preparationStage=prep;setEnabled(true);building=false;buying=true;resumeAfterMarket=resume;estimating=estimateOnly;wholeMarket=wholeSchematic;shopping.clear();
         spent=buildBudgetActive?buildBudgetSpent:0;estimate=0;buyingItem=null;marketWait=marketStage=0;pendingOffer=null;boughtListings.clear();unavailableListings.clear();pendingListing="";soldNotice=false;soldSkips=marketRechecks=0;
         marketStage=-1;
         if(buyNotifications.get())notify(estimateOnly?"Reading auction prices":"Material buying started — budget "+(long)maxSpend.get().doubleValue());
@@ -4196,11 +4237,11 @@ public final class AutoBuilder extends Module {
                 if(++marketRechecks>3){finishBuying("Auction pages changed — try again");return;}searchMarket();return;
             }
             if(!returningToOffer){
-                if(choice!=null&&(bestMarketOffer==null||choice.each()<bestMarketOffer.each()||choice.each()==bestMarketOffer.each()&&choice.total()<bestMarketOffer.total())){bestMarketOffer=choice;bestMarketKey=listingKey(handler,choice);bestMarketPage=marketPage;}
+                if(choice!=null&&AuctionMarket.better(choice,bestMarketOffer,requested)){bestMarketOffer=choice;bestMarketKey=listingKey(handler,choice);bestMarketPage=marketPage;}
                 if(nextMarketPage(handler))return;
                 if(bestMarketOffer!=null&&bestMarketPage!=marketPage){searchMarket(true);status="Returning to cheapest listing";return;}
                 if(bestMarketOffer==null&&marketInventoryBlocked){handleFullInventory();return;}
-            }else if(choice==null||choice.each()>bestMarketOffer.each()||choice.each()==bestMarketOffer.each()&&choice.total()>bestMarketOffer.total()){
+            }else if(choice==null||AuctionMarket.better(bestMarketOffer,choice,requested)){
                 if(++marketRechecks>3){finishBuying("Cheapest listing changed — try again");return;}searchMarket();return;
             }
             if(choice!=null){
@@ -4212,15 +4253,21 @@ public final class AutoBuilder extends Module {
         if(ticks>=marketDeadline)finishBuying("No suitable listing for "+buyingItem.getName().getString()+" within price / quantity limits");
     }
     private boolean nextMarketPage(ScreenHandler handler){
-        if(marketPage<maxPages.getInt())for(var slot:handler.slots){
-            if(slot.inventory!=mc.player.getInventory()&&!slot.getStack().isEmpty()&&AuctionMarket.word(slot.getStack().getName().getString(),nextWord.get())){
+        int limit=maxPages.getInt();
+        if(mc.currentScreen instanceof HandledScreen<?> screen){int pages=AuctionMarket.pageCount(screen.getTitle().getString());if(pages>0)limit=Math.min(limit,pages);}
+        for(var slot:handler.slots)if(slot.inventory!=mc.player.getInventory()){
+            var stack=slot.getStack();int pages=AuctionMarket.pageCount(stack.getName().getString());if(pages>0)limit=Math.min(limit,pages);
+            var lore=stack.get(net.minecraft.component.DataComponentTypes.LORE);if(lore!=null)for(var line:lore.lines()){pages=AuctionMarket.pageCount(line.getString());if(pages>0)limit=Math.min(limit,pages);}
+        }
+        if(marketPage<limit)for(var slot:handler.slots){
+            if(slot.inventory!=mc.player.getInventory()&&!slot.getStack().isEmpty()&&AuctionMarket.word(slot.getStack().getName().getString(),nextWord.get())&&!AuctionMarket.disabledNext(slot.getStack())){
                 mc.interactionManager.clickSlot(handler.syncId,slot.id,0,SlotActionType.PICKUP,mc.player);marketPage++;marketWait=20;marketDeadline=ticks+160;return true;
             }
         }
         return false;
     }
     private void handleFullInventory(){
-        if(preparationStage==0&&(layerSupply()||sectionSupply())&&buyingItem!=Items.COOKED_BEEF&&buyingItem!=Items.DIAMOND_PICKAXE&&buyingItem!=Items.DIAMOND_SHOVEL&&requiredMaterials().entrySet().stream().anyMatch(entry->entry.getValue()>0&&inventoryCount(entry.getKey())>0)){
+        if(!wholeMarket&&preparationStage==0&&(layerSupply()||sectionSupply())&&buyingItem!=Items.COOKED_BEEF&&buyingItem!=Items.DIAMOND_PICKAXE&&buyingItem!=Items.DIAMOND_SHOVEL&&requiredMaterials().entrySet().stream().anyMatch(entry->entry.getValue()>0&&inventoryCount(entry.getKey())>0)){
             boolean resume=resumeAfterMarket;finishBuying("Supply batch ready — continue building before buying more");if(resume){building=true;delay=6;status="Building with this supply batch";}return;
         }
         if(!depositWhen.is("Manual")){var outstanding=new LinkedHashMap<>(shopping);depositAll();if(depositing){depositedShopping.putAll(outstanding);resumeShoppingAfterDeposit=true;}return;}

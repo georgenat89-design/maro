@@ -33,6 +33,10 @@ final class BuilderHomeChecks {
     private static BlockPos storage;
     private static Vec3d warmupStart;
     private static boolean movedDuringWarmup,rejectTravel,rejectDelete,silentDelete,commandsAwayFromStorage;
+    private static boolean commandCooldown;
+    private static int lastAttempt=-100,cooldownRejections;
+    private static final Set<String> forcedCooldownCommands=new HashSet<>();
+    private static final List<Integer> commandTimes=new ArrayList<>();
     private static AutoBuilder looseTraceBuilder;
     private static BlockPos looseTraceOrigin;
     private static Object looseTraceChest;
@@ -51,39 +55,64 @@ final class BuilderHomeChecks {
     static void installCommands(TestSingleplayerContext world,BlockPos storageChest){
         storage=storageChest;
         world.getServer().runOnServer(server->{
-            Arrays.fill(saved,null);Arrays.fill(saves,0);Arrays.fill(travels,0);Arrays.fill(deletes,0);commands.clear();saveCommands=travelCommands=deleteCommands=0;waiting=null;returnIssued=false;movedDuringWarmup=rejectTravel=rejectDelete=silentDelete=commandsAwayFromStorage=false;
+            Arrays.fill(saved,null);Arrays.fill(saves,0);Arrays.fill(travels,0);Arrays.fill(deletes,0);commands.clear();saveCommands=travelCommands=deleteCommands=0;waiting=null;returnIssued=false;movedDuringWarmup=rejectTravel=rejectDelete=silentDelete=commandsAwayFromStorage=commandCooldown=false;lastAttempt=-100;cooldownRejections=0;commandTimes.clear();forcedCooldownCommands.clear();
             reservedThird=new Home(Vec3d.ofBottomCenter(storage.east(1000)),35,4);saved[2]=reservedThird;
             server.getCommandManager().getDispatcher().register(CommandManager.literal("home")
                 .executes(command->{open(command.getSource().getPlayer());return 1;})
                 .then(CommandManager.argument("id",IntegerArgumentType.integer(1,3)).executes(command->{
-                    var player=command.getSource().getPlayer();int id=IntegerArgumentType.getInteger(command,"id")-1;require(id<2,"Builder travelled to home 3");travelCommands++;travels[id]++;commands.add("home "+(id+1));
+                    var player=command.getSource().getPlayer();int id=IntegerArgumentType.getInteger(command,"id")-1;require(id<2,"Builder travelled to home 3");if(cooldown(player,"home "+(id+1)))return 1;travelCommands++;travels[id]++;commands.add("home "+(id+1));
                     if(rejectTravel){player.sendMessage(Text.literal("Home teleport failed: cooldown"),false);return 1;}
                     if(saved[id]==null){player.sendMessage(Text.literal("Home not set"),false);return 1;}
                     if(id==1)returnIssued=true;waiting=player;arrival=saved[id];warmupStart=player.getEntityPos();arriveAt=server.getTicks()+30;
                     player.sendMessage(Text.literal("Teleporting to home "+(id+1)+"; stand still"),false);return 1;
                 })));
             server.getCommandManager().getDispatcher().register(CommandManager.literal("sethome").executes(command->{
-                var player=command.getSource().getPlayer();saveCommands++;
+                var player=command.getSource().getPlayer();if(cooldown(player,"sethome"))return 1;saveCommands++;
                 for(int i=0;i<3;i++)if(saved[i]==null){require(i<2,"Builder saved home 3");require(player.isOnGround(),"Home saved while airborne");if(i==0)commandsAwayFromStorage|=storage.getSquaredDistance(player.getBlockPos())>9;saves[i]++;commands.add("sethome "+(i+1));saved[i]=new Home(player.getEntityPos(),player.getYaw(),player.getPitch());player.sendMessage(Text.literal("Home "+(i+1)+" set successfully"),false);return 1;}
                 player.sendMessage(Text.literal("Home slots full"),false);return 1;
             }));
             server.getCommandManager().getDispatcher().register(CommandManager.literal("delhome")
                 .then(CommandManager.argument("id",IntegerArgumentType.integer(1,3)).executes(command->{
-                    var player=command.getSource().getPlayer();int id=IntegerArgumentType.getInteger(command,"id")-1;deleteCommands++;
+                    var player=command.getSource().getPlayer();int id=IntegerArgumentType.getInteger(command,"id")-1;if(cooldown(player,"delhome "+(id+1)))return 1;deleteCommands++;
                     require(id<2,"Builder deleted home 3");deletes[id]++;commands.add("delhome "+(id+1));if(id==0)commandsAwayFromStorage|=!player.isOnGround()||storage.getSquaredDistance(player.getBlockPos())>9;
                     if(id==1&&returnIssued)require(waiting==null&&saved[1]!=null&&player.isOnGround()&&player.getEntityPos().squaredDistanceTo(saved[1].pos)<.36,"Home 2 deleted before actual native arrival");
                     if(rejectDelete){player.sendMessage(Text.literal("Home "+(id+1)+" could not be deleted: permission denied"),false);return 1;}
                     if(silentDelete)return 1;
                     boolean absent=saved[id]==null;saved[id]=null;if(id==1)returnIssued=false;
-                    player.sendMessage(Text.literal("Home "+(id+1)+(absent?" not set":" deleted successfully")),false);return 1;
+                    player.sendMessage(Text.literal(absent&&commandCooldown?"Home does not exist":"Home "+(id+1)+(absent?" not set":" deleted successfully")),false);return 1;
                 })));
             server.getPlayerManager().getPlayerList().forEach(server.getCommandManager()::sendCommandTree);
         });
+    }
+    private static boolean cooldown(ServerPlayerEntity player,String command){
+        if(!commandCooldown)return false;int now=player.getEntityWorld().getServer().getTicks();commandTimes.add(now);
+        boolean blocked=now-lastAttempt<18||forcedCooldownCommands.remove(command);lastAttempt=now;
+        if(blocked){cooldownRejections++;player.sendMessage(Text.literal("You need to wait another 0.25 seconds to execute a command"),false);}
+        return blocked;
+    }
+    static void cooldownRegression(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        var chest=start.east(2);installCommands(world,chest);
+        command(world,"setblock",chest,"chest[facing=west,type=right]");command(world,"setblock",chest.south(),"chest[facing=west,type=left]");context.waitTicks(6);
+        world.getServer().runOnServer(server->{commandCooldown=true;forcedCooldownCommands.addAll(List.of("sethome","home 1"));});
+        try{
+            context.runOnClient(client->{setting(builder,"Builder Homes",true);builder.install(new Schematic("home-cooldown.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(start.south(2));((BuilderHomes)field(builder,"homes")).reset();client.crosshairTarget=new net.minecraft.util.hit.BlockHitResult(Vec3d.ofCenter(chest),Direction.WEST,chest,false);builder.markContainer();button(builder,"Set Storage Home").press();});
+            waitHome(context,builder,140);
+            context.runOnClient(client->require(((BuilderHomes)field(builder,"homes")).readyFor(chest),"Exact Donut cooldown message prevented storage save: "+builder.status()));
+            var work=start.east(12);teleport(world,work);context.waitTicks(12);
+            context.runOnClient(client->require(((BuilderHomes)field(builder,"homes")).restock(chest),"Cooldown restock did not begin"));waitHome(context,builder,180);
+            context.runOnClient(client->require(client.player.getEntityPos().squaredDistanceTo(saved[0].pos)<=.36,"Cooldown retry never reached actual home 1: "+builder.status()));
+            context.runOnClient(client->require(((BuilderHomes)field(builder,"homes")).returnToWork(),"Cooldown work return did not begin"));waitHome(context,builder,120);
+            context.runOnClient(client->require(client.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(work))<=.36,"Cooldown sequence did not return to home 2"));
+            require(cooldownRejections==2&&saves[0]==1&&saves[1]==1&&travels[0]==1&&travels[1]==1&&saved[1]==null&&saved[2]==reservedThird&&!movedDuringWarmup,"Cooldown retries duplicated successful commands or changed home 3");
+            for(int i=1;i<commandTimes.size();i++)require(commandTimes.get(i)-commandTimes.get(i-1)>=18,"Home commands were sent without the one-second gap: "+commandTimes);
+            System.out.println("[home-cooldown-proof] exact 0.25s feedback retried sethome and home1; native storage/work roundtrip confirmed, home2 deleted, home3 untouched; command ticks="+commandTimes);
+        }finally{world.getServer().runOnServer(server->commandCooldown=false);context.runOnClient(client->{builder.pause("Cooldown test done");button(builder,"Clear Restock Marks").press();setting(builder,"Builder Homes",false);});}
     }
     static void restoreStorage(TestSingleplayerContext world,com.google.gson.JsonArray p){world.getServer().runOnServer(server->saved[0]=new Home(new Vec3d(p.get(0).getAsDouble(),p.get(1).getAsDouble(),p.get(2).getAsDouble()),p.get(3).getAsFloat(),p.get(4).getAsFloat()));}
     static void verifyCommands(){verifyCommands(true);}
     static void verifyCommands(boolean fresh){require(!movedDuringWarmup&&!commandsAwayFromStorage,"Home commands moved during warmup or saved away from storage");int expected=fresh?1:0;require(deletes[0]==expected&&saves[0]==expected,"Build did not preserve the expected storage home setup");require(saves[1]>0&&saved[1]==null&&deletes[1]==2*saves[1]&&travels[1]==saves[1]&&saved[2]==reservedThird,"Restock did not use/clear home 2 after arrival or home 3 changed");System.out.println("[builder-home] Run: storage saves="+saves[0]+" restock returns="+saves[1]+" native travels="+travelCommands+" home 3 untouched");}
     static void run(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        cooldownRegression(context,world,builder,start);
         System.out.println("[builder-check] Automatic storage home replacement, warmup, native arrival, prompt repair and independent camera aim");
         installCommands(world,start.east(2));var chest=storage;
         command(world,"setblock",chest,"chest[facing=west,type=right]");command(world,"setblock",chest.south(),"chest[facing=west,type=left]");
@@ -102,6 +131,9 @@ final class BuilderHomeChecks {
         int before=saveCommands;
         context.runOnClient(client->button(builder,"Set Storage Home").press());waitHome(context,builder,80);
         context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(homes.ready()&&!builder.building(),"Storage setup failed or unexpectedly started building: "+builder.status());var entry=homes.saveData().get(0).getAsJsonObject();var feet=BlockPos.ofFloored(entry.get("x").getAsDouble(),entry.get("y").getAsDouble(),entry.get("z").getAsDouble());for(var reserved:List.of(feet,feet.up())){require((boolean)call(builder,"reservedSupplyAccess",new Class<?>[]{BlockPos.class},reserved),"Storage-home arrival cell was available to scaffolding");require(call(builder,"placement",new Class<?>[]{BlockPos.class,BlockState.class,Item.class,int.class,boolean.class},reserved,Blocks.DIRT.getDefaultState(),Items.DIRT,-1,true)==null,"Scaffold could block native storage arrival");}});require(saveCommands==before+1,"Absent home 1 did not save exactly once");
+        if(Boolean.getBoolean("maro.gametest.builderNetworkOnly")){
+            restockRoundTrip(context,world,builder,home2,chest);temporaryFootingReturn(context,world,builder,home2,chest);samePointWorkReturn(context,world,builder,start,chest);return;
+        }
         if(Boolean.getBoolean("maro.gametest.builderCleanupCeilingOnly")){
             cleanupCeilingOwnership(context,world,builder,start);
             System.out.println("[builder-cleanup-ceiling] PASS: native pickup, retained exit, owned-post cleanup and roof repair");return;
@@ -856,8 +888,8 @@ final class BuilderHomeChecks {
         for(String material:List.of("stone","dirt")){
             command(world,"setblock",footing,material);world.getServer().runCommand("tp @a "+position.x+" "+position.y+" "+position.z+" 0 0");context.waitTicks(12);int first=commands.size();
             context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(client.player.isOnGround()&&client.world.isSpaceEmpty(client.player,client.player.getBoundingBox()),"Roof-edge fixture did not establish a real grounded body");require(client.world.getBlockState(feet.down()).isAir()&&!new BuilderWalk().canStand(feet),"Roof-edge fixture's nominal centre unexpectedly has footing");require(homes.safeHere()==material.equals("stone"),"Roof-edge storage safety did not distinguish permanent and temporary footing");require(homes.restock(chest),"Native roof-edge body refused a restock save");});
-            waitHome(context,builder,100);
-            context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(homes.protectsFooting(footing)&&!homes.protectsFooting(feet.down()),"Home return protected the air cell instead of its actual supporting block");var savedData=homes.saveData();homes.loadData(savedData);require(homes.protectsFooting(footing)&&homes.returnToWork(),"Roof-edge footing was lost across save/load");});waitHome(context,builder,100);
+            waitHome(context,builder,180);
+            context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(homes.protectsFooting(footing)&&!homes.protectsFooting(feet.down()),"Home return protected the air cell instead of its actual supporting block");var savedData=homes.saveData();homes.loadData(savedData);require(homes.protectsFooting(footing)&&homes.returnToWork(),"Roof-edge footing was lost across save/load");});waitHome(context,builder,180);
             require(commands.subList(first,commands.size()).equals(List.of("delhome 2","sethome 2","home 1","home 2","delhome 2")),"Roof-edge restock command order changed");
             context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(client.player.isOnGround()&&client.player.getEntityPos().squaredDistanceTo(position)<.04&&client.player.getHealth()==20&&!homes.protectsFooting(footing)&&homes.saveData().get(1).isJsonNull(),"Roof-edge restock did not safely return and clear home 2");});
             command(world,"setblock",footing,"air");teleport(world,work);context.waitTicks(12);
@@ -866,7 +898,7 @@ final class BuilderHomeChecks {
     }
     private static void obstructedStorageRoundTrip(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work,BlockPos chest){
         var arrival=chest.west(3);teleport(world,arrival);context.waitTicks(12);
-        context.runOnClient(client->button(builder,"Set Storage Home").press());waitHome(context,builder,100);
+        context.runOnClient(client->button(builder,"Set Storage Home").press());waitHome(context,builder,180);
         var obstacle=chest.west(2);command(world,"setblock",obstacle,"dirt");command(world,"setblock",obstacle.up(),"dirt");context.waitTicks(6);
         context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(homes.readyFor(chest)&&client.player.getBlockPos().equals(arrival)&&client.world.isSpaceEmpty(client.player,client.player.getBoundingBox()),"Obstructed storage fixture did not retain a safe three-cell home arrival");require(call(builder,"chestHit",new Class<?>[]{BlockPos.class,Vec3d.class},chest,client.player.getEyePos())==null,"Obstructed storage fixture still sees the chest");});
         restockRoundTrip(context,world,builder,work,chest,true);
@@ -1025,13 +1057,13 @@ final class BuilderHomeChecks {
     private static void samePointWorkReturn(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,BlockPos chest){
         System.out.println("[builder-home] Return through native home 2 even when chest routing has already reached the saved work point");
         var work=start.east(6);teleport(world,work);context.waitTicks(12);int first=commands.size();var third=saved[2];
-        context.runOnClient(client->{builder.pause("same-point return setup");require(((BuilderHomes)field(builder,"homes")).restock(chest),"Same-point restock did not begin");});waitHome(context,builder,100);
+        context.runOnClient(client->{builder.pause("same-point return setup");require(((BuilderHomes)field(builder,"homes")).restock(chest),"Same-point restock did not begin");});waitHome(context,builder,180);
         var walk=context.computeOnClient(client->new BuilderWalk());boolean arrived=false;
         for(int tick=0;tick<180&&!arrived;tick++){
             final int lookTick=tick;arrived=context.computeOnClient(client->{walk.turning(true,12);walk.beginLookTick(lookTick);return walk.standAt(work);});context.waitTick();
         }
         require(arrived,"Native chest-route walk did not reach the saved work point");context.runOnClient(client->walk.stop());context.waitTicks(12);
-        context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(client.player.getEntityPos().squaredDistanceTo(saved[1].pos)<=.36&&homes.returnToWork(),"Same-point native return did not begin");});waitHome(context,builder,100);
+        context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(client.player.getEntityPos().squaredDistanceTo(saved[1].pos)<=.36&&homes.returnToWork(),"Same-point native return did not begin");});waitHome(context,builder,180);
         require(commands.subList(first,commands.size()).equals(List.of("delhome 2","sethome 2","home 1","home 2","delhome 2")),"Same-point return skipped native travel: "+commands.subList(first,commands.size()));
         require(saved[1]==null&&saved[2]==third&&waiting==null&&!movedDuringWarmup,"Same-point return deleted early, moved during warmup or changed home 3");
         context.runOnClient(client->{require(client.player.getHealth()==20&&client.currentScreen==null,"Same-point return lost health or left a menu");builder.pause("same-point native return checked");});teleport(world,start);context.waitTicks(12);
@@ -1079,7 +1111,7 @@ final class BuilderHomeChecks {
         world.getServer().runOnServer(server->{var player=server.getPlayerManager().getPlayerList().getFirst();player.onLanding();player.setVelocity(Vec3d.ZERO);});
         teleport(world,platform.up());context.waitTicks(24);
         var floor=context.computeOnClient(client->{var feet=client.player.getBlockPos().down();require(client.world.getBlockState(feet).isOf(Blocks.DIRT)&&client.player.isOnGround(),"Temporary-floor fixture did not settle: "+client.player.getEntityPos());return feet;});
-        context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(homes.restock(chest),"Temporary work footing refused restock");});waitHome(context,builder,100);
+        context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(homes.restock(chest),"Temporary work footing refused restock");});waitHome(context,builder,180);
         require(saved[1]!=null,"Restock did not retain home 2 while at storage");var returnPoint=saved[1];int previousDeletes=deletes[1];var third=saved[2];
         context.runOnClient(client->{
             var homes=(BuilderHomes)field(builder,"homes");require(homes.protectsFooting(floor)&&!(boolean)call(builder,"safeToRecycle",new Class<?>[]{BlockPos.class},floor),"Return footing could be recycled while away: expected="+floor+" homes="+homes.saveData()+" native="+returnPoint.pos);
@@ -1087,7 +1119,7 @@ final class BuilderHomeChecks {
         });
         rejectTravel=true;context.runOnClient(client->require(((BuilderHomes)field(builder,"homes")).returnToWork(),"Return retry did not begin"));waitHome(context,builder,50);rejectTravel=false;
         require(saved[1]==returnPoint&&deletes[1]==previousDeletes,"Rejected return deleted home 2 before arrival");
-        context.runOnClient(client->{require(builder.status().contains("cooldown"),"Rejected return did not pause");builder.startBuild();});waitHome(context,builder,100);context.waitTick();
+        context.runOnClient(client->{require(builder.status().contains("cooldown"),"Rejected return did not pause");builder.startBuild();});waitHome(context,builder,180);context.waitTick();
         require(saved[1]==null&&saved[2]==third&&!movedDuringWarmup,"Resumed return failed to clear only home 2");
         context.runOnClient(client->{require(client.player.isOnGround()&&client.player.getHealth()==20&&client.player.getEntityPos().squaredDistanceTo(returnPoint.pos)<.36,"Temporary-floor return was not confirmed safely");require(!((BuilderHomes)field(builder,"homes")).protectsFooting(floor),"Completed trip retained footing protection");builder.pause("temporary return checked");});
         require(world.getServer().computeOnServer(server->server.getOverworld().getBlockState(floor).isOf(Blocks.DIRT)),"Restock destroyed its return footing");

@@ -29,6 +29,9 @@ public final class BuilderHomes {
     private List<Integer> routeHomes=List.of();
     private int routeHomeCursor,routeViewCursor,routeRetryAt;
     private String failure="";
+    private String queuedCommand="",lastCommand="";
+    private int commandAt,lastCommandAt=-20,commandRetries;
+    private static final java.util.regex.Pattern COMMAND_WAIT=java.util.regex.Pattern.compile("(?i)wait(?: another)?\\s+([0-9]+(?:\\.[0-9]+)?)\\s*seconds?");
     public BuilderHomes(BuilderWalk walker){this.walker=walker;}
     public boolean ready(){return points[0]!=null;}
     public boolean readyFor(BlockPos chest){return chest!=null&&ready()&&chest.getSquaredDistance(points[0].feet())<=25&&safe(points[0]);}
@@ -38,7 +41,7 @@ public final class BuilderHomes {
         &&mc.player.getEntityPos().squaredDistanceTo(points[0].position)<=.36;}
     public boolean busy(){return stage!=Stage.IDLE;}
     public void cancel(){
-        stage=Stage.IDLE;pending=null;storageChest=storageStand=null;storageViews=List.of();storageProgress=null;receipt=savingReturn=travellingBack=false;failure="";settled=0;invalidateRoutes();walker.stop();
+        stage=Stage.IDLE;pending=null;storageChest=storageStand=null;storageViews=List.of();storageProgress=null;receipt=savingReturn=travellingBack=false;failure=queuedCommand=lastCommand="";settled=0;invalidateRoutes();walker.stop();
     }
     public boolean checkingRoutes(){return checkingRoutes;}
     public void invalidateRoutes(){checkingRoutes=false;routeTarget=routeFeet=null;routeViews=List.of();routeHomes=List.of();routeRetryAt=0;}
@@ -96,10 +99,11 @@ public final class BuilderHomes {
         return new Box(point.x-half,point.y,point.z-half,point.x+half,point.y+dimensions.height(),point.z+half).intersects(new Box(pos));
     }
     private void clearReturn(){
-        slot=1;pending=points[1];points[1]=null;returnTrip=storageArrived=false;begin(Stage.RETURN_DELETE);mc.getNetworkHandler().sendChatCommand("delhome 2");
+        slot=1;pending=points[1];points[1]=null;returnTrip=storageArrived=false;begin(Stage.RETURN_DELETE);command("delhome 2");
     }
-    private void begin(Stage next){walker.stop();stage=next;started=clock;receipt=false;failure="";settled=0;}
-    private void save(){begin(Stage.SAVE);mc.getNetworkHandler().sendChatCommand("sethome");}
+    private void begin(Stage next){walker.stop();stage=next;started=clock;receipt=false;failure=queuedCommand=lastCommand="";commandRetries=0;settled=0;}
+    private void command(String value){queuedCommand=lastCommand=value;commandAt=Math.max(clock,lastCommandAt+20);}
+    private void save(){begin(Stage.SAVE);command("sethome");}
     /** A native server position receipt also confirms teleports to the current position. */
     public void positionConfirmed(){if(stage==Stage.TRAVEL||stage==Stage.STORAGE_TRAVEL)receipt=true;}
     private boolean besideStorage(Point point){
@@ -114,11 +118,11 @@ public final class BuilderHomes {
         if(clock-storageProgressAt>180){cancel();pause.accept("No safe route to marked storage — home 1 was kept");return;}
         if(readyFor(storageChest)&&mc.player.getEntityPos().squaredDistanceTo(points[0].position)>64){
             if(!settledToTravel())return;
-            pending=points[0];begin(Stage.STORAGE_TRAVEL);mc.getNetworkHandler().sendChatCommand("home 1");return;
+            pending=points[0];begin(Stage.STORAGE_TRAVEL);command("home 1");return;
         }
         if(safeHere()&&besideStorage(current())){
             if(++settled<4)return;
-            pending=current();points[0]=null;begin(Stage.DELETE);mc.getNetworkHandler().sendChatCommand("delhome 1");return;
+            pending=current();points[0]=null;begin(Stage.DELETE);command("delhome 1");return;
         }
         settled=0;
         // Long journeys use the walker's checked segments before selecting a final dry view.
@@ -146,7 +150,13 @@ public final class BuilderHomes {
         cancel();pause.accept("No safe route to marked storage — home 1 was kept");
     }
     public void message(String raw){
-        if(!busy())return;String text=raw.toLowerCase(Locale.ROOT);
+        if(!busy())return;String text=raw.replaceAll("§.","").toLowerCase(Locale.ROOT);
+        var wait=COMMAND_WAIT.matcher(text);
+        if(!lastCommand.isEmpty()&&queuedCommand.isEmpty()&&(text.contains("command")||text.contains("cooldown"))&&wait.find()){
+            double seconds=Double.parseDouble(wait.group(1));
+            if(!Double.isFinite(seconds)||seconds>60||++commandRetries>3){failure=raw;return;}
+            receipt=false;queuedCommand=lastCommand;commandAt=Math.max(lastCommandAt+20,clock+(int)Math.ceil(seconds*20)+3);started=clock;return;
+        }
         if(!text.contains("home")&&!text.contains("teleport")&&!text.contains("command"))return;
         if(text.contains("cancel")||text.contains("cooldown")||text.contains("combat")||text.contains("permission")||text.contains("cannot")||text.contains("can't")||text.contains("could not")||text.contains("unable")||text.contains("not allowed")||text.contains("not deleted")||text.contains("not removed")||text.contains("unknown command")||text.contains("failed")){failure=raw;return;}
         boolean missing=text.contains("not found")||text.contains("not set")||text.contains("does not exist")||text.contains("no home")||text.contains("don't have")||text.contains("do not have");
@@ -164,6 +174,16 @@ public final class BuilderHomes {
     public boolean tick(Consumer<String> status,Consumer<String> pause){
         clock++;if(!busy())return false;walker.release();
         if(!failure.isEmpty()){String reason=failure;cancel();pause.accept("Home command failed: "+reason);return true;}
+        if(!queuedCommand.isEmpty()){
+            status.accept("Waiting for home command cooldown before /"+queuedCommand);
+            boolean saving=stage==Stage.DELETE||stage==Stage.SAVE||stage==Stage.RETURN_DELETE;
+            if(pending==null||!safe(pending)||saving&&mc.player.getEntityPos().squaredDistanceTo(pending.position)>.36){cancel();pause.accept("Home footing changed before command — resume from dry ground");return true;}
+            if(clock<commandAt||!settledToTravel()||mc.currentScreen!=null||mc.player.currentScreenHandler!=mc.player.playerScreenHandler){
+                if(clock-started>1200){cancel();pause.accept("Home command could not settle — resume from dry ground");}return true;
+            }
+            String value=queuedCommand;queuedCommand="";lastCommandAt=started=clock;
+            mc.getNetworkHandler().sendChatCommand(value);return true;
+        }
         if(clock-started>(stage==Stage.APPROACH?1200:300)){
             cancel();pause.accept("Home did not confirm — check server feedback and resume");return true;
         }
@@ -173,7 +193,7 @@ public final class BuilderHomes {
             if(!settledToTravel()||mc.player.currentScreenHandler!=mc.player.playerScreenHandler)return true;
             if(!savingReturn){if(points[1]==null||!safe(points[1])){cancel();pause.accept("Restock return footing changed — resume from dry ground");return true;}travel(0);return true;}
             var point=current(true);if(!safe(point))return true;
-            pending=point;points[1]=null;begin(Stage.DELETE);mc.getNetworkHandler().sendChatCommand("delhome 2");return true;
+            pending=point;points[1]=null;begin(Stage.DELETE);command("delhome 2");return true;
         }
         if(stage==Stage.RETURN_WAIT){
             status.accept("Returning to the saved work area through /home 2");
@@ -245,7 +265,7 @@ public final class BuilderHomes {
     }
     private boolean settledToTravel(){return mc.player.isOnGround()&&mc.player.getVelocity().horizontalLengthSquared()<.0004&&!mc.player.isTouchingWater()&&!mc.player.isInLava()&&!mc.player.isUsingItem();}
     private boolean travel(int index){
-        slot=index;pending=points[index];begin(Stage.TRAVEL);mc.getNetworkHandler().sendChatCommand("home "+(slot+1));return true;
+        slot=index;pending=points[index];begin(Stage.TRAVEL);command("home "+(slot+1));return true;
     }
     public JsonArray saveData(){
         var data=new JsonArray();for(int i=0;i<points.length;i++){var point=points[i];if(point==null){data.add(JsonNull.INSTANCE);continue;}var entry=new JsonObject();entry.addProperty("x",point.position.x);entry.addProperty("y",point.position.y);entry.addProperty("z",point.position.z);entry.addProperty("floor",point.floor);entry.addProperty("dimension",point.dimension);var support=new JsonArray();support.add(point.footing.getX());support.add(point.footing.getY());support.add(point.footing.getZ());entry.add("footing",support);if(i==1&&returnTrip){entry.addProperty("restock-return",true);if(storageArrived)entry.addProperty("restock-storage",true);}data.add(entry);}return data;
