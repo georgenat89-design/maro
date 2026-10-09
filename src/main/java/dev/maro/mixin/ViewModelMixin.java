@@ -54,10 +54,5 @@ public abstract class ViewModelMixin {
         if (stack.isIn(net.minecraft.registry.tag.ItemTags.SWORDS) && dev.maro.module.impl.visuals.BetterLooks.shortSword()) {
             matrices.scale(0.72f, 0.72f, 0.72f);
         }
-        // Cosmetics' Item Size, for skinned swords, pickaxes and shovels.
-        if (dev.maro.module.impl.visuals.SkinAccessories.skinFor(stack) != null) {
-            float size = dev.maro.module.impl.visuals.SkinAccessories.itemScale();
-            if (size != 1) matrices.scale(size, size, size);
-        }
     }
 }

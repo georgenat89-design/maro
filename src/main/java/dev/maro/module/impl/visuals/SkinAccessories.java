@@ -144,6 +144,10 @@ public final class SkinAccessories extends Module {
         SkinAccessories m = instance;
         return m == null ? 1 : m.itemSize.getFloat();
     }
+
+    public float itemSize() {
+        return itemSize.getFloat();
+    }
     public void selectPreset(String name) { preset.set(name); applyPreset(preset.get()); }
     private void applyPreset(String name) {
         // Presets only change the accessory combination and palette; personal fit is retained.

@@ -62,6 +62,7 @@
     "BetterLooksMixins$HandBob",
     "FakePlayerAttackMixin",
     "ItemLooksMixin",
+    "ItemScaleMixin",
     "FakeBlockWorldMixin"
   ],
   "injectors": {

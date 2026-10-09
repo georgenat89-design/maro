@@ -278,11 +278,12 @@ public final class SkinAccessoriesScreen extends Screen {
         } else {
             Fonts.drawCentered(ctx, "Join a world to see yourself", px + pw / 2f, py + ph / 2f, Theme.TEXT_MUTED, false, 0.7f);
         }
-        // On a weapon tab, the chosen skin large in the corner, as it looks in your hand.
+        // On a weapon tab, the chosen skin large in the corner, at its Item Size.
         String chosen = current();
         ItemStack big = chosen.equals("None") ? null : icon(chosen);
         if (big != null) {
-            float s = Math.min(3.4f, pw / 70f), bx = px + pw - 16 * s - 8, byy = py + ph - 16 * s - 8;
+            float s = Math.min(Math.min(3.4f, pw / 70f) * module.itemSize(), (pw - 24) / 32f);
+            float bx = px + pw - 16 * s - 8, byy = py + ph - 16 * s - 8;
             Render2D.roundRect(ctx, bx - 4, byy - 4, 16 * s + 8, 16 * s + 8, 8, 0x50000000);
             var m = ctx.getMatrices();
             m.pushMatrix();
@@ -415,8 +416,8 @@ public final class SkinAccessoriesScreen extends Screen {
         float fy = listY + listH + 6;
         if (size != null) {
             Fonts.drawV(ctx, "Size", listX + 2, fy + 4, Theme.TEXT_DIM, false, 0.66f);
-            String value = Math.round(size.getPercent() * 100) + "%";
-            if (size.getName().equals("Halo Height")) value = size.format();
+            // Sizes read as a share of normal size (100% is as made); the halo's height in pixels.
+            String value = size.getName().equals("Halo Height") ? size.format() : Math.round(size.getFloat() * 100) + "%";
             Fonts.drawRight(ctx, value, listX + listW - 2, fy + 4, Theme.TEXT_DIM, false, 0.66f);
             sliderX = listX + 2;
             sliderW = listW - 4;

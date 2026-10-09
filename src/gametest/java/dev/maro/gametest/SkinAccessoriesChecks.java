@@ -96,6 +96,27 @@ final class SkinAccessoriesChecks {
                         && dev.maro.render.accessories.CosmeticItems.all(dev.maro.render.accessories.CosmeticItems.Kind.PICKAXE).size() == 25
                         && dev.maro.render.accessories.CosmeticItems.all(dev.maro.render.accessories.CosmeticItems.Kind.SHOVEL).size() == 25,
                         "There are not 50 swords, 25 pickaxes and 25 shovels");
+                // Item Size reaches the sword wherever it is held (here, the preview's third-person hand), not in menus.
+                var itemSize = (dev.maro.setting.NumberSetting) setting(m, "Item Size");
+                itemSize.set(1.5);
+                var held = new net.minecraft.client.render.item.ItemRenderState();
+                c.getItemModelManager().updateForLivingEntity(held, new ItemStack(Items.DIAMOND_SWORD),
+                        net.minecraft.item.ItemDisplayContext.THIRD_PERSON_RIGHT_HAND, c.player);
+                float scale = ((dev.maro.render.accessories.ItemScale) held).maro$scale();
+                require(Math.abs(scale - 1.5f) < 1e-4, "Item Size does not reach a held skinned sword: " + scale);
+                var icon = new net.minecraft.client.render.item.ItemRenderState();
+                c.getItemModelManager().clearAndUpdate(icon, new ItemStack(Items.DIAMOND_SWORD), net.minecraft.item.ItemDisplayContext.GUI, c.world, c.player, 0);
+                require(((dev.maro.render.accessories.ItemScale) icon).maro$scale() == 1, "Item Size changed a sword's icon in a menu");
+                var plain = new net.minecraft.client.render.item.ItemRenderState();
+                c.getItemModelManager().updateForLivingEntity(plain, new ItemStack(Items.STICK),
+                        net.minecraft.item.ItemDisplayContext.THIRD_PERSON_RIGHT_HAND, c.player);
+                require(((dev.maro.render.accessories.ItemScale) plain).maro$scale() == 1, "Item Size changed an item with no skin");
+                itemSize.set(1.6);
+            });
+            context.waitTicks(3);
+            context.takeScreenshot("maro-cosmetics-sword-big");
+            context.runOnClient(c -> {
+                ((dev.maro.setting.NumberSetting) setting(m, "Item Size")).set(1.0);
                 ((SkinAccessoriesScreen) c.currentScreen).showTab("Pickaxe");
                 ((ModeSetting) setting(m, "Pickaxe")).set("Phoenix Pickaxe");
             });

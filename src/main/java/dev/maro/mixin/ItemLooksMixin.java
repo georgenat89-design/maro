@@ -1,6 +1,7 @@
 package dev.maro.mixin;
 
 import dev.maro.render.accessories.ItemLooks;
+import dev.maro.render.accessories.ItemScale;
 import net.minecraft.client.item.ItemModelManager;
 import net.minecraft.client.render.item.ItemRenderState;
 import net.minecraft.item.ItemDisplayContext;
@@ -15,7 +16,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Every item drawn passes here on its way to a model: Cosmetics' sword, pickaxe and shovel skins
- * and Fake Block's item look swap the model it is drawn with. Only the drawing changes.
+ * and Fake Block's item look swap the model it is drawn with, and a skin in your hand takes
+ * Cosmetics' Item Size. Only the drawing changes.
  */
 @Mixin(ItemModelManager.class)
 public abstract class ItemLooksMixin {
@@ -31,6 +33,8 @@ public abstract class ItemLooksMixin {
         maro$swapping = true;
         try {
             ((ItemModelManager) (Object) this).update(state, shown, context, world, holder, seed);
+            float scale = ItemLooks.handScale(stack, context, holder);
+            if (scale != 1) ((ItemScale) state).maro$setScale(scale);
         } finally {
             maro$swapping = false;
         }
