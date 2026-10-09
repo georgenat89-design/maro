@@ -29,6 +29,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             ModuleManager.all().forEach(module -> module.setEnabled(false));
         });
 
+        if(Boolean.getBoolean("maro.gametest.builderGrimOnly")){BuilderGrimChecks.run(context);return;}
         try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
             singleplayer.getClientWorld().waitForChunksRender();
 
