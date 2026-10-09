@@ -102,8 +102,8 @@ final class SkinAccessoriesChecks {
                 var held = new net.minecraft.client.render.item.ItemRenderState();
                 c.getItemModelManager().updateForLivingEntity(held, new ItemStack(Items.DIAMOND_SWORD),
                         net.minecraft.item.ItemDisplayContext.THIRD_PERSON_RIGHT_HAND, c.player);
-                float scale = ((dev.maro.render.accessories.ItemScale) held).maro$scale();
-                require(Math.abs(scale - 1.5f) < 1e-4, "Item Size does not reach a held skinned sword: " + scale);
+                float heldSize = ((dev.maro.render.accessories.ItemScale) held).maro$scale();
+                require(Math.abs(heldSize - 1.5f) < 1e-4, "Item Size does not reach a held skinned sword: " + heldSize);
                 var icon = new net.minecraft.client.render.item.ItemRenderState();
                 c.getItemModelManager().clearAndUpdate(icon, new ItemStack(Items.DIAMOND_SWORD), net.minecraft.item.ItemDisplayContext.GUI, c.world, c.player, 0);
                 require(((dev.maro.render.accessories.ItemScale) icon).maro$scale() == 1, "Item Size changed a sword's icon in a menu");
