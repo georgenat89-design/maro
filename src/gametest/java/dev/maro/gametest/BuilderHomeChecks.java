@@ -310,6 +310,7 @@ final class BuilderHomeChecks {
         for(int i:List.of(0,1,2,6,9,17))command(world,"setblock",origin.add(i%4,i/8,i/4%2),i==0?"dispenser[facing=west]":i==1?"hopper[facing=west]":"cracked_polished_blackstone_bricks");
         if(chestReceiver){command(world,"setblock",origin,"chest[facing=west,type=right]");command(world,"setblock",origin.south(),"chest[facing=west,type=left]");}
         if(looseReceiver)for(int i:List.of(1,5,7))command(world,"setblock",origin.add(i%4,0,i/4),"cracked_polished_blackstone_bricks");
+        if(looseReceiver)world.getServer().runCommand("give @a diamond_pickaxe");
         var beam=origin.add(1,1,0);var upper=beam.up();var target=origin.add(2,1,0);command(world,"setblock",target,"air");
         // Legacy damage predates this run. New access must never mine these beams above a hopper.
         if(!looseReceiver){command(world,"setblock",beam,"air");command(world,"setblock",upper,"air");}

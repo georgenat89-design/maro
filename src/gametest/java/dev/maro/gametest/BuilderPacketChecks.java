@@ -18,11 +18,11 @@ public final class BuilderPacketChecks {
     private static Set<BlockPos> crouchTargets=Set.of();
     private static int crouchMining,crouchFailures;
     private static Set<BlockPos> protectedBlocks=Set.of();
-    private static int protectedMining;
+    private static int protectedMining,hopperMining;
     private static float lookYaw,lookPitch,maxYaw,maxPitch;
     private static int abruptLooks;
     private static dev.maro.builder.BuilderHomes checkedHomes;
-    public static void begin(){recording=true;extraMovement=interactions=lastSequence=invalidSequence=unpublishedLook=repeatedMovement=crouchMining=crouchFailures=abruptLooks=protectedMining=0;lastMovementAge=-1;crouchTargets=protectedBlocks=Set.of();checkedHomes=null;}
+    public static void begin(){recording=true;extraMovement=interactions=lastSequence=invalidSequence=unpublishedLook=repeatedMovement=crouchMining=crouchFailures=abruptLooks=protectedMining=hopperMining=0;lastMovementAge=-1;crouchTargets=protectedBlocks=Set.of();checkedHomes=null;}
     public static void expectIntactBlocks(Set<BlockPos> targets){protectedBlocks=Set.copyOf(targets);}
     public static void expectLookLimits(float yaw,float pitch){
         var player=MinecraftClient.getInstance().player;lookYaw=player.getYaw();lookPitch=player.getPitch();maxYaw=yaw;maxPitch=pitch;
@@ -39,6 +39,19 @@ public final class BuilderPacketChecks {
         if(!recording)return;
         if(packet instanceof PlayerActionC2SPacket mine&&protectedBlocks.contains(mine.getPos())
             &&(mine.getAction()==PlayerActionC2SPacket.Action.START_DESTROY_BLOCK||mine.getAction()==PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK))protectedMining++;
+        if(packet instanceof PlayerActionC2SPacket mine
+            &&(mine.getAction()==PlayerActionC2SPacket.Action.START_DESTROY_BLOCK||mine.getAction()==PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK)){
+            var client=MinecraftClient.getInstance();var builder=dev.maro.module.ModuleManager.get(dev.maro.module.impl.player.AutoBuilder.class);
+            // Check actual outbound mining independently of the planner and its caches.
+            // Owned dirt is deliberately removable, even over a hopper.
+            if(client.world!=null&&builder!=null&&!builder.temporarySupports().contains(mine.getPos())){
+                boolean caught=false;
+                for(int dx=-1;dx<=1&&!caught;dx++)for(int dz=-1;dz<=1&&!caught;dz++)
+                    for(int y=client.world.getBottomY();y<mine.getPos().getY();y++)
+                        if(client.world.getBlockState(new BlockPos(mine.getPos().getX()+dx,y,mine.getPos().getZ()+dz)).getBlock() instanceof net.minecraft.block.HopperBlock){caught=true;break;}
+                if(caught)hopperMining++;
+            }
+        }
         if(packet instanceof PlayerMoveC2SPacket move&&checkedHomes!=null){
             float yaw=move.getYaw(lookYaw),pitch=move.getPitch(lookPitch);
             float dy=Math.abs(MathHelper.wrapDegrees(yaw-lookYaw)),dp=Math.abs(pitch-lookPitch);
@@ -71,6 +84,7 @@ public final class BuilderPacketChecks {
     public static void verify(int minimumInteractions){
         recording=false;
         if(protectedMining>0)throw new AssertionError("Mined a protected build block: "+protectedMining);
+        if(hopperMining>0)throw new AssertionError("Native mining packet cut a build block above a hopper: "+hopperMining);
         if(abruptLooks>0)throw new AssertionError("Native head movement exceeded yaw/pitch limits: "+abruptLooks);
         if(!crouchTargets.isEmpty()&&(crouchMining==0||crouchFailures>0))throw new AssertionError("Native crouch mining: actions="+crouchMining+" invalid pose="+crouchFailures);
         if(interactions<minimumInteractions||extraMovement!=0||invalidSequence!=0||unpublishedLook!=0||repeatedMovement!=0)
