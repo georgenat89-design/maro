@@ -1940,7 +1940,10 @@ public final class AutoBuilder extends Module {
             entryCandidates=unique.stream().sorted(Comparator.comparingDouble(c->c.top.getSquaredDistance(feet))).toList();
         }
         if(ticks<entryRetryAt)return false;
-        int total=entryCandidates.size();long deadline=System.nanoTime()+3_000_000;
+        // The early clear-route pass is a preference, not an exhaustive search
+        // of thousands of columns inside a sealed room. Try nearby candidates
+        // before handing the same work to the fully proved entrance planner.
+        int total=allowOpenings?entryCandidates.size():Math.min(192,entryCandidates.size());long deadline=System.nanoTime()+3_000_000;
         while(entrySearchCursor<total&&System.nanoTime()<deadline){
             if(entryProbeCursor!=entrySearchCursor){entryProbeCursor=entrySearchCursor;entryProbeBase=null;entryDoorCursor=0;}
             var candidate=entryCandidates.get(entrySearchCursor++);var top=candidate.top;var destination=candidate.destination;
