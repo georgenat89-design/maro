@@ -59,6 +59,7 @@
     "BetterLooksMixins$LavaFog",
     "BetterLooksMixins$EffectFog",
     "BetterLooksMixins$NoFog",
+    "BetterLooksMixins$HandBob",
     "FakePlayerAttackMixin",
     "ItemLooksMixin",
     "FakeBlockWorldMixin"

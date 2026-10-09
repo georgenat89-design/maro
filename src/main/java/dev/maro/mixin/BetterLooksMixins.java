@@ -9,6 +9,7 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.render.Camera;
+import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.render.SkyRendering;
 import net.minecraft.client.render.entity.EntityRenderer;
@@ -21,6 +22,7 @@ import net.minecraft.client.render.fog.WaterFogModifier;
 import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.client.toast.Toast;
 import net.minecraft.client.toast.ToastManager;
+import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
 import net.minecraft.item.ItemStack;
@@ -98,7 +100,8 @@ public final class BetterLooksMixins {
     public abstract static class Glint {
         @Inject(method = "hasGlint", at = @At("HEAD"), cancellable = true)
         private void maro$glint(CallbackInfoReturnable<Boolean> cir) {
-            if (BetterLooks.noGlint()) cir.setReturnValue(false);
+            Boolean glint = BetterLooks.glint();
+            if (glint != null) cir.setReturnValue(glint);
         }
     }
 
@@ -184,6 +187,16 @@ public final class BetterLooksMixins {
         private static void clear(EntityRenderState state) {
             state.shadowRadius = 0;
             state.shadowPieces.clear();
+        }
+    }
+
+    /** No Item Bobbing: the view still bobs as you walk, the hand drawn over it does not. */
+    @Mixin(GameRenderer.class)
+    public abstract static class HandBob {
+        @WrapOperation(method = "renderHand", at = @At(value = "INVOKE",
+                target = "Lnet/minecraft/client/render/GameRenderer;bobView(Lnet/minecraft/client/util/math/MatrixStack;F)V"))
+        private void maro$noItemBob(GameRenderer self, MatrixStack matrices, float tickProgress, Operation<Void> original) {
+            if (!BetterLooks.noItemBob()) original.call(self, matrices, tickProgress);
         }
     }
 

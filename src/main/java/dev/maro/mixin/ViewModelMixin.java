@@ -50,6 +50,10 @@ public abstract class ViewModelMixin {
         boolean leftArm = context == ItemDisplayContext.FIRST_PERSON_LEFT_HAND;
         boolean mainHand = leftArm == (entity.getMainArm() == Arm.LEFT);
         ViewModel.itemTransform(matrices, mainHand, leftArm);
+        // Better Looks' Short Sword.
+        if (stack.isIn(net.minecraft.registry.tag.ItemTags.SWORDS) && dev.maro.module.impl.visuals.BetterLooks.shortSword()) {
+            matrices.scale(0.72f, 0.72f, 0.72f);
+        }
         // Cosmetics' Item Size, for skinned swords, pickaxes and shovels.
         if (dev.maro.module.impl.visuals.SkinAccessories.skinFor(stack) != null) {
             float size = dev.maro.module.impl.visuals.SkinAccessories.itemScale();

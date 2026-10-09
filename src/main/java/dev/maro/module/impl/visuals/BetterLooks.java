@@ -47,7 +47,6 @@ public class BetterLooks extends Module {
     private final BooleanSetting noStars = toggle("No Stars", "No stars at night");
     private final BooleanSetting noSunrise = toggle("No Sunrise Glow", "No orange glow at sunrise and sunset");
     private final BooleanSetting noShadows = toggle("No Entity Shadows", "No round shadows under mobs, players and items");
-    private final BooleanSetting noGlint = toggle("No Enchant Glint", "Enchanted items without the purple shimmer");
 
     // ---- Particles
     private final ModeSetting particleMode = add(new ModeSetting("Particle Mode",
@@ -87,19 +86,23 @@ public class BetterLooks extends Module {
 
     // ---- ViewModel
     private final BooleanSetting lowFire = toggle("Low Fire", "The fire on screen sits low, out of the way");
+    private final BooleanSetting shortSword = toggle("Short Sword", "Swords in your hand drawn smaller, so they cover less of the view");
+    private final BooleanSetting noItemBob = toggle("No Item Bobbing", "Your hand and item stay still as you walk (the view still bobs)");
+    private final ModeSetting glint = add(new ModeSetting("Enchant Glint",
+            "Normal: as the game draws it. Off: no shimmer. All Items: every item shimmers", "Normal", "Normal", "Off", "All Items"));
     private final BooleanSetting lowShield = toggle("Low Shield", "Your shield held lower so it covers less");
     private final BooleanSetting noEquipDip = toggle("No Equip Dip", "Items do not dip when you switch to them");
     private final BooleanSetting hideOffHand = toggle("Hide Off Hand", "Leave the off hand out of first person");
 
     private final List<Section> sections = List.of(
             new Section("World", "Sky, weather, light and fog", List.of(gammaBoost, clearWater, brightUnderwater, clearLava, noFog, noBlindFog,
-                    noWeather, noRainGloom, noClouds, noSunMoon, noStars, noSunrise, noShadows, noGlint)),
+                    noWeather, noRainGloom, noClouds, noSunMoon, noStars, noSunrise, noShadows)),
             new Section("Particles", "Particle density, totems and effects", List.of(particleMode, particleDensity, reduceCrit, reducePotion,
                     noExplode, reduceFlash, reduceLeaf, reduceTotem, smallTotem, noTotemOverlay, noRainSplash, noCampfireSmoke,
                     noPortalParticles, noSweep, noDamageHearts, noMining, noAmbient)),
             new Section("Interface", "Menus, inventories and the HUD", List.of(noPumpkin, noVignette, transparentInvBg, noMenuBlur, noToasts,
                     noBossBar, noScoreboard, noPotionIcons, noNausea, noPowderSnow, noHurtCam, noFireOverlay, noUnderwaterOverlay)),
-            new Section("ViewModel", "Your hand and items in first person", List.of(lowFire, lowShield, noEquipDip, hideOffHand)));
+            new Section("ViewModel", "Hand, sword, fire and item polish", List.of(lowFire, shortSword, noItemBob, glint, lowShield, noEquipDip, hideOffHand)));
 
     public BetterLooks() {
         super("Better Looks", "One panel to clean up the sky, fog, particles, menus and your hand, with Color Correct built in", Category.VISUALS);
@@ -217,8 +220,19 @@ public class BetterLooks extends Module {
         return on(m -> m.noShadows);
     }
 
-    public static boolean noGlint() {
-        return on(m -> m.noGlint);
+    /** null: the game decides; false: never shimmer; true: always. */
+    public static Boolean glint() {
+        BetterLooks m = instance;
+        if (m == null || !m.isEnabled() || m.glint.is("Normal")) return null;
+        return m.glint.is("All Items");
+    }
+
+    public static boolean shortSword() {
+        return on(m -> m.shortSword);
+    }
+
+    public static boolean noItemBob() {
+        return on(m -> m.noItemBob);
     }
 
     public static boolean transparentInvBg() {
