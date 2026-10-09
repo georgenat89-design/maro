@@ -95,6 +95,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             PlayerEspChecks.run(context, singleplayer);
             BaseEspChecks.run(context, singleplayer);
             BlockEspChecks.run(context, singleplayer);
+            HoleEspChecks.run(context, singleplayer);
             SpawnerNotifierChecks.run(context, singleplayer);
             AutoGoliathChecks.run(context, singleplayer);
             FakePlayerChecks.run(context);

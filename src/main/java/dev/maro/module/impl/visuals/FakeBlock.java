@@ -24,7 +24,7 @@ import java.util.List;
 /**
  * Fake Block: one block or item looks like another, only on your screen. Spoof World redraws that
  * block wherever it is placed; Spoof Items draws the item (in hand, in the inventory, dropped) as
- * the other. Armour, tools and weapons it is drawn as can shine as if enchanted.
+ * the other, called by its name, and shine as if enchanted.
  */
 public class FakeBlock extends Module {
     private static FakeBlock instance;
@@ -42,11 +42,12 @@ public class FakeBlock extends Module {
     private final BooleanSetting spoofItems = add(new BooleanSetting("Spoof Items", "Items of it look like the other", true));
     private final BooleanSetting spoofWorld = add(new BooleanSetting("Spoof World", "Placed blocks of it look like the other", true)
             .onChange(on -> rebuild()));
-    private final BooleanSetting enchanted = add(new BooleanSetting("Enchanted", "The look shines as if enchanted (armour, tools, weapons)", false)
-            .visible(this::replaceIsGear));
+    private final BooleanSetting useName = add(new BooleanSetting("Use Its Name", "Items of it are called by the other's name too (hotbar and tooltips)", true)
+            .visible(spoofItems::get));
+    private final BooleanSetting enchanted = add(new BooleanSetting("Enchanted", "The look shines as if enchanted, whatever it is", false));
 
     private final List<SettingSection> sections = List.of(SettingSection.of("Fake Block", source, pickSource, replace, pickReplace, clear,
-            spoofItems, spoofWorld, enchanted));
+            spoofItems, useName, spoofWorld, enchanted));
 
     /** Read by the chunk builder threads. */
     private static volatile Block worldFrom, worldTo;
@@ -95,10 +96,6 @@ public class FakeBlock extends Module {
         return item(replace.get());
     }
 
-    private boolean replaceIsGear() {
-        Item r = replaceItem();
-        return r != Items.AIR && new ItemStack(r).isDamageable();
-    }
 
     /** Works out the blocks again and has the world redrawn, so a change shows straight away. */
     private void rebuild() {
@@ -140,7 +137,21 @@ public class FakeBlock extends Module {
     }
 
     private boolean enabled() {
-        return enchanted.get() && replaceIsGear();
+        return enchanted.get();
+    }
+
+    /**
+     * The name to show for this stack: the look's own, while Use Its Name is on (a stack you named
+     * yourself keeps its name), or null to leave it. Only on the client's own thread, so the
+     * singleplayer server's use of names is left alone.
+     */
+    public static net.minecraft.text.Text nameLook(ItemStack stack) {
+        FakeBlock m = instance;
+        if (m == null || !m.isEnabled() || !m.spoofItems.get() || !m.useName.get()) return null;
+        if (stack.contains(DataComponentTypes.CUSTOM_NAME) || !mc.isOnThread()) return null;
+        Item from = m.sourceItem(), to = m.replaceItem();
+        if (from == Items.AIR || to == Items.AIR || !stack.isOf(from)) return null;
+        return to.getName();
     }
 
     /** Whether the world is drawn with a block swapped right now; for tests. */
