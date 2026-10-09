@@ -72,10 +72,17 @@ public class NoRender extends Module {
         return sections;
     }
 
-    /** Whether this part is hidden right now. Cheap: called from render code every frame. */
+    /**
+     * Whether this part is hidden right now. Cheap: called from render code every frame. The switches
+     * are Better Looks' now; this module stays only as the name its hooks know.
+     */
     public static boolean hides(Part part) {
-        NoRender m = instance;
-        return m != null && m.isEnabled() && m.parts[part.ordinal()].get() || BetterLooks.hides(part);
+        return BetterLooks.hides(part);
+    }
+
+    @Override
+    public boolean hiddenInGui() {
+        return true;
     }
 
     public static NoRender get() {

@@ -70,19 +70,20 @@ public final class ModuleManager {
     /** A category's modules in alphabetical order. */
     public static List<Module> byCategory(Category category) {
         List<Module> list = new ArrayList<>();
-        for (Module m : MODULES) if (m.getCategory() == category) list.add(m);
+        for (Module m : MODULES) if (m.getCategory() == category && !m.hiddenInGui()) list.add(m);
         list.sort((a, b) -> String.CASE_INSENSITIVE_ORDER.compare(a.getName(), b.getName()));
         return list;
     }
 
     public static long enabledCount(Category category) {
-        return MODULES.stream().filter(m -> m.getCategory() == category && m.isEnabled()).count();
+        return MODULES.stream().filter(m -> m.getCategory() == category && m.isEnabled() && !m.hiddenInGui()).count();
     }
 
     public static List<Module> search(String query) {
         String q = query.toLowerCase(Locale.ROOT).trim();
         List<Module> starts = new ArrayList<>(), contains = new ArrayList<>(), desc = new ArrayList<>();
         for (Module m : MODULES) {
+            if (m.hiddenInGui()) continue;
             String n = m.getName().toLowerCase(Locale.ROOT);
             String compact = n.replace(" ", "");
             if (n.startsWith(q) || compact.startsWith(q.replace(" ", ""))) starts.add(m);

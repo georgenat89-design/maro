@@ -37,7 +37,8 @@ final class BetterLooksChecks {
             });
             context.waitTicks(4);
             context.takeScreenshot("maro-better-looks");
-            require(context.computeOnClient(c -> screen.sectionTitles()).containsAll(java.util.List.of("World", "Particles", "Interface", "ViewModel", "Color")),
+            require(context.computeOnClient(c -> screen.sectionTitles()).containsAll(
+                            java.util.List.of("World", "Particles", "Interface", "Entities", "ViewModel", "Color", "Motion Blur", "Bloom")),
                     "Better Looks is missing a section: " + context.computeOnClient(c -> screen.sectionTitles()));
             int all = context.computeOnClient(c -> screen.shownRows(-1));
             context.runOnClient(c -> screen.search("fog"));
@@ -47,11 +48,18 @@ final class BetterLooksChecks {
             require(fog > 0 && fog < all, "Searching fog did not narrow the settings: " + fog + " of " + all);
             context.runOnClient(c -> {
                 screen.search("");
-                screen.showSection(4);
+                screen.showSection(screen.sectionTitles().indexOf("Color"));
             });
             context.waitTicks(3);
             context.takeScreenshot("maro-better-looks-color");
 
+            // Their own modules are no longer listed: their settings are here.
+            context.runOnClient(c -> {
+                for (String gone : java.util.List.of("No Render", "Color Correct", "Motion Blur", "Bloom", "Hats")) {
+                    require(ModuleManager.byCategory(ModuleManager.getByName(gone).getCategory()).stream().noneMatch(m -> m.getName().equals(gone))
+                            && ModuleManager.search(gone).stream().noneMatch(m -> m.getName().equals(gone)), gone + " is still listed on its own");
+                }
+            });
             context.runOnClient(c -> {
                 module.setEnabled(true);
                 ((BooleanSetting) setting(module, "No Clouds")).set(true);

@@ -83,6 +83,15 @@ public class BetterLooks extends Module {
     private final BooleanSetting noHurtCam = toggle("No Hurt Cam", "No camera shake when you take damage");
     private final BooleanSetting noFireOverlay = toggle("No Fire Overlay", "No flames across the screen while you burn");
     private final BooleanSetting noUnderwaterOverlay = toggle("No Underwater Overlay", "No water texture over the screen underwater");
+    private final BooleanSetting noInWall = toggle("No In-Wall Overlay", "No block texture over the screen when your head is in a block");
+
+    // ---- Entities
+    private final BooleanSetting hideItems = toggle("Hide Dropped Items", "Items lying on the ground are not drawn");
+    private final BooleanSetting hideXp = toggle("Hide XP Orbs", "Experience orbs are not drawn");
+    private final BooleanSetting hideArmorStands = toggle("Hide Armor Stands", "Armor stands and what they wear are not drawn");
+    private final BooleanSetting hideFalling = toggle("Hide Falling Blocks", "Sand, gravel and the like are not drawn while they fall");
+    private final BooleanSetting hideFireworks = toggle("Hide Fireworks", "Firework rockets are not drawn in flight");
+    private final BooleanSetting hideFrames = toggle("Hide Item Frames", "Item frames and what they hold are not drawn");
 
     // ---- ViewModel
     private final BooleanSetting lowFire = toggle("Low Fire", "The fire on screen sits low, out of the way");
@@ -101,7 +110,9 @@ public class BetterLooks extends Module {
                     noExplode, reduceFlash, reduceLeaf, reduceTotem, smallTotem, noTotemOverlay, noRainSplash, noCampfireSmoke,
                     noPortalParticles, noSweep, noDamageHearts, noMining, noAmbient)),
             new Section("Interface", "Menus, inventories and the HUD", List.of(noPumpkin, noVignette, transparentInvBg, noMenuBlur, noToasts,
-                    noBossBar, noScoreboard, noPotionIcons, noNausea, noPowderSnow, noHurtCam, noFireOverlay, noUnderwaterOverlay)),
+                    noBossBar, noScoreboard, noPotionIcons, noNausea, noPowderSnow, noHurtCam, noFireOverlay, noUnderwaterOverlay, noInWall)),
+            new Section("Entities", "Clutter left out of the world you see", List.of(hideItems, hideXp, hideArmorStands, hideFalling,
+                    hideFireworks, hideFrames)),
             new Section("ViewModel", "Hand, sword, fire and item polish", List.of(lowFire, shortSword, noItemBob, glint, lowShield, noEquipDip, hideOffHand)));
 
     public BetterLooks() {
@@ -165,7 +176,13 @@ public class BetterLooks extends Module {
             case WEATHER -> m.noWeather.get();
             case EXPLOSIONS -> m.noExplode.get();
             case MINING_PARTICLES -> m.noMining.get();
-            default -> false;
+            case IN_WALL -> m.noInWall.get();
+            case DROPPED_ITEMS -> m.hideItems.get();
+            case XP_ORBS -> m.hideXp.get();
+            case ARMOR_STANDS -> m.hideArmorStands.get();
+            case FALLING_BLOCKS -> m.hideFalling.get();
+            case FIREWORKS -> m.hideFireworks.get();
+            case ITEM_FRAMES -> m.hideFrames.get();
         };
     }
 

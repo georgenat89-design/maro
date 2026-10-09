@@ -343,7 +343,7 @@ public final class SkinAccessoriesScreen extends Screen {
         float maxScroll = Math.max(0, content - listH);
         scrollTarget = Math.max(0, Math.min(maxScroll, scrollTarget));
         scroll += (scrollTarget - scroll) * 0.35f;
-        ctx.enableScissor(Math.round(listX), Math.round(listY + 2), Math.round(listX + listW), Math.round(listY + listH - 2));
+        Render2D.clip(ctx, Math.round(listX), Math.round(listY + 2), Math.round(listX + listW), Math.round(listY + listH - 2));
         float ry = listY + 4 - scroll;
         for (String choice : choices) {
             if (ry + ROW >= listY && ry <= listY + listH) {
@@ -370,7 +370,7 @@ public final class SkinAccessoriesScreen extends Screen {
             }
             ry += ROW + ROW_GAP;
         }
-        ctx.disableScissor();
+        Render2D.unclip(ctx);
         if (maxScroll > 0) {
             float bar = Math.max(16, listH * listH / content);
             Render2D.roundRect(ctx, listX + listW - 5, listY + (listH - bar) * (scroll / maxScroll), 3, bar, 1.5f, Theme.accent(0xA0));

@@ -261,7 +261,7 @@ public final class BlockEspScreen extends Screen {
         }
 
         boolean inGrid = mx >= gridX && mx < gridX + gridW && my >= gridY && my < gridY + gridH;
-        ctx.enableScissor(Math.round(gridX - 2), Math.round(gridY), Math.round(gridX + gridW + 2), Math.round(gridY + gridH));
+        Render2D.clip(ctx, Math.round(gridX - 2), Math.round(gridY), Math.round(gridX + gridW + 2), Math.round(gridY + gridH));
         int first = Math.max(0, (int) (leftScroll / (TILE + GAP)));
         int last = Math.min(rows - 1, (int) ((leftScroll + gridH) / (TILE + GAP)) + 1);
         for (int row = first; row <= last; row++) {
@@ -287,7 +287,7 @@ public final class BlockEspScreen extends Screen {
                 if (bottom > top) hit(tx, top, TILE, bottom - top, (x, y) -> toggle(block));
             }
         }
-        ctx.disableScissor();
+        Render2D.unclip(ctx);
         scrollbar(ctx, gridX + gridW - 3, gridY, gridH, leftScroll, content);
     }
 
@@ -324,7 +324,7 @@ public final class BlockEspScreen extends Screen {
         rightScroll = clamp(rightScroll, 0, Math.max(0, content - listH));
         boolean inList = mx >= listX && mx < listX + listW && my >= listY && my < listY + listH;
 
-        ctx.enableScissor(Math.round(listX), Math.round(listY), Math.round(listX + listW), Math.round(listY + listH));
+        Render2D.clip(ctx, Math.round(listX), Math.round(listY), Math.round(listX + listW), Math.round(listY + listH));
         float y = listY + 4 - rightScroll;
         float rowX = listX + 4, rowW = listW - 8 - (content > listH ? 4 : 0);
         for (Block block : picked) {
@@ -366,7 +366,7 @@ public final class BlockEspScreen extends Screen {
             }
             y += ROW + 3 + extra;
         }
-        ctx.disableScissor();
+        Render2D.unclip(ctx);
         scrollbar(ctx, listX + listW - 4, listY, listH, rightScroll, content);
     }
 

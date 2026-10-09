@@ -99,19 +99,25 @@ public final class BetterLooksScreen extends Screen {
             for (Setting<?> setting : s.settings()) rows.add(new Row(setting.getName(), setting.getDescription(), setting, null, null));
             cards.add(new Card(s.title(), s.subtitle(), rows));
         }
-        Module color = ModuleManager.getByName("Color Correct");
-        if (color != null) {
-            List<Row> rows = new ArrayList<>();
-            rows.add(new Row("Color Correct", "Grade the whole picture with the settings below", null, color::isEnabled, color::toggle));
-            for (SettingSection s : color.getSettingSections()) {
-                for (Setting<?> setting : s.getSettings()) {
-                    if (setting instanceof BooleanSetting || setting instanceof NumberSetting || setting instanceof ModeSetting || setting instanceof ColorSetting) {
-                        rows.add(new Row(setting.getName(), setting.getDescription(), setting, null, null));
-                    }
+        embed("Color Correct", "Color", "Your Color Correct: hue, saturation, light and tint");
+        embed("Motion Blur", "Motion Blur", "Blur on fast movement, the same at any frame rate");
+        embed("Bloom", "Bloom", "A soft glow round bright things");
+    }
+
+    /** Another module's settings as a card of their own, its on/off switch at the top. */
+    private void embed(String moduleName, String title, String subtitle) {
+        Module m = ModuleManager.getByName(moduleName);
+        if (m == null) return;
+        List<Row> rows = new ArrayList<>();
+        rows.add(new Row(moduleName, "Turn " + moduleName + " on or off", null, m::isEnabled, m::toggle));
+        for (SettingSection s : m.getSettingSections()) {
+            for (Setting<?> setting : s.getSettings()) {
+                if (setting instanceof BooleanSetting || setting instanceof NumberSetting || setting instanceof ModeSetting || setting instanceof ColorSetting) {
+                    rows.add(new Row(setting.getName(), setting.getDescription(), setting, null, null));
                 }
             }
-            cards.add(new Card("Color", "Your Color Correct: hue, saturation, light and tint", rows));
         }
+        cards.add(new Card(title, subtitle, rows));
     }
 
     // ---- for tests -------------------------------------------------------------------------------
@@ -274,7 +280,7 @@ public final class BetterLooksScreen extends Screen {
 
         listTop = y + 6;
         listBottom = y + h - 6;
-        ctx.enableScissor(Math.round(x + 1), Math.round(listTop), Math.round(x + w - 1), Math.round(listBottom));
+        Render2D.clip(ctx, Math.round(x + 1), Math.round(listTop), Math.round(x + w - 1), Math.round(listBottom));
         float cy = listTop - scroll;
         float cardX = x + 8, cardW = w - 16 - (maxScroll > 0 ? 6 : 0);
         boolean any = false;
@@ -303,7 +309,7 @@ public final class BetterLooksScreen extends Screen {
             cy += cardH + 10;
         }
         if (!any) Fonts.drawCentered(ctx, "No settings match “" + q + "”", x + w / 2f, y + h / 2f, Theme.TEXT_MUTED, false, 0.7f);
-        ctx.disableScissor();
+        Render2D.unclip(ctx);
         if (maxScroll > 0) {
             float bar = Math.max(18, viewH * viewH / total);
             Render2D.roundRect(ctx, x + w - 8, listTop + (viewH - bar) * (scroll / maxScroll), 3, bar, 1.5f, Theme.accent(0x90));

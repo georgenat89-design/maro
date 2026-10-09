@@ -46,6 +46,12 @@ import dev.maro.nathan.render.PostEffect;
  * menu and all, once it is finished.
  */
 public class ColorCorrect extends Module {
+    /** Set from Better Looks' panel, so not listed on its own. */
+    @Override
+    public boolean hiddenInGui() {
+        return true;
+    }
+
     private static final Identifier SCRATCH = PostEffect.ours("scratch");
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();

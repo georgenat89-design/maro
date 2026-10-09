@@ -157,13 +157,13 @@ public final class ChatMacroScreen extends Screen {
                 Fonts.endRaw();
             }
         } else {
-            ctx.enableScissor(Math.round(px), Math.round(rowsY - 2), Math.round(px + pw), Math.round(rowsY + rowsH));
+            Render2D.clip(ctx, Math.round(px), Math.round(rowsY - 2), Math.round(px + pw), Math.round(rowsY + rowsH));
             float y = rowsY - scroll;
             for (ChatMacros.Macro macro : new ArrayList<>(macros)) {
                 if (y + ROW >= rowsY && y <= rowsY + rowsH) row(ctx, macro, x, y, w - (maxScroll > 0 ? 6 : 0), mx, my, now);
                 y += ROW + ROW_GAP;
             }
-            ctx.disableScissor();
+            Render2D.unclip(ctx);
             if (maxScroll > 0) {
                 float bar = Math.max(16, rowsH * rowsH / rowsContent);
                 Render2D.roundRect(ctx, px + pw - 18, rowsY + (rowsH - bar) * (scroll / maxScroll), 3, bar, 1.5f, 0x40FFFFFF);

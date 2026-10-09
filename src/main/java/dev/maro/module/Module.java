@@ -95,6 +95,11 @@ public abstract class Module {
         return null;
     }
 
+    /** Left out of the GUI's module lists and search: its settings live in another module's panel. */
+    public boolean hiddenInGui() {
+        return false;
+    }
+
     /** Whether the module is on in a config that has never saved it: true for ones that should start with the client. */
     public boolean enabledByDefault() {
         return false;

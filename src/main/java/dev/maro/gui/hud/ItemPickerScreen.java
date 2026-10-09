@@ -91,7 +91,7 @@ public final class ItemPickerScreen extends Screen {
             float maxScroll = Math.max(0, rows * CELL - gh);
             scrollTarget = Math.max(0, Math.min(maxScroll, scrollTarget));
             scroll += (scrollTarget - scroll) * 0.35f;
-            ctx.enableScissor((int) gx, (int) gy, (int) (gx + gw), (int) (gy + gh));
+            Render2D.clip(ctx, (int) gx, (int) gy, (int) (gx + gw), (int) (gy + gh));
             Item hovered = null;
             for (int i = 0; i < shown.size(); i++) {
                 float cx = gx + (i % cols) * CELL, cy = gy + (i / cols) * CELL - scroll;
@@ -101,7 +101,7 @@ public final class ItemPickerScreen extends Screen {
                 Render2D.roundRect(ctx, cx + 1, cy + 1, CELL - 2, CELL - 2, 4, hov ? Theme.accent(0x60) : 0xFF1A1E29);
                 ctx.drawItem(new ItemStack(shown.get(i)), (int) cx + 3, (int) cy + 3);
             }
-            ctx.disableScissor();
+            Render2D.unclip(ctx);
             if (hovered != null) {
                 String name = hovered.getName().getString();
                 float tw = Fonts.width(name, false, 0.66f) + 10;

@@ -278,7 +278,7 @@ public final class BetterTexturesScreen extends Screen {
         if (hasMore && !loading && error == null && scroll >= maxScroll - CARD_H * 2) runSearch(true);
 
         float top = y + pad, bottom = y + h - pad;
-        ctx.enableScissor(Math.round(x + 1), Math.round(top), Math.round(x + w - 1), Math.round(bottom));
+        Render2D.clip(ctx, Math.round(x + 1), Math.round(top), Math.round(x + w - 1), Math.round(bottom));
         for (int i = 0; i < results.size(); i++) {
             float cx = x + pad + (i % cols) * (cw + GAP);
             float cy = top + (i / cols) * (CARD_H + GAP) - scroll;
@@ -287,7 +287,7 @@ public final class BetterTexturesScreen extends Screen {
         }
         float endY = top + rows * (CARD_H + GAP) - scroll;
         if (loading && endY < bottom) spinner(ctx, x + w / 2f, endY + 10, 5, now);
-        ctx.disableScissor();
+        Render2D.unclip(ctx);
         if (maxScroll > 0) {
             float track = h - pad * 2, bar = Math.max(18, track * track / (content + 0.01f));
             Render2D.roundRect(ctx, x + w - 7, top + (track - bar) * (scroll / maxScroll), 3, bar, 1.5f, 0x40FFFFFF);
