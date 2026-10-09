@@ -32,6 +32,14 @@ configurations {
 dependencies {
     implementation 'org.yaml:snakeyaml:2.7'
     include 'org.yaml:snakeyaml:2.7'
+    // WebP icons for Better Textures (Modrinth stores many pack icons as WebP). Pure Java.
+    def twelveMonkeys = ['com.twelvemonkeys.common:common-lang', 'com.twelvemonkeys.common:common-io',
+                         'com.twelvemonkeys.common:common-image', 'com.twelvemonkeys.imageio:imageio-core',
+                         'com.twelvemonkeys.imageio:imageio-metadata', 'com.twelvemonkeys.imageio:imageio-webp']
+    twelveMonkeys.each {
+        implementation "${it}:3.12.0"
+        include "${it}:3.12.0"
+    }
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"

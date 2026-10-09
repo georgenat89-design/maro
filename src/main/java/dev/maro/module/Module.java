@@ -87,6 +87,14 @@ public abstract class Module {
         return List.of(section);
     }
 
+    /**
+     * A screen of its own for this module's settings, opened instead of the settings box when the
+     * module is right-clicked in the GUI; null for the usual box.
+     */
+    public net.minecraft.client.gui.screen.Screen panel(net.minecraft.client.gui.screen.Screen parent) {
+        return null;
+    }
+
     public com.google.gson.JsonObject saveExtra() { return new com.google.gson.JsonObject(); }
     public void loadExtra(com.google.gson.JsonObject data) { }
 

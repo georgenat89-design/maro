@@ -139,6 +139,11 @@ public final class PanelsView {
             net.minecraft.client.MinecraftClient.getInstance().setScreen(new dev.maro.builder.BuilderControlScreen(gui, builder));
             return;
         }
+        net.minecraft.client.gui.screen.Screen own = m.panel(gui);
+        if (own != null) {
+            net.minecraft.client.MinecraftClient.getInstance().setScreen(own);
+            return;
+        }
         openPopover(new Popover(m, m.getName(), m, m.getSettingSections(), 0, 0));
     }
 
