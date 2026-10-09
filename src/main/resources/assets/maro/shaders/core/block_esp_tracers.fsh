@@ -10,7 +10,8 @@
 in vec2 texCoord;
 flat in float quadTag;
 
-const int MAX_TRACERS = 64;
+// Tracers in one draw: more are drawn in further batches.
+const int MAX_TRACERS = 128;
 
 // Only vec4s, so std140 lays it out exactly as BlockEspRenderer writes it.
 layout(std140) uniform TracerData {

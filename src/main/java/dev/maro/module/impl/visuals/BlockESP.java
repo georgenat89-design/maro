@@ -105,7 +105,9 @@ public class BlockESP extends Module {
     }
 
     /** Chunks scanned in a tick at most, and waiting for the worker at once. */
-    private static final int PER_TICK = 10, QUEUE_LIMIT = 24;
+    private static final int PER_TICK = 32, QUEUE_LIMIT = 96;
+    /** The nearest boxes on screen that get a soft edge and a glow; past these, the cost is not worth it. */
+    private static final int SOFT_EDGES = 300, GLOWING = 400;
 
     private static BlockESP instance;
 
@@ -124,7 +126,7 @@ public class BlockESP extends Module {
             .visible(() -> !yLimit.is("Off")));
 
     // ---- look
-    private final NumberSetting range = add(new NumberSetting("Range", "How far out to look", 8, 2, 16, 1).suffix(" chunks"));
+    private final NumberSetting range = add(new NumberSetting("Range", "How far out to look, in loaded chunks", 12, 2, 32, 1).suffix(" chunks"));
     private final ModeSetting style = add(new ModeSetting("Style", "Boxes filled and outlined, outlined only, or filled only", "Both",
             "Both", "Outline", "Fill"));
     private final ModeSetting colorMode = add(new ModeSetting("Color", "Each kind of block in its own colour, or all in one", "By Block",
@@ -136,7 +138,8 @@ public class BlockESP extends Module {
     private final NumberSetting lineWidth = add(new NumberSetting("Line Width", "How thick the boxes' edges are", 2, 0.5, 4, 0.25)
             .suffix("px").visible(() -> !style.is("Fill")));
     private final BooleanSetting throughWalls = add(new BooleanSetting("Through Walls", "See the boxes through blocks", true));
-    private final NumberSetting maxBlocks = add(new NumberSetting("Max Blocks", "Draw at most this many, nearest first", 400, 25, 2000, 25));
+    private final NumberSetting maxBlocks = add(new NumberSetting("Max Blocks", "Draw at most this many, nearest first", 10000, 100, 50000, 100));
+    private final BooleanSetting smoothEdges = add(new BooleanSetting("Smooth Edges", "A soft feathered edge on the nearest boxes' lines", true));
 
     // ---- tracers
     private final BooleanSetting tracers = add(new BooleanSetting("Tracers", "Clean glowing lines from your crosshair to the blocks", true));
@@ -159,7 +162,7 @@ public class BlockESP extends Module {
     private final NumberSetting pulseSpeed = add(new NumberSetting("Pulse Speed", "How fast the pulses travel", 1, 0.25, 3, 0.05)
             .suffix("x").visible(() -> tracers.get() && pulses.get()));
     private final NumberSetting maxTracers = add(new NumberSetting("Max Tracers", "At most this many lines, nearest first",
-            32, 1, BlockEspRenderer.MAX_TRACERS, 1).visible(tracers::get));
+            500, 1, BlockEspRenderer.MAX_TRACERS, 1).visible(tracers::get));
 
     // ---- bloom
     private final BooleanSetting espBloom = add(new BooleanSetting("ESP Bloom", "The boxes glow, their light bleeding out round them", true));
@@ -207,7 +210,7 @@ public class BlockESP extends Module {
         sections = List.of(
                 SettingSection.of("Blocks", blocksButton),
                 SettingSection.of("Y Level", yLimit, maxY),
-                SettingSection.of("Look", range, style, colorMode, oneColor, fillOpacity, lineWidth, throughWalls, maxBlocks),
+                SettingSection.of("Look", range, style, colorMode, oneColor, fillOpacity, lineWidth, smoothEdges, throughWalls, maxBlocks),
                 SettingSection.of("Tracers", tracers, tracerTo, tracerStart, tracerColor, tracerCustom, tracerWidth, tracerGlow, pulses, pulseSpeed, maxTracers),
                 SettingSection.of("Bloom", espBloom, tracerBloom, bloomStrength, bloomSize));
     }
@@ -219,7 +222,9 @@ public class BlockESP extends Module {
 
     @Override
     protected void onEnable() {
-        worker = Executors.newSingleThreadExecutor(task -> {
+        // A few scanners side by side: each chunk is scanned on its own, from its own copy.
+        int threads = Math.max(1, Math.min(3, Runtime.getRuntime().availableProcessors() / 2));
+        worker = Executors.newFixedThreadPool(threads, task -> {
             Thread thread = new Thread(task, "Maro Block ESP");
             thread.setDaemon(true);
             return thread;
@@ -670,18 +675,30 @@ public class BlockESP extends Module {
         Vec3d camera = renderer.camera();
         double reach = range.get() * 16;
         float seconds = seconds();
+        float width = lineWidth.getFloat();
+        boolean soft = smoothEdges.get() && mode.lines();
 
+        // Only boxes on screen are drawn; the nearest of them also get a soft edge and a glow.
+        int visible = 0;
         for (int i = 0; i < shownCount; i++) {
             long pos = shown[i];
             int x = BlockPos.unpackLongX(pos), y = BlockPos.unpackLongY(pos), z = BlockPos.unpackLongZ(pos);
             Block block = shownBlocks[i];
-            int color = drawColorOf(block);
             Box shape = shapeOf(block);
             double x1 = x + shape.minX, y1 = y + shape.minY, z1 = z + shape.minZ;
             double x2 = x + shape.maxX, y2 = y + shape.maxY, z2 = z + shape.maxZ;
+            if (!BlockEspRenderer.inView(x1, y1, z1, x2, y2, z2, camera)) continue;
+            int near = visible++;
+            int color = drawColorOf(block);
             Color line = new Color(color | 0xFF000000);
+            if (soft && near < SOFT_EDGES) {
+                // A wider, faint line under the crisp one feathers its edge.
+                renderer.lineWidth(Math.min(4f, width * 2.4f));
+                renderer.box(x1, y1, z1, x2, y2, z2, line, new Color(ColorUtil.withAlpha(color, 0x46)), ShapeMode.Lines, 0);
+                renderer.lineWidth(width);
+            }
             renderer.box(x1, y1, z1, x2, y2, z2, new Color(ColorUtil.withAlpha(color, fillAlpha)), line, mode, 0);
-            if (boxGlow) {
+            if (boxGlow && near < GLOWING) {
                 renderer.glow(true);
                 renderer.box(x1, y1, z1, x2, y2, z2, new Color(ColorUtil.withAlpha(color, glowFillAlpha)), line, mode, 0);
                 renderer.glow(false);

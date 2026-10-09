@@ -21,6 +21,7 @@ import net.minecraft.client.gl.UniformType;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Vec3d;
+import org.joml.FrustumIntersection;
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
 import org.lwjgl.BufferUtils;
@@ -42,8 +43,10 @@ import java.util.OptionalInt;
 public final class BlockEspRenderer {
     private static final MinecraftClient mc = MinecraftClient.getInstance();
 
-    /** Matches MAX_TRACERS in block_esp_tracers.fsh. */
-    public static final int MAX_TRACERS = 64;
+    /** Tracers in one draw; matches MAX_TRACERS in block_esp_tracers.fsh. More are drawn in further batches. */
+    private static final int BATCH = 128;
+    /** The most tracers in a frame. */
+    public static final int MAX_TRACERS = 2000;
 
     private static final RenderPipeline TRACERS = RenderPipeline.builder()
         .withLocation(Identifier.of(Maro.MOD_ID, "pipeline/block_esp_tracers"))
@@ -75,21 +78,21 @@ public final class BlockEspRenderer {
     }
 
     /** TracerData: Info, Style, then a line and a colour per tracer. */
-    private static final int TRACER_BYTES = (2 + MAX_TRACERS * 2) * 16;
-    private static final int LINES_AT = 2 * 16, COLORS_AT = LINES_AT + MAX_TRACERS * 16;
+    private static final int TRACER_BYTES = (2 + BATCH * 2) * 16;
+    private static final int LINES_AT = 2 * 16, COLORS_AT = LINES_AT + BATCH * 16;
     /** Uniform slices start on 256-byte boundaries, the widest alignment drivers ask for. */
     private static final int TRACER_STRIDE = (TRACER_BYTES + 255) / 256 * 256;
     private static final int GLOW_PASSES = 5, GLOW_STRIDE = 256;
 
     // Vertex z is a tag, as in player_esp.vsh: n marks the quad of tracer n - 1.
-    private static final ByteBuffer TRACER_VERTICES = BufferUtils.createByteBuffer(MAX_TRACERS * 4 * 3 * Float.BYTES);
-    private static final ByteBuffer TRACER_INDICES = BufferUtils.createByteBuffer(MAX_TRACERS * 6 * Integer.BYTES);
+    private static final ByteBuffer TRACER_VERTICES = BufferUtils.createByteBuffer(BATCH * 4 * 3 * Float.BYTES);
+    private static final ByteBuffer TRACER_INDICES = BufferUtils.createByteBuffer(BATCH * 6 * Integer.BYTES);
     private static final ByteBuffer SCREEN_VERTICES = BufferUtils.createByteBuffer(4 * 3 * Float.BYTES);
     private static final ByteBuffer SCREEN_INDICES = BufferUtils.createByteBuffer(6 * Integer.BYTES);
 
     static {
         int[] quad = {0, 1, 2, 0, 2, 3};
-        for (int q = 0; q < MAX_TRACERS; q++) {
+        for (int q = 0; q < BATCH; q++) {
             for (int i = 0; i < quad.length; i++) TRACER_INDICES.putInt((q * 6 + i) * Integer.BYTES, q * 4 + quad[i]);
         }
         float[] corners = {-1, -1, -1, 1, 1, 1, 1, -1};
@@ -102,6 +105,7 @@ public final class BlockEspRenderer {
     }
 
     private static final Matrix4f viewProjection = new Matrix4f();
+    private static final FrustumIntersection frustum = new FrustumIntersection();
     private static boolean haveMatrices;
 
     /** This frame's tracers: target in NDC (off screen for blocks behind you), colour, weight. */
@@ -114,6 +118,8 @@ public final class BlockEspRenderer {
     /** The glow target was cleared and drawn into this frame. */
     private static boolean glowDrawn;
     private static GpuBuffer tracerUniforms, glowUniforms;
+    /** How many batches tracerUniforms has room for, two slices each (the bloom pass and the frame). */
+    private static int tracerBatches;
     private static BlockESP module;
 
     private BlockEspRenderer() {
@@ -129,7 +135,15 @@ public final class BlockEspRenderer {
         count = 0;
         glowDrawn = false;
         viewProjection.set(projectionMatrix).mul(positionMatrix);
+        frustum.set(viewProjection);
         haveMatrices = true;
+    }
+
+    /** Whether a box, in world coordinates, is at least partly on screen this frame. */
+    public static boolean inView(double x1, double y1, double z1, double x2, double y2, double z2, Vec3d camera) {
+        if (!haveMatrices) return true;
+        return frustum.testAab((float) (x1 - camera.x), (float) (y1 - camera.y), (float) (z1 - camera.z),
+                (float) (x2 - camera.x), (float) (y2 - camera.y), (float) (z2 - camera.z));
     }
 
     /** The framebuffer the boxes' glow is drawn into, or null before bloom is first used. */
@@ -227,50 +241,57 @@ public final class BlockEspRenderer {
 
     private static void drawTracers(Framebuffer target, float[][] lines, int n, boolean coreOnly) {
         int height = target.textureHeight;
-        float width = module().tracerWidthPx(height);
-        for (int i = 0; i < n; i++) writeTracerQuad(i, lines[i], width, target.textureWidth, height);
-
-        if (tracerUniforms == null) {
+        BlockESP m = module();
+        float width = m.tracerWidthPx(height);
+        int batches = (n + BATCH - 1) / BATCH;
+        if (tracerUniforms == null || tracerBatches < batches) {
+            if (tracerUniforms != null) tracerUniforms.close();
+            tracerBatches = Math.max(batches, 4);
             tracerUniforms = RenderSystem.getDevice().createBuffer(() -> "maro block esp tracers",
-                GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST, TRACER_STRIDE * 2L);
+                GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST, (long) TRACER_STRIDE * 2 * tracerBatches);
         }
-        GpuBufferSlice data = tracerUniforms.slice(coreOnly ? TRACER_STRIDE : 0, TRACER_BYTES);
-        ByteBuffer bytes = MemoryUtil.memCalloc(TRACER_BYTES);
-        try {
-            BlockESP m = module();
-            bytes.putFloat(0, n);
-            bytes.putFloat(4, width);
-            bytes.putFloat(8, m.tracerHalo());
-            bytes.putFloat(12, m.seconds());
-            bytes.putFloat(16, m.tracerPackets() ? 1f : 0f);
-            bytes.putFloat(20, m.packetSpeed());
-            bytes.putFloat(24, 14f * height / 1080f);
-            bytes.putFloat(28, coreOnly ? 1f : 0f);
-            for (int i = 0; i < n; i++) {
-                for (int k = 0; k < 4; k++) bytes.putFloat(LINES_AT + i * 16 + k * 4, lines[i][k]);
-                int c = colors[i];
-                bytes.putFloat(COLORS_AT + i * 16, (c >> 16 & 0xFF) / 255f);
-                bytes.putFloat(COLORS_AT + i * 16 + 4, (c >> 8 & 0xFF) / 255f);
-                bytes.putFloat(COLORS_AT + i * 16 + 8, (c & 0xFF) / 255f);
-                bytes.putFloat(COLORS_AT + i * 16 + 12, weights[i] * (c >>> 24) / 255f);
-            }
-            RenderSystem.getDevice().createCommandEncoder().writeToBuffer(data, bytes);
-        } finally {
-            MemoryUtil.memFree(bytes);
-        }
+        // Tracers go in batches of BATCH, each its own draw with its own slice of the uniforms.
+        for (int batch = 0; batch < batches; batch++) {
+            int first = batch * BATCH, k = Math.min(BATCH, n - first);
+            for (int i = 0; i < k; i++) writeTracerQuad(i, lines[first + i], width, target.textureWidth, height);
 
-        GpuBuffer vertices = VertexFormats.POSITION.uploadImmediateVertexBuffer(TRACER_VERTICES);
-        GpuBuffer indices = VertexFormats.POSITION.uploadImmediateIndexBuffer(TRACER_INDICES);
-        RenderPass pass = RenderSystem.getDevice().createCommandEncoder()
-            .createRenderPass(() -> "maro block esp tracers", target.getColorAttachmentView(), OptionalInt.empty());
-        try {
-            pass.setPipeline(TRACERS);
-            pass.setUniform("TracerData", data);
-            pass.setVertexBuffer(0, vertices);
-            pass.setIndexBuffer(indices, VertexFormat.IndexType.INT);
-            pass.drawIndexed(0, 0, n * 6, 1);
-        } finally {
-            pass.close();
+            GpuBufferSlice data = tracerUniforms.slice((long) (batch * 2 + (coreOnly ? 1 : 0)) * TRACER_STRIDE, TRACER_BYTES);
+            ByteBuffer bytes = MemoryUtil.memCalloc(TRACER_BYTES);
+            try {
+                bytes.putFloat(0, k);
+                bytes.putFloat(4, width);
+                bytes.putFloat(8, m.tracerHalo());
+                bytes.putFloat(12, m.seconds());
+                bytes.putFloat(16, m.tracerPackets() ? 1f : 0f);
+                bytes.putFloat(20, m.packetSpeed());
+                bytes.putFloat(24, 14f * height / 1080f);
+                bytes.putFloat(28, coreOnly ? 1f : 0f);
+                for (int i = 0; i < k; i++) {
+                    for (int c = 0; c < 4; c++) bytes.putFloat(LINES_AT + i * 16 + c * 4, lines[first + i][c]);
+                    int color = colors[first + i];
+                    bytes.putFloat(COLORS_AT + i * 16, (color >> 16 & 0xFF) / 255f);
+                    bytes.putFloat(COLORS_AT + i * 16 + 4, (color >> 8 & 0xFF) / 255f);
+                    bytes.putFloat(COLORS_AT + i * 16 + 8, (color & 0xFF) / 255f);
+                    bytes.putFloat(COLORS_AT + i * 16 + 12, weights[first + i] * (color >>> 24) / 255f);
+                }
+                RenderSystem.getDevice().createCommandEncoder().writeToBuffer(data, bytes);
+            } finally {
+                MemoryUtil.memFree(bytes);
+            }
+
+            GpuBuffer vertices = VertexFormats.POSITION.uploadImmediateVertexBuffer(TRACER_VERTICES);
+            GpuBuffer indices = VertexFormats.POSITION.uploadImmediateIndexBuffer(TRACER_INDICES);
+            RenderPass pass = RenderSystem.getDevice().createCommandEncoder()
+                .createRenderPass(() -> "maro block esp tracers", target.getColorAttachmentView(), OptionalInt.empty());
+            try {
+                pass.setPipeline(TRACERS);
+                pass.setUniform("TracerData", data);
+                pass.setVertexBuffer(0, vertices);
+                pass.setIndexBuffer(indices, VertexFormat.IndexType.INT);
+                pass.drawIndexed(0, 0, k * 6, 1);
+            } finally {
+                pass.close();
+            }
         }
     }
 
