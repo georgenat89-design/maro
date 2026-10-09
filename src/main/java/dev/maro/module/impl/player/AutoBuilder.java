@@ -948,7 +948,9 @@ public final class AutoBuilder extends Module {
             var feet=mc.player.getBlockPos();if(reservedSupplyAccess(feet)||!walker.canPillar(feet)||!mc.world.getBlockState(feet).isReplaceable())return false;
             // A failed descent cannot be repaired by climbing farther above it.
             // Recycling capacity must not restart an endless upward pillar loop.
-            var recoveryTarget=recoveryDestination();
+            // A receiver can sit below its proved access view. Finish that
+            // column instead of waiting at the receiver's own block height.
+            var recoveryTarget=committedClimb?accessStand:recoveryDestination();
             if(recoveryTarget==null||feet.getY()>=recoveryTarget.getY())return false;
             // A higher target alone is not a reason to place dirt here. Outside
             // a committed, fully checked column, the one-block lift must prove
