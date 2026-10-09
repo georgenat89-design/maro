@@ -278,6 +278,20 @@ public final class SkinAccessoriesScreen extends Screen {
         } else {
             Fonts.drawCentered(ctx, "Join a world to see yourself", px + pw / 2f, py + ph / 2f, Theme.TEXT_MUTED, false, 0.7f);
         }
+        // On a weapon tab, the chosen skin large in the corner, as it looks in your hand.
+        String chosen = current();
+        ItemStack big = chosen.equals("None") ? null : icon(chosen);
+        if (big != null) {
+            float s = Math.min(3.4f, pw / 70f), bx = px + pw - 16 * s - 8, byy = py + ph - 16 * s - 8;
+            Render2D.roundRect(ctx, bx - 4, byy - 4, 16 * s + 8, 16 * s + 8, 8, 0x50000000);
+            var m = ctx.getMatrices();
+            m.pushMatrix();
+            m.translate(bx, byy);
+            m.scale(s, s);
+            ctx.drawItem(big, 0, 0);
+            m.popMatrix();
+            Fonts.drawRight(ctx, chosen, px + pw - 8, byy - 10, Theme.TEXT_DIM, false, 0.62f);
+        }
         // Drag across the preview to turn it.
         hit(px, py, pw, ph, (hx, hy, b) -> {
             dragging = true;

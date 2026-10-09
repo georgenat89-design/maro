@@ -44,7 +44,10 @@ final class FakePlayerChecks {
             context.waitTicks(5);
             context.takeScreenshot("maro-fake-player");
             float before = context.computeOnClient(c -> fake.getHealth());
+            System.out.println("FAKE PLAYER still the same=" + context.computeOnClient(c -> module.entity() == fake)
+                    + " removed=" + context.computeOnClient(c -> fake.isRemoved()) + " isFake=" + context.computeOnClient(c -> module.isFake(fake)));
             context.runOnClient(c -> c.interactionManager.attackEntity(c.player, fake));
+            System.out.println("FAKE PLAYER hits taken " + context.computeOnClient(c -> module.hits()));
             context.waitTicks(2);
             float after = context.computeOnClient(c -> fake.getHealth());
             System.out.println("FAKE PLAYER health " + before + " -> " + after);

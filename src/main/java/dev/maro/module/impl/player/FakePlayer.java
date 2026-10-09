@@ -89,7 +89,8 @@ public class FakePlayer extends Module {
             fake = null;
             return;
         }
-        if (fake == null || fake.getEntityWorld() != mc.world) {
+        // Gone with a change of world or dimension: back where you are.
+        if (fake == null || fake.isRemoved()) {
             spawn();
             return;
         }
@@ -163,6 +164,7 @@ public class FakePlayer extends Module {
     public void hit(Entity attacker) {
         Fake f = fake;
         if (f == null) return;
+        hits++;
         float damage = (float) mc.player.getAttributeValue(EntityAttributes.ATTACK_DAMAGE);
         float charge = mc.player.getAttackCooldownProgress(0.5f);
         damage *= 0.2f + charge * charge * 0.8f;
@@ -198,7 +200,12 @@ public class FakePlayer extends Module {
         }
     }
 
-    private int totemPops;
+    private int totemPops, hits;
+
+    /** How many hits it has taken; for tests. */
+    public int hits() {
+        return hits;
+    }
 
     /** How many totems it has popped since it was made; for tests. */
     public int totemPops() {
