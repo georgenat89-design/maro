@@ -149,6 +149,8 @@ public final class ConfigManager {
                 Maro.LOGGER.warn("Failed to load module {} from config {}", m.getName(), name, e);
             }
         }
+        dev.maro.module.impl.visuals.NoRender nr = dev.maro.module.impl.visuals.NoRender.get();
+        if (nr != null) nr.carryOver();
         current = name;
         return true;
     }

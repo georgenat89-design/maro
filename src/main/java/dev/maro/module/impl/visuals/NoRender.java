@@ -80,6 +80,18 @@ public class NoRender extends Module {
         return BetterLooks.hides(part);
     }
 
+    /**
+     * A No Render left on from before it joined Better Looks: what it hid, Better Looks now hides,
+     * and Better Looks is switched on. Happens once, since this is then switched off for good.
+     */
+    public void carryOver() {
+        BetterLooks looks = BetterLooks.get();
+        if (!isEnabled() || looks == null) return;
+        for (Part part : Part.values()) if (parts[part.ordinal()].get()) looks.hide(part);
+        looks.setEnabled(true);
+        setEnabled(false);
+    }
+
     @Override
     public boolean hiddenInGui() {
         return true;

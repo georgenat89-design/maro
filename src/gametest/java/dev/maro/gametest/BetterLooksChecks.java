@@ -60,6 +60,19 @@ final class BetterLooksChecks {
                             && ModuleManager.search(gone).stream().noneMatch(m -> m.getName().equals(gone)), gone + " is still listed on its own");
                 }
             });
+            // A No Render left on from before carries what it hid over to Better Looks, once.
+            context.runOnClient(c -> {
+                NoRender old = NoRender.get();
+                module.setEnabled(false);
+                old.getSettings().stream().filter(s -> s.getName().equals("Item Frames")).findFirst().map(s -> (BooleanSetting) s).orElseThrow().set(true);
+                old.setEnabled(true);
+                old.carryOver();
+                require(module.isEnabled() && ((BooleanSetting) setting(module, "Hide Item Frames")).get() && !old.isEnabled(),
+                        "No Render's switches were not carried over to Better Looks");
+                require(NoRender.hides(NoRender.Part.ITEM_FRAMES), "A carried-over switch does not hide its part");
+                old.getSettings().forEach(Setting::reset);
+                ((BooleanSetting) setting(module, "Hide Item Frames")).set(false);
+            });
             context.runOnClient(c -> {
                 module.setEnabled(true);
                 ((BooleanSetting) setting(module, "No Clouds")).set(true);

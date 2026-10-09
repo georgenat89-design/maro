@@ -160,29 +160,37 @@ public class BetterLooks extends Module {
     /** Whether one of No Render's parts is hidden by a switch here. */
     public static boolean hides(NoRender.Part part) {
         BetterLooks m = active();
-        if (m == null) return false;
+        return m != null && m.switchFor(part).get();
+    }
+
+    /** Turns on the switch here that hides one of No Render's parts. */
+    public void hide(NoRender.Part part) {
+        switchFor(part).set(true);
+    }
+
+    private BooleanSetting switchFor(NoRender.Part part) {
         return switch (part) {
-            case FIRE -> m.noFireOverlay.get();
-            case PUMPKIN -> m.noPumpkin.get();
-            case POWDER_SNOW -> m.noPowderSnow.get();
-            case UNDERWATER -> m.noUnderwaterOverlay.get();
-            case VIGNETTE -> m.noVignette.get();
-            case PORTAL, NAUSEA -> m.noNausea.get();
-            case TOTEM -> m.noTotemOverlay.get();
-            case HURT_CAMERA -> m.noHurtCam.get();
-            case BOSS_BAR -> m.noBossBar.get();
-            case SCOREBOARD -> m.noScoreboard.get();
-            case POTION_ICONS -> m.noPotionIcons.get();
-            case WEATHER -> m.noWeather.get();
-            case EXPLOSIONS -> m.noExplode.get();
-            case MINING_PARTICLES -> m.noMining.get();
-            case IN_WALL -> m.noInWall.get();
-            case DROPPED_ITEMS -> m.hideItems.get();
-            case XP_ORBS -> m.hideXp.get();
-            case ARMOR_STANDS -> m.hideArmorStands.get();
-            case FALLING_BLOCKS -> m.hideFalling.get();
-            case FIREWORKS -> m.hideFireworks.get();
-            case ITEM_FRAMES -> m.hideFrames.get();
+            case FIRE -> noFireOverlay;
+            case PUMPKIN -> noPumpkin;
+            case POWDER_SNOW -> noPowderSnow;
+            case UNDERWATER -> noUnderwaterOverlay;
+            case VIGNETTE -> noVignette;
+            case PORTAL, NAUSEA -> noNausea;
+            case TOTEM -> noTotemOverlay;
+            case HURT_CAMERA -> noHurtCam;
+            case BOSS_BAR -> noBossBar;
+            case SCOREBOARD -> noScoreboard;
+            case POTION_ICONS -> noPotionIcons;
+            case WEATHER -> noWeather;
+            case EXPLOSIONS -> noExplode;
+            case MINING_PARTICLES -> noMining;
+            case IN_WALL -> noInWall;
+            case DROPPED_ITEMS -> hideItems;
+            case XP_ORBS -> hideXp;
+            case ARMOR_STANDS -> hideArmorStands;
+            case FALLING_BLOCKS -> hideFalling;
+            case FIREWORKS -> hideFireworks;
+            case ITEM_FRAMES -> hideFrames;
         };
     }
 
