@@ -783,7 +783,18 @@ public final class AutoBuilder extends Module {
         if(depositing){depositTick();return;}
         if(pasting){pasteTick();return;}
         if(!building||schematic==null||origin==null||loading)return;
-        if(restockTarget!=null){restockTick();return;}
+        if(restockTarget!=null){
+            // Recovering a mined block can require the same checked climb or
+            // entrance as placement. Finish that route before opening its UI.
+            if(recoveringAccessStock&&ownedHandler==null&&restockWait==0&&mc.currentScreen==null){
+                if(ticks-chestSessionStarted>1200){finishRestock("Chest access timed out - continuing supply search");return;}
+                if(delay>0){walker.release();return;}
+                if(placement!=null){placeTick();return;}
+                if(mining!=null){mineTick();return;}
+                if(followStandGoal()||ceilingTop!=null&&continueCeilingEntry()||continueEntryPassage()||continueAccess())return;
+            }
+            restockTick();return;
+        }
         if(mc.currentScreen!=null){walker.release();digging=false;return;}
         if(mode.is("Semi Auto")&&!mc.options.useKey.isPressed()){walker.release();digging=false;status="Hold right mouse to build";return;}
         if(mc.player.isUsingItem()){walker.release();return;}
@@ -3479,16 +3490,39 @@ public final class AutoBuilder extends Module {
         var options=new ArrayList<BlockPos>();
         int below=(int)Math.floor(effectiveReach()+mc.player.getStandingEyeHeight()-.5),above=(int)Math.floor(effectiveReach()-mc.player.getStandingEyeHeight()+.5);
         for(int dx=-3;dx<=3;dx++)for(int dz=-3;dz<=3;dz++)for(int dy=-below;dy<=above;dy++){
-            var stand=chest.add(dx,dy,dz);if(chestTriedStands.containsKey(stand)||!walker.canStand(stand)||mc.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(stand))<.04)continue;
+            var stand=chest.add(dx,dy,dz);if(!recoveringAccessStock&&chestTriedStands.containsKey(stand)||!walker.canStand(stand)||mc.player.getEntityPos().squaredDistanceTo(Vec3d.ofBottomCenter(stand))<.04)continue;
             if(chestHit(chest,walker.standingPoint(stand).add(0,mc.player.getStandingEyeHeight(),0))!=null)options.add(stand);
         }
         options.sort(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos())));
         long deadline=System.nanoTime()+6_000_000;
-        for(var stand:options){chestTriedStands.put(stand,ticks+200);if(walker.canReachStand(stand)){chestStand=stand;chestProgressAt=ticks;walker.stop();status="Walking around an obstructed chest";return null;}if(System.nanoTime()>deadline)break;}
+        for(var stand:options){if(chestTriedStands.containsKey(stand))continue;chestTriedStands.put(stand,ticks+200);if(walker.canReachStand(stand)){chestStand=stand;chestProgressAt=ticks;walker.stop();status="Walking around an obstructed chest";return null;}if(System.nanoTime()>deadline)break;}
+        if(recoveringAccessStock&&prepareReceiverAccess(chest,options)){chestJourneyFailed=false;return null;}
         if(prepareSupportDescent(options)){chestJourneyFailed=false;return null;}
         if(prepareFloorOpening(options,-1)){chestJourneyFailed=false;return null;}
         chestJourneyFailed=ticks-chestProgressAt>100||ticks-chestSessionStarted>1200;
         walker.release();status="Replanning route to selected chest";return null;
+    }
+    /** Prove a route to real recovery stock using its still-missing repair owner. */
+    private boolean prepareReceiverAccess(BlockPos chest,List<BlockPos> views){
+        int work=-1;
+        for(var opening:floorAccessWork.keySet()){
+            int cell=schematic.indexAt(opening.subtract(anchor()),turns(),mirror.get());
+            if(cell>=0&&states[cell]!=CORRECT&&states[cell]!=IGNORED&&Schematic.material(desired(cell))==restockAttemptItem){work=cell;break;}
+        }
+        if(work<0||views.isEmpty())return false;
+        var key=new ViewKey(chest,mc.player.getBlockPos().toImmutable(),false);
+        var search=viewSearches.computeIfAbsent(key,unused->new ViewSearch());
+        while(viewSearches.size()>24)viewSearches.remove(viewSearches.keySet().iterator().next());
+        int progress=search.columnCursor+search.passage.cursor+search.ceilingCursor+search.entry.cursor+search.entry.doorCursor;
+        navigatingCell=work;navigationStarted=ticks;
+        boolean planned=prepareDirectColumn(views,work,search)||prepareElevatedEntry(views,work,search)
+            ||preparePassage(views,work,search)||prepareCeilingEntry(views,work,search);
+        if(planned)cleanupTarget=null;
+        // A bounded search cursor is progress; repeating an exhausted search
+        // is not. Preserve the existing no-progress and total chest deadlines.
+        if(progress!=search.columnCursor+search.passage.cursor+search.ceilingCursor+search.entry.cursor+search.entry.doorCursor
+            ||accessStand!=null||standGoal!=null||ceilingTop!=null||entryPassageTop!=null||passageStand!=null)chestProgressAt=ticks;
+        return planned;
     }
     private int actionDelay(){return Math.max(2,spacing.getInt()+ThreadLocalRandom.current().nextInt(timingVariation.getInt()+1));}
     private void select(int slot){if(mc.player==null||mc.interactionManager==null)return;if(mc.player.getInventory().getSelectedSlot()!=slot){mc.player.getInventory().setSelectedSlot(slot);((ClientPlayerInteractionManagerAccessor)mc.interactionManager).maro$syncSelectedSlot();}}
@@ -3668,6 +3702,7 @@ public final class AutoBuilder extends Module {
     }
     private void finishRestock(String reason){
         boolean recovered=recoveringAccessStock;
+        boolean failedAccess=recovered&&(ownedHandler==null||receivedChestInventory!=ownedHandler);
         if(ownedHandler!=null&&mc.player.currentScreenHandler==ownedHandler)mc.player.closeHandledScreen();
         if(restockTarget!=null){
             if(ownedHandler!=null&&receivedChestInventory==ownedHandler){
@@ -3685,6 +3720,9 @@ public final class AutoBuilder extends Module {
             }
         }
         ownedHandler=null;restockTarget=null;recoveringAccessStock=false;restockBatch=Map.of();partialSource=-1;partialItem=null;restockWait=0;
+        if(failedAccess){
+            var searches=new LinkedHashMap<>(viewSearches);resetAccessRouting();viewSearches.putAll(searches);navigatingCell=-1;
+        }
         resetChestJourney();walker.stop();delay=6;status=reason;
         if(!recovered&&useHomes.get()&&homes.returnToWork()){resetAfterHome();status="Returning to saved work area through /home 2";}
     }
