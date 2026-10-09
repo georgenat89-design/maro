@@ -99,6 +99,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             SpawnerNotifierChecks.run(context, singleplayer);
             AutoGoliathChecks.run(context, singleplayer);
             FakePlayerChecks.run(context);
+            NametagsChecks.run(context);
             FakeBlockChecks.run(context, singleplayer);
             BetterLooksChecks.run(context);
             SkyChecks.run(context, singleplayer);

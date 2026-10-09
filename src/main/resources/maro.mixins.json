@@ -37,6 +37,8 @@
     "BlockEventsMixin",
     "ChunkLoadMixin",
     "FakeBlockNameMixin",
+    "NametagsMixins$HideLabel",
+    "NametagsMixins$Pops",
     "EntityRenderStateMixin",
     "EntityRenderManagerMixin",
     "OrderedRenderCommandQueueImplAccessor",
