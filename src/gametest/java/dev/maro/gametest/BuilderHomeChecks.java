@@ -390,6 +390,10 @@ final class BuilderHomeChecks {
         });
         boolean mined=false,recovered=false,persisted=looseReceiver;int elapsed=0;
         for(;elapsed<800&&context.computeOnClient(client->builder.building());elapsed++){
+            if(looseReceiver&&elapsed%20==0){
+                System.out.println((String)context.computeOnClient(client->"[builder-loose-stock-progress] "+builder.status()+" player="+client.player.getEntityPos()+" needed="+field(builder,"needed")+" held="+builder.inventoryCount(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)+" pickup="+field(builder,"accessPickupId")+" mining="+field(builder,"mining")+" passage="+field(builder,"passageBlocks")+" restock="+field(builder,"restockTarget")));
+                System.out.println((String)world.getServer().computeOnServer(server->"[builder-loose-stock-drops] "+server.getOverworld().getEntitiesByClass(net.minecraft.entity.ItemEntity.class,new Box(origin).expand(8),item->true).stream().map(item->item.getStack()+" at "+item.getEntityPos()).toList()));
+            }
             mined|=world.getServer().computeOnServer(server->server.getOverworld().getBlockState(beam).isAir());
             recovered|=context.computeOnClient(client->looseReceiver?(int)field(builder,"accessPickupId")>=0:(boolean)field(builder,"recoveringAccessStock"));
             if(!persisted&&context.computeOnClient(client->!((Map<?,?>)field(builder,"accessDropSources")).isEmpty())){context.runOnClient(client->{var savedBuild=builder.saveExtra();call(builder,"loadOpenings",new Class<?>[]{com.google.gson.JsonObject.class},savedBuild);require(!((Map<?,?>)field(builder,"accessDropSources")).isEmpty()&&!((Map<?,?>)field(builder,"accessStockSources")).isEmpty(),"Saved access openings lost their native pipe/material receipts");});persisted=true;}context.waitTick();
