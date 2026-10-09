@@ -3645,10 +3645,17 @@ public final class AutoBuilder extends Module {
     private boolean collectAccessDrop(){
         if(accessPickupId>=0){
             var entity=mc.world.getEntityById(accessPickupId);
-            if(!(entity instanceof net.minecraft.entity.ItemEntity drop)||!drop.isAlive()||inventoryCount(accessPickupItem)>accessPickupCount
-                ||ticks>=accessPickupUntil){
+            var drop=entity instanceof net.minecraft.entity.ItemEntity item&&item.isAlive()?item:null;
+            // Another nearby item can arrive first. An inventory increase does
+            // not confirm collection of this entity, and must not blacklist its
+            // still-needed material while the remaining hole is being repaired.
+            boolean moved=drop!=null&&accessPickupSearch==null&&(!walker.canStand(accessPickupStand)
+                ||!mc.player.getBoundingBox().offset(walker.standingPoint(accessPickupStand).subtract(mc.player.getEntityPos())).expand(1,0,1).intersects(drop.getBoundingBox()));
+            if(drop==null||moved||ticks>=accessPickupUntil){
                 boolean routed=accessPickupSearch!=null;
-                accessPickupRetry.put(accessPickupId,ticks+100);accessPickupId=-1;accessPickupWork=-1;accessPickupStand=accessPickupFeet=null;accessPickupItem=null;accessPickupViews=List.of();accessPickupSearch=null;
+                if(drop!=null&&!moved&&ticks>=accessPickupUntil)accessPickupRetry.put(accessPickupId,ticks+100);
+                else accessPickupRetry.remove(accessPickupId);
+                accessPickupId=-1;accessPickupWork=-1;accessPickupStand=accessPickupFeet=null;accessPickupItem=null;accessPickupViews=List.of();accessPickupSearch=null;
                 if(routed){
                     // Ending a pickup attempt changes intent, not geometry. A
                     // failed ledge pickup must not erase the main job's bounded
@@ -3678,7 +3685,6 @@ public final class AutoBuilder extends Module {
                     ||prepareElevatedEntry(accessPickupViews,accessPickupWork,accessPickupSearch))return true;
                 accessPickupUntil=ticks;return false;
             }
-            if(!walker.canStand(accessPickupStand)){accessPickupUntil=ticks;return false;}
             walker.standAt(accessPickupStand);status="Collecting access repair material";return true;
         }
         if(!autoMove.get()||!mc.player.isOnGround()||floorAccessWork.isEmpty())return false;
