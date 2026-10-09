@@ -1,0 +1,8 @@
+name: MaroGrimFixture
+version: 1.0.0
+main: dev.maro.grimfixture.GrimFixture
+api-version: '1.21.11'
+depend: [GrimAC]
+commands:
+  marofixture:
+    description: Isolated localhost builder test fixture (console only)

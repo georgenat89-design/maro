@@ -27,8 +27,9 @@ final class BuilderGrimChecks {
         require(Files.isRegularFile(ROOT.resolve("connection.json")),"Set -PbuilderGrimFixture to the running local Paper/Grim fixture directory");
         context.runOnClient(client->{
             ModuleManager.all().forEach(module->module.setEnabled(false));
+            client.options.getInactivityFpsLimit().setValue(net.minecraft.client.option.InactivityFpsLimit.MINIMIZED);
             client.options.pauseOnLostFocus=false;client.options.getEnableVsync().setValue(false);client.options.getMaxFps().setValue(120);
-            var address="127.0.0.1:25585";
+            var address="127.0.0.1:"+connection().get("gamePort").getAsInt();
             ConnectScreen.connect(client.currentScreen,client,ServerAddress.parse(address),new ServerInfo("Maro Grim fixture",address,ServerInfo.ServerType.OTHER),false,null);
         });
         context.waitFor(client->client.player!=null&&client.world!=null&&client.getNetworkHandler()!=null,600);
@@ -90,9 +91,10 @@ final class BuilderGrimChecks {
     private static Object field(Object target,String name){try{var field=target.getClass().getDeclaredField(name);field.setAccessible(true);return field.get(target);}catch(ReflectiveOperationException error){throw new AssertionError(error);}}
     private static Properties proof(){try(var stream=Files.newInputStream(ROOT.resolve("server/plugins/MaroGrimFixture/proof.properties"))){var props=new Properties();props.load(stream);return props;}catch(IOException error){throw new UncheckedIOException(error);}}
     private static void require(boolean passed,String message){if(!passed)throw new AssertionError(message);}
+    private static com.google.gson.JsonObject connection(){try{return JsonParser.parseString(Files.readString(ROOT.resolve("connection.json"))).getAsJsonObject();}catch(IOException error){throw new UncheckedIOException(error);}}
     private static String command(String command){
         try{
-            var config=JsonParser.parseString(Files.readString(ROOT.resolve("connection.json"))).getAsJsonObject();
+            var config=connection();
             try(var socket=new Socket()){
                 socket.connect(new InetSocketAddress("127.0.0.1",config.get("rconPort").getAsInt()),5000);socket.setSoTimeout(5000);
                 var input=new DataInputStream(socket.getInputStream());var output=socket.getOutputStream();
