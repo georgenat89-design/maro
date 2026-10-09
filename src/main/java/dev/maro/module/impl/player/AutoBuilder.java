@@ -300,10 +300,11 @@ public final class AutoBuilder extends Module {
         final Map<BlockPos,BlockPos> doorByApproach=new HashMap<>();
         final List<DoorApproach> doorCandidates=new ArrayList<>();
         final EntrySearch entry=new EntrySearch();
+        final EntrySearch clearEntry=new EntrySearch();
         final DescentSearch descent=new DescentSearch();
         final PassageSearch passage=new PassageSearch();
         final FloorSearch floor=new FloorSearch();
-        int expires,cursor,routeCursor,stepCursor,temporaryCursor,ceilingCursor,columnCursor,recoveryStage;
+        int expires,cursor,routeCursor,cutRouteCursor,stepCursor,temporaryCursor,ceilingCursor,columnCursor,recoveryStage;
         int liquidSupportCursor;
         List<BlockPos> liquidSupports;
         List<BlockPos> ceilingViews;
@@ -314,6 +315,8 @@ public final class AutoBuilder extends Module {
         final Map<BlockPos,Set<BlockPos>> liquidOpenings=new HashMap<>();
     }
     private final LinkedHashMap<ViewKey,ViewSearch> viewSearches=new LinkedHashMap<>();
+    private record HopperColumn(int lowest,int expires){}
+    private final Map<Long,HopperColumn> hopperColumns=new HashMap<>();
     private long viewPlanningDeadline;
     private long floorPlanningDeadline;
     private BlockPos ceilingBase,ceilingTop;
@@ -475,6 +478,7 @@ public final class AutoBuilder extends Module {
     public static void serverBlockUpdate(BlockPos pos,BlockState state){
         var builder=ModuleManager.get(AutoBuilder.class);
         if(builder==null||builder.world!=mc.world)return;
+        builder.hopperColumns.remove(hopperColumnKey(pos.getX(),pos.getZ()));
         if(pos.equals(builder.routeMining)||pos.equals(builder.mining)||builder.unconfirmedPlacements.containsKey(pos))builder.homes.invalidateRoutes();
         if(builder.cleanupTarget!=null&&(pos.equals(builder.mining)||builder.supports.contains(pos)))builder.cleanupExitSearchFeet=null;
         if(builder.accessStairs.stream().anyMatch(piece->piece.getSquaredDistance(pos)<=25))builder.stairPlacementPlan=Set.of();
@@ -608,6 +612,7 @@ public final class AutoBuilder extends Module {
         origin=pos.toImmutable();world=mc.world;dimension=nextDimension;replan();
     }
     private void replan(){
+        hopperColumns.clear();
         buildEta.reset();ignoredSolid=0;
         preparationReady=false;chestStocks.clear();preparedStock.clear();emptyChestItems.clear();buildBudgetActive=false;buildBudgetSpent=0;
         if(schematic==null)return;pause("Placement changed");transformedStates.clear();triedStands.clear();states=new byte[schematic.size()];unitsLeft=new byte[schematic.size()];scanCursor=correct=completedScans=passTasks=0;lastPassTasks=schematic.size();solid=schematic.solidCount();
@@ -1482,8 +1487,10 @@ public final class AutoBuilder extends Module {
         }
         options.sort(Comparator.<BlockPos>comparingInt(p->p.equals(accessStand)?-1:roofOpenings.containsKey(p)?1:directStands.contains(p)?0:2)
             .thenComparingInt(p->scaffoldDistance.getOrDefault(p,0)).thenComparingDouble(p->p.getSquaredDistance(mc.player.getBlockPos())));standGoal=null;
+        var clearOptions=options.stream().filter(p->!needsBuildCut(roofOpenings.get(p))).toList();
         long routeDeadline=System.nanoTime()+6_000_000;
         while(search.routeCursor<options.size()){
+            if(needsBuildCut(roofOpenings.get(options.get(search.routeCursor)))){search.routeCursor++;continue;}
             if((!directStands.contains(options.get(search.routeCursor))||roofOpenings.containsKey(options.get(search.routeCursor)))&&!search.doorChecked){
                 if(prepareDoorAccess(target,options.stream().filter(p->directStands.contains(p)&&!roofOpenings.containsKey(p)).toList(),routingWork,search))return true;
                 search.doorChecked=true;
@@ -1508,31 +1515,43 @@ public final class AutoBuilder extends Module {
             }
             if(search.recoveryStage==1){if(prepareSupportDescent(options,false,search))return true;search.recoveryStage=2;}
             if(search.recoveryStage==2){
-                if(prepareDirectColumn(options,routingWork,search))return true;
+                if(prepareDirectColumn(clearOptions,routingWork,search))return true;
                 // Prove an exterior column and its onward walking route before
                 // trying speculative side stairs or reclaiming capacity for them.
                 // Scaffold views are valid destinations too: they expose the
                 // next attachment even when the final block is not in reach.
-                if(prepareElevatedEntry(options,routingWork,search))return true;
+                if(prepareElevatedEntry(clearOptions,routingWork,search.clearEntry,false))return true;
                 long stepDeadline=System.nanoTime()+3_000_000;
                 while(search.stepCursor<options.size()&&System.nanoTime()<stepDeadline){
                     var option=options.get(search.stepCursor++);
-                    if(!support.get()||!walker.canStand(option)
+                    if(needsBuildCut(roofOpenings.get(option))||!support.get()||!walker.canStand(option)
                         ||!directStands.contains(option)&&!(supportFallback&&supports.contains(option.down())))continue;
                     if(accessStep(option))return true;
                 }
                 if(search.stepCursor<options.size()){walker.release();status="Checking remaining access steps";return true;}
-                search.recoveryStage=3;
+                search.recoveryStage=3;search.columnCursor=0;
             }
             if(search.recoveryStage==3){
                 boolean cleaning=target.equals(cleanupTarget)&&supports.contains(target);
                 // A native upper bucket view may need only one real footing.
                 // Try that before planning another route to a hidden old post.
-                if(liquid&&temporaryView(target,wanted,cell,tried,search))return true;
+                if(wanted!=null&&temporaryView(target,wanted,cell,tried,search))return true;
                 if(liquid&&prepareLiquidSupportAccess(target,cell,search))return true;
-                if(wanted!=null&&prepareBuriedBlockAccess(target,wanted,cell))return true;
-                if((cleaning||wanted!=null&&!wanted.isAir()&&states[cell]!=CORRECT)&&preparePassage(options,routingWork,search))return true;
-                search.recoveryStage=4;
+                long cutDeadline=System.nanoTime()+3_000_000;
+                while(search.cutRouteCursor<options.size()&&System.nanoTime()<cutDeadline){
+                    var option=options.get(search.cutRouteCursor++);var cuts=roofOpenings.get(option);
+                    if(!needsBuildCut(cuts)||cuts.stream().anyMatch(p->!supports.contains(p)&&!passageCell(p))
+                        ||tried.containsKey(option)&&!option.equals(accessStand)||!walker.canStand(option))continue;
+                    tried.put(option,ticks+40);if(walker.canReachStand(option)){standGoal=option;break;}
+                }
+                if(standGoal==null){
+                    if(search.cutRouteCursor<options.size()){walker.release();status="Checking remaining roof access";return true;}
+                    if(prepareDirectColumn(options,routingWork,search))return true;
+                    if(prepareElevatedEntry(options,routingWork,search))return true;
+                    if(wanted!=null&&prepareBuriedBlockAccess(target,wanted,cell))return true;
+                    if((cleaning||wanted!=null&&!wanted.isAir()&&states[cell]!=CORRECT)&&preparePassage(options,routingWork,search))return true;
+                    search.recoveryStage=4;
+                }
             }
             if(search.recoveryStage==4){
                 boolean cleaning=target.equals(cleanupTarget)&&supports.contains(target);
@@ -1552,7 +1571,7 @@ public final class AutoBuilder extends Module {
                 // even when ordinary walking from that home still needs a pillar.
                 if(chest!=null&&homes.storage(chest)){resetAfterHome();status="Returning to storage ground to recheck build access";return true;}
             }
-            return false;
+            if(standGoal==null)return false;
         }
         if(roofAccess&&search.liquidOpenings.containsKey(standGoal)){
             liquidTopStand=standGoal;liquidTopBlocks.clear();liquidTopBlocks.addAll(search.liquidOpenings.get(standGoal));
@@ -1561,6 +1580,7 @@ public final class AutoBuilder extends Module {
         }
         standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();status="Moving around an obstructed block";return true;
     }
+    private boolean needsBuildCut(Set<BlockPos> removed){return removed!=null&&removed.stream().anyMatch(p->!supports.contains(p)&&!mc.world.getBlockState(p).isAir());}
     private boolean usableWorkDoor(BlockPos pos){
         int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());var state=mc.world.getBlockState(pos);
         if(cell<0||!(state.getBlock() instanceof DoorBlock door)||!door.getBlockSetType().canOpenByHand()
@@ -1874,11 +1894,14 @@ public final class AutoBuilder extends Module {
         return prepareElevatedEntry(views,work,search.entry);
     }
     private boolean prepareElevatedEntry(List<BlockPos> views,int work,EntrySearch entry){
+        return prepareElevatedEntry(views,work,entry,true);
+    }
+    private boolean prepareElevatedEntry(List<BlockPos> views,int work,EntrySearch entry,boolean allowOpenings){
         int previousCursor=entry.cursor,previousDoor=entry.doorCursor;
         entrySearchFeet=entry.feet;entrySearchWork=entry.work;entrySearchHash=entry.hash;
         entrySearchCursor=entry.cursor;entryRetryAt=entry.retryAt;entryDoorCursor=entry.doorCursor;
         entryProbeCursor=entry.probeCursor;entryProbeBase=entry.probeBase;entryCandidates=entry.candidates;
-        try{return prepareElevatedEntrySearch(views,work,entry);}
+        try{return prepareElevatedEntrySearch(views,work,entry,allowOpenings);}
         finally{
             entry.feet=entrySearchFeet;entry.work=entrySearchWork;entry.hash=entrySearchHash;
             entry.cursor=entrySearchCursor;entry.retryAt=entryRetryAt;entry.doorCursor=entryDoorCursor;
@@ -1889,7 +1912,7 @@ public final class AutoBuilder extends Module {
         }
     }
     /** Reach a finished elevated floor by climbing outside it, rather than mining or pillaring underneath it. */
-    private boolean prepareElevatedEntrySearch(List<BlockPos> views,int work,EntrySearch search){
+    private boolean prepareElevatedEntrySearch(List<BlockPos> views,int work,EntrySearch search,boolean allowOpenings){
         if(!support.get()||work<0&&cleanupTarget==null||views.isEmpty())return false;
         var feet=mc.player.getBlockPos();int hash=views.hashCode();
         if(!feet.equals(entrySearchFeet)||entrySearchWork!=work||entrySearchHash!=hash){
@@ -1939,7 +1962,7 @@ public final class AutoBuilder extends Module {
                 reachable=walker.canClimbAfterClearing(base,top,destination,Set.of());
                 if(!reachable){entryProbeBase=base;entryDoorCursor=0;}
             }else reachable=false;
-            if(!reachable&&unstuck.get()&&work>=0&&states[work]!=CORRECT){
+            if(!reachable&&allowOpenings&&unstuck.get()&&work>=0&&states[work]!=CORRECT){
                 var eye=Vec3d.ofBottomCenter(top).add(0,mc.player.getStandingEyeHeight(),0);
                 while(entryDoorCursor<ESCAPE_SIDES.length*3&&System.nanoTime()<deadline){
                     int sample=entryDoorCursor++;var side=ESCAPE_SIDES[sample%ESCAPE_SIDES.length];
@@ -2684,13 +2707,13 @@ public final class AutoBuilder extends Module {
                 .flatMap(pos->java.util.stream.IntStream.rangeClosed(1,3).mapToObj(pos::up)).distinct()
                 .filter(pos->pos.getY()<mc.player.getY()-.5&&pos.getY()>=mc.player.getY()-5)
                 .filter(pos->{int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());var state=mc.world.getBlockState(pos);
-                    return cell>=0&&states[cell]==CORRECT&&!state.hasBlockEntity()&&state.getFluidState().isEmpty()&&state.getHardness(mc.world,pos)>=0&&state.isFullCube(mc.world,pos);})
+                    return cell>=0&&states[cell]==CORRECT&&!aboveHopper(pos,false)&&!state.hasBlockEntity()&&state.getFluidState().isEmpty()&&state.getHardness(mc.world,pos)>=0&&state.isFullCube(mc.world,pos);})
                 .sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(feet))).limit(128).toList();
         }
         long deadline=System.nanoTime()+3_000_000;
         while(hatchSearchCursor<hatchCandidates.size()&&System.nanoTime()<deadline){
             var cover=hatchCandidates.get(hatchSearchCursor);
-            if(!walker.canStand(cover.up())||!safeToRecycle(cover)||!walker.canDescendThrough(cover)){hatchSearchCursor++;hatchExitCursor=0;continue;}
+            if(aboveHopper(cover,false)||!walker.canStand(cover.up())||!safeToRecycle(cover)||!walker.canDescendThrough(cover)){hatchSearchCursor++;hatchExitCursor=0;continue;}
             var geometry=descentGeometry(cover);if(geometry==null||!safeToRecycle(geometry.removed)){hatchSearchCursor++;hatchExitCursor=0;continue;}
             var search=new EscapeSearch();search.cursor=hatchExitCursor;boolean proved=openDescentExit(geometry,search,deadline)!=null;hatchExitCursor=search.cursor;
             if(proved){hatchViews.add(cover.up());hatchSearchCursor++;hatchExitCursor=0;}
@@ -2747,7 +2770,7 @@ public final class AutoBuilder extends Module {
     private boolean removableRouteFloor(BlockPos pos){
         if(supports.contains(pos)&&!plannedSolid(pos)&&mc.world.getBlockState(pos).isOf(Blocks.DIRT))return true;
         int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());
-        return (pos.equals(routeOpening)||passageBlocks.contains(pos))&&cell>=0&&!desired(cell).isAir()&&matchesBuildState(mc.world.getBlockState(pos),desired(cell));
+        return (pos.equals(routeOpening)||passageBlocks.contains(pos))&&cell>=0&&!desired(cell).isAir()&&!aboveHopper(pos,false)&&matchesBuildState(mc.world.getBlockState(pos),desired(cell));
     }
     /** Reopen only our finished, noninteractive wall cells after proving a useful route. */
     private boolean preparePassage(List<BlockPos> views,int work,ViewSearch owner){
@@ -2803,8 +2826,30 @@ public final class AutoBuilder extends Module {
     private boolean passageCell(BlockPos pos){
         int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());var state=mc.world.getBlockState(pos);
         if(liquidSupportTarget!=null&&liquidSupportWork>=0&&pos.getY()<=position(liquidSupportWork).getY())return false;
-        return cell>=0&&states[cell]==CORRECT&&!liquidBoundary(pos)&&!floorDeferred(pos)&&!state.hasBlockEntity()&&state.getFluidState().isEmpty()
+        return cell>=0&&states[cell]==CORRECT&&!liquidBoundary(pos)&&!floorDeferred(pos)&&!aboveHopper(pos,false)&&!state.hasBlockEntity()&&state.getFluidState().isEmpty()
             &&state.getHardness(mc.world,pos)>=0&&state.isFullCube(mc.world,pos)&&!state.getBlock().equals(Blocks.BEDROCK);
+    }
+    private static long hopperColumnKey(int x,int z){return ((long)x<<32)^(z&0xffffffffL);}
+    /** Keep finished blocks above hopper catchments, including the neighbouring fall columns.
+     * Solid covers and disabled hoppers are still protected: later cuts or redstone can expose them. */
+    private boolean aboveHopper(BlockPos pos,boolean fresh){
+        if(supports.contains(pos)&&mc.world.getBlockState(pos).isOf(Blocks.DIRT))return false;
+        if(hopperColumns.size()>8192)hopperColumns.clear();
+        for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++){
+            int x=pos.getX()+dx,z=pos.getZ()+dz;long key=hopperColumnKey(x,z);
+            if(!mc.world.isChunkLoaded(new BlockPos(x,pos.getY(),z)))return true;
+            var cached=fresh?null:hopperColumns.get(key);
+            if(cached==null||cached.expires<=ticks){
+                int lowest=Integer.MAX_VALUE;var probe=new BlockPos.Mutable(x,mc.world.getBottomY(),z);
+                for(int y=mc.world.getBottomY(),top=y+mc.world.getHeight();y<top;y++){
+                    probe.setY(y);
+                    if(mc.world.getBlockState(probe).getBlock() instanceof HopperBlock){lowest=y;break;}
+                }
+                cached=new HopperColumn(lowest,ticks+100);hopperColumns.put(key,cached);
+            }
+            if(cached.lowest<pos.getY())return true;
+        }
+        return false;
     }
     private boolean clearPassageTick(){
         if(passageStand==null)return false;
@@ -2858,7 +2903,7 @@ public final class AutoBuilder extends Module {
             .flatMap(pos->java.util.stream.IntStream.rangeClosed(1,3).mapToObj(pos::up)).distinct()
             .filter(pos->work<0||!(desired(work).getBlock() instanceof FluidBlock)||pos.getY()>position(work).getY())
             .filter(pos->{int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());var actual=mc.world.getBlockState(pos);
-                return cell>=0&&states[cell]==CORRECT&&plannedSolid(pos)&&!liquidBoundary(pos)&&!actual.hasBlockEntity()&&actual.getHardness(mc.world,pos)>=0&&actual.isSideSolidFullSquare(mc.world,pos,Direction.UP);})
+                return cell>=0&&states[cell]==CORRECT&&plannedSolid(pos)&&!liquidBoundary(pos)&&!aboveHopper(pos,false)&&!actual.hasBlockEntity()&&actual.getHardness(mc.world,pos)>=0&&actual.isSideSolidFullSquare(mc.world,pos,Direction.UP);})
             .sorted(Comparator.comparingDouble(pos->pos.getSquaredDistance(mc.player.getBlockPos()))).toList();
         var feet=mc.player.getBlockPos();
         if(!feet.equals(floorSearchFeet)||!Objects.equals(lowerView,floorSearchView)||work!=floorSearchWork){
@@ -2899,7 +2944,7 @@ public final class AutoBuilder extends Module {
             }
             // Cached masks select a candidate only. Prove the actual approach,
             // support, complete descent and attachments again before mining.
-            if(lower==null||!walker.canDescendThrough(cover)||!safeToRecycle(cover)||!walker.canReachStand(cover.up())||!descentReaches(cover,lower)){
+            if(lower==null||aboveHopper(cover,false)||!walker.canDescendThrough(cover)||!safeToRecycle(cover)||!walker.canReachStand(cover.up())||!descentReaches(cover,lower)){
                 floorProbes.remove(cover);continue;
             }
             int pendingWork=work;
@@ -3152,6 +3197,7 @@ public final class AutoBuilder extends Module {
         // us onto it. It can turn a checked drop into a longer damaging fall.
         if(!mc.player.isOnGround()&&!mc.player.getAbilities().flying){status="Landing before clearing a block";return;}
         var state=mc.world.getBlockState(mining);
+        if(!state.isAir()&&aboveHopper(mining,true)){abandonHopperCut(mining);return;}
         int opened=schematic.indexAt(mining.subtract(anchor()),turns(),mirror.get());
         if(useHomes.get()&&homes.ready()&&!supports.contains(mining)&&!state.isAir()
             &&(opened<0||matchesBuildState(state,desired(opened)))){
@@ -3208,12 +3254,23 @@ public final class AutoBuilder extends Module {
         if(!selectInventorySlot(best))return;
         digging=true;var target=mining;
         withPublishedLook(()->{
+            if(aboveHopper(target,true)){abandonHopperCut(target);return;}
             if(peekTarget!=null&&!safePeekMining(target)){digging=false;return;}
             var actual=(BlockHitResult)mc.player.raycast(effectiveReach(),1,false);
             if(actual.getType()!=HitResult.Type.BLOCK||!actual.getBlockPos().equals(target)){digging=false;return;}
             mc.interactionManager.updateBlockBreakingProgress(target,actual.getSide());mc.player.swingHand(Hand.MAIN_HAND);lastAction=ticks;
             status=supports.contains(target)?"Removing temporary scaffold":target.equals(routeOpening)||passageBlocks.contains(target)?"Opening checked access route":"Clearing mismatching block";
         });
+    }
+    private void abandonHopperCut(BlockPos blocked){
+        mining=routeMining=routeOpening=descentPost=descentView=standGoal=null;
+        passageBlocks.clear();passageStand=null;liquidTopBlocks.clear();liquidTopStand=null;
+        ceilingBase=ceilingTop=null;ceilingBlocks.clear();clearEntryPassage();
+        accessStand=accessBase=null;accessFloor=false;accessSupports.clear();accessStairs=accessColumn=Set.of();
+        floorAccessWork.remove(blocked);openingRepairDepth.remove(blocked);
+        viewSearches.clear();floorProbes.clear();descentEscapes.clear();hatchSearchFeet=null;
+        digging=false;releaseSneak();walker.stop();mc.interactionManager.cancelBlockBreaking();
+        status="Keeping blocks above hoppers — checking another route";
     }
     private void tuneNote(BlockPos pos,int wanted){
         if(!pos.equals(tuningSession)){tuningSession=pos;tuningTarget=null;tuningClicks=0;}
