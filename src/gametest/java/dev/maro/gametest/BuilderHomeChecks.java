@@ -115,6 +115,10 @@ final class BuilderHomeChecks {
         }
         if(Boolean.getBoolean("maro.gametest.builderHopperOnly")){
             hopperCutProtection(context,world,builder,start);hopperRepairStock(context,world,builder,start);
+            for(int sample=1;sample<8;sample++){
+                System.out.println("[builder-home] Native loose repair sample "+(sample+1)+"/8");
+                hopperRepairStock(context,world,builder,start,false,true);
+            }
             buriedHopperRoofAccess(context,world,builder,start);existingViewBeforeRoof(context,world,builder,start);
             System.out.println("[builder-hopper] PASS: protected native hopper catchments, existing routes and legacy repair stock");return;
         }
