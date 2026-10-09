@@ -317,6 +317,7 @@ final class BuilderHomeChecks {
     private static void hopperCutProtection(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-home] Keep covered, disabled and deep hopper catchments intact; reject stale mining and finish from the existing view");
         var origin=start.south(10);var cells=new BlockState[24];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());
+        clearPriorHopperFixtureDrops(world,origin);
         cells[0]=Blocks.DISPENSER.getDefaultState().with(DispenserBlock.FACING,Direction.WEST);
         cells[1]=Blocks.HOPPER.getDefaultState().with(HopperBlock.FACING,Direction.WEST).with(HopperBlock.ENABLED,false);
         for(int i:List.of(2,6,9,17))cells[i]=Blocks.CRACKED_POLISHED_BLACKSTONE_BRICKS.getDefaultState();cells[10]=Blocks.GLASS.getDefaultState();
@@ -361,6 +362,7 @@ final class BuilderHomeChecks {
     private static void hopperRepairStock(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,boolean chestReceiver,boolean looseReceiver){
         System.out.println("[builder-home] Recover "+(looseReceiver?"mined access blocks through native loose drops":"legacy holes from stock already in a native hopper pipe")+"; preserve existing stock");
         var origin=start.south(10);var cells=new BlockState[24];Arrays.fill(cells,Blocks.STRUCTURE_VOID.getDefaultState());
+        clearPriorHopperFixtureDrops(world,origin);
         cells[0]=Blocks.DISPENSER.getDefaultState().with(DispenserBlock.FACING,Direction.WEST);cells[1]=Blocks.HOPPER.getDefaultState().with(HopperBlock.FACING,Direction.WEST);
         if(chestReceiver){cells[0]=Blocks.CHEST.getDefaultState().with(ChestBlock.FACING,Direction.WEST).with(ChestBlock.CHEST_TYPE,net.minecraft.block.enums.ChestType.RIGHT);cells[4]=cells[0].with(ChestBlock.CHEST_TYPE,net.minecraft.block.enums.ChestType.LEFT);}
         cells[2]=cells[6]=Blocks.CRACKED_POLISHED_BLACKSTONE_BRICKS.getDefaultState();cells[9]=cells[17]=Blocks.CRACKED_POLISHED_BLACKSTONE_BRICKS.getDefaultState();cells[10]=Blocks.GLASS.getDefaultState();
@@ -398,6 +400,16 @@ final class BuilderHomeChecks {
         context.runOnClient(client->{require(!builder.building()&&builder.inventoryCount(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS)==0&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Native access recovery left materials, work, supports, damage or a menu: "+builder.status());if(!looseReceiver){require(!((Map<?,?>)field(builder,"accessStockSources")).isEmpty(),"Completed openings discarded their material receiver ledger");var saved=builder.saveExtra();call(builder,"loadOpenings",new Class<?>[]{com.google.gson.JsonObject.class},saved);require(!((Map<?,?>)field(builder,"accessStockSources")).isEmpty(),"Completed material receivers did not survive reload");}BuilderPacketChecks.verify(3);builder.pause("hopper repair stock checked");setting(builder,"Temporary Supports",true);});
         teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+3)+" "+(origin.getY()+2)+" "+(origin.getZ()+1)+" air");context.waitTicks(4);
         System.out.println("[builder-home] Access material recovered through "+(looseReceiver?"native loose drops":"native hopper/"+(chestReceiver?"double chest":"dispenser")+" UI without new cuts above hoppers")+"; exact two-beam repairs, original brick/diamond stock intact, no home trip, zero supports and full health in "+elapsed+" ticks");
+    }
+    private static void clearPriorHopperFixtureDrops(TestSingleplayerContext world,BlockPos origin){
+        // These cases reuse the same footprint. A disabled hopper in the prior
+        // case leaves its mined dirt loose; a newly enabled hopper must not
+        // collect that unrelated item after this case seeds its exact stock.
+        world.getServer().runOnServer(server->{
+            var drops=server.getOverworld().getEntitiesByClass(net.minecraft.entity.ItemEntity.class,new Box(origin,origin.add(4,3,2)).expand(2),item->true);
+            drops.forEach(net.minecraft.entity.Entity::discard);
+            System.out.println("[builder-home] Cleared "+drops.size()+" prior native loose items before hopper fixture setup");
+        });
     }
     private static void closedDoorAccess(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-home] Open an existing wooden door for dry basin assembly, then restore both closed halves without mining it");
