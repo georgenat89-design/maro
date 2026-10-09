@@ -119,7 +119,7 @@ final class BuilderHomeChecks {
             System.out.println("[builder-receiver] PASS: prompt native receiver column, real stock recovery and cleanup");return;
         }
         if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){
-            pistonBeforeFrontContainer(context,world,builder,start);elevatedRoomAccess(context,world,builder,start);raisedLiquidEntrance(context,world,builder,start);rotations(context,builder,start);
+            samePointWorkReturn(context,world,builder,start,chest);pistonBeforeFrontContainer(context,world,builder,start);elevatedRoomAccess(context,world,builder,start);raisedLiquidEntrance(context,world,builder,start);rotations(context,builder,start);
             System.out.println("[builder-entry] PASS: prompt proved exterior entry, contained upper liquid and brisk rotations");return;
         }
         if(Boolean.getBoolean("maro.gametest.builderHopperOnly")){
@@ -140,6 +140,7 @@ final class BuilderHomeChecks {
         scaffoldObstructedSign(context,world,builder,start);
         roofEdgeRoundTrip(context,world,builder,home2,chest);
         obstructedStorageRoundTrip(context,world,builder,home2,chest);
+        samePointWorkReturn(context,world,builder,start,chest);
         immediateWorkBeforeAccess(context,world,builder,home2);
         verticalRepairOrder(context,world,builder,home2);
         repairOwnerOrder(context,world,builder,home2);
@@ -1020,6 +1021,21 @@ final class BuilderHomeChecks {
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20,"Section dependency chain left work, scaffolds or damage: "+builder.status());BuilderPacketChecks.verify(4);builder.pause("section dependencies checked");setting(builder,"Temporary Supports",true);setting(builder,"Restock When Empty",true);setting(builder,"Stockpile In Chests",true);});
         teleport(world,work);context.waitTicks(12);for(int x=-1;x<3;x++)command(world,"setblock",first.east(x),"air");context.waitTicks(4);
         System.out.println("[builder-home] Deferred hopper outlet selected other native work immediately; released outlet chain crossed the eight-cell batch boundary and completed; full health and zero supports");
+    }
+    private static void samePointWorkReturn(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,BlockPos chest){
+        System.out.println("[builder-home] Return through native home 2 even when chest routing has already reached the saved work point");
+        var work=start.east(6);teleport(world,work);context.waitTicks(12);int first=commands.size();var third=saved[2];
+        context.runOnClient(client->{builder.pause("same-point return setup");require(((BuilderHomes)field(builder,"homes")).restock(chest),"Same-point restock did not begin");});waitHome(context,builder,100);
+        var walk=new BuilderWalk();boolean arrived=false;
+        for(int tick=0;tick<180&&!arrived;tick++){
+            final int lookTick=tick;arrived=context.computeOnClient(client->{walk.turning(true,12);walk.beginLookTick(lookTick);return walk.standAt(work);});context.waitTick();
+        }
+        require(arrived,"Native chest-route walk did not reach the saved work point");context.runOnClient(client->walk.stop());context.waitTicks(12);
+        context.runOnClient(client->{var homes=(BuilderHomes)field(builder,"homes");require(client.player.getEntityPos().squaredDistanceTo(saved[1].pos)<=.36&&homes.returnToWork(),"Same-point native return did not begin");});waitHome(context,builder,100);
+        require(commands.subList(first,commands.size()).equals(List.of("delhome 2","sethome 2","home 1","home 2","delhome 2")),"Same-point return skipped native travel: "+commands.subList(first,commands.size()));
+        require(saved[1]==null&&saved[2]==third&&waiting==null&&!movedDuringWarmup,"Same-point return deleted early, moved during warmup or changed home 3");
+        context.runOnClient(client->{require(client.player.getHealth()==20&&client.currentScreen==null,"Same-point return lost health or left a menu");builder.pause("same-point native return checked");});teleport(world,start);context.waitTicks(12);
+        System.out.println("[builder-home] Same-point return used home 2 and waited for its actual server teleport before deletion; home 3 untouched, full health");
     }
     private static void restockRoundTrip(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos work,BlockPos chest){
         restockRoundTrip(context,world,builder,work,chest,false);
