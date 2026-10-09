@@ -64,49 +64,63 @@ import java.util.function.Predicate;
  * palette says so without looking at its blocks). After that the block changes the game reports keep the list
  * up to date, so a chunk is only scanned again if it is reloaded or what you look for changes.
  */
-public class BlockESP extends Module {
-    /** A kind of block to look for, and the colour it is drawn in. */
+public class BlockESP extends Module implements dev.maro.render.esp.EspStyle {
+    /** A kind of block to look for, the colour it is drawn in, and whether it is storage (Storage ESP's). */
     private enum Group {
-        SPAWNERS("Spawners", "Mob and trial spawners", 0xFFFF3B6B, true,
+        SPAWNERS("Spawners", "Mob and trial spawners", 0xFFFF3B6B, true, false,
                 b -> b == Blocks.SPAWNER || b == Blocks.TRIAL_SPAWNER),
-        CHESTS("Chests", "Chests and trapped chests", 0xFFFFA733, true,
+        CHESTS("Chests", "Chests and trapped chests", 0xFFFFA733, true, true,
                 b -> b == Blocks.CHEST || b == Blocks.TRAPPED_CHEST),
-        SHULKERS("Shulker Boxes", "Shulker boxes of every colour", 0xFFFF6AD5, true,
+        SHULKERS("Shulker Boxes", "Shulker boxes of every colour", 0xFFFF6AD5, true, true,
                 b -> b instanceof ShulkerBoxBlock),
-        ENDER_CHESTS("Ender Chests", "Ender chests", 0xFFB45CFF, false,
+        ENDER_CHESTS("Ender Chests", "Ender chests", 0xFFB45CFF, true, true,
                 b -> b == Blocks.ENDER_CHEST),
-        BARRELS("Barrels", "Barrels", 0xFFD6904E, false,
+        BARRELS("Barrels", "Barrels", 0xFFD6904E, true, true,
                 b -> b == Blocks.BARREL),
-        DEBRIS("Ancient Debris", "Ancient debris in the Nether", 0xFFFF7A3D, true,
+        HOPPERS("Hoppers", "Hoppers", 0xFF9AA3B5, false, true,
+                b -> b == Blocks.HOPPER),
+        DISPENSERS("Dispensers", "Dispensers and droppers", 0xFF7FD3FF, false, true,
+                b -> b == Blocks.DISPENSER || b == Blocks.DROPPER),
+        FURNACES("Furnaces", "Furnaces, blast furnaces and smokers", 0xFFFF8A4A, false, true,
+                b -> b == Blocks.FURNACE || b == Blocks.BLAST_FURNACE || b == Blocks.SMOKER),
+        OTHER_STORAGE("Other Storage", "Brewing stands, crafters, decorated pots and chiseled bookshelves", 0xFF5FE0B0, false, true,
+                b -> b == Blocks.BREWING_STAND || b == Blocks.CRAFTER || b == Blocks.DECORATED_POT || b == Blocks.CHISELED_BOOKSHELF),
+        DEBRIS("Ancient Debris", "Ancient debris in the Nether", 0xFFFF7A3D, true, false,
                 b -> b == Blocks.ANCIENT_DEBRIS),
-        DIAMONDS("Diamond Ore", "Diamond ore, stone and deepslate", 0xFF4DF0FF, true,
+        DIAMONDS("Diamond Ore", "Diamond ore, stone and deepslate", 0xFF4DF0FF, true, false,
                 b -> b == Blocks.DIAMOND_ORE || b == Blocks.DEEPSLATE_DIAMOND_ORE),
-        EMERALDS("Emerald Ore", "Emerald ore, stone and deepslate", 0xFF35F07A, false,
+        EMERALDS("Emerald Ore", "Emerald ore, stone and deepslate", 0xFF35F07A, false, false,
                 b -> b == Blocks.EMERALD_ORE || b == Blocks.DEEPSLATE_EMERALD_ORE),
-        GOLD("Gold Ore", "Gold ore, including the Nether's", 0xFFFFD84A, false,
+        GOLD("Gold Ore", "Gold ore, including the Nether's", 0xFFFFD84A, false, false,
                 b -> b == Blocks.GOLD_ORE || b == Blocks.DEEPSLATE_GOLD_ORE || b == Blocks.NETHER_GOLD_ORE),
-        IRON("Iron Ore", "Iron ore, stone and deepslate", 0xFFE8B98F, false,
+        IRON("Iron Ore", "Iron ore, stone and deepslate", 0xFFE8B98F, false, false,
                 b -> b == Blocks.IRON_ORE || b == Blocks.DEEPSLATE_IRON_ORE),
-        REDSTONE("Redstone Ore", "Redstone ore, stone and deepslate", 0xFFFF2E2E, false,
+        REDSTONE("Redstone Ore", "Redstone ore, stone and deepslate", 0xFFFF2E2E, false, false,
                 b -> b == Blocks.REDSTONE_ORE || b == Blocks.DEEPSLATE_REDSTONE_ORE),
-        LAPIS("Lapis Ore", "Lapis ore, stone and deepslate", 0xFF3D6BFF, false,
+        LAPIS("Lapis Ore", "Lapis ore, stone and deepslate", 0xFF3D6BFF, false, false,
                 b -> b == Blocks.LAPIS_ORE || b == Blocks.DEEPSLATE_LAPIS_ORE);
 
         final String label, description;
         final int color;
-        final boolean on;
+        final boolean on, storage;
         final Predicate<Block> matches;
 
-        Group(String label, String description, int color, boolean on, Predicate<Block> matches) {
+        Group(String label, String description, int color, boolean on, boolean storage, Predicate<Block> matches) {
             this.label = label;
             this.description = description;
             this.color = color;
             this.on = on;
+            this.storage = storage;
             this.matches = matches;
         }
     }
 
-    /** Chunks scanned in a tick at most, and waiting for the worker at once. */
+    /** Whether a block is storage, which Storage ESP finds and Block ESP leaves to it. */
+    public static boolean isStorage(Block block) {
+        for (Group g : Group.values()) if (g.storage && g.matches.test(block)) return true;
+        return false;
+    }
+
     /** Chunks looked at each tick and scans waiting at once: high, so a teleport's worth of chunks is done in a moment. */
     private static final int PER_TICK = 256, QUEUE_LIMIT = 1024;
     /** The list is redrawn at most this often while scans stream in (about every other frame). */
@@ -119,65 +133,65 @@ public class BlockESP extends Module {
     // ---- blocks: picked in BlockEspScreen, each with its own colour, kept in the order they were added
     private final Map<Block, Integer> picked = new LinkedHashMap<>();
     /** Bumped whenever a block is picked or dropped (not when a colour changes), so the scan starts over. */
-    private int pickedVersion, builtVersion = -1;
-    private final ButtonSetting blocksButton = add(new ButtonSetting("Blocks",
-            "Pick which blocks to find, from every block in the game, and the colour of each", "Choose",
+    private int pickedVersion, builtVersion = Integer.MIN_VALUE;
+    protected final ButtonSetting blocksButton = add(new ButtonSetting("Blocks",
+            "Pick which blocks to find, and the colour of each", "Choose",
             () -> mc.setScreen(new BlockEspScreen(mc.currentScreen, this))));
 
     // ---- Y level
-    private final ModeSetting yLimit = add(new ModeSetting("Y Limit",
-            "Blocks: only blocks at or below Max Y. You: only while you are at or below Max Y", "Blocks", "Off", "Blocks", "You"));
-    private final NumberSetting maxY = add(new NumberSetting("Max Y", "The height blocks (or you) must be at or below", 0, -64, 320, 1)
+    protected final ModeSetting yLimit = add(new ModeSetting("Y Limit",
+            "Blocks: only blocks at or below Max Y. You: only while you are at or below Max Y", defaultYLimit(), "Off", "Blocks", "You"));
+    protected final NumberSetting maxY = add(new NumberSetting("Max Y", "The height blocks (or you) must be at or below", 0, -64, 320, 1)
             .visible(() -> !yLimit.is("Off")));
 
     // ---- look
-    private final NumberSetting range = add(new NumberSetting("Range", "How far out to look, in loaded chunks", 12, 2, 32, 1).suffix(" chunks"));
-    private final ModeSetting style = add(new ModeSetting("Style", "Boxes filled and outlined, outlined only, or filled only", "Both",
+    protected final NumberSetting range = add(new NumberSetting("Range", "How far out to look, in chunks (only chunks the server has sent you can be seen)", defaultRange(), 2, 64, 1).suffix(" chunks"));
+    protected final ModeSetting style = add(new ModeSetting("Style", "Boxes filled and outlined, outlined only, or filled only", "Both",
             "Both", "Outline", "Fill"));
-    private final ModeSetting colorMode = add(new ModeSetting("Color", "Each kind of block in its own colour, or all in one", "By Block",
+    protected final ModeSetting colorMode = add(new ModeSetting("Color", "Each kind of block in its own colour, or all in one", "By Block",
             "By Block", "One Color"));
-    private final ColorSetting oneColor = add(new ColorSetting("ESP Color", "The colour every box is drawn in", 0xFF7B2CFF)
+    protected final ColorSetting oneColor = add(new ColorSetting("ESP Color", "The colour every box is drawn in", 0xFF7B2CFF)
             .visible(() -> colorMode.is("One Color")));
-    private final NumberSetting fillOpacity = add(new NumberSetting("Fill Opacity", "How solid the boxes' fill is", 22, 0, 100, 1)
+    protected final NumberSetting fillOpacity = add(new NumberSetting("Fill Opacity", "How solid the boxes' fill is", 22, 0, 100, 1)
             .suffix("%").visible(() -> !style.is("Outline")));
-    private final NumberSetting lineWidth = add(new NumberSetting("Line Width", "How thick the boxes' edges are", 2, 0.5, 4, 0.25)
+    protected final NumberSetting lineWidth = add(new NumberSetting("Line Width", "How thick the boxes' edges are", 2, 0.5, 4, 0.25)
             .suffix("px").visible(() -> !style.is("Fill")));
-    private final BooleanSetting throughWalls = add(new BooleanSetting("Through Walls", "See the boxes through blocks", true));
-    private final NumberSetting maxBlocks = add(new NumberSetting("Max Blocks", "Draw at most this many, nearest first", 10000, 100, 50000, 100));
-    private final BooleanSetting smoothEdges = add(new BooleanSetting("Smooth Edges", "A soft feathered edge on the nearest boxes' lines", true));
+    protected final BooleanSetting throughWalls = add(new BooleanSetting("Through Walls", "See the boxes through blocks", true));
+    protected final NumberSetting maxBlocks = add(new NumberSetting("Max Blocks", "Draw at most this many, nearest first", 10000, 100, 50000, 100));
+    protected final BooleanSetting smoothEdges = add(new BooleanSetting("Smooth Edges", "A soft feathered edge on the nearest boxes' lines", true));
 
     // ---- tracers
-    private final BooleanSetting tracers = add(new BooleanSetting("Tracers", "Clean glowing lines from your crosshair to the blocks", true));
-    private final ModeSetting tracerTo = add(new ModeSetting("Tracer To",
+    protected final BooleanSetting tracers = add(new BooleanSetting("Tracers", "Clean glowing lines from your crosshair to the blocks", true));
+    protected final ModeSetting tracerTo = add(new ModeSetting("Tracer To",
             "Each Group: one line to each cluster of the same block (a row of chests gets one), to its nearest. Each Block: a line to every block",
             "Each Group", "Each Group", "Each Block").visible(tracers::get));
-    private final ModeSetting tracerStart = add(new ModeSetting("Tracer Start", "Where the lines start", "Crosshair", "Crosshair", "Bottom")
+    protected final ModeSetting tracerStart = add(new ModeSetting("Tracer Start", "Where the lines start", "Crosshair", "Crosshair", "Bottom")
             .visible(tracers::get));
-    private final ModeSetting tracerColor = add(new ModeSetting("Tracer Color",
+    protected final ModeSetting tracerColor = add(new ModeSetting("Tracer Color",
             "Block matches the box, Distance goes from green to red as you get close", "Block", "Block", "Distance", "Rainbow", "Custom")
             .visible(tracers::get));
-    private final ColorSetting tracerCustom = add(new ColorSetting("Tracer Custom", "Line colour in Custom mode", 0xFFFFFFFF)
+    protected final ColorSetting tracerCustom = add(new ColorSetting("Tracer Custom", "Line colour in Custom mode", 0xFFFFFFFF)
             .visible(() -> tracers.get() && tracerColor.is("Custom")));
-    private final NumberSetting tracerWidth = add(new NumberSetting("Tracer Width", "Line thickness at 1080p (scales with resolution)", 1.5, 0.5, 5, 0.25)
+    protected final NumberSetting tracerWidth = add(new NumberSetting("Tracer Width", "Line thickness at 1080p (scales with resolution)", 1.5, 0.5, 5, 0.25)
             .suffix("px").visible(tracers::get));
-    private final NumberSetting tracerGlow = add(new NumberSetting("Tracer Glow", "How strong the soft glow round each line is", 40, 0, 150, 1)
+    protected final NumberSetting tracerGlow = add(new NumberSetting("Tracer Glow", "How strong the soft glow round each line is", 40, 0, 150, 1)
             .suffix("%").visible(tracers::get));
-    private final BooleanSetting pulses = add(new BooleanSetting("Light Pulses", "Pulses of light travel along each line to its block", false)
+    protected final BooleanSetting pulses = add(new BooleanSetting("Light Pulses", "Pulses of light travel along each line to its block", false)
             .visible(tracers::get));
-    private final NumberSetting pulseSpeed = add(new NumberSetting("Pulse Speed", "How fast the pulses travel", 1, 0.25, 3, 0.05)
+    protected final NumberSetting pulseSpeed = add(new NumberSetting("Pulse Speed", "How fast the pulses travel", 1, 0.25, 3, 0.05)
             .suffix("x").visible(() -> tracers.get() && pulses.get()));
-    private final NumberSetting maxTracers = add(new NumberSetting("Max Tracers", "At most this many lines, nearest first",
+    protected final NumberSetting maxTracers = add(new NumberSetting("Max Tracers", "At most this many lines, nearest first",
             500, 1, BlockEspRenderer.MAX_TRACERS, 1).visible(tracers::get));
 
     // ---- bloom
-    private final BooleanSetting espBloom = add(new BooleanSetting("ESP Bloom", "The boxes glow, their light bleeding out round them", true));
-    private final BooleanSetting tracerBloom = add(new BooleanSetting("Tracer Bloom", "The tracers glow the same way", true));
-    private final NumberSetting bloomStrength = add(new NumberSetting("Bloom Strength", "How bright the glow is", 100, 10, 300, 5)
+    protected final BooleanSetting espBloom = add(new BooleanSetting("ESP Bloom", "The boxes glow, their light bleeding out round them", true));
+    protected final BooleanSetting tracerBloom = add(new BooleanSetting("Tracer Bloom", "The tracers glow the same way", true));
+    protected final NumberSetting bloomStrength = add(new NumberSetting("Bloom Strength", "How bright the glow is", 100, 10, 300, 5)
             .suffix("%").visible(this::bloomOn));
-    private final NumberSetting bloomSize = add(new NumberSetting("Bloom Size", "How far the glow spreads", 1.5, 0.5, 4, 0.1)
+    protected final NumberSetting bloomSize = add(new NumberSetting("Bloom Size", "How far the glow spreads", 1.5, 0.5, 4, 0.1)
             .suffix("x").visible(this::bloomOn));
 
-    private final List<SettingSection> sections;
+    protected final List<SettingSection> sections;
 
     // ---- scanning, on the client thread except where it says
     private record Hits(WorldChunk chunk, Long2ObjectOpenHashMap<Block> blocks) {
@@ -210,8 +224,13 @@ public class BlockESP extends Module {
     private final long start = System.nanoTime();
 
     public BlockESP() {
-        super("Block ESP", "Boxes round the blocks you pick through walls, with glowing tracers, bloom and a Y limit", Category.VISUALS);
-        instance = this;
+        this("Block ESP", "Boxes round the blocks you pick through walls, with glowing tracers, bloom and a Y limit");
+    }
+
+    /** For the modules built on this one (Storage ESP, Hole ESP): the same settings, their own name. */
+    protected BlockESP(String name, String description) {
+        super(name, description, Category.VISUALS);
+        if (getClass() == BlockESP.class && instance == null) instance = this;
         resetBlocks();
         sections = List.of(
                 SettingSection.of("Blocks", blocksButton),
@@ -226,6 +245,21 @@ public class BlockESP extends Module {
         return sections;
     }
 
+    /** The Range a new config starts with. */
+    protected int defaultRange() {
+        return 12;
+    }
+
+    /** The Y Limit a new config starts with. */
+    protected String defaultYLimit() {
+        return "Blocks";
+    }
+
+    /** Which blocks this module may find: everything but storage, which is Storage ESP's. */
+    public boolean allows(Block block) {
+        return block != Blocks.AIR && !isStorage(block);
+    }
+
     @Override
     protected void onEnable() {
         // A few scanners side by side: each chunk is scanned on its own, from its own copy.
@@ -235,7 +269,7 @@ public class BlockESP extends Module {
             thread.setDaemon(true);
             return thread;
         });
-        builtVersion = -1;
+        builtVersion = Integer.MIN_VALUE;
         clearScans();
         MeteorClient.EVENT_BUS.subscribe(this);
     }
@@ -261,15 +295,26 @@ public class BlockESP extends Module {
 
     /** Rebuilds the wanted blocks when the pick changes, and starts the scan over. */
     private void refreshTargets() {
-        if (builtVersion == pickedVersion) return;
-        builtVersion = pickedVersion;
+        int version = scanVersion();
+        if (builtVersion == version) return;
+        builtVersion = version;
         Set<Block> next = Collections.newSetFromMap(new IdentityHashMap<>());
-        next.addAll(picked.keySet());
+        next.addAll(wantedBlocks());
         targets = next;
         clearScans();
     }
 
-    private int drawColorOf(Block block) {
+    /** Changes whenever what is looked for changes, so the scan starts over. */
+    protected int scanVersion() {
+        return pickedVersion;
+    }
+
+    /** The blocks a chunk section must hold to be scanned at all. */
+    protected java.util.Collection<Block> wantedBlocks() {
+        return picked.keySet();
+    }
+
+    protected int drawColorOf(Block block) {
         if (colorMode.is("One Color")) return oneColor.get() | 0xFF000000;
         return colorOf(block);
     }
@@ -292,7 +337,7 @@ public class BlockESP extends Module {
     }
 
     public void pick(Block block) {
-        if (block == null || block == Blocks.AIR || picked.containsKey(block)) return;
+        if (block == null || !allows(block) || picked.containsKey(block)) return;
         picked.put(block, defaultColor(block));
         pickedVersion++;
     }
@@ -311,10 +356,11 @@ public class BlockESP extends Module {
         pickedVersion++;
     }
 
-    /** Back to the starting pick: spawners, chests, shulker boxes, ancient debris and diamond ore. */
+    /** Back to the starting pick: spawners, ancient debris and diamond ore (chests and the like for Storage ESP). */
     public void resetBlocks() {
         picked.clear();
         for (Block block : Registries.BLOCK) {
+            if (!allows(block)) continue;
             for (Group g : Group.values()) {
                 if (g.on && g.matches.test(block)) {
                     picked.put(block, g.color);
@@ -326,12 +372,22 @@ public class BlockESP extends Module {
     }
 
     /** The presets the picker offers: a name and the blocks it adds. */
-    public static List<Map.Entry<String, List<Block>>> presets() {
+    public List<Map.Entry<String, List<Block>>> presetList() {
         List<Map.Entry<String, List<Block>>> out = new ArrayList<>();
         out.add(Map.entry("Spawners", groupBlocks(Group.SPAWNERS)));
-        out.add(Map.entry("Storage", groupBlocks(Group.CHESTS, Group.SHULKERS, Group.ENDER_CHESTS, Group.BARRELS)));
         out.add(Map.entry("Valuables", groupBlocks(Group.DEBRIS, Group.DIAMONDS, Group.EMERALDS)));
         out.add(Map.entry("All Ores", groupBlocks(Group.DIAMONDS, Group.EMERALDS, Group.GOLD, Group.IRON, Group.REDSTONE, Group.LAPIS, Group.DEBRIS)));
+        return out;
+    }
+
+    /** Storage ESP's presets. */
+    protected static List<Map.Entry<String, List<Block>>> storagePresets() {
+        List<Map.Entry<String, List<Block>>> out = new ArrayList<>();
+        out.add(Map.entry("Containers", groupBlocks(Group.CHESTS, Group.SHULKERS, Group.ENDER_CHESTS, Group.BARRELS)));
+        out.add(Map.entry("Shulkers", groupBlocks(Group.SHULKERS)));
+        out.add(Map.entry("Redstone", groupBlocks(Group.HOPPERS, Group.DISPENSERS)));
+        out.add(Map.entry("All Storage", groupBlocks(Group.CHESTS, Group.SHULKERS, Group.ENDER_CHESTS, Group.BARRELS, Group.HOPPERS,
+                Group.DISPENSERS, Group.FURNACES, Group.OTHER_STORAGE)));
         return out;
     }
 
@@ -383,6 +439,8 @@ public class BlockESP extends Module {
             Identifier id = Identifier.tryParse(entry.getKey());
             if (id == null || !Registries.BLOCK.containsId(id)) continue;
             Block block = Registries.BLOCK.get(id);
+            // Storage picked here before Storage ESP existed is Storage ESP's now.
+            if (!allows(block)) continue;
             int color = defaultColor(block);
             try {
                 String hex = entry.getValue().getAsString().replace("#", "");
@@ -440,8 +498,8 @@ public class BlockESP extends Module {
         if (dx * dx + dz * dz > (radius + 0.5) * (radius + 0.5)) return;
         long key = at.toLong();
         // One already being scanned is from before this load; the sweep scans this one when it is back.
-        if (queued.contains(key)) return;
-        scan(chunk, key);
+        if (!queued.contains(key)) scan(chunk, key);
+        chunkLoaded(chunk);
     }
 
     /** Chunk offsets within the radius, nearest first. */
@@ -462,7 +520,7 @@ public class BlockESP extends Module {
         offsetsRadius = radius;
     }
 
-    private WorldChunk loaded(int x, int z) {
+    protected WorldChunk loaded(int x, int z) {
         return mc.world != null && mc.world.getChunkManager().isChunkLoaded(x, z) ? mc.world.getChunk(x, z) : null;
     }
 
@@ -482,8 +540,39 @@ public class BlockESP extends Module {
         }
     }
 
-    private void scan(WorldChunk chunk, long key) {
-        Set<Block> wanted = targets;
+    /** A scan of one chunk, made ready on the game thread and run on a worker. */
+    protected interface ChunkScan {
+        Long2ObjectOpenHashMap<Block> run();
+    }
+
+    protected void scan(WorldChunk chunk, long key) {
+        ChunkScan job = prepareScan(chunk, targets);
+        if (job == null) {
+            Hits old = chunks.put(key, new Hits(chunk, new Long2ObjectOpenHashMap<>(0)));
+            if (old != null && !old.blocks().isEmpty()) dirty = true;
+            return;
+        }
+        long scanSession = session;
+        int version = versions.get(key);
+        queued.add(key);
+        worker.submit(() -> {
+            Long2ObjectOpenHashMap<Block> found;
+            try {
+                found = job.run();
+            } catch (RuntimeException e) {
+                Maro.LOGGER.warn(getName() + " could not scan a chunk", e);
+                found = new Long2ObjectOpenHashMap<>(0);
+            }
+            Long2ObjectOpenHashMap<Block> result = found;
+            mc.execute(() -> publish(key, chunk, result, scanSession, version));
+        });
+    }
+
+    /**
+     * Copies what the worker needs of a chunk (only the sections that hold a wanted block at all) and
+     * returns the scan of it, or null when there is nothing in it to find.
+     */
+    protected ChunkScan prepareScan(WorldChunk chunk, Set<Block> wanted) {
         ChunkSection[] sections = chunk.getSectionArray();
         ChunkSection[] copies = new ChunkSection[sections.length];
         boolean any = false;
@@ -495,43 +584,59 @@ public class BlockESP extends Module {
                 any = true;
             }
         }
-        if (!any) {
-            Hits old = chunks.put(key, new Hits(chunk, new Long2ObjectOpenHashMap<>(0)));
-            if (old != null && !old.blocks().isEmpty()) dirty = true;
-            return;
-        }
+        if (!any) return null;
         int bottom = chunk.getBottomSectionCoord();
         int startX = chunk.getPos().getStartX(), startZ = chunk.getPos().getStartZ();
-        long scanSession = session;
-        int version = versions.get(key);
-        queued.add(key);
-        worker.submit(() -> {
+        return () -> {
             Long2ObjectOpenHashMap<Block> found = new Long2ObjectOpenHashMap<>();
-            try {
-                for (int i = 0; i < copies.length; i++) {
-                    ChunkSection section = copies[i];
-                    if (section == null) continue;
-                    int baseY = (bottom + i) << 4;
-                    Block last = null;
-                    boolean lastWanted = false;
-                    for (int y = 0; y < 16; y++) {
-                        for (int z = 0; z < 16; z++) {
-                            for (int x = 0; x < 16; x++) {
-                                Block block = section.getBlockState(x, y, z).getBlock();
-                                if (block != last) {
-                                    last = block;
-                                    lastWanted = wanted.contains(block);
-                                }
-                                if (lastWanted) found.put(BlockPos.asLong(startX + x, baseY + y, startZ + z), block);
+            for (int i = 0; i < copies.length; i++) {
+                ChunkSection section = copies[i];
+                if (section == null) continue;
+                int baseY = (bottom + i) << 4;
+                Block last = null;
+                boolean lastWanted = false;
+                for (int y = 0; y < 16; y++) {
+                    for (int z = 0; z < 16; z++) {
+                        for (int x = 0; x < 16; x++) {
+                            Block block = section.getBlockState(x, y, z).getBlock();
+                            if (block != last) {
+                                last = block;
+                                lastWanted = wanted.contains(block);
                             }
+                            if (lastWanted) found.put(BlockPos.asLong(startX + x, baseY + y, startZ + z), block);
                         }
                     }
                 }
-            } catch (RuntimeException e) {
-                Maro.LOGGER.warn("Block ESP could not scan a chunk", e);
             }
-            mc.execute(() -> publish(key, chunk, found, scanSession, version));
-        });
+            return found;
+        };
+    }
+
+    /** Throws away what was found in a chunk and scans it again (now, if it is loaded). */
+    protected void rescan(long key) {
+        if (queued.contains(key)) {
+            versions.addTo(key, 1);
+            Hits old = chunks.remove(key);
+            if (old != null && !old.blocks().isEmpty()) dirty = true;
+            return;
+        }
+        Hits old = chunks.remove(key);
+        if (old != null && !old.blocks().isEmpty()) dirty = true;
+        WorldChunk chunk = loaded(ChunkPos.getPackedX(key), ChunkPos.getPackedZ(key));
+        if (chunk != null && worker != null && !targets.isEmpty()) scan(chunk, key);
+    }
+
+    /** A chunk was loaded and has been sent for scanning; for modules that also look at its neighbours. */
+    protected void chunkLoaded(WorldChunk chunk) {
+    }
+
+    /** A block changed; true when the module has dealt with it itself. */
+    protected boolean blockChanged(BlockUpdateEvent event) {
+        return false;
+    }
+
+    /** A chunk's scan was taken; for modules that tell you about new finds. */
+    protected void published(long key, Long2ObjectOpenHashMap<Block> found) {
     }
 
     private void publish(long key, WorldChunk chunk, Long2ObjectOpenHashMap<Block> found, long scanSession, int version) {
@@ -542,6 +647,7 @@ public class BlockESP extends Module {
         if (loaded(ChunkPos.getPackedX(key), ChunkPos.getPackedZ(key)) != chunk || versions.get(key) != version) return;
         chunks.put(key, new Hits(chunk, found));
         if (!found.isEmpty()) dirty = true;
+        published(key, found);
     }
 
     /** Drops chunks out of range, unloaded or replaced. */
@@ -562,6 +668,7 @@ public class BlockESP extends Module {
     /** Keeps the list up to date as blocks are placed and broken, without scanning again. */
     @EventHandler
     private void onBlockUpdate(BlockUpdateEvent event) {
+        if (worker == null || blockChanged(event)) return;
         Set<Block> wanted = targets;
         boolean was = wanted.contains(event.oldState.getBlock()), now = wanted.contains(event.newState.getBlock());
         if (!was && !now) return;
@@ -699,7 +806,7 @@ public class BlockESP extends Module {
         if (yLimit.is("You") && mc.player.getY() > maxY.get()) return;
 
         boolean boxGlow = espBloom.get(), lineGlow = tracerBloom();
-        if (boxGlow || lineGlow) BlockEspRenderer.prepareGlow();
+        if (boxGlow || lineGlow) BlockEspRenderer.prepareGlow(this);
         renderer.throughWalls(throughWalls.get());
         renderer.lineWidth(lineWidth.getFloat());
         ShapeMode mode = style.is("Outline") ? ShapeMode.Lines : style.is("Fill") ? ShapeMode.Sides : ShapeMode.Both;
@@ -750,7 +857,7 @@ public class BlockESP extends Module {
                 double distance = Math.sqrt(mc.player.squaredDistanceTo(cx, cy, cz));
                 float weight = (float) Math.max(0.4, 1 - distance / Math.max(1, reach) * 0.6);
                 int color = drawColorOf(shownBlocks[i]);
-                BlockEspRenderer.addTracer(cx, cy, cz, camera, tracerColorOf(color, distance / Math.max(1, reach), t, seconds), weight);
+                BlockEspRenderer.addTracer(this, cx, cy, cz, camera, tracerColorOf(color, distance / Math.max(1, reach), t, seconds), weight);
             }
         }
         renderer.throughWalls(true);
@@ -767,7 +874,7 @@ public class BlockESP extends Module {
     }
 
     /** The block's outline, for chests and other blocks smaller than a whole block; a full block otherwise. */
-    private Box shapeOf(Block block) {
+    protected Box shapeOf(Block block) {
         return shapes.computeIfAbsent(block, b -> {
             try {
                 VoxelShape shape = b.getDefaultState().getOutlineShape(EmptyBlockView.INSTANCE, BlockPos.ORIGIN);
@@ -806,7 +913,7 @@ public class BlockESP extends Module {
         return tracers.get() && tracerBloom.get();
     }
 
-    private boolean bloomOn() {
+    public boolean bloomOn() {
         return espBloom.get() || tracerBloom.get();
     }
 

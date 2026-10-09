@@ -78,11 +78,13 @@ public final class BlockEspScreen extends Screen {
     private float px, py, pw, ph, gridX, gridY, gridW, gridH, listX, listY, listW, listH;
 
     public BlockEspScreen(Screen parent, BlockESP module) {
-        super(Text.literal("Block ESP blocks"));
+        super(Text.literal(module.getName() + " blocks"));
         this.parent = parent;
         this.module = module;
         for (Block block : Registries.BLOCK) {
             if (block == Blocks.AIR || block == Blocks.CAVE_AIR || block == Blocks.VOID_AIR) continue;
+            // Only what this module finds: Block ESP leaves storage to Storage ESP, which has only storage.
+            if (!module.allows(block)) continue;
             all.add(block);
             names.put(block, block.getName().getString());
         }
@@ -422,7 +424,7 @@ public final class BlockEspScreen extends Screen {
         float x = px + 16;
         Fonts.drawV(ctx, "ADD", x, y + h / 2f, Theme.TEXT_MUTED, true, 0.6f);
         x += Fonts.width("ADD", true, 0.6f) + 8;
-        for (Map.Entry<String, List<Block>> preset : BlockESP.presets()) {
+        for (Map.Entry<String, List<Block>> preset : module.presetList()) {
             String label = preset.getKey();
             boolean all = !preset.getValue().isEmpty() && preset.getValue().stream().allMatch(module::isPicked);
             float w = Fonts.width(label, false, 0.66f) + 22;
