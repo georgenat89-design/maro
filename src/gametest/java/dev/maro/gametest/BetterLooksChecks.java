@@ -52,6 +52,13 @@ final class BetterLooksChecks {
             });
             context.waitTicks(3);
             context.takeScreenshot("maro-better-looks-color");
+            // The sections list stays inside its box, scrolling on a short window.
+            context.runOnClient(c -> {
+                float[] a = screen.sectionsArea();
+                screen.mouseScrolled(a[0] + 10, a[1] + 10, 0, -20);
+            });
+            context.waitTicks(3);
+            context.takeScreenshot("maro-better-looks-sections");
 
             // Their own modules are no longer listed: their settings are here.
             context.runOnClient(c -> {

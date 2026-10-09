@@ -89,6 +89,7 @@ public final class BetterLooksScreen extends Screen {
 
     private final List<Hit> hits = new ArrayList<>();
     private float px, py, pw, ph, listTop, listBottom;
+    private float sideScroll, sideLeft, sideRight, sideTop, sideBottom;
 
     public BetterLooksScreen(Screen parent, BetterLooks module) {
         super(Text.literal("Better Looks"));
@@ -130,6 +131,11 @@ public final class BetterLooksScreen extends Screen {
     public void search(String words) {
         query = words;
         scrollTarget = scroll = 0;
+    }
+
+    /** The sections list's area, left, top, right and bottom; for tests. */
+    public float[] sectionsArea() {
+        return new float[] {sideLeft, sideTop, sideRight, sideBottom};
     }
 
     public List<String> sectionTitles() {
@@ -219,26 +225,45 @@ public final class BetterLooksScreen extends Screen {
         Render2D.roundRect(ctx, x, y, w, h, 9, 0xFF0F1219);
         Render2D.roundOutline(ctx, x, y, w, h, 9, 1, 0x14FFFFFF);
         Fonts.drawV(ctx, "Sections", x + 10, y + 13, Theme.TEXT_MUTED, false, 0.62f);
-        float iy = y + 24;
+        // On a short window the rows close up a little, then scroll once they can close up no more.
+        int n = cards.size() + 1;
+        sideLeft = x;
+        sideRight = x + w;
+        sideTop = y + 22;
+        sideBottom = y + h - 6;
+        float avail = sideBottom - sideTop - 2;
+        float step = Math.max(19, Math.min(24, avail / n)), rowH = step - 4;
+        float maxScroll = Math.max(0, n * step - 4 - avail);
+        sideScroll = Math.max(0, Math.min(maxScroll, sideScroll));
+        Render2D.clip(ctx, Math.round(x + 1), Math.round(sideTop), Math.round(x + w - 1), Math.round(sideBottom));
+        float iy = sideTop + 2 - sideScroll;
         String q = query.trim();
         for (int i = -1; i < cards.size(); i++) {
-            String title = i < 0 ? "All Settings" : cards.get(i).title();
-            int count = shownRows(i);
-            boolean sel = section == i;
-            boolean hov = inside(mx, my, x + 6, iy, w - 12, 20);
-            Render2D.roundRect(ctx, x + 6, iy, w - 12, 20, 6, sel ? Theme.accent(0xD0) : hov ? 0xFF1F2430 : 0xFF161A23);
-            Render2D.roundOutline(ctx, x + 6, iy, w - 12, 20, 6, 1, sel ? Theme.accent(0xFF) : 0x16FFFFFF);
-            Fonts.drawV(ctx, title, x + 14, iy + 10, sel ? 0xFFFFFFFF : Theme.TEXT_DIM, false, 0.68f);
-            String n = String.valueOf(count);
-            float nw = Fonts.width(n, false, 0.56f) + 8;
-            Render2D.roundRect(ctx, x + w - 12 - nw, iy + 4.5f, nw, 11, 3.5f, sel ? 0x40FFFFFF : 0xFF222736);
-            Fonts.drawCentered(ctx, n, x + w - 12 - nw / 2f, iy + 10, sel ? 0xFFFFFFFF : (q.isEmpty() || count > 0 ? Theme.TEXT_DIM : Theme.TEXT_MUTED), false, 0.56f);
-            final int index = i;
-            hit(x + 6, iy, w - 12, 20, (hx, hy, b) -> {
-                showSection(index);
-                Sounds.click();
-            });
-            iy += 24;
+            if (iy + rowH >= sideTop && iy <= sideBottom) {
+                String title = i < 0 ? "All Settings" : cards.get(i).title();
+                int count = shownRows(i);
+                boolean sel = section == i;
+                boolean hov = inside(mx, my, x + 6, iy, w - 12, rowH) && my >= sideTop && my < sideBottom;
+                Render2D.roundRect(ctx, x + 6, iy, w - 12, rowH, 6, sel ? Theme.accent(0xD0) : hov ? 0xFF1F2430 : 0xFF161A23);
+                Render2D.roundOutline(ctx, x + 6, iy, w - 12, rowH, 6, 1, sel ? Theme.accent(0xFF) : 0x16FFFFFF);
+                Fonts.drawV(ctx, title, x + 14, iy + rowH / 2f, sel ? 0xFFFFFFFF : Theme.TEXT_DIM, false, 0.68f);
+                String c = String.valueOf(count);
+                float nw = Fonts.width(c, false, 0.56f) + 8;
+                Render2D.roundRect(ctx, x + w - 12 - nw, iy + rowH / 2f - 5.5f, nw, 11, 3.5f, sel ? 0x40FFFFFF : 0xFF222736);
+                Fonts.drawCentered(ctx, c, x + w - 12 - nw / 2f, iy + rowH / 2f, sel ? 0xFFFFFFFF : (q.isEmpty() || count > 0 ? Theme.TEXT_DIM : Theme.TEXT_MUTED), false, 0.56f);
+                float top = Math.max(iy, sideTop), bottom = Math.min(iy + rowH, sideBottom);
+                final int index = i;
+                if (bottom > top) hit(x + 6, top, w - 12, bottom - top, (hx, hy, b) -> {
+                    showSection(index);
+                    Sounds.click();
+                });
+            }
+            iy += step;
+        }
+        Render2D.unclip(ctx);
+        if (maxScroll > 0) {
+            float viewH = sideBottom - sideTop, bar = Math.max(14, viewH * viewH / (viewH + maxScroll));
+            Render2D.roundRect(ctx, x + w - 4, sideTop + (viewH - bar) * (sideScroll / maxScroll), 2, bar, 1, Theme.accent(0x90));
         }
         // A tip at the bottom.
         float ty = y + h - 36;
@@ -563,7 +588,8 @@ public final class BetterLooksScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mx, double my, double horizontal, double vertical) {
-        scrollTarget -= (float) vertical * 30;
+        if (mx >= sideLeft && mx < sideRight && my >= sideTop && my < sideBottom) sideScroll -= (float) vertical * 24;
+        else scrollTarget -= (float) vertical * 30;
         return true;
     }
 
