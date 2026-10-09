@@ -3263,12 +3263,9 @@ public final class AutoBuilder extends Module {
         });
     }
     private void abandonHopperCut(BlockPos blocked){
-        mining=routeMining=routeOpening=descentPost=descentView=standGoal=null;
-        passageBlocks.clear();passageStand=null;liquidTopBlocks.clear();liquidTopStand=null;
-        ceilingBase=ceilingTop=null;ceilingBlocks.clear();clearEntryPassage();
-        accessStand=accessBase=null;accessFloor=false;accessSupports.clear();accessStairs=accessColumn=Set.of();
+        resetAccessRouting();routeOpening=null;
         floorAccessWork.remove(blocked);openingRepairDepth.remove(blocked);
-        viewSearches.clear();floorProbes.clear();descentEscapes.clear();hatchSearchFeet=null;
+        descentEscapes.clear();hatchSearchFeet=null;
         digging=false;releaseSneak();walker.stop();mc.interactionManager.cancelBlockBreaking();
         status="Keeping blocks above hoppers — checking another route";
     }

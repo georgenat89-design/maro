@@ -283,8 +283,10 @@ final class BuilderHomeChecks {
             BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);BuilderPacketChecks.expectIntactBlocks(Set.of(beam,upper));builder.startBuild();
             @SuppressWarnings("unchecked")var openings=(Map<BlockPos,Integer>)field(builder,"floorAccessWork");openings.put(beam,10);
             @SuppressWarnings("unchecked")var passage=(Set<BlockPos>)field(builder,"passageBlocks");passage.add(beam);setField(builder,"passageStand",client.player.getBlockPos());setField(builder,"routeMining",beam);setField(builder,"mining",beam);
+            setField(builder,"descentLanding",true);setField(builder,"recoveryPhase",2);setField(builder,"recoveryJump",true);client.options.jumpKey.setPressed(true);
             call(builder,"mineTick",new Class<?>[]{});
             require(field(builder,"mining")==null&&field(builder,"routeMining")==null&&passage.isEmpty()&&builder.status().startsWith("Keeping blocks above hoppers"),"A stale verified route bypassed the final hopper mining guard: "+builder.status());
+            require(!(boolean)field(builder,"descentLanding")&&(int)field(builder,"recoveryPhase")==0&&!client.options.jumpKey.isPressed(),"Rejected hopper route retained its stale descent or jump");
         });
         int elapsed=0;
         for(;elapsed<600&&context.computeOnClient(client->builder.building());elapsed++){
