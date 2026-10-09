@@ -46,6 +46,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.HoleESP());
         register(new dev.maro.module.impl.visuals.Nametags());
         register(new dev.maro.module.impl.visuals.Trajectories());
+        register(new dev.maro.module.impl.visuals.HandShader());
         register(new dev.maro.module.impl.visuals.SpawnerNotifier());
         register(new dev.maro.module.impl.visuals.BetterTextures());
         register(new dev.maro.module.impl.visuals.BetterLooks());

@@ -39,6 +39,7 @@
     "FakeBlockNameMixin",
     "NametagsMixins$HideLabel",
     "NametagsMixins$Pops",
+    "HandShaderMixin",
     "EntityRenderStateMixin",
     "EntityRenderManagerMixin",
     "OrderedRenderCommandQueueImplAccessor",
