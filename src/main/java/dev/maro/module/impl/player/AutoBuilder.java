@@ -1955,13 +1955,17 @@ public final class AutoBuilder extends Module {
                 for(int dx=-6;dx<=6;dx++)for(int dz=-6;dz<=6;dz++)
                     unique.add(new EntryCandidate(destination.add(dx,dy,dz),destination));
             }
-            entryCandidates=unique.stream().sorted(Comparator.comparingDouble(c->c.top.getSquaredDistance(feet))).toList();
+            // A nearby isolated column can still leave the player far from the
+            // entrance. Rank the complete approach plus onward journey, then
+            // keep the native collision proof as the authority to commit it.
+            entryCandidates=unique.stream().sorted(Comparator.<EntryCandidate>comparingInt(c->c.top.getManhattanDistance(feet)+c.top.getManhattanDistance(c.destination))
+                .thenComparingDouble(c->c.top.getSquaredDistance(feet))).toList();
         }
         if(ticks<entryRetryAt)return false;
         // The early clear-route pass is a preference, not an exhaustive search
         // of thousands of columns inside a sealed room. Try nearby candidates
         // before handing the same work to the fully proved entrance planner.
-        int total=allowOpenings?entryCandidates.size():Math.min(192,entryCandidates.size());long deadline=System.nanoTime()+3_000_000;
+        int total=allowOpenings?entryCandidates.size():Math.min(64,entryCandidates.size());long deadline=System.nanoTime()+3_000_000;
         while(entrySearchCursor<total&&System.nanoTime()<deadline){
             if(entryProbeCursor!=entrySearchCursor){entryProbeCursor=entrySearchCursor;entryProbeBase=null;entryDoorCursor=0;}
             var candidate=entryCandidates.get(entrySearchCursor++);var top=candidate.top;var destination=candidate.destination;
