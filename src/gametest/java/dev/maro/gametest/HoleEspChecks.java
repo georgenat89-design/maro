@@ -61,14 +61,17 @@ final class HoleEspChecks {
         var position = context.computeOnClient(c -> c.player.getEntityPos());
         float[] angles = context.computeOnClient(c -> new float[] {c.player.getYaw(), c.player.getPitch()});
         var perspective = context.computeOnClient(c -> c.options.getPerspective());
+        var gameMode = world.getServer().computeOnServer(s -> s.getPlayerManager().getPlayerList().getFirst().interactionManager.getGameMode());
         try {
+            // Creative and on the ground, so nothing here can hurt the player for the tests after.
+            world.getServer().runCommand("gamemode creative @a");
             world.getServer().runCommand("fill 36 -42 36 62 -36 44 minecraft:air");
             hole(world, "minecraft:bedrock", SINGLE);
             hole(world, "minecraft:bedrock", DOUBLE_A, DOUBLE_B);
             hole(world, "minecraft:bedrock", OPEN);
             world.getServer().runCommand("setblock " + at(OPEN.east()) + " minecraft:air");
             hole(world, "minecraft:obsidian", OBSIDIAN);
-            world.getServer().runCommand("tp @a 49 -34 30 0 35");
+            world.getServer().runCommand("tp @a 49 -60 30 0 -20");
             context.waitTicks(10);
             context.runOnClient(c -> {
                 c.options.setPerspective(Perspective.FIRST_PERSON);
@@ -97,6 +100,7 @@ final class HoleEspChecks {
             });
             world.getServer().runCommand("fill 36 -42 36 62 -36 44 minecraft:air");
             world.getServer().runCommand("tp @a " + position.x + " " + position.y + " " + position.z + " " + angles[0] + " " + angles[1]);
+            world.getServer().runOnServer(s -> s.getPlayerManager().getPlayerList().getFirst().changeGameMode(gameMode));
             context.waitTicks(5);
         }
     }

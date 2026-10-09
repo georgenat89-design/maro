@@ -28,6 +28,7 @@ final class TrajectoriesChecks {
         require(module != null, "Trajectories was not registered");
         Perspective perspective = context.computeOnClient(c -> c.options.getPerspective());
         var position = context.computeOnClient(c -> c.player.getEntityPos());
+        var gameMode = world.getServer().computeOnServer(s -> s.getPlayerManager().getPlayerList().getFirst().interactionManager.getGameMode());
         try {
             world.getServer().runCommand("gamemode creative @a");
             context.runOnClient(c -> {
@@ -83,6 +84,7 @@ final class TrajectoriesChecks {
             });
             world.getServer().runCommand("kill @e[type=minecraft:arrow]");
             world.getServer().runCommand("tp @a " + position.x + " " + position.y + " " + position.z);
+            world.getServer().runOnServer(s -> s.getPlayerManager().getPlayerList().getFirst().changeGameMode(gameMode));
             context.waitTicks(3);
         }
     }
