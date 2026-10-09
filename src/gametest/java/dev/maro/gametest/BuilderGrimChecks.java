@@ -84,6 +84,8 @@ final class BuilderGrimChecks {
             }
         }finally{
             context.runOnClient(client->{BuilderPacketChecks.recording=false;BuilderBlockDelay.release();builder.pause("Grim tests finished");builder.setEnabled(false);});
+            context.runOnClient(client->{if(client.world!=null)client.world.disconnect(net.minecraft.text.Text.literal("Grim fixture finished"));client.disconnectWithSavingScreen();});
+            context.waitFor(client->client.world==null);context.setScreen(net.minecraft.client.gui.screen.TitleScreen::new);
         }
     }
     private static void requireActive(Properties actual){require(actual.getProperty("grimStarted").equals("true")&&actual.getProperty("grimUser").equals("true")&&Integer.parseInt(actual.getProperty("enabledChecks"))>20,"Grim is not actively checking the native player: "+actual);for(String permission:List.of("op","exempt","noModifyPacket","noSetback"))require(actual.getProperty(permission).equals("false"),"Fixture bypass permission: "+permission);}
