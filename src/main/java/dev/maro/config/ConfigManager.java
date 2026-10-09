@@ -54,6 +54,7 @@ public final class ConfigManager {
         }
         loadClient();
         if (exists(current)) load(current);
+        else for (Module m : ModuleManager.all()) if (m.enabledByDefault()) m.setEnabled(true);
     }
 
     public static String getCurrent() {
@@ -134,7 +135,8 @@ public final class ConfigManager {
         JsonObject modules = root.has("modules") && root.get("modules").isJsonObject() ? root.getAsJsonObject("modules") : new JsonObject();
         for (Module m : ModuleManager.all()) {
             if (!modules.has(m.getName()) || !modules.get(m.getName()).isJsonObject()) {
-                m.setEnabled(false);
+                // Never saved in this config: as it comes (on, for one that starts on).
+                m.setEnabled(m.enabledByDefault());
                 continue;
             }
             JsonObject o = modules.getAsJsonObject(m.getName());

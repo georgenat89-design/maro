@@ -10,7 +10,10 @@ import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.ParticleManager;
 import net.minecraft.client.render.Frustum;
 import net.minecraft.client.render.GameRenderer;
+import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.WeatherRendering;
+import net.minecraft.client.texture.Sprite;
+import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.client.render.entity.EntityRenderManager;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
@@ -40,8 +43,20 @@ public final class NoRenderMixins {
     @Mixin(InGameOverlayRenderer.class)
     public abstract static class Overlays {
         @Inject(method = "renderFireOverlay", at = @At("HEAD"), cancellable = true)
-        private static void maro$fire(CallbackInfo ci) {
-            if (NoRender.hides(Part.FIRE)) ci.cancel();
+        private static void maro$fire(MatrixStack matrices, VertexConsumerProvider consumers, Sprite sprite, CallbackInfo ci) {
+            if (NoRender.hides(Part.FIRE)) {
+                ci.cancel();
+                return;
+            }
+            // Better Looks' Low Fire: moved down while drawn, and back after.
+            float drop = dev.maro.module.impl.visuals.BetterLooks.fireDrop();
+            if (drop > 0) matrices.translate(0, -drop, 0);
+        }
+
+        @Inject(method = "renderFireOverlay", at = @At("RETURN"))
+        private static void maro$fireAfter(MatrixStack matrices, VertexConsumerProvider consumers, Sprite sprite, CallbackInfo ci) {
+            float drop = dev.maro.module.impl.visuals.BetterLooks.fireDrop();
+            if (drop > 0) matrices.translate(0, drop, 0);
         }
 
         @Inject(method = "renderUnderwaterOverlay", at = @At("HEAD"), cancellable = true)
@@ -137,6 +152,8 @@ public final class NoRenderMixins {
                                      CallbackInfoReturnable<Particle> cir) {
             if (NoRender.hides(Part.EXPLOSIONS)
                     && (effect.getType() == ParticleTypes.EXPLOSION || effect.getType() == ParticleTypes.EXPLOSION_EMITTER)) {
+                cir.setReturnValue(null);
+            } else if (dev.maro.module.impl.visuals.BetterLooks.dropParticle(effect.getType())) {
                 cir.setReturnValue(null);
             }
         }

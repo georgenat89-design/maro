@@ -22,7 +22,10 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.misc.ScreenHider());
         register(new dev.maro.module.impl.misc.BlockDisconnect());
         register(new dev.maro.module.impl.misc.CoordSnapper());
+        register(new dev.maro.module.impl.misc.DiscordPresence());
+        register(new dev.maro.module.impl.misc.AutoGoliath());
         register(new dev.maro.module.impl.player.FastPlace());
+        register(new dev.maro.module.impl.player.FakePlayer());
         register(new dev.maro.module.impl.player.AutoMine());
         register(new dev.maro.module.impl.player.AutoBuilder());
         register(new dev.maro.module.impl.player.CrafterDisabler());
@@ -41,6 +44,8 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.BlockESP());
         register(new dev.maro.module.impl.visuals.SpawnerNotifier());
         register(new dev.maro.module.impl.visuals.BetterTextures());
+        register(new dev.maro.module.impl.visuals.BetterLooks());
+        register(new dev.maro.module.impl.visuals.FakeBlock());
         register(new dev.maro.module.impl.visuals.PlayerESP());
         register(new dev.maro.module.impl.visuals.CustomSky());
         register(new dev.maro.module.impl.visuals.CustomTotem());

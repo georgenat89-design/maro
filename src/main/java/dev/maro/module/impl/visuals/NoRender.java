@@ -75,7 +75,7 @@ public class NoRender extends Module {
     /** Whether this part is hidden right now. Cheap: called from render code every frame. */
     public static boolean hides(Part part) {
         NoRender m = instance;
-        return m != null && m.isEnabled() && m.parts[part.ordinal()].get();
+        return m != null && m.isEnabled() && m.parts[part.ordinal()].get() || BetterLooks.hides(part);
     }
 
     public static NoRender get() {

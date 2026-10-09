@@ -46,7 +46,19 @@
     "PotatoTexturesMixin",
     "CustomTotemSpriteMixin",
     "CustomTotemPopMixin",
-    "EmoteModelMixin"
+    "EmoteModelMixin",
+    "BetterLooksMixins$Sky",
+    "BetterLooksMixins$Clouds",
+    "BetterLooksMixins$Rain",
+    "BetterLooksMixins$Underwater",
+    "BetterLooksMixins$Glint",
+    "BetterLooksMixins$Menus",
+    "BetterLooksMixins$Toasts",
+    "BetterLooksMixins$WaterFog",
+    "BetterLooksMixins$Shadows",
+    "FakePlayerAttackMixin",
+    "ItemLooksMixin",
+    "FakeBlockWorldMixin"
   ],
   "injectors": {
     "defaultRequire": 1

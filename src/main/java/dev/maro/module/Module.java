@@ -95,6 +95,11 @@ public abstract class Module {
         return null;
     }
 
+    /** Whether the module is on in a config that has never saved it: true for ones that should start with the client. */
+    public boolean enabledByDefault() {
+        return false;
+    }
+
     public com.google.gson.JsonObject saveExtra() { return new com.google.gson.JsonObject(); }
     public void loadExtra(com.google.gson.JsonObject data) { }
 

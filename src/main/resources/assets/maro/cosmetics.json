@@ -1,0 +1,502 @@
+[
+ {
+  "kind": "sword",
+  "id": "sword_phoenix_grace",
+  "name": "Phoenix Grace"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_abominable_great_saber",
+  "name": "Abominable Great Saber"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_abominable_blade",
+  "name": "Abominable Blade"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_abominable_scythe",
+  "name": "Abominable Scythe"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_acidic_cleaver",
+  "name": "Acidic Cleaver"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_amethyst_shuriken",
+  "name": "Amethyst Shuriken"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_ancient_royal_great_sword",
+  "name": "Ancient Royal Great Sword"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_arcane_rapier",
+  "name": "Arcane Rapier"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_ashen_katana",
+  "name": "Ashen Katana"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_blood_moon_saber",
+  "name": "Blood Moon Saber"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_celestial_edge",
+  "name": "Celestial Edge"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_cherry_blossom_katana",
+  "name": "Cherry Blossom Katana"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_copper_rustblade",
+  "name": "Copper Rustblade"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_crimson_fang",
+  "name": "Crimson Fang"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_crystal_longsword",
+  "name": "Crystal Longsword"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_cyber_katana",
+  "name": "Cyber Katana"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_diamond_claymore",
+  "name": "Diamond Claymore"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_dragonbone_cleaver",
+  "name": "Dragonbone Cleaver"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_echo_reaver",
+  "name": "Echo Reaver"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_emerald_rapier",
+  "name": "Emerald Rapier"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_ember_dagger",
+  "name": "Ember Dagger"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_frostbite_edge",
+  "name": "Frostbite Edge"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_galaxy_blade",
+  "name": "Galaxy Blade"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_glacier_greatsword",
+  "name": "Glacier Greatsword"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_golden_sovereign",
+  "name": "Golden Sovereign"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_hellfire_scythe",
+  "name": "Hellfire Scythe"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_inferno_saber",
+  "name": "Inferno Saber"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_jade_serpent",
+  "name": "Jade Serpent"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_lava_cleaver",
+  "name": "Lava Cleaver"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_lightning_katana",
+  "name": "Lightning Katana"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_midnight_rapier",
+  "name": "Midnight Rapier"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_molten_edge",
+  "name": "Molten Edge"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_nebula_scythe",
+  "name": "Nebula Scythe"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_netherite_executioner",
+  "name": "Netherite Executioner"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_ocean_s_wrath",
+  "name": "Ocean's Wrath"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_obsidian_fang",
+  "name": "Obsidian Fang"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_prismarine_saber",
+  "name": "Prismarine Saber"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_radiant_paladin_sword",
+  "name": "Radiant Paladin Sword"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_ruby_cutlass",
+  "name": "Ruby Cutlass"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_sakura_petal_blade",
+  "name": "Sakura Petal Blade"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_sapphire_longsword",
+  "name": "Sapphire Longsword"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_shadow_reaper_scythe",
+  "name": "Shadow Reaper Scythe"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_solar_flare_blade",
+  "name": "Solar Flare Blade"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_storm_breaker",
+  "name": "Storm Breaker"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_toxic_venom_dagger",
+  "name": "Toxic Venom Dagger"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_void_ripper",
+  "name": "Void Ripper"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_warped_cleaver",
+  "name": "Warped Cleaver"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_wither_bane",
+  "name": "Wither Bane"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_wyvern_fang_shuriken",
+  "name": "Wyvern Fang Shuriken"
+ },
+ {
+  "kind": "sword",
+  "id": "sword_zenith_greatsword",
+  "name": "Zenith Greatsword"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_abyssal_pickaxe",
+  "name": "Abyssal Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_amethyst_pickaxe",
+  "name": "Amethyst Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_arctic_pickaxe",
+  "name": "Arctic Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_blaze_pickaxe",
+  "name": "Blaze Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_celestial_pickaxe",
+  "name": "Celestial Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_cobalt_pickaxe",
+  "name": "Cobalt Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_copper_pickaxe",
+  "name": "Copper Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_crystal_pickaxe",
+  "name": "Crystal Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_dragonbone_pickaxe",
+  "name": "Dragonbone Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_ember_pickaxe",
+  "name": "Ember Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_emerald_pickaxe",
+  "name": "Emerald Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_frostbite_pickaxe",
+  "name": "Frostbite Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_galaxy_pickaxe",
+  "name": "Galaxy Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_gilded_pickaxe",
+  "name": "Gilded Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_jade_pickaxe",
+  "name": "Jade Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_lava_pickaxe",
+  "name": "Lava Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_lunar_pickaxe",
+  "name": "Lunar Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_netherite_pickaxe",
+  "name": "Netherite Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_obsidian_pickaxe",
+  "name": "Obsidian Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_phoenix_pickaxe",
+  "name": "Phoenix Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_prismarine_pickaxe",
+  "name": "Prismarine Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_ruby_pickaxe",
+  "name": "Ruby Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_sculk_pickaxe",
+  "name": "Sculk Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_thunder_pickaxe",
+  "name": "Thunder Pickaxe"
+ },
+ {
+  "kind": "pickaxe",
+  "id": "pickaxe_void_pickaxe",
+  "name": "Void Pickaxe"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_abyssal_shovel",
+  "name": "Abyssal Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_amethyst_shovel",
+  "name": "Amethyst Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_arctic_shovel",
+  "name": "Arctic Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_blaze_shovel",
+  "name": "Blaze Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_celestial_shovel",
+  "name": "Celestial Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_cobalt_shovel",
+  "name": "Cobalt Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_copper_shovel",
+  "name": "Copper Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_crystal_shovel",
+  "name": "Crystal Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_dragonbone_shovel",
+  "name": "Dragonbone Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_ember_shovel",
+  "name": "Ember Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_emerald_shovel",
+  "name": "Emerald Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_frostbite_shovel",
+  "name": "Frostbite Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_galaxy_shovel",
+  "name": "Galaxy Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_gilded_shovel",
+  "name": "Gilded Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_jade_shovel",
+  "name": "Jade Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_lava_shovel",
+  "name": "Lava Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_lunar_shovel",
+  "name": "Lunar Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_netherite_shovel",
+  "name": "Netherite Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_obsidian_shovel",
+  "name": "Obsidian Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_phoenix_shovel",
+  "name": "Phoenix Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_prismarine_shovel",
+  "name": "Prismarine Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_ruby_shovel",
+  "name": "Ruby Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_sculk_shovel",
+  "name": "Sculk Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_thunder_shovel",
+  "name": "Thunder Shovel"
+ },
+ {
+  "kind": "shovel",
+  "id": "shovel_void_shovel",
+  "name": "Void Shovel"
+ }
+]

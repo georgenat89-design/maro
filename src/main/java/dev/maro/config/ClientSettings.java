@@ -33,6 +33,10 @@ public final class ClientSettings {
 
     public static final SettingSection BEHAVIOUR = new SettingSection("Behaviour");
     public static final BooleanSetting uiSounds = BEHAVIOUR.add(new BooleanSetting("UI Sounds", "Play a click when toggling things", true));
+    public static final ModeSetting uiSound = BEHAVIOUR.add(new ModeSetting("Click Sound", "The sound a click makes", "Click", "Click", "Soft", "Tick", "Pop")
+            .visible(uiSounds::get));
+    public static final NumberSetting uiVolume = BEHAVIOUR.add(new NumberSetting("Sound Volume", "How loud menu clicks are (the game's Master volume applies too)", 70, 5, 100, 5)
+            .suffix("%").visible(uiSounds::get));
     public static final BooleanSetting notifications = BEHAVIOUR.add(new BooleanSetting("Notifications", "Show toast notifications", true));
     public static final BooleanSetting toggleNotifications = BEHAVIOUR.add(new BooleanSetting("Toggle Alerts", "Notify when a module is toggled with its keybind", true)
             .visible(notifications::get));

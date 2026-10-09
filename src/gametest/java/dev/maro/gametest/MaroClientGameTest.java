@@ -96,12 +96,17 @@ public class MaroClientGameTest implements FabricClientGameTest {
             BaseEspChecks.run(context, singleplayer);
             BlockEspChecks.run(context, singleplayer);
             SpawnerNotifierChecks.run(context, singleplayer);
+            AutoGoliathChecks.run(context, singleplayer);
+            FakePlayerChecks.run(context);
+            FakeBlockChecks.run(context, singleplayer);
+            BetterLooksChecks.run(context);
             SkyChecks.run(context, singleplayer);
             TotemChecks.run(context, singleplayer);
             ScreenChecks.run(context, singleplayer);
             EmoteChecks.run(context, singleplayer);
             CoordSnapperChecks.run(context);
             BetterTexturesChecks.run(context);
+            DiscordPresenceChecks.run(context);
             StaffNotifierChecks.run(context);
             HudReadabilityChecks.run(context);
             String before = context.computeOnClient(client -> describe(client));

@@ -21,35 +21,6 @@ jobs:
       - name: Build
         run: ./gradlew build --no-daemon
 
-      # Temporary: prints the signatures of game classes new hooks are written against.
-      - name: Inspect game classes
-        continue-on-error: true
-        run: |
-          JAR=$(find ~/.gradle/caches .gradle -path '*yarn*' -name 'minecraft-*.jar' ! -name '*sources*' 2>/dev/null | grep -v intermediary | head -1)
-          echo "INSPECT JAR $JAR"
-          for c in net.minecraft.client.render.fog.FogRenderer net.minecraft.client.render.fog.FogModifier \
-              net.minecraft.client.render.fog.WaterFogModifier net.minecraft.client.render.fog.LavaFogModifier \
-              net.minecraft.client.render.fog.StatusEffectFogModifier net.minecraft.client.render.fog.BlindnessEffectFogModifier \
-              net.minecraft.client.render.fog.DarknessEffectFogModifier net.minecraft.client.render.fog.AtmosphericFogModifier \
-              net.minecraft.client.render.fog.FogData net.minecraft.client.render.entity.state.EntityRenderState \
-              net.minecraft.client.render.block.entity.BeaconBlockEntityRenderer net.minecraft.client.toast.ToastManager \
-              net.minecraft.client.network.OtherClientPlayerEntity net.minecraft.client.render.chunk.ChunkRendererRegion \
-              net.minecraft.client.item.ItemModelManager net.minecraft.client.render.item.ItemRenderer \
-              net.minecraft.client.render.entity.feature.HeldItemFeatureRenderer net.minecraft.client.render.entity.state.PlayerEntityRenderState \
-              net.minecraft.client.render.entity.state.LivingEntityRenderState net.minecraft.client.render.entity.state.ArmedEntityRenderState \
-              net.minecraft.client.render.item.ItemRenderState net.minecraft.client.gui.hud.ChatHud; do
-            echo "INSPECT === $c"; javap -p -cp "$JAR" $c | sed 's/^/INSPECT /'
-          done
-          for spec in "net.minecraft.client.render.fog.FogRenderer:applyFog" "net.minecraft.client.render.entity.EntityRenderer:updateShadow" \
-              "net.minecraft.client.render.fog.WaterFogModifier:applyStartEndModifier" "net.minecraft.client.render.WorldRenderer:renderClouds" \
-              "net.minecraft.client.network.ClientPlayerInteractionManager:attackEntity" "net.minecraft.client.world.ClientWorld:addEntity" \
-              "net.minecraft.client.render.entity.LivingEntityRenderer:updateRenderState" "net.minecraft.entity.LivingEntity:handleStatus" \
-              "net.minecraft.client.render.chunk.SectionBuilder:build"; do
-            c=${spec%%:*}; m=${spec##*:}
-            echo "INSPECT --- $c.$m"
-            javap -p -c -cp "$JAR" $c | awk -v m="$m" '$0 ~ "^  [a-z].* "m"\\(" {on=1} on {print} on && /^$/ {on=0}' | head -150 | sed 's/^/INSPECT /'
-          done
-
       # The in-game test runs on Mesa's software renderer, which accepts shaders that NVIDIA, AMD
       # and Intel drivers refuse to compile. Hold every shader to the GLSL spec as well.
       - name: Check shaders against the GLSL spec
@@ -118,3 +89,21 @@ jobs:
           name: test-screenshots-build-${{ github.run_number }}
           path: "**/screenshots/*.png"
 
+      # Temporary: prints the signatures of game classes new hooks are written against. Last, so it
+      # is in the tail of the log that the API hands back.
+      - name: Inspect game classes
+        if: always()
+        continue-on-error: true
+        run: |
+          JAR=$(find ~/.gradle/caches .gradle -path '*yarn*' -name 'minecraft-*.jar' ! -name '*sources*' 2>/dev/null | grep -v intermediary | head -1)
+          echo "INSPECT JAR $JAR"
+          for c in net.minecraft.client.render.fog.FogRenderer net.minecraft.client.render.fog.FogData \
+              net.minecraft.client.render.fog.LavaFogModifier net.minecraft.client.render.fog.StatusEffectFogModifier \
+              net.minecraft.client.render.fog.BlindnessEffectFogModifier net.minecraft.client.render.fog.AtmosphericFogModifier \
+              net.minecraft.client.network.AbstractClientPlayerEntity net.minecraft.client.network.OtherClientPlayerEntity \
+              net.minecraft.client.render.entity.state.PlayerEntityRenderState net.minecraft.client.render.entity.state.EntityRenderState \
+              net.minecraft.client.item.ItemModelManager net.minecraft.client.render.chunk.RenderedChunk; do
+            echo "INSPECT === $c"; javap -p -cp "$JAR" $c | grep -v "lambda\$" | sed 's/^/INSPECT /'
+          done
+          echo "INSPECT --- FogRenderer.applyFog"
+          javap -p -c -cp "$JAR" net.minecraft.client.render.fog.FogRenderer | grep -E "^  [a-z].*\(|invoke.*applyFog|putfield|getfield.*FogData" | sed 's/^/INSPECT /'

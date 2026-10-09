@@ -196,7 +196,7 @@ public class CustomTotem extends Module {
 
     /** How much bigger to draw the totem pop animation. */
     public static float popScale() {
-        return on() ? instance.popSize.getFloat() / 100f : 1f;
+        return (on() ? instance.popSize.getFloat() / 100f : 1f) * BetterLooks.totemScale();
     }
 
     // ---- choosing a picture ---------------------------------------------------------------------
