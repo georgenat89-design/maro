@@ -1026,7 +1026,7 @@ final class BuilderHomeChecks {
         System.out.println("[builder-home] Return through native home 2 even when chest routing has already reached the saved work point");
         var work=start.east(6);teleport(world,work);context.waitTicks(12);int first=commands.size();var third=saved[2];
         context.runOnClient(client->{builder.pause("same-point return setup");require(((BuilderHomes)field(builder,"homes")).restock(chest),"Same-point restock did not begin");});waitHome(context,builder,100);
-        var walk=new BuilderWalk();boolean arrived=false;
+        var walk=context.computeOnClient(client->new BuilderWalk());boolean arrived=false;
         for(int tick=0;tick<180&&!arrived;tick++){
             final int lookTick=tick;arrived=context.computeOnClient(client->{walk.turning(true,12);walk.beginLookTick(lookTick);return walk.standAt(work);});context.waitTick();
         }
