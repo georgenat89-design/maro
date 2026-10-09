@@ -42,12 +42,12 @@ import java.util.Map;
 public class SpawnerNotifier extends Module {
     private static final int SPAWNER_RED = 0xFFFF4D5E;
 
-    private final NumberSetting range = add(new NumberSetting("Range", "How far out to look, in loaded chunks", 12, 2, 32, 1).suffix(" chunks"));
+    private final NumberSetting range = add(new NumberSetting("Range", "How far out to look, in chunks (only chunks the server has sent you can be seen)", 32, 2, 64, 1).suffix(" chunks"));
     private final BooleanSetting notify = add(new BooleanSetting("Notification", "A Spawner Found notification for each new one", true));
     private final BooleanSetting chat = add(new BooleanSetting("Chat Message", "A line in chat with the spawner's coordinates (only you see it)", true));
     private final BooleanSetting sound = add(new BooleanSetting("Sound", "A ping when one is found", true));
     private final BooleanSetting tags = add(new BooleanSetting("Tags", "A tag over each spawner: what it spawns and how far", true));
-    private final NumberSetting tagRange = add(new NumberSetting("Tag Range", "Tags on spawners this close", 128, 16, 512, 8)
+    private final NumberSetting tagRange = add(new NumberSetting("Tag Range", "Tags on spawners this close", 512, 16, 1024, 16)
             .suffix(" blocks").visible(tags::get));
     private final NumberSetting tagScale = add(new NumberSetting("Tag Size", "How big the tags are", 1, 0.5, 2, 0.05)
             .suffix("x").visible(tags::get));
@@ -75,6 +75,24 @@ public class SpawnerNotifier extends Module {
     @Override
     public List<SettingSection> getSettingSections() {
         return sections;
+    }
+
+    /** Saved before the ranges were made longer: a range still at its old default takes the new one, once. */
+    private static final int RANGES = 2;
+
+    @Override
+    public com.google.gson.JsonObject saveExtra() {
+        var data = super.saveExtra();
+        data.addProperty("ranges", RANGES);
+        return data;
+    }
+
+    @Override
+    public void loadExtra(com.google.gson.JsonObject data) {
+        super.loadExtra(data);
+        if (data.has("ranges")) return;
+        if (range.getInt() == 12) range.set(32.0);
+        if (tagRange.getInt() == 128) tagRange.set(512.0);
     }
 
     @Override

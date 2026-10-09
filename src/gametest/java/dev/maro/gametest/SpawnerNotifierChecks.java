@@ -33,6 +33,10 @@ final class SpawnerNotifierChecks {
         throw new AssertionError(failure);
     }
 
+    private static Setting<?> setting(SpawnerNotifier module, String name) {
+        return module.getSettings().stream().filter(x -> x.getName().equals(name)).findFirst().orElseThrow();
+    }
+
     private static String mobAt(SpawnerNotifier module, BlockPos pos) {
         return module.spawners().stream().filter(f -> f.pos().equals(pos)).map(SpawnerNotifier.Found::mob).findFirst().orElse(null);
     }
@@ -40,6 +44,24 @@ final class SpawnerNotifierChecks {
     static void run(ClientGameTestContext context, TestSingleplayerContext world) {
         SpawnerNotifier module = ModuleManager.get(SpawnerNotifier.class);
         require(module != null, "Spawner Notifier was not registered");
+        // The longer ranges: a config saved at the old defaults (12 chunks, 128 blocks) moves up once.
+        context.runOnClient(c -> {
+            var range = (dev.maro.setting.NumberSetting) setting(module, "Range");
+            var tagRange = (dev.maro.setting.NumberSetting) setting(module, "Tag Range");
+            range.reset();
+            tagRange.reset();
+            require(range.getInt() == 32 && range.getMax() >= 64 && tagRange.getInt() == 512 && tagRange.getMax() >= 1024,
+                    "Spawner Notifier's ranges are not the longer ones: " + range.getInt() + " chunks, " + tagRange.getInt() + " blocks");
+            range.set(12.0);
+            tagRange.set(128.0);
+            module.loadExtra(new com.google.gson.JsonObject());
+            require(range.getInt() == 32 && tagRange.getInt() == 512, "An old config's default ranges were not made longer");
+            range.set(12.0);
+            module.loadExtra(module.saveExtra());
+            require(range.getInt() == 12, "A range chosen after the change was moved");
+            range.reset();
+            tagRange.reset();
+        });
         var position = context.computeOnClient(c -> c.player.getEntityPos());
         float[] angles = context.computeOnClient(c -> new float[] {c.player.getYaw(), c.player.getPitch()});
         var perspective = context.computeOnClient(c -> c.options.getPerspective());
