@@ -1487,7 +1487,9 @@ public final class AutoBuilder extends Module {
         }
         options.sort(Comparator.<BlockPos>comparingInt(p->p.equals(accessStand)?-1:roofOpenings.containsKey(p)?1:directStands.contains(p)?0:2)
             .thenComparingInt(p->scaffoldDistance.getOrDefault(p,0)).thenComparingDouble(p->p.getSquaredDistance(mc.player.getBlockPos())));standGoal=null;
-        var clearOptions=options.stream().filter(p->!needsBuildCut(roofOpenings.get(p))).toList();
+        // First prove a route to the actual placement. A scaffold-only view can
+        // merely expose another speculative piece inside the same closed wall.
+        var clearOptions=options.stream().filter(p->directStands.contains(p)&&!needsBuildCut(roofOpenings.get(p))).toList();
         long routeDeadline=System.nanoTime()+6_000_000;
         while(search.routeCursor<options.size()){
             if(needsBuildCut(roofOpenings.get(options.get(search.routeCursor)))){search.routeCursor++;continue;}
