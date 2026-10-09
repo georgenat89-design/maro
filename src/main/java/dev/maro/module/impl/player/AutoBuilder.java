@@ -1521,14 +1521,6 @@ public final class AutoBuilder extends Module {
                 // Scaffold views are valid destinations too: they expose the
                 // next attachment even when the final block is not in reach.
                 if(prepareElevatedEntry(clearOptions,routingWork,search.clearEntry,false))return true;
-                long stepDeadline=System.nanoTime()+3_000_000;
-                while(search.stepCursor<options.size()&&System.nanoTime()<stepDeadline){
-                    var option=options.get(search.stepCursor++);
-                    if(needsBuildCut(roofOpenings.get(option))||!support.get()||!walker.canStand(option)
-                        ||!directStands.contains(option)&&!(supportFallback&&supports.contains(option.down())))continue;
-                    if(accessStep(option))return true;
-                }
-                if(search.stepCursor<options.size()){walker.release();status="Checking remaining access steps";return true;}
                 search.recoveryStage=3;search.columnCursor=0;
             }
             if(search.recoveryStage==3){
@@ -1555,6 +1547,16 @@ public final class AutoBuilder extends Module {
             }
             if(search.recoveryStage==4){
                 boolean cleaning=target.equals(cleanupTarget)&&supports.contains(target);
+                // Local steps prove their next piece, not a complete entrance.
+                // Do not let them preempt a checked walk, column or passage.
+                long stepDeadline=System.nanoTime()+3_000_000;
+                while(search.stepCursor<options.size()&&System.nanoTime()<stepDeadline){
+                    var option=options.get(search.stepCursor++);
+                    if(needsBuildCut(roofOpenings.get(option))||!support.get()||!walker.canStand(option)
+                        ||!directStands.contains(option)&&!(supportFallback&&supports.contains(option.down())))continue;
+                    if(accessStep(option))return true;
+                }
+                if(search.stepCursor<options.size()){walker.release();status="Checking remaining access steps";return true;}
                 if((cleaning||wanted!=null&&!wanted.isAir())&&prepareCeilingEntry(options,routingWork,search))return true;
                 if(wanted!=null&&temporaryView(target,wanted,cell,tried,search))return true;
                 search.recoveryStage=5;

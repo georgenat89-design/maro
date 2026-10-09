@@ -105,6 +105,10 @@ final class BuilderHomeChecks {
             receiverColumnClimb(context,world,builder,start);
             System.out.println("[builder-receiver] PASS: prompt native receiver column, real stock recovery and cleanup");return;
         }
+        if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){
+            elevatedRoomAccess(context,world,builder,start);raisedLiquidEntrance(context,world,builder,start);rotations(context,builder,start);
+            System.out.println("[builder-entry] PASS: prompt proved exterior entry, contained upper liquid and brisk rotations");return;
+        }
         if(Boolean.getBoolean("maro.gametest.builderHopperOnly")){
             hopperCutProtection(context,world,builder,start);hopperRepairStock(context,world,builder,start);
             buriedHopperRoofAccess(context,world,builder,start);existingViewBeforeRoof(context,world,builder,start);
@@ -429,6 +433,7 @@ final class BuilderHomeChecks {
             context.runOnClient(client->{if(field(builder,"passageStand")!=null)require(!((Set<?>)field(builder,"passageBlocks")).contains(retired),"New verified passage retained a retired opening");});context.waitTick();
         }
         require(retained,"Elevated room did not exercise the retained exterior-column opening");
+        require(elapsed<1000,"Proved exterior entry was delayed by speculative access steps: "+elapsed+" ticks, "+context.computeOnClient(client->builder.status()));
         require(world.getServer().computeOnServer(server->{for(int i=0;i<cells.length;i++)if(!cells[i].isOf(Blocks.STRUCTURE_VOID)&&!AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(origin.add(i%5,i/25,i/5%5)),cells[i]))return false;return true;}),"Exterior column did not open its proved passage and restore the room");
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Elevated room left work, dirt, damage or menu");BuilderPacketChecks.verify(1);builder.pause("elevated entry checked");});
         teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+4)+" "+(origin.getY()+3)+" "+(origin.getZ()+4)+" air");context.waitTicks(4);
