@@ -34,6 +34,8 @@ public abstract class ViewModelMixin {
         Arm arm = mainHand ? player.getMainArm() : player.getMainArm().getOpposite();
         matrices.push();
         ViewModel.handTransform(matrices, mainHand, arm == Arm.LEFT);
+        // Better Looks' Low Shield.
+        if (item.isOf(net.minecraft.item.Items.SHIELD) && dev.maro.module.impl.visuals.BetterLooks.lowShield()) matrices.translate(0, -0.22, 0);
         original.call(renderer, player, tickProgress, pitch, hand, ViewModel.swingProgress(swingProgress, mainHand, item), item,
                 ViewModel.equipProgress(equipProgress), matrices, queue, light);
         matrices.pop();
@@ -48,5 +50,9 @@ public abstract class ViewModelMixin {
         boolean leftArm = context == ItemDisplayContext.FIRST_PERSON_LEFT_HAND;
         boolean mainHand = leftArm == (entity.getMainArm() == Arm.LEFT);
         ViewModel.itemTransform(matrices, mainHand, leftArm);
+        // Better Looks' Short Sword.
+        if (stack.isIn(net.minecraft.registry.tag.ItemTags.SWORDS) && dev.maro.module.impl.visuals.BetterLooks.shortSword()) {
+            matrices.scale(0.72f, 0.72f, 0.72f);
+        }
     }
 }

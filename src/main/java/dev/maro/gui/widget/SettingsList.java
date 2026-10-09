@@ -13,12 +13,15 @@ import dev.maro.setting.ModeSetting;
 import dev.maro.setting.NumberSetting;
 import dev.maro.setting.Setting;
 import dev.maro.setting.SettingSection;
+import dev.maro.setting.TextSetting;
 import dev.maro.util.ColorUtil;
 import dev.maro.util.Sounds;
 import net.minecraft.client.gui.DrawContext;
 
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -29,6 +32,7 @@ public class SettingsList {
     private static final float GAP = 4f;
     private static final float PICKER_H = 78f;
     private final Set<ColorSetting> expanded = new HashSet<>();
+    private final Map<TextSetting, TextField> textFields = new IdentityHashMap<>();
 
     /**
      * @return total content height
@@ -95,6 +99,7 @@ public class SettingsList {
         if (s instanceof BooleanSetting b) bool(gui, ctx, b, x, y, w, hv);
         else if (s instanceof NumberSetting n) number(gui, ctx, n, x, y, w);
         else if (s instanceof ModeSetting m) mode(gui, ctx, m, x, y, w);
+        else if (s instanceof TextSetting t) text(gui, ctx, t, x, y, w);
         else if (s instanceof ColorSetting c) color(gui, ctx, c, x, y, w, h);
         else if (s instanceof KeybindSetting k) {
             float cw = Fonts.width(gui.listening == k ? "Press a key" : k.getKeyName(), false, 0.72f) + 9;
@@ -157,6 +162,18 @@ public class SettingsList {
         gui.scrollHit(vx, y + 4, vw, 15, amount -> n.set(n.get() + n.getStep() * Math.signum(amount)));
     }
 
+    // ---- text ---------------------------------------------------------------------------
+
+    private void text(ClickGuiScreen gui, DrawContext ctx, TextSetting t, float x, float y, float w) {
+        TextField field = textFields.computeIfAbsent(t, k -> new TextField(k.getPlaceholder(), k.getMaxLength())
+                .filter(TextSetting::allowed).counter().onChange(k::set));
+        // Follow the setting while it is not being typed in, after a reset or a config load.
+        if (gui.focused != field && !field.getText().equals(t.get())) field.setText(t.get());
+        field.onEnter(() -> gui.focused = null);
+        float fw = Math.min(140f, w * 0.38f);
+        field.render(gui, ctx, x + w - 10 - fw, y + 6, fw, 18, null, null);
+    }
+
     // ---- mode ---------------------------------------------------------------------------
 
     private void mode(ClickGuiScreen gui, DrawContext ctx, ModeSetting m, float x, float y, float w) {
@@ -208,13 +225,19 @@ public class SettingsList {
             float hv = Anims.of(m, "pill", hov);
             Render2D.roundRect(ctx, px, cy - h / 2, pw, h, Math.min(h / 2, Theme.radius()), ColorUtil.lerp(0xFF15141D, 0xFF22202C, hv));
             Render2D.roundOutline(ctx, px, cy - h / 2, pw, h, Math.min(h / 2, Theme.radius()), 1f, ColorUtil.lerp(Theme.BORDER, Theme.accent(0x90), hv));
-            Icons.BACK.draw(ctx, px + 8, cy, 6, Theme.TEXT_MUTED, 0);
-            Icons.CHEVRON_RIGHT.draw(ctx, px + pw - 8, cy, 6, Theme.TEXT_MUTED, 0);
-            Fonts.drawCentered(ctx, v, px + pw / 2f, cy, Theme.TEXT, false, scale);
+            // A click opens every choice in a list beside it.
+            Dropdown.anchor(m, px, px + pw, cy - h / 2, h);
+            boolean open = Dropdown.isOpen(m);
+            Fonts.drawV(ctx, v, px + 8, cy, open ? Theme.accent() : Theme.TEXT, false, scale);
+            Icons.CHEVRON_RIGHT.draw(ctx, px + pw - 8, cy, 6, open ? Theme.accent() : Theme.TEXT_MUTED, open ? 1 : 0);
             Fonts.drawRight(ctx, (m.index() + 1) + "/" + modes.size(), px - 6, cy, Theme.TEXT_MUTED, false, 0.65f);
             gui.hit(px, cy - h / 2, pw, h, (button, mx, my) -> {
-                m.cycle(button == 1 || mx < px + pw / 3f ? -1 : 1);
-                Sounds.click();
+                if (button == 1) {
+                    m.cycle(-1);
+                    Sounds.click();
+                } else {
+                    Dropdown.toggle(m);
+                }
             });
             gui.scrollHit(px, cy - h / 2, pw, h, amount -> m.cycle(amount > 0 ? -1 : 1));
         }

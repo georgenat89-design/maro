@@ -21,7 +21,11 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.player.AutoTrident());
         register(new dev.maro.module.impl.misc.ScreenHider());
         register(new dev.maro.module.impl.misc.BlockDisconnect());
+        register(new dev.maro.module.impl.misc.CoordSnapper());
+        register(new dev.maro.module.impl.misc.DiscordPresence());
+        register(new dev.maro.module.impl.misc.AutoGoliath());
         register(new dev.maro.module.impl.player.FastPlace());
+        register(new dev.maro.module.impl.player.FakePlayer());
         register(new dev.maro.module.impl.player.AutoMine());
         register(new dev.maro.module.impl.player.AutoBuilder());
         register(new dev.maro.module.impl.player.CrafterDisabler());
@@ -37,9 +41,16 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.SkinAccessories());
         register(new dev.maro.module.impl.visuals.Pet());
         register(new dev.maro.module.impl.visuals.BaseESP());
+        register(new dev.maro.module.impl.visuals.BlockESP());
+        register(new dev.maro.module.impl.visuals.SpawnerNotifier());
+        register(new dev.maro.module.impl.visuals.BetterTextures());
+        register(new dev.maro.module.impl.visuals.BetterLooks());
+        register(new dev.maro.module.impl.visuals.FakeBlock());
         register(new dev.maro.module.impl.visuals.PlayerESP());
+        register(new dev.maro.module.impl.visuals.CustomSky());
+        register(new dev.maro.module.impl.visuals.CustomTotem());
+        register(new dev.maro.module.impl.visuals.Emotes());
         register(new dev.maro.module.impl.visuals.StaffNotifier());
-        register(new dev.maro.anubis.module.impl.misc.AntiVanishModule());
         dev.maro.nathan.NameeProtectAddon.init();
 
         // Register your modules here, e.g.
@@ -56,20 +67,23 @@ public final class ModuleManager {
         return Collections.unmodifiableList(MODULES);
     }
 
+    /** A category's modules in alphabetical order. */
     public static List<Module> byCategory(Category category) {
         List<Module> list = new ArrayList<>();
-        for (Module m : MODULES) if (m.getCategory() == category) list.add(m);
+        for (Module m : MODULES) if (m.getCategory() == category && !m.hiddenInGui()) list.add(m);
+        list.sort((a, b) -> String.CASE_INSENSITIVE_ORDER.compare(a.getName(), b.getName()));
         return list;
     }
 
     public static long enabledCount(Category category) {
-        return MODULES.stream().filter(m -> m.getCategory() == category && m.isEnabled()).count();
+        return MODULES.stream().filter(m -> m.getCategory() == category && m.isEnabled() && !m.hiddenInGui()).count();
     }
 
     public static List<Module> search(String query) {
         String q = query.toLowerCase(Locale.ROOT).trim();
         List<Module> starts = new ArrayList<>(), contains = new ArrayList<>(), desc = new ArrayList<>();
         for (Module m : MODULES) {
+            if (m.hiddenInGui()) continue;
             String n = m.getName().toLowerCase(Locale.ROOT);
             String compact = n.replace(" ", "");
             if (n.startsWith(q) || compact.startsWith(q.replace(" ", ""))) starts.add(m);

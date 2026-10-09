@@ -13,7 +13,6 @@ import dev.maro.render.accessories.AccessoryModels;
 import dev.maro.render.accessories.SkinAccessoriesLayer;
 import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Vector3f;
-import org.lwjgl.glfw.GLFW;
 import javax.imageio.ImageIO;
 import java.io.IOException;
 
@@ -23,7 +22,7 @@ final class SkinAccessoriesChecks {
     static void run(ClientGameTestContext context) {
         checkWingDirection();
         SkinAccessories m = ModuleManager.get(SkinAccessories.class);
-        require(m != null, "Skin Accessories not registered");
+        require(m != null, "Cosmetics not registered");
         int scale = context.computeOnClient(c -> c.options.getGuiScale().getValue());
         Perspective perspective = context.computeOnClient(c -> c.options.getPerspective());
         float[] rotation = context.computeOnClient(c -> new float[]{c.player.getYaw(), c.player.getPitch()});
@@ -41,12 +40,7 @@ final class SkinAccessoriesChecks {
             float[] after = context.computeOnClient(c -> new float[]{c.player.getYaw(), c.player.getPitch()});
             require(after[0] == rotation[0] && after[1] == rotation[1], "Preview rotated the real player");
             var screenshot = context.takeScreenshot("maro-skin-accessories-cyber");
-            int[] bounds = context.computeOnClient(c -> {
-                int w = Math.min(610, c.getWindow().getScaledWidth() - 20), h = Math.min(306, c.getWindow().getScaledHeight() - 20);
-                int x = (c.getWindow().getScaledWidth() - w) / 2, y = (c.getWindow().getScaledHeight() - h) / 2;
-                double s = c.getWindow().getScaleFactor();
-                return new int[]{(int)((x + 10) * s), (int)((y + 35) * s), (int)((x + w * .43 + 2) * s), (int)((y + h - 45) * s)};
-            });
+            int[] bounds = context.computeOnClient(c -> ((SkinAccessoriesScreen) c.currentScreen).previewBounds());
             try {
                 var image = ImageIO.read(screenshot.toFile()); int cyan = 0;
                 for (int y = bounds[1]; y < bounds[3]; y++) for (int x = bounds[0]; x < bounds[2]; x++) {
@@ -81,16 +75,59 @@ final class SkinAccessoriesChecks {
                 context.runOnClient(c -> m.selectPreset(preset)); context.waitTicks(2);
                 if (preset.equals("Angel") || preset.equals("Fox") || preset.equals("Dragon")) context.takeScreenshot("maro-skin-accessories-" + preset.toLowerCase());
             }
-            // Real click on the first preset, then mix a part and rotate.
-            int[] click = context.computeOnClient(c -> {
-                int w = Math.min(610, c.getWindow().getScaledWidth() - 20), h = Math.min(306, c.getWindow().getScaledHeight() - 20);
-                double s = c.getWindow().getScaleFactor();
-                return new int[]{(int)(((c.getWindow().getScaledWidth() - w) / 2 + w * .43 + 25) * s),
-                    (int)(((c.getWindow().getScaledHeight() - h) / 2 + 67) * s)};
+            // The Looks tab picks a whole look; the Sword tab shows a skin in the preview player's hand.
+            context.runOnClient(c -> {
+                var screen = (SkinAccessoriesScreen) c.currentScreen;
+                screen.showTab("Looks");
+                m.selectPreset("Dragon");
+                screen.showTab("Sword");
+                ((ModeSetting) setting(m, "Sword")).set("Phoenix Grace");
             });
-            context.getInput().setCursorPos(click[0], click[1]); context.getInput().holdMouse(GLFW.GLFW_MOUSE_BUTTON_LEFT);
-            context.waitTick(); context.getInput().releaseMouse(GLFW.GLFW_MOUSE_BUTTON_LEFT); context.waitTick();
-            require(m.preset().equals("Dragon"), "Clicking accessory preset did not apply Dragon");
+            context.waitTicks(3);
+            context.takeScreenshot("maro-cosmetics-sword");
+            require(m.preset().equals("Dragon"), "Picking the Dragon look did not apply it");
+            context.runOnClient(c -> {
+                var skin = SkinAccessories.skinFor(new ItemStack(Items.DIAMOND_SWORD));
+                require(skin != null && skin.name().equals("Phoenix Grace"), "The sword skin is not used while previewing: " + skin);
+                var shown = dev.maro.render.accessories.ItemLooks.shown(new ItemStack(Items.DIAMOND_SWORD), net.minecraft.item.ItemDisplayContext.GUI, c.player);
+                require(String.valueOf(shown.get(net.minecraft.component.DataComponentTypes.ITEM_MODEL)).equals("maro:cosmetic/sword_phoenix_grace"),
+                        "A diamond sword is not drawn with the Phoenix Grace model: " + shown.get(net.minecraft.component.DataComponentTypes.ITEM_MODEL));
+                require(dev.maro.render.accessories.CosmeticItems.all(dev.maro.render.accessories.CosmeticItems.Kind.SWORD).size() == 50
+                        && dev.maro.render.accessories.CosmeticItems.all(dev.maro.render.accessories.CosmeticItems.Kind.PICKAXE).size() == 25
+                        && dev.maro.render.accessories.CosmeticItems.all(dev.maro.render.accessories.CosmeticItems.Kind.SHOVEL).size() == 25,
+                        "There are not 50 swords, 25 pickaxes and 25 shovels");
+                // Item Size reaches the sword wherever it is held (here, the preview's third-person hand), not in menus.
+                var itemSize = (dev.maro.setting.NumberSetting) setting(m, "Item Size");
+                itemSize.set(1.5);
+                var held = new net.minecraft.client.render.item.ItemRenderState();
+                c.getItemModelManager().updateForLivingEntity(held, new ItemStack(Items.DIAMOND_SWORD),
+                        net.minecraft.item.ItemDisplayContext.THIRD_PERSON_RIGHT_HAND, c.player);
+                float heldSize = ((dev.maro.render.accessories.ItemScale) held).maro$scale();
+                require(Math.abs(heldSize - 1.5f) < 1e-4, "Item Size does not reach a held skinned sword: " + heldSize);
+                var icon = new net.minecraft.client.render.item.ItemRenderState();
+                c.getItemModelManager().clearAndUpdate(icon, new ItemStack(Items.DIAMOND_SWORD), net.minecraft.item.ItemDisplayContext.GUI, c.world, c.player, 0);
+                require(((dev.maro.render.accessories.ItemScale) icon).maro$scale() == 1, "Item Size changed a sword's icon in a menu");
+                var plain = new net.minecraft.client.render.item.ItemRenderState();
+                c.getItemModelManager().updateForLivingEntity(plain, new ItemStack(Items.STICK),
+                        net.minecraft.item.ItemDisplayContext.THIRD_PERSON_RIGHT_HAND, c.player);
+                require(((dev.maro.render.accessories.ItemScale) plain).maro$scale() == 1, "Item Size changed an item with no skin");
+                itemSize.set(1.6);
+            });
+            context.waitTicks(3);
+            context.takeScreenshot("maro-cosmetics-sword-big");
+            context.runOnClient(c -> {
+                ((dev.maro.setting.NumberSetting) setting(m, "Item Size")).set(1.0);
+                ((SkinAccessoriesScreen) c.currentScreen).showTab("Pickaxe");
+                ((ModeSetting) setting(m, "Pickaxe")).set("Phoenix Pickaxe");
+            });
+            context.waitTicks(3);
+            context.takeScreenshot("maro-cosmetics-pickaxe");
+            context.runOnClient(c -> ((SkinAccessoriesScreen) c.currentScreen).showTab("Hat"));
+            context.waitTicks(3);
+            context.takeScreenshot("maro-cosmetics-hats");
+            context.runOnClient(c -> ((SkinAccessoriesScreen) c.currentScreen).showTab("Wings"));
+            context.waitTicks(3);
+            context.takeScreenshot("maro-cosmetics-wings");
             context.runOnClient(c -> {
                 var state = new PlayerEntityRenderState(); state.id = c.player.getId();
                 state.equippedHeadStack = new ItemStack(Items.DIAMOND_HELMET);

@@ -60,11 +60,11 @@ public final class PlayerEspRenderer {
     /** Players whose contour and glow are sized individually; matches MAX_PLAYERS in player_esp.fsh. */
     private static final int MAX_PLAYERS = 16;
     /**
-     * EspData in player_esp.fsh: eight vec4s of settings, a rect per player, a scale per player,
+     * EspData in player_esp.fsh: eight vec4s of settings, PlayerInfo, a rect per player, a scale per player,
      * then a line (x0, y0, x1, y1 in pixels) and a colour per tracer.
      */
-    private static final int UNIFORM_BYTES = (8 + MAX_PLAYERS + MAX_PLAYERS / 4 + MAX_PLAYERS * 2) * 16;
-    private static final int RECTS_AT = 8 * 16, SCALES_AT = RECTS_AT + MAX_PLAYERS * 16,
+    private static final int UNIFORM_BYTES = (9 + MAX_PLAYERS + MAX_PLAYERS / 4 + MAX_PLAYERS * 2) * 16;
+    private static final int INFO_AT = 8 * 16, RECTS_AT = 9 * 16, SCALES_AT = RECTS_AT + MAX_PLAYERS * 16,
         LINES_AT = SCALES_AT + MAX_PLAYERS / 4 * 16, LINE_COLORS_AT = LINES_AT + MAX_PLAYERS * 16;
     /** One quad for the silhouettes' rectangle, then one per tracer. */
     private static final int MAX_QUADS = 1 + MAX_PLAYERS;
@@ -392,11 +392,11 @@ public final class PlayerEspRenderer {
         try {
             Framebuffer target = mc.getFramebuffer();
             float[] values = module().uniformValues();
-            values[values.length - 1] = mask.textureHeight / (float) target.textureHeight;
+            values[PlayerESP.MASK_SCALE_INDEX] = mask.textureHeight / (float) target.textureHeight;
             for (int i = 0; i < values.length; i++) data.putFloat(i * Float.BYTES, values[i]);
 
             // PlayerInfo, a pixel rect per player, the scales packed four to a vec4, then tracers.
-            int info = 7 * 16;
+            int info = INFO_AT;
             data.putFloat(info, playerCount);
             data.putFloat(info + 4, module().tracerWidthPx());
             data.putFloat(info + 8, module().rainbowTracers() ? 1f : 0f);

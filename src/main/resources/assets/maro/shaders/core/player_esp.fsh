@@ -20,11 +20,12 @@ const int MAX_PLAYERS = 16;
 layout(std140) uniform EspData {
     vec4 FillColorA;    // rgb
     vec4 FillColorB;    // rgb
-    vec4 OutlineColor;  // rgb
+    vec4 OutlineColor;  // rgb, w inner glow strength
     vec4 Timing;        // x seconds, y speed, z pattern scale, w star density
     vec4 FillParams;    // x style, y opacity, z edge fade, w enabled
     vec4 LineParams;    // x colour mode, y width (px), z opacity, w enabled
     vec4 GlowParams;    // x enabled, y radius (px), z strength, w mask texels per screen pixel
+    vec4 GlowColor;     // rgb the glow fades into, w 1 to use it (0 keeps the contour colour)
     vec4 PlayerInfo;    // x number of player rects, y tracer width (px), z rainbow tracers, w tracer count
     // Each player's screen rect in pixels (x0, y0, x1, y1) and, four to a vec4, how much of the
     // full contour and glow width that player gets: small, distant players get thinner ones so
@@ -283,7 +284,7 @@ void main() {
     // the clear area, for pixels inside. A sample's partial coverage moves its edge estimate by
     // the uncovered fraction, which is what makes the result sub-pixel smooth.
     int reach = int(ceil(width)) + 2;
-    if (edgeFade > 0.0) reach = max(reach, 5);
+    if (edgeFade > 0.0 || OutlineColor.w > 0.0) reach = max(reach, 5);
     reach = min(reach, 9);
 
     float toInside = 1e4;
@@ -380,16 +381,28 @@ void main() {
         lineAlpha = clamp(width + 0.5 - sd, 0.0, 1.0) * clamp(sd + 1.0, 0.0, 1.0) * LineParams.z;
     }
 
-    // ---- glow: quadratic falloff away from the edge, outside the silhouette only.
+    // ---- glow: quadratic falloff away from the edge, outside the silhouette only. With its own
+    // colour it starts in the contour colour at the edge and fades into that colour further out.
     float glowAlpha = 0.0;
+    vec3 glowColor = lineColor;
     if (glowOn && !inside && glowDistance < 1e3) {
-        float k = 1.0 - clamp(max(glowDistance, 0.0) / max(glowRadius, 1.0), 0.0, 1.0);
+        float f = clamp(max(glowDistance, 0.0) / max(glowRadius, 1.0), 0.0, 1.0);
+        float k = 1.0 - f;
         glowAlpha = k * k * GlowParams.z * (1.0 - coverage);
+        if (GlowColor.w > 0.5) glowColor = mix(lineColor, GlowColor.rgb, smoothstep(0.0, 0.55, f));
+    }
+
+    // ---- inner glow: a soft band of the contour colour just inside the edge.
+    float innerAlpha = 0.0;
+    if (OutlineColor.w > 0.0 && sd < 0.0) {
+        float band = max(1.5, 3.5 * sizeScale);
+        innerAlpha = OutlineColor.w * (1.0 - smoothstep(0.0, band, -sd)) * coverage;
     }
 
     vec4 color = vec4(0.0);
-    color = over(color, lineColor, clamp(glowAlpha, 0.0, 1.0));
+    color = over(color, glowColor, clamp(glowAlpha, 0.0, 1.0));
     color = over(color, fill, clamp(fillAlpha, 0.0, 1.0));
+    color = over(color, lineColor, clamp(innerAlpha, 0.0, 1.0));
     color = over(color, lineColor, clamp(lineAlpha, 0.0, 1.0));
 
     if (color.a <= 0.002) discard;

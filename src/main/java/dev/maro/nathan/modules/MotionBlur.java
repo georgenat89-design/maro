@@ -89,6 +89,12 @@ import dev.maro.nathan.render.PostEffect;
  * would leave in dark areas into fine grain that the eye does not see.
  */
 public class MotionBlur extends Module {
+    /** Set from Better Looks' panel, so not listed on its own. */
+    @Override
+    public boolean hiddenInGui() {
+        return true;
+    }
+
     /**
      * The shutter at full strength (50), in seconds: how far back in time a
      * pixel is smeared. A camera turning at 90 degrees a second, seen through

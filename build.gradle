@@ -32,6 +32,14 @@ configurations {
 dependencies {
     implementation 'org.yaml:snakeyaml:2.7'
     include 'org.yaml:snakeyaml:2.7'
+    // WebP icons for Better Textures (Modrinth stores many pack icons as WebP). Pure Java.
+    def twelveMonkeys = ['com.twelvemonkeys.common:common-lang', 'com.twelvemonkeys.common:common-io',
+                         'com.twelvemonkeys.common:common-image', 'com.twelvemonkeys.imageio:imageio-core',
+                         'com.twelvemonkeys.imageio:imageio-metadata', 'com.twelvemonkeys.imageio:imageio-webp']
+    twelveMonkeys.each {
+        implementation "${it}:3.12.0"
+        include "${it}:3.12.0"
+    }
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
@@ -65,6 +73,8 @@ tasks.register('runProductionClientGameTest', net.fabricmc.loom.task.prod.Client
     }
     jvmArgs.add("-Dmaro.gametest.projectionOnly=" + providers.gradleProperty("projectionTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.petOnly=" + providers.gradleProperty("petTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.skyOnly=" + providers.gradleProperty("skyTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.totemOnly=" + providers.gradleProperty("totemTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.baseEspOnly=" + providers.gradleProperty("baseEspTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.staffOnly=" + providers.gradleProperty("staffTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.spotifyOnly=" + providers.gradleProperty("spotifyTestOnly").getOrElse("false"))

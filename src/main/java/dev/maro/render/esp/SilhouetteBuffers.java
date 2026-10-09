@@ -2,9 +2,11 @@ package dev.maro.render.esp;
 
 import net.minecraft.client.render.OutlineVertexConsumerProvider;
 import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.RenderLayers;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.BufferAllocator;
+import net.minecraft.util.Identifier;
 
 import java.util.function.Supplier;
 
@@ -28,6 +30,10 @@ public final class SilhouetteBuffers {
 
             var outline = layer.getAffectedOutline();
             if (outline.isPresent()) return new Flat(immediate.getBuffer(outline.get()));
+
+            // Armour, elytra and trims have no outline twin: draw them through one made from their texture.
+            Identifier texture = EquipmentTextures.of(layer);
+            if (texture != null) return new Flat(immediate.getBuffer(RenderLayers.outlineNoCull(texture)));
 
             return Noop.INSTANCE;
         }

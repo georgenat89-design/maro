@@ -19,7 +19,7 @@ public abstract class LightmapMixin {
     private Object maro$fullbright(SimpleOption<?> option, Operation<Object> original) {
         Object value = original.call(option);
         if (option == MinecraftClient.getInstance().options.getGamma() && value instanceof Double gamma) {
-            return Fullbright.gamma(gamma);
+            return dev.maro.module.impl.visuals.BetterLooks.gamma(Fullbright.gamma(gamma));
         }
         return value;
     }

@@ -16,16 +16,22 @@ import java.util.Locale;
 
 /**
  * Moves a {@link HudElement}: drag it, scroll or press + / - to resize, arrows to nudge (Shift for
- * 10), R to reset, Esc when done. Draws no background, so what you place is the real element over
- * the real world.
+ * 10), C to center it across the screen, R to reset, Esc when done. Dragged near the middle of the
+ * screen, it snaps there, with a guide line to show it. Draws no background, so what you place is
+ * the real element over the real world.
  */
 public class HudPlacementScreen extends Screen {
+    /** How close, in GUI pixels, the element's middle must come to the screen's to snap to it. */
+    private static final float SNAP = 6;
+
     private final Screen parent;
     private final HudElement element;
 
     private boolean dragging;
     private float grabX;
     private float grabY;
+    private boolean snappedX;
+    private boolean snappedY;
 
     public HudPlacementScreen(Screen parent, HudElement element) {
         super(Text.literal(element.hudName() + " - placement"));
@@ -49,10 +55,14 @@ public class HudPlacementScreen extends Screen {
         float h = element.hudHeight();
         boolean over = contains(mouseX, mouseY);
 
+        // Guide lines through the middle of the screen while the element is snapped to it.
+        if (dragging && snappedX) Render2D.rect(context, width / 2f - 0.5f, 0, 1, height, Theme.accent(150));
+        if (dragging && snappedY) Render2D.rect(context, 0, height / 2f - 0.5f, width, 1, Theme.accent(150));
+
         Render2D.roundOutline(context, left - 3, top - 3, w + 6, h + 6, 8, 1,
                 Theme.accent(dragging ? 255 : over ? 200 : 120));
 
-        String hint = "Drag to move  ·  Scroll to resize  ·  Arrows to nudge  ·  R to reset  ·  Esc when done";
+        String hint = "Drag to move  ·  Scroll to resize  ·  Arrows to nudge  ·  C to center  ·  R to reset  ·  Esc when done";
         float hintWidth = Fonts.width(hint, true, 0.8f) + 16;
         Render2D.roundRect(context, width / 2f - hintWidth / 2, 8, hintWidth, 16, 8, ColorUtil.withAlpha(Theme.PANEL, 225));
         Fonts.drawCentered(context, hint, width / 2f, 16, Theme.TEXT, true, 0.8f);
@@ -81,15 +91,24 @@ public class HudPlacementScreen extends Screen {
     @Override
     public boolean mouseDragged(Click event, double dragX, double dragY) {
         if (dragging) {
-            element.hudMove((float) event.x() - grabX, (float) event.y() - grabY);
+            dragTo((float) event.x() - grabX, (float) event.y() - grabY);
             return true;
         }
         return super.mouseDragged(event, dragX, dragY);
     }
 
+    /** Moves the element's top left corner here, snapping its middle to the screen's when close. */
+    public void dragTo(float left, float top) {
+        float w = element.hudWidth(), h = element.hudHeight();
+        snappedX = Math.abs(left + w / 2 - width / 2f) <= SNAP;
+        snappedY = Math.abs(top + h / 2 - height / 2f) <= SNAP;
+        element.hudMove(snappedX ? width / 2f - w / 2 : left, snappedY ? height / 2f - h / 2 : top);
+    }
+
     @Override
     public boolean mouseReleased(Click event) {
         dragging = false;
+        snappedX = snappedY = false;
         return super.mouseReleased(event);
     }
 
@@ -113,6 +132,7 @@ public class HudPlacementScreen extends Screen {
             case GLFW.GLFW_KEY_DOWN -> element.hudMove(element.hudLeft(), element.hudTop() + step);
             case GLFW.GLFW_KEY_EQUAL, GLFW.GLFW_KEY_KP_ADD -> element.hudResize(0.05f);
             case GLFW.GLFW_KEY_MINUS, GLFW.GLFW_KEY_KP_SUBTRACT -> element.hudResize(-0.05f);
+            case GLFW.GLFW_KEY_C -> element.hudMove(width / 2f - element.hudWidth() / 2, element.hudTop());
             case GLFW.GLFW_KEY_R -> element.hudReset();
             default -> {
                 return super.keyPressed(event);

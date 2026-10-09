@@ -41,6 +41,20 @@ public final class Render2D {
         scissor = rect;
     }
 
+    /**
+     * Clips everything drawn after it, text and shapes alike, to a rectangle until {@link #unclip}:
+     * a DrawContext scissor alone leaves these shapes unclipped.
+     */
+    public static void clip(DrawContext ctx, int x1, int y1, int x2, int y2) {
+        ctx.enableScissor(x1, y1, x2, y2);
+        setScissor(new ScreenRect(x1, y1, Math.max(0, x2 - x1), Math.max(0, y2 - y1)));
+    }
+
+    public static void unclip(DrawContext ctx) {
+        setScissor(null);
+        ctx.disableScissor();
+    }
+
     /** Size of one physical pixel in GUI units. */
     public static float px() {
         return (float) (1.0 / MinecraftClient.getInstance().getWindow().getScaleFactor());

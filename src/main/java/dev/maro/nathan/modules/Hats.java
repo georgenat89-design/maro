@@ -73,6 +73,12 @@ import dev.maro.nathan.hats.HatCatalogue;
  * manager when the module is switched off.
  */
 public class Hats extends Module {
+    /** Picked in Cosmetics' Hat tab, so not listed on its own. */
+    @Override
+    public boolean hiddenInGui() {
+        return true;
+    }
+
     /** Where a sheet painted by hand is looked for, under the game directory. */
     private static final String EXTERNAL = "chefhat";
 
