@@ -392,16 +392,25 @@ final class AutoBuilderChecks {
         context.runOnClient(client->require(builder.inventoryCount(Items.STONE)==0,"Resume bought/placed an already completed block"));
     }
     private static void rejectedPlacement(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
-        var target=start.add(0,0,2);var rejected=new java.util.concurrent.atomic.AtomicBoolean();var gate=new java.util.concurrent.atomic.AtomicBoolean(true);
+        var target=start.add(0,0,2);var rejected=new java.util.concurrent.atomic.AtomicInteger();var gate=new java.util.concurrent.atomic.AtomicBoolean(true);
         net.fabricmc.fabric.api.event.player.UseBlockCallback.EVENT.register((player,level,hand,hit)->{
-            if(!level.isClient()&&gate.get()&&hit.getBlockPos().equals(target.down())&&player.getStackInHand(hand).isOf(Items.STONE)&&rejected.compareAndSet(false,true)){((net.minecraft.server.network.ServerPlayerEntity)player).playerScreenHandler.syncState();return net.minecraft.util.ActionResult.FAIL;}
+            if(!level.isClient()&&gate.get()&&hit.getBlockPos().equals(target.down())&&player.getStackInHand(hand).isOf(Items.STONE)&&rejected.getAndIncrement()<3){((net.minecraft.server.network.ServerPlayerEntity)player).playerScreenHandler.syncState();return net.minecraft.util.ActionResult.FAIL;}
             return net.minecraft.util.ActionResult.PASS;
         });
         try{
             world.getServer().runCommand("give @a stone 1");context.waitTicks(6);
-            context.runOnClient(client->{builder.install(new Schematic("rejected-placement.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);builder.startBuild();});
-            await(context,builder,350);require(rejected.get(),"Server rejection fixture did not intercept the placement");verify(world,target,1,1,1,y->Blocks.STONE);
-        }finally{gate.set(false);}
+            context.runOnClient(client->{builder.install(new Schematic("rejected-placement.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(18,14);BuilderPlacementProbe.begin(target);builder.startBuild();});
+            await(context,builder,200);require(rejected.get()==4,"Server did not reject exactly three attempts before accepting");verify(world,target,1,1,1,y->Blocks.STONE);
+            context.waitTicks(8);
+            context.runOnClient(client->{
+                require(BuilderPlacementProbe.attempts.size()==4&&BuilderPlacementProbe.slotClicks==6&&BuilderPlacementProbe.emptySlotClicks>=3&&BuilderPlacementProbe.withheld>0,"Missing inventory correction was not recovered through the original slot: attempts="+BuilderPlacementProbe.attempts+" clicks="+BuilderPlacementProbe.slotClicks+" empty="+BuilderPlacementProbe.emptySlotClicks+" withheld="+BuilderPlacementProbe.withheld);
+                int maxGap=0;for(int i=1;i<BuilderPlacementProbe.attempts.size();i++)maxGap=Math.max(maxGap,BuilderPlacementProbe.attempts.get(i)-BuilderPlacementProbe.attempts.get(i-1));
+                require(maxGap<=10,"Ghost retry retained a long placement pause: "+BuilderPlacementProbe.attempts);
+                require(builder.inventoryCount(Items.STONE)==0&&client.player.playerScreenHandler.getCursorStack().isEmpty(),"Ghost recovery lost/duplicated stock or left it on the cursor");BuilderPacketChecks.verify(4);
+                System.out.println("[ghost-placement-proof] attempts="+BuilderPlacementProbe.attempts+" slotClicks="+BuilderPlacementProbe.slotClicks+" emptySlotClicks="+BuilderPlacementProbe.emptySlotClicks+" withheld="+BuilderPlacementProbe.withheld+" maxGap="+maxGap);
+            });
+            world.getServer().runOnServer(server->{var player=server.getPlayerManager().getPlayerList().getFirst();require(player.getInventory().count(Items.STONE)==0&&player.playerScreenHandler.getCursorStack().isEmpty(),"Actual server ghost recovery inventory/cursor mismatch");});
+        }finally{gate.set(false);context.runOnClient(client->{BuilderPlacementProbe.end();BuilderPacketChecks.recording=false;});}
     }
     private static void ghostMining(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         var target=start.south(2);

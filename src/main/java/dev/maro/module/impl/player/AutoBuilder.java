@@ -341,7 +341,8 @@ public final class AutoBuilder extends Module {
     private record LatePlacement(Place job,int expires){}
     private final Map<BlockPos,LatePlacement> latePlacements=new HashMap<>();
     private BlockState pendingBefore,pendingServerState;
-    private int placementDeadline;
+    private int placementDeadline,placementInventorySlot,ghostSlot=-1,ghostSlotDeadline,ghostRetryAt;
+    private boolean ghostSlotReceived;
     private BlockPos pendingBreak;
     private BlockState breakBefore,breakServerState;
     private int breakDeadline;
@@ -708,7 +709,7 @@ public final class AutoBuilder extends Module {
         clearEntryPassage();
         supportPickup=null;supportPickupUntil=supportRecycleAt=0;accessPickupId=-1;accessPickupWork=-1;accessPickupStand=accessPickupFeet=null;accessPickupItem=null;accessPickupViews=List.of();accessPickupSearch=null;accessPickupRetry.clear();
         walker.resetLook();cameraLocked=false;
-        placementAttemptTarget=null;failedPlacementUntil.clear();unexpectedBuildHandler=null;resetChestJourney();
+        placementAttemptTarget=null;failedPlacementUntil.clear();ghostSlot=-1;ghostSlotReceived=false;unexpectedBuildHandler=null;resetChestJourney();
         stopEating();navigatingCell=-1;foodRestock=foodShopping=supportRestock=supportShopping=false;
         preparationStage=0;depositQueue.clear();
         if(partialSource>=0&&ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler&&!ownedHandler.getCursorStack().isEmpty())mc.interactionManager.clickSlot(ownedHandler.syncId,partialSource,0,SlotActionType.PICKUP,mc.player);
@@ -800,6 +801,7 @@ public final class AutoBuilder extends Module {
             &&(!mode.is("Semi Auto")||mc.options.useKey.isPressed())&&collectAccessDrop())return;
         if(homeSetupResume&&homes.ready()){homeSetupResume=false;startBuild();return;}
         if(building&&!buying&&!depositing&&recoverUnexpectedBuildMenu())return;
+        if(building&&ghostSlot>=0&&ghostInventoryTick())return;
         if(building&&!buying&&!depositing&&!pasting&&!loading&&restockTarget==null&&mc.currentScreen==null
             &&(!mode.is("Semi Auto")||mc.options.useKey.isPressed())&&deferUnproductiveWork())return;
         if(mc.currentScreen==null&&(building||depositing)&&clearPassageTick())return;
@@ -2557,7 +2559,35 @@ public final class AutoBuilder extends Module {
         }
         status=reason;
     }
-    private void beginPlacementReceipt(Place job){unconfirmedPlacements.put(job.target,job);pendingPlacement=job;pendingBefore=mc.world.getBlockState(job.target);pendingServerState=null;placementDeadline=ticks+80;}
+    private void beginPlacementReceipt(Place job){unconfirmedPlacements.put(job.target,job);pendingPlacement=job;pendingBefore=mc.world.getBlockState(job.target);pendingServerState=null;placementInventorySlot=mc.player.getInventory().getSelectedSlot();placementDeadline=ticks+80;}
+    /** A native pickup/return asks the server to resend the rejected placement's original slot. */
+    private boolean resyncGhostSlot(){
+        var handler=mc.player.playerScreenHandler;
+        if(mc.player.currentScreenHandler!=handler||!handler.getCursorStack().isEmpty())return false;
+        ghostSlotReceived=false;ghostSlotDeadline=ticks+20;
+        int slot=36+ghostSlot;
+        mc.interactionManager.clickSlot(handler.syncId,slot,0,SlotActionType.PICKUP,mc.player);
+        mc.interactionManager.clickSlot(handler.syncId,slot,0,SlotActionType.PICKUP,mc.player);
+        return true;
+    }
+    public void placementInventoryReceived(int syncId,int slot){
+        if(inGame()&&mc.isOnThread()&&ghostSlot>=0&&syncId==mc.player.playerScreenHandler.syncId&&(slot<0||slot==36+ghostSlot))ghostSlotReceived=true;
+    }
+    private boolean ghostInventoryTick(){
+        walker.release();
+        if(placement==null){ghostSlot=-1;return false;}
+        if(mc.player.currentScreenHandler!=mc.player.playerScreenHandler||!mc.player.playerScreenHandler.getCursorStack().isEmpty()){
+            status="Waiting for rejected block to return to its slot";return true;
+        }
+        if(placementAttemptTarget!=null&&ticks-placementAttemptStarted>80){
+            var job=placement;ghostSlot=-1;deferPlacement(job,"Ghost placement still refused — checking another view");return true;
+        }
+        if(ghostSlotReceived&&mc.player.getInventory().getStack(ghostSlot).isOf(placement.item)&&ticks>=ghostRetryAt){
+            ghostSlot=-1;delay=0;status="Ghost block recovered — retrying placement";return false;
+        }
+        if(ticks>=ghostSlotDeadline)resyncGhostSlot();
+        status="Recovering ghost block inventory";return true;
+    }
     private void reconcilePrediction(Place job,BlockState authoritative){
         unconfirmedPlacements.remove(job.target);
         if(authoritative==null)latePlacements.put(job.target,new LatePlacement(job,ticks+500));
@@ -3266,6 +3296,14 @@ public final class AutoBuilder extends Module {
             // A refused prediction must not remain as collision geometry or as a face for
             // the next placement. Only reconcile this builder's own predicted block.
             reconcilePrediction(job,actual);
+            if(actual!=null&&actual.equals(pendingBefore)&&!matchesBuildState(actual,job.state)
+                &&mc.player.currentScreenHandler==mc.player.playerScreenHandler&&mc.player.playerScreenHandler.getCursorStack().isEmpty()){
+                // Keep the checked view and the original attempt deadline. A permanently
+                // refused position still reaches normal repositioning after the fast burst.
+                ghostSlot=placementInventorySlot;ghostRetryAt=ticks+2;placement=job;
+                failedPlacementUntil.remove(job.target);if(job.index>=0)retryAt.remove(job.index);
+                resyncGhostSlot();status="Ghost placement rejected — recovering its slot";return;
+            }
             placementAttemptTarget=null;failedPlacementUntil.put(job.target,ticks+20);
             if(job.index>=0){retryAt.put(job.index,ticks+10);if(autoMove.get())reposition(job.index);}
             if(job.temporary&&recoveryPhase!=0){endRecovery();recoveryCooldown=ticks+20;}
@@ -3359,9 +3397,9 @@ public final class AutoBuilder extends Module {
         walker.release();
         if(breakServerState==null&&ticks<breakDeadline){status="Waiting for server mining confirmation";return;}
         reconcileBreak(breakServerState);
-        boolean confirmed=breakServerState!=null&&breakServerState.isAir();
+        boolean confirmed=breakServerState!=null&&breakServerState.isAir(),rejected=breakServerState!=null&&!confirmed;
         pendingBreak=null;breakBefore=breakServerState=null;
-        if(!confirmed){mc.interactionManager.cancelBlockBreaking();delay=6;status="Mining not confirmed — rechecking server blocks";}
+        if(!confirmed){mc.interactionManager.cancelBlockBreaking();digging=false;delay=rejected?2:6;status=rejected?"Ghost mining rejected — retrying confirmed block":"Mining not confirmed — rechecking server blocks";}
         else status="Mining confirmed";
     }
     private void abandonHopperCut(BlockPos blocked){
