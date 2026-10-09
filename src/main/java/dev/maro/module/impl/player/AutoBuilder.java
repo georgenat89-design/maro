@@ -442,7 +442,7 @@ public final class AutoBuilder extends Module {
         button("Materials","Mark Restock Container","R adds or refreshes the double chest you are looking at; Shift + R removes it","Add",this::markContainer);
         button("Materials","Remove Restock Container","Remove the double chest you are looking at from selected supplies","Remove",this::removeContainer);
         button("Travel","Set Storage Home","Walk to marked storage, replace home 1 and confirm the save","Set Home 1",()->setupHomes(false));
-        button("Materials","Clear Restock Marks","Clear this world's selected supply chests","Clear",()->{pause("Supply chests cleared");preparationReady=false;containers.clear();triedContainers.clear();emptyChestItems.clear();chestStocks.clear();preparedStock.clear();});
+        button("Materials","Clear Restock Marks","Remove every selected supply chest, including distant or unloaded chests","Remove All",this::clearContainers);
         button("Materials","Buy Materials","Buy all missing schematic materials within your configured budget","Buy",()->startBuying(false,true));
         button("Materials","Estimate Cost","Read current auction listings without buying","Estimate",()->startBuying(true,true));
         button("Materials","Cancel Buying","Stop the shopping session","Cancel",()->finishBuying("Buying cancelled"));
@@ -731,6 +731,11 @@ public final class AutoBuilder extends Module {
         selectContainer(mc.player!=null&&(mc.player.isSneaking()||mc.options.sneakKey.isPressed()));
     }
     public void removeContainer(){selectContainer(true);}
+    public void clearContainers(){
+        pause("All supply chests removed — 0 selected");
+        preparationReady=false;containers.clear();triedContainers.clear();emptyChestItems.clear();chestStocks.clear();preparedStock.clear();
+        homes.forgetStorage();checkpoint();notify(status);
+    }
     private void selectContainer(boolean remove){
         if(!inGame()||!(mc.crosshairTarget instanceof BlockHitResult hit)||hit.getType()!=HitResult.Type.BLOCK)return;
         BlockPos pos=hit.getBlockPos();

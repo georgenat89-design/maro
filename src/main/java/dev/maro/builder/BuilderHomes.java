@@ -46,6 +46,8 @@ public final class BuilderHomes {
     public boolean checkingRoutes(){return checkingRoutes;}
     public void invalidateRoutes(){checkingRoutes=false;routeTarget=routeFeet=null;routeViews=List.of();routeHomes=List.of();routeRetryAt=0;}
     public void reset(){cancel();Arrays.fill(points,null);returnTrip=storageArrived=false;retryAt=0;}
+    /** Forget removed storage while retaining an outstanding work-area return. */
+    public void forgetStorage(){cancel();points[0]=null;storageArrived=false;retryAt=0;}
     private Point current(){return current(false);}
     private Box standingBody(Vec3d position){var dimensions=mc.player.getDimensions(net.minecraft.entity.EntityPose.STANDING);double half=dimensions.width()/2;return new Box(position.x-half,position.y,position.z-half,position.x+half,position.y+dimensions.height(),position.z+half).contract(.000001);}
     private Box footingContact(Vec3d position){var body=standingBody(position);return new Box(body.minX,position.y-.05,body.minZ,body.maxX,position.y+.001,body.maxZ);}
