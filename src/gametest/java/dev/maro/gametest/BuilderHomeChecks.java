@@ -101,10 +101,15 @@ final class BuilderHomeChecks {
             repairDependencyCycles(context,world,builder,home2);
             System.out.println("[builder-cycle] PASS: native repair cycles, delayed material and scaffold cleanup");return;
         }
+        if(Boolean.getBoolean("maro.gametest.builderReceiverOnly")){
+            receiverColumnClimb(context,world,builder,start);
+            System.out.println("[builder-receiver] PASS: prompt native receiver column, real stock recovery and cleanup");return;
+        }
         longCheckedWalk(context,world,builder,start);
         unproductiveHomeEscape(context,world,builder,start);
         missingMaterialBeforeAccess(context,world,builder,start);
         blockedRepairReceivers(context,world,builder,start,chest);
+        receiverColumnClimb(context,world,builder,start);
         crouchedChestPlacementView(context,world,builder,start);
         scaffoldObstructedSign(context,world,builder,start);
         roofEdgeRoundTrip(context,world,builder,home2,chest);
@@ -555,6 +560,37 @@ final class BuilderHomeChecks {
         context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Sign recovery left work, dirt, damage or a menu: "+builder.status());BuilderPacketChecks.verify(1);builder.pause("scaffold-obstructed sign checked");setting(builder,"Restock When Empty",true);setting(builder,"Auto Buy When Missing",true);});
         teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+4)+" "+(origin.getY()+3)+" "+(origin.getZ()+4)+" air");context.waitTicks(4);
         System.out.println("[builder-home] Rotated native sign placed after owned ray obstruction removal; chest/floor/footing intact, zero dirt and full health in "+elapsed+" ticks");
+    }
+    private static void receiverColumnClimb(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-home] Continue a proved receiver column above the chest's own height without idle replanning");
+        var previous=context.computeOnClient(client->{var values=new HashMap<String,com.google.gson.JsonElement>();for(var option:builder.getSettings())if(List.of("Temporary Supports","Prepare Whole Build").contains(option.getName()))values.put(option.getName(),option.toJson());return values;});
+        var base=start.west(3).south(7);var top=base.up(2);var receiver=base.east(2);var opening=base.north(2);
+        command(world,"setblock",receiver,"dispenser[facing=west]");command(world,"setblock",opening,"air");
+        world.getServer().runOnServer(server->{var stock=(net.minecraft.inventory.Inventory)server.getOverworld().getBlockEntity(receiver);stock.setStack(0,new ItemStack(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS));stock.setStack(1,new ItemStack(Items.DIAMOND,7));stock.markDirty();});
+        world.getServer().runCommand("clear @a cracked_polished_blackstone_bricks");world.getServer().runCommand("give @a dirt 4");teleport(world,base);context.waitTicks(12);int first=commands.size();
+        context.runOnClient(client->{
+            setting(builder,"Temporary Supports",true);setting(builder,"Prepare Whole Build",false);
+            builder.install(new Schematic("receiver-column-height.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.CRACKED_POLISHED_BLACKSTONE_BRICKS.getDefaultState()}));builder.setOrigin(opening);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();
+            @SuppressWarnings("unchecked")var owners=(Map<BlockPos,Integer>)field(builder,"floorAccessWork");owners.put(opening,-1);
+            @SuppressWarnings("unchecked")var sources=(Map<Item,Set<BlockPos>>)field(builder,"accessStockSources");sources.put(Items.CRACKED_POLISHED_BLACKSTONE_BRICKS,new LinkedHashSet<>(List.of(receiver)));
+            setField(builder,"needed",Items.CRACKED_POLISHED_BLACKSTONE_BRICKS);require((boolean)call(builder,"beginRestock",new Class<?>[]{}),"Native receiver recovery did not begin");
+            require(receiver.equals(field(builder,"restockTarget"))&&(boolean)field(builder,"recoveringAccessStock"),"Column fixture selected a different receiver");
+            var walker=(BuilderWalk)field(builder,"walker");require(walker.canClimbAfterClearing(base,top,top,Set.of()),"Native receiver column lacks a checked climb");
+            var eye=Vec3d.ofBottomCenter(top).add(0,client.player.getStandingEyeHeight(),0);require(call(builder,"chestHit",new Class<?>[]{BlockPos.class,Vec3d.class},receiver,eye)!=null,"Column top has no native receiver ray");
+            setField(builder,"navigatingCell",0);call(builder,"commitColumnAccess",new Class<?>[]{BlockPos.class,BlockPos.class},base,top);walker.requestRecovery();
+        });
+        int lift=0;boolean climbed=false;
+        for(;lift<80;lift++){
+            climbed=world.getServer().computeOnServer(server->server.getOverworld().getBlockState(base).isOf(Blocks.DIRT))&&context.computeOnClient(client->client.player.getY()>base.getY()+.8);
+            if(climbed)break;context.waitTick();
+        }
+        require(climbed,"Committed receiver column waited instead of climbing above chest height: "+context.computeOnClient(client->builder.status()));
+        int elapsed=lift;for(;elapsed<800&&context.computeOnClient(client->builder.building());elapsed++)context.waitTick();
+        require(world.getServer().computeOnServer(server->{var level=server.getOverworld();var stock=(net.minecraft.inventory.Inventory)level.getBlockEntity(receiver);if(!level.getBlockState(opening).isOf(Blocks.CRACKED_POLISHED_BLACKSTONE_BRICKS)||!stock.getStack(0).isEmpty()||!stock.getStack(1).isOf(Items.DIAMOND)||stock.getStack(1).getCount()!=7||!level.getBlockState(base.down()).isOf(Blocks.STONE))return false;for(var pos:BlockPos.iterate(base.add(-3,0,-3),base.add(3,4,3)))if(level.getBlockState(pos).isOf(Blocks.DIRT))return false;return true;}),"Receiver column failed real stock recovery, hole restoration or native cleanup");
+        require(commands.size()==first,"Local receiver column used a storage home");
+        context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Receiver column left work, dirt, damage or menu: "+builder.status());BuilderPacketChecks.verify(1);builder.pause("receiver column checked");for(var option:builder.getSettings())if(previous.containsKey(option.getName()))option.fromJson(previous.get(option.getName()));});
+        teleport(world,start);context.waitTicks(12);command(world,"setblock",receiver,"air");command(world,"setblock",opening,"air");context.waitTicks(4);
+        System.out.println("[builder-home] Native receiver column lifted above chest height in "+lift+" ticks; actual stock patched the hole, diamonds/footing preserved, zero dirt and full health in "+elapsed+" ticks");
     }
     private static void blockedRepairReceivers(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,BlockPos chest){
         System.out.println("[builder-home] Skip two unreachable repair receivers and patch the hole from actual selected storage");
