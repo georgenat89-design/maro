@@ -8,6 +8,7 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.client.gui.tooltip.Tooltip;
 import net.minecraft.text.Text;
 import net.minecraft.util.hit.*;
 import net.minecraft.util.math.Direction;
@@ -17,7 +18,7 @@ public final class BuilderControlScreen extends Screen {
     private final Screen parent;
     private final AutoBuilder builder;
     private int left,top,panelWidth,panelHeight,column;
-    private ButtonWidget start,buy,mode,preview,restart,cancel,deposit;
+    private ButtonWidget start,buy,mode,preview,restart,cancel,deposit,removeChest;
     public BuilderControlScreen(Screen parent,AutoBuilder builder){super(Text.literal("Auto Builder"));this.parent=parent;this.builder=builder;}
     @Override protected void init(){
         panelWidth=Math.min(440,width-24);panelHeight=Math.min(228,height-12);left=(width-panelWidth)/2;top=(height-panelHeight)/2;column=(panelWidth-42)/2;
@@ -39,17 +40,20 @@ public final class BuilderControlScreen extends Screen {
         buy=smallButton("Buy Missing",0,top+174,builder::buyMaterials);
         deposit=smallButton("Deposit All",1,top+174,builder::depositAll);
         smallButton("Add Chest",2,top+174,builder::markContainer);
-        smallButton("Saved Builds",3,top+174,()->client.setScreen(new BuilderPlacementsScreen(this,builder)));
+        removeChest=smallButton("Remove Chest",3,top+174,builder::removeContainer);
+        removeChest.setTooltip(Tooltip.of(Text.literal("Look at either half of a selected double chest to remove it from supplies")));
+        smallButton("Saved Builds",4,top+174,()->client.setScreen(new BuilderPlacementsScreen(this,builder)));
         button("Options",1,top+194,18,()->{var gui=parent instanceof ClickGuiScreen existing?existing:new ClickGuiScreen();client.setScreen(gui);gui.openModuleOptions(builder);});
         preview=button("",0,top+194,18,builder::togglePreview);
 
         tick();
     }
     private ButtonWidget button(String label,int col,int y,int height,Runnable action){return addDrawableChild(ButtonWidget.builder(Text.literal(label),b->action.run()).dimensions(left+18+col*(column+6),y,column,height).build());}
-    private ButtonWidget smallButton(String label,int col,int y,Runnable action){int w=(panelWidth-54)/4;return addDrawableChild(ButtonWidget.builder(Text.literal(label),b->action.run()).dimensions(left+18+col*(w+6),y,w,18).build());}
+    private ButtonWidget smallButton(String label,int col,int y,Runnable action){int w=(panelWidth-60)/5;return addDrawableChild(ButtonWidget.builder(Text.literal(label),b->action.run()).dimensions(left+18+col*(w+6),y,w,18).build());}
     @Override public void tick(){
         boolean loaded=builder.schematic()!=null&&!builder.loading();start.active=loaded&&!builder.buying()&&!builder.depositing();buy.active=loaded&&builder.auctionBudget()>0&&!builder.buying()&&!builder.depositing();preview.active=loaded;restart.active=loaded;cancel.active=loaded||builder.loading()||builder.depositing();deposit.active=!builder.buying()&&!builder.depositing();
         start.setMessage(Text.literal(builder.building()?"Resume Build":"Start Build"));mode.setMessage(Text.literal(builder.buildMode().equals("Semi Auto")?"Mode: Hold Right Click":"Mode: Automatic"));preview.setMessage(Text.literal(builder.previewVisible()?"Hide Preview":"Show Preview"));
+        removeChest.active=!builder.restockContainers().isEmpty();
     }
     @Override public void render(DrawContext ctx,int mouseX,int mouseY,float delta){
         ctx.fill(0,0,width,height,0xC50B101A);SmoothHudText.beginFrame();Render2D.shadow(ctx,left,top,panelWidth,panelHeight,12,10,0x60000000);Render2D.roundRect(ctx,left,top,panelWidth,panelHeight,12,0xFF171F2D);

@@ -440,6 +440,7 @@ public final class AutoBuilder extends Module {
         button("Start","Cancel Schematic","Stop all actions and unload the schematic; placed blocks remain","Cancel",this::cancelSchematic);
         button("Snapshot","Capture Snapshot","Save the configured area from the placement origin to a vanilla .nbt file","Capture",this::startCapture);
         button("Materials","Mark Restock Container","R adds or refreshes the double chest you are looking at; Shift + R removes it","Add",this::markContainer);
+        button("Materials","Remove Restock Container","Remove the double chest you are looking at from selected supplies","Remove",this::removeContainer);
         button("Travel","Set Storage Home","Walk to marked storage, replace home 1 and confirm the save","Set Home 1",()->setupHomes(false));
         button("Materials","Clear Restock Marks","Clear this world's selected supply chests","Clear",()->{pause("Supply chests cleared");preparationReady=false;containers.clear();triedContainers.clear();emptyChestItems.clear();chestStocks.clear();preparedStock.clear();});
         button("Materials","Buy Materials","Buy all missing schematic materials within your configured budget","Buy",()->startBuying(false,true));
@@ -727,14 +728,20 @@ public final class AutoBuilder extends Module {
     private void notify(String message){Notifications.push("Auto Builder",message,Notifications.Type.INFO,5000);if(mc.player!=null)mc.player.sendMessage(Text.literal("[Auto Builder] "+message),false);}
     public void onActionBind(int key){if(markBind.matches(key)&&(isEnabled()||schematic!=null)){markContainer();return;}if(isEnabled()&&buyBind.matches(key))startBuying(false,true);}
     public void markContainer(){
+        selectContainer(mc.player!=null&&(mc.player.isSneaking()||mc.options.sneakKey.isPressed()));
+    }
+    public void removeContainer(){selectContainer(true);}
+    private void selectContainer(boolean remove){
         if(!inGame()||!(mc.crosshairTarget instanceof BlockHitResult hit)||hit.getType()!=HitResult.Type.BLOCK)return;
-        BlockPos pos=hit.getBlockPos();var block=mc.world.getBlockState(pos).getBlock();
-        if(!doubleChest(pos)){notify("Look at the double chest you want to use");return;}
+        BlockPos pos=hit.getBlockPos();
+        if(!doubleChest(pos)){notify(remove?"Look at the selected double chest you want to remove":"Look at the double chest you want to use");return;}
         if(world!=mc.world)setOrigin(mc.player.getBlockPos());
         var partner=pos.offset(ChestBlock.getFacing(mc.world.getBlockState(pos)));var existing=containers.stream().filter(p->p.equals(pos)||p.equals(partner)).findFirst().orElse(null);
-        boolean remove=mc.player.isSneaking()||mc.options.sneakKey.isPressed();pause("Supply chest selection changed");preparationReady=false;chestStocks.clear();preparedStock.clear();triedContainers.clear();emptyChestItems.clear();
-        if(remove){if(existing!=null)containers.remove(existing);notify("Supply chest removed — "+containers.size()+" selected");}
-        else{if(existing==null)containers.add((pos.compareTo(partner)<0?pos:partner).toImmutable());notify("Supply chest added / refreshed — "+containers.size()+" selected");}
+        if(remove&&existing==null){notify("That double chest is not selected");return;}
+        pause("Supply chest selection changed");preparationReady=false;chestStocks.clear();preparedStock.clear();triedContainers.clear();emptyChestItems.clear();
+        if(remove){containers.remove(existing);status="Supply chest removed — "+containers.size()+" selected";}
+        else{if(existing==null)containers.add((pos.compareTo(partner)<0?pos:partner).toImmutable());status="Supply chest added / refreshed — "+containers.size()+" selected";}
+        notify(status);
     }
     private void setupHomes(boolean resume){
         if(!inGame()||homes.busy())return;
