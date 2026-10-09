@@ -119,7 +119,7 @@ final class BuilderHomeChecks {
             System.out.println("[builder-receiver] PASS: prompt native receiver column, real stock recovery and cleanup");return;
         }
         if(Boolean.getBoolean("maro.gametest.builderEntryOnly")){
-            elevatedRoomAccess(context,world,builder,start);raisedLiquidEntrance(context,world,builder,start);rotations(context,builder,start);
+            pistonBeforeFrontContainer(context,world,builder,start);elevatedRoomAccess(context,world,builder,start);raisedLiquidEntrance(context,world,builder,start);rotations(context,builder,start);
             System.out.println("[builder-entry] PASS: prompt proved exterior entry, contained upper liquid and brisk rotations");return;
         }
         if(Boolean.getBoolean("maro.gametest.builderHopperOnly")){
@@ -147,6 +147,7 @@ final class BuilderHomeChecks {
         sectionDependencyChain(context,world,builder,home2);
         buriedHopperRoofAccess(context,world,builder,start);
         offsetPistonRoofAccess(context,world,builder,start);
+        pistonBeforeFrontContainer(context,world,builder,start);
         existingViewBeforeRoof(context,world,builder,start);
         hopperCutProtection(context,world,builder,start);
         hopperRepairStock(context,world,builder,start);
@@ -311,6 +312,38 @@ final class BuilderHomeChecks {
         require(world.getServer().computeOnServer(server->{for(int y=0;y<7;y++)for(int z=-4;z<9;z++)for(int x=-4;x<9;x++)if(server.getOverworld().getBlockState(origin.add(x,y,z)).isOf(Blocks.DIRT))return false;return true;}),"Offset piston access left raw dirt");
         teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+4)+" "+(origin.getY()+2)+" "+(origin.getZ()+4)+" air");context.waitTicks(4);
         System.out.println("[builder-home] Native east-facing piston through registered offset roof beams; all cells restored, protected container retained, zero dirt, full health and bounded look in "+elapsed+" ticks");
+    }
+    private static void pistonBeforeFrontContainer(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        System.out.println("[builder-home] Place horizontal pistons before their front containers seal the native placement view");
+        var origin=start.add(-2,0,10);int width=5,height=4,length=5;
+        for(var facing:Direction.Type.HORIZONTAL){
+            var cells=new BlockState[width*height*length];Arrays.fill(cells,Blocks.AIR.getDefaultState());
+            var center=new BlockPos(2,1,2);var front=center.offset(facing);var rear=center.offset(facing.getOpposite());
+            for(int z=0;z<length;z++)for(int x=0;x<width;x++)cells[z*width+x]=Blocks.STONE.getDefaultState();
+            for(var side:Direction.Type.HORIZONTAL)if(side!=facing)for(int y=1;y<=2;y++){
+                var wall=center.offset(side).withY(y);cells[(y*length+wall.getZ())*width+wall.getX()]=Blocks.STONE.getDefaultState();
+            }
+            for(int z=1;z<=3;z++)for(int x=1;x<=3;x++)cells[(3*length+z)*width+x]=Blocks.STONE.getDefaultState();
+            int target=(center.getY()*length+center.getZ())*width+center.getX(),container=(front.getY()*length+front.getZ())*width+front.getX();
+            cells[target]=Blocks.STICKY_PISTON.getDefaultState().with(PistonBlock.FACING,facing);
+            cells[container]=Blocks.YELLOW_SHULKER_BOX.getDefaultState();
+            var hopper=center.down();cells[hopper.getZ()*width+hopper.getX()]=Blocks.HOPPER.getDefaultState().with(HopperBlock.FACING,facing);
+            for(int i=0;i<cells.length;i++){
+                var at=origin.add(i%width,i/(width*length),i/width%length);var state=cells[i];
+                command(world,"setblock",at,i==target||i==container?"air":state.isOf(Blocks.HOPPER)?"hopper[facing="+facing.asString()+"]":state.isOf(Blocks.STONE)?"stone":"air");
+            }
+            world.getServer().runCommand("give @a sticky_piston 1");world.getServer().runCommand("give @a yellow_shulker_box 1");
+            teleport(world,origin.add(center.offset(facing,2)));context.waitTicks(12);
+            context.runOnClient(client->{setting(builder,"Temporary Supports",false);setting(builder,"Prepare Whole Build",false);builder.install(new Schematic("piston-before-container-"+facing.asString()+".nbt","test",width,height,length,BlockPos.ORIGIN,cells));builder.setOrigin(origin);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(12,8);builder.startBuild();});
+            int elapsed=0;
+            for(;elapsed<600&&context.computeOnClient(client->builder.building()||((BuilderHomes)field(builder,"homes")).busy());elapsed++){
+                require(world.getServer().computeOnServer(server->{var w=server.getOverworld();return !w.getBlockState(origin.add(front)).isOf(Blocks.YELLOW_SHULKER_BOX)||AutoBuilder.matchesBuildState(w.getBlockState(origin.add(center)),cells[target]);}),"Front container sealed the missing "+facing+" piston placement view");context.waitTick();
+            }
+            require(world.getServer().computeOnServer(server->{for(int i=0;i<cells.length;i++)if(!AutoBuilder.matchesBuildState(server.getOverworld().getBlockState(origin.add(i%width,i/(width*length),i/width%length)),cells[i]))return false;return true;}),"Native "+facing+" piston/container order did not finish: "+context.computeOnClient(client->builder.status()));
+            context.runOnClient(client->{require(!builder.building()&&builder.temporarySupports().isEmpty()&&client.player.getHealth()==20&&client.currentScreen==null,"Piston/container ordering left work, dirt, damage or menu");BuilderPacketChecks.verify(2);builder.pause("piston approach checked");setting(builder,"Temporary Supports",true);});
+            teleport(world,start);context.waitTicks(12);world.getServer().runCommand("fill "+origin.getX()+" "+origin.getY()+" "+origin.getZ()+" "+(origin.getX()+4)+" "+(origin.getY()+3)+" "+(origin.getZ()+4)+" air");context.waitTicks(4);
+            System.out.println("[builder-piston-order] "+facing+" native piston before front container, all cells complete, zero cuts/dirt, full health in "+elapsed+" ticks");
+        }
     }
     private static void existingViewBeforeRoof(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         System.out.println("[builder-home] Walk to an existing native view before opening an intact glass roof");
