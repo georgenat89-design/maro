@@ -139,6 +139,18 @@ public final class BlockEspRenderer {
         haveMatrices = true;
     }
 
+    /**
+     * Where a point in the world lands on screen this frame, in GUI coordinates {x, y} for a screen
+     * {@code guiWidth} by {@code guiHeight}, or null if it is behind the camera.
+     */
+    public static float[] toScreen(double x, double y, double z, Vec3d camera, int guiWidth, int guiHeight) {
+        if (!haveMatrices) return null;
+        Vector4f p = new Vector4f((float) (x - camera.x), (float) (y - camera.y), (float) (z - camera.z), 1f);
+        viewProjection.transform(p);
+        if (p.w <= 0.05f) return null;
+        return new float[] {(p.x / p.w + 1f) / 2f * guiWidth, (1f - p.y / p.w) / 2f * guiHeight};
+    }
+
     /** Whether a box, in world coordinates, is at least partly on screen this frame. */
     public static boolean inView(double x1, double y1, double z1, double x2, double y2, double z2, Vec3d camera) {
         if (!haveMatrices) return true;

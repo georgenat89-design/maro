@@ -39,6 +39,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.Pet());
         register(new dev.maro.module.impl.visuals.BaseESP());
         register(new dev.maro.module.impl.visuals.BlockESP());
+        register(new dev.maro.module.impl.visuals.SpawnerNotifier());
         register(new dev.maro.module.impl.visuals.PlayerESP());
         register(new dev.maro.module.impl.visuals.CustomSky());
         register(new dev.maro.module.impl.visuals.CustomTotem());
