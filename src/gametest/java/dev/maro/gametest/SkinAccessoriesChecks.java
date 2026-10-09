@@ -94,8 +94,9 @@ final class SkinAccessoriesChecks {
                         "A diamond sword is not drawn with the Phoenix Grace model: " + shown.get(net.minecraft.component.DataComponentTypes.ITEM_MODEL));
                 require(dev.maro.render.accessories.CosmeticItems.all(dev.maro.render.accessories.CosmeticItems.Kind.SWORD).size() == 50
                         && dev.maro.render.accessories.CosmeticItems.all(dev.maro.render.accessories.CosmeticItems.Kind.PICKAXE).size() == 25
-                        && dev.maro.render.accessories.CosmeticItems.all(dev.maro.render.accessories.CosmeticItems.Kind.SHOVEL).size() == 25,
-                        "There are not 50 swords, 25 pickaxes and 25 shovels");
+                        && dev.maro.render.accessories.CosmeticItems.all(dev.maro.render.accessories.CosmeticItems.Kind.SHOVEL).size() == 25
+                        && dev.maro.render.accessories.CosmeticItems.all(dev.maro.render.accessories.CosmeticItems.Kind.TRIDENT).size() == 25,
+                        "There are not 50 swords, 25 pickaxes, 25 shovels and 25 tridents");
                 // Item Size reaches the sword wherever it is held (here, the preview's third-person hand), not in menus.
                 var itemSize = (dev.maro.setting.NumberSetting) setting(m, "Item Size");
                 itemSize.set(1.5);
@@ -122,6 +123,15 @@ final class SkinAccessoriesChecks {
             });
             context.waitTicks(3);
             context.takeScreenshot("maro-cosmetics-pickaxe");
+            // Tridents: a skin of their own, drawn on a held trident.
+            context.runOnClient(c -> {
+                ((SkinAccessoriesScreen) c.currentScreen).showTab("Trident");
+                ((ModeSetting) setting(m, "Trident")).set("Phoenix Trident");
+                var skin = SkinAccessories.skinFor(new ItemStack(Items.TRIDENT));
+                require(skin != null && skin.name().equals("Phoenix Trident"), "The trident skin is not used while previewing: " + skin);
+            });
+            context.waitTicks(3);
+            context.takeScreenshot("maro-cosmetics-trident");
             context.runOnClient(c -> ((SkinAccessoriesScreen) c.currentScreen).showTab("Hat"));
             context.waitTicks(3);
             context.takeScreenshot("maro-cosmetics-hats");

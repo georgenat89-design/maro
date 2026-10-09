@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draws the Cosmetics weapon and tool skins: 50 swords, 25 pickaxes and 25 shovels as 32x32
+"""Draws the Cosmetics weapon and tool skins: 50 swords, 25 pickaxes, 25 shovels and 25 tridents as 32x32
 pixel art, with an item model and item definition for each, under assets/maro.
 
 Run from the repository root:  python3 tools/cosmeticgen.py
@@ -118,6 +118,7 @@ TOOL_MATERIAL = {"Abyssal": "void", "Amethyst": "amethyst", "Arctic": "frost", "
                  "Prismarine": "prismarine", "Ruby": "ruby", "Sculk": "echo", "Thunder": "thunder", "Void": "nebula"}
 PICK_FORMS = ["classic", "heavy", "spike", "crescent", "classic"]
 SHOVEL_FORMS = ["spade", "round", "pointed", "broad", "spade"]
+TRIDENT_FORMS = ["classic", "barbed", "crescent", "royal", "classic"]
 
 
 def slug(name):
@@ -463,6 +464,73 @@ def draw_shovel(name, form, mat):
     return c.image()
 
 
+def draw_trident(name, form, mat):
+    m = MATERIALS[mat]
+    bd, bm, bl = (hexc(c) for c in m["blade"])
+    md, mm, ml = (hexc(c) for c in m["metal"])
+    grip = hexc(m["grip"])
+    accent = hexc(m["accent"])
+    rnd = random.Random(name + " trident")
+    c = Canvas()
+    head = set()
+    spread = {"classic": 3.9, "barbed": 3.7, "crescent": 3.4, "royal": 4.1}[form]
+    base = 0.55  # where the head starts along the shaft
+
+    def prong(x, y, t, d, centre, start, end, width):
+        if not start <= t <= end:
+            return False
+        u = (t - start) / (end - start)
+        half = width if u < 0.65 else width * (1 - (u - 0.65) / 0.35) + 0.12
+        if abs(d - centre) > half:
+            return False
+        head.add((x, y))
+        e = (d - centre) / max(0.01, half)
+        col = mix(bm, bl, 0.75) if e < -0.2 else (mix(bm, bd, 0.55) if e > 0.4 else bm)
+        if u > 0.85:
+            col = mix(col, bl, 0.6)
+        c.put(x, y, col, 2)
+        return True
+
+    for y in range(SIZE):
+        for x in range(SIZE):
+            t, d = coords(x, y)
+            # The shaft, banded every few pixels, with a wrapped grip low down.
+            if 0.02 <= t <= base + 0.04 and abs(d) <= 0.8:
+                handle = mix(grip, md, 0.55)
+                c.put(x, y, mix(shade(handle, 0.9), shade(handle, 1.4), t) if int(t * L) % 5 else mm, 1)
+            if 0.14 <= t <= 0.26 and abs(d) <= 1.05:
+                c.put(x, y, grip if int(t * L) % 2 else shade(grip, 1.5), 1)
+            if t < 0.05 and abs(d) <= 1.3:
+                c.put(x, y, mm, 2)
+            # The crossbar the prongs grow from.
+            if base <= t <= base + 0.06 and abs(d) <= spread + 0.8:
+                head.add((x, y))
+                c.put(x, y, mix(md, ml, 0.5 - d / (2 * (spread + 0.8))), 2)
+            # The middle prong, longest, to the tip.
+            prong(x, y, t, d, 0.0, base + 0.04, 1.0, 0.95)
+            # The side prongs: straight, hooked outward (barbed), bowed out (crescent) or tall (royal).
+            for side in (-1, 1):
+                start, end = base + 0.04, {"classic": 0.88, "barbed": 0.86, "crescent": 0.88, "royal": 0.92}[form]
+                u = max(0.0, min(1.0, (t - start) / (end - start)))
+                centre = side * spread
+                if form == "crescent":
+                    centre = side * (spread + math.sin(u * math.pi) * 1.1)
+                prong(x, y, t, d, centre, start, end, 0.8)
+                if form == "barbed" and start + 0.1 <= t <= start + 0.14 and 0 < side * d - spread <= 1.9:
+                    head.add((x, y))
+                    c.put(x, y, mix(bm, bd, 0.3), 2)
+    # A gem or a bright stud where the prongs meet.
+    x, y = at(base + 0.03, 0)
+    c.put(int(x), int(y), accent, 3)
+    if form == "royal":
+        for k in (-1, 1):
+            x, y = at(base + 0.03, k * (spread + 0.6))
+            c.put(int(x), int(y), accent, 3)
+    effects(c, m["fx"], rnd, bd, bm, bl, accent, lambda x, y: (x, y) in head)
+    c.outline(lambda x, y: shade(bd if (x, y) in head else md, 0.45))
+    return c.image()
+
+
 def write(kind, name, image, catalogue):
     ident = kind + "_" + slug(name)
     tex = os.path.join(ROOT, "textures", "item", "cosmetic", ident + ".png")
@@ -489,6 +557,8 @@ def main():
         write("pickaxe", base + " Pickaxe", draw_pickaxe(base, PICK_FORMS[i % len(PICK_FORMS)], TOOL_MATERIAL[base]), catalogue)
     for i, base in enumerate(TOOLS):
         write("shovel", base + " Shovel", draw_shovel(base, SHOVEL_FORMS[i % len(SHOVEL_FORMS)], TOOL_MATERIAL[base]), catalogue)
+    for i, base in enumerate(TOOLS):
+        write("trident", base + " Trident", draw_trident(base, TRIDENT_FORMS[i % len(TRIDENT_FORMS)], TOOL_MATERIAL[base]), catalogue)
     with open(os.path.join(ROOT, "cosmetics.json"), "w") as f:
         json.dump(catalogue, f, indent=1)
         f.write("\n")

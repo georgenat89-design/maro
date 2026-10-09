@@ -16,13 +16,13 @@ import java.util.Map;
 
 /**
  * The weapon and tool skins drawn by tools/cosmeticgen.py: each a name ("Phoenix Grace"), the kind
- * of item it dresses (sword, pickaxe, shovel) and the item model it is drawn with.
+ * of item it dresses (sword, pickaxe, shovel, trident) and the item model it is drawn with.
  */
 public final class CosmeticItems {
     private CosmeticItems() {
     }
 
-    public enum Kind {SWORD, PICKAXE, SHOVEL}
+    public enum Kind {SWORD, PICKAXE, SHOVEL, TRIDENT}
 
     public record Skin(Kind kind, String id, String name) {
         public Identifier model() {

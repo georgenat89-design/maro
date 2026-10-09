@@ -42,6 +42,7 @@ final class StaffNotifierChecks {
                 require(module.isStaffName("DOUGH4")&&module.isStaffName("u_vv")&&module.isStaffName("cryptodaveyt"),"New staff defaults were missing");
                 require(module.isStaffName("CaptainMoose35")&&module.isStaffName("owen1212055"),"CaptainMoose35 and Owen1212055 were not in the staff list");
                 require(module.isStaffName("Splaterd")&&module.isStaffName("auzzitech")&&module.isStaffName("Zeef69"),"splaterd, auzzitech and zeef69 were not in the staff list");
+                require(module.isStaffName("LzouZMp5")&&module.isStaffName("lzouzmp5"),"LzouZMp5 was not in the staff list");
                 // A list saved before they were added gets them once; one saved since keeps them out if removed.
                 var names=(SettingAdapters.ValueSetting)setting(module,"staff names");
                 names.apply("Builder; frwost");
@@ -49,7 +50,7 @@ final class StaffNotifierChecks {
                 var upgraded=new StaffNotifier();upgraded.loadExtra(older);
                 String upgradedNames=setting(upgraded,"staff names").toJson().toString().toLowerCase(java.util.Locale.ROOT);
                 require(upgradedNames.contains("captainmoose35")&&upgradedNames.contains("owen1212055")&&upgradedNames.contains("splaterd")
-                        &&upgradedNames.contains("auzzitech")&&upgradedNames.contains("zeef69")&&upgradedNames.contains("builder"),
+                        &&upgradedNames.contains("auzzitech")&&upgradedNames.contains("zeef69")&&upgradedNames.contains("lzouzmp5")&&upgradedNames.contains("builder"),
                     "An older saved staff list did not gain the new names: "+upgradedNames);
                 var current=new StaffNotifier();current.loadExtra(module.saveExtra());
                 String currentNames=setting(current,"staff names").toJson().toString().toLowerCase(java.util.Locale.ROOT);

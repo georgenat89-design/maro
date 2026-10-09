@@ -36,11 +36,11 @@ import java.util.Locale;
 /**
  * Cosmetics: your character turning on the left (Front, Back, Reset; drag to turn it), and on the
  * right a tab for each kind of cosmetic, a list of every choice in it with the current one lit, a
- * size slider for that kind and Apply. Hats come from the Hats module; swords, pickaxes and
- * shovels are skins over your own items; the rest are the 3D accessories.
+ * size slider for that kind and Apply. Hats come from the Hats module; swords, pickaxes, shovels
+ * and tridents are skins over your own items; the rest are the 3D accessories.
  */
 public final class SkinAccessoriesScreen extends Screen {
-    public static final String[] TABS = {"Hat", "Sword", "Pickaxe", "Shovel", "Wings", "Head", "Tail", "Halo", "Back", "Shoulders", "Looks", "Colors"};
+    public static final String[] TABS = {"Hat", "Sword", "Pickaxe", "Shovel", "Trident", "Wings", "Head", "Tail", "Halo", "Back", "Shoulders", "Looks", "Colors"};
     private static final float ROW = 18, ROW_GAP = 3;
     private static final int[] PALETTE = {0xFF48385E, 0xFFBA7BFF, 0xFFFFD98A, 0xFF55E6F5, 0xFFFF536D, 0xFFD77B3B, 0xFF8DE7B4,
             0xFFE9E5EF, 0xFF293447, 0xFFF2A4C3, 0xFF3391FC, 0xFF1E1B1F};
@@ -116,7 +116,7 @@ public final class SkinAccessoriesScreen extends Screen {
                 out.add("None");
                 for (String id : dev.maro.nathan.hats.HatCatalogue.ids()) out.add(pretty(id));
             }
-            case "Sword", "Pickaxe", "Shovel", "Wings", "Head", "Tail", "Halo", "Back", "Shoulders" ->
+            case "Sword", "Pickaxe", "Shovel", "Trident", "Wings", "Head", "Tail", "Halo", "Back", "Shoulders" ->
                     out.addAll(((ModeSetting) setting(tab)).getModes());
             case "Looks" -> out.addAll(List.of(SkinAccessories.PRESETS));
             default -> {
@@ -159,7 +159,7 @@ public final class SkinAccessoriesScreen extends Screen {
     /** The slider under the list for this tab, if it has one. */
     private NumberSetting size() {
         return switch (tab) {
-            case "Sword", "Pickaxe", "Shovel" -> (NumberSetting) setting("Item Size");
+            case "Sword", "Pickaxe", "Shovel", "Trident" -> (NumberSetting) setting("Item Size");
             case "Wings" -> (NumberSetting) setting("Wing Size");
             case "Head" -> (NumberSetting) setting("Head Size");
             case "Tail" -> (NumberSetting) setting("Tail Length");
@@ -184,6 +184,7 @@ public final class SkinAccessoriesScreen extends Screen {
             case "Sword" -> Items.DIAMOND_SWORD;
             case "Pickaxe" -> Items.DIAMOND_PICKAXE;
             case "Shovel" -> Items.DIAMOND_SHOVEL;
+            case "Trident" -> Items.TRIDENT;
             default -> null;
         };
         return item == null ? ItemStack.EMPTY : new ItemStack(item);
@@ -195,6 +196,7 @@ public final class SkinAccessoriesScreen extends Screen {
             case "Sword" -> CosmeticItems.Kind.SWORD;
             case "Pickaxe" -> CosmeticItems.Kind.PICKAXE;
             case "Shovel" -> CosmeticItems.Kind.SHOVEL;
+            case "Trident" -> CosmeticItems.Kind.TRIDENT;
             default -> null;
         };
         if (kind == null) return null;
@@ -311,7 +313,7 @@ public final class SkinAccessoriesScreen extends Screen {
 
     private void tabs(DrawContext ctx, int mx, int my) {
         float tx = x + 10 + previewW + 10, tw = w - previewW - 30, ty = y + 34;
-        int perRow = 6;
+        int perRow = (TABS.length + 1) / 2;
         float cw = (tw - (perRow - 1) * 4) / perRow;
         for (int i = 0; i < TABS.length; i++) {
             String name = TABS[i];
