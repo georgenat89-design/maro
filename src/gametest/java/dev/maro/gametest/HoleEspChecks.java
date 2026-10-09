@@ -71,7 +71,7 @@ final class HoleEspChecks {
             hole(world, "minecraft:bedrock", OPEN);
             world.getServer().runCommand("setblock " + at(OPEN.east()) + " minecraft:air");
             hole(world, "minecraft:obsidian", OBSIDIAN);
-            world.getServer().runCommand("tp @a 49 -60 30 0 -20");
+            world.getServer().runCommand("tp @a 49 -60 30 0 -55");
             context.waitTicks(10);
             context.runOnClient(c -> {
                 c.options.setPerspective(Perspective.FIRST_PERSON);

@@ -72,7 +72,8 @@ final class HandShaderChecks {
             int galaxy = changed(plain, read(context.takeScreenshot("maro-hand-shader-galaxy")));
             System.out.println("HAND SHADER galaxy changed " + galaxy + " pixels; frames " + context.computeOnClient(c -> HandShaderRenderer.appliedFrames()));
             require(context.computeOnClient(c -> HandShaderRenderer.appliedFrames()) > before, "The hand shader never ran");
-            require(galaxy > 500, "Galaxy did not change the hand: " + galaxy + " pixels");
+            // The sword fills a good part of the lower right; most of it should change.
+            require(galaxy > 3000, "Galaxy did not change the hand: " + galaxy + " pixels");
             for (String mode : HandShader.MODES) {
                 if (mode.equals("Galaxy")) continue;
                 context.runOnClient(c -> ((ModeSetting) module.getSettings().stream().filter(s -> s.getName().equals("Mode")).findFirst().orElseThrow()).set(mode));

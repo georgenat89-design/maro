@@ -111,8 +111,6 @@ public abstract class GameRendererMixin {
         //
         // Player ESP and Block ESP go on before either, so their fills, tracers and glow bloom and
         // grade with the world.
-        // The hand's own look first: it is part of the picture the ESP is drawn over.
-        dev.maro.render.HandShaderRenderer.apply();
         PlayerEspRenderer.composite();
         dev.maro.render.esp.BlockEspRenderer.composite();
         Bloom.applyTo(MinecraftClient.getInstance().getFramebuffer(), pool);
