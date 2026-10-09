@@ -498,5 +498,130 @@
   "kind": "shovel",
   "id": "shovel_void_shovel",
   "name": "Void Shovel"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_abyssal_trident",
+  "name": "Abyssal Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_amethyst_trident",
+  "name": "Amethyst Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_arctic_trident",
+  "name": "Arctic Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_blaze_trident",
+  "name": "Blaze Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_celestial_trident",
+  "name": "Celestial Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_cobalt_trident",
+  "name": "Cobalt Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_copper_trident",
+  "name": "Copper Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_crystal_trident",
+  "name": "Crystal Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_dragonbone_trident",
+  "name": "Dragonbone Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_ember_trident",
+  "name": "Ember Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_emerald_trident",
+  "name": "Emerald Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_frostbite_trident",
+  "name": "Frostbite Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_galaxy_trident",
+  "name": "Galaxy Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_gilded_trident",
+  "name": "Gilded Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_jade_trident",
+  "name": "Jade Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_lava_trident",
+  "name": "Lava Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_lunar_trident",
+  "name": "Lunar Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_netherite_trident",
+  "name": "Netherite Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_obsidian_trident",
+  "name": "Obsidian Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_phoenix_trident",
+  "name": "Phoenix Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_prismarine_trident",
+  "name": "Prismarine Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_ruby_trident",
+  "name": "Ruby Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_sculk_trident",
+  "name": "Sculk Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_thunder_trident",
+  "name": "Thunder Trident"
+ },
+ {
+  "kind": "trident",
+  "id": "trident_void_trident",
+  "name": "Void Trident"
  }
 ]

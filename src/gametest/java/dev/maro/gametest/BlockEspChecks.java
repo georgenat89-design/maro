@@ -29,7 +29,8 @@ final class BlockEspChecks {
     }
 
     private static final BlockPos SPAWNER = new BlockPos(6, -40, 6), CHEST = new BlockPos(-6, -38, 4),
-            DIAMOND = new BlockPos(4, -36, -7), HIGH_SPAWNER = new BlockPos(-3, 30, -3), GOLD = new BlockPos(-4, -34, 8);
+            DIAMOND = new BlockPos(4, -36, -7), HIGH_SPAWNER = new BlockPos(-3, 30, -3), GOLD = new BlockPos(-4, -34, 8),
+            FAR = new BlockPos(3000, -40, 3000);
 
     private static void require(boolean value, String message) {
         if (!value) throw new AssertionError(message);
@@ -169,6 +170,22 @@ final class BlockEspChecks {
             await(context, () -> module.shownPositions().contains(GOLD), "A newly picked gold block was not found");
             context.runOnClient(c -> module.unpick(Blocks.GOLD_BLOCK));
             await(context, () -> !module.shownPositions().contains(GOLD), "An unpicked block stayed in Block ESP");
+
+            // A spawner in a chunk not yet loaded shows up as its chunk arrives, not on a later sweep.
+            world.getServer().runCommand("forceload add " + FAR.getX() + " " + FAR.getZ());
+            world.getServer().runCommand("setblock " + at(FAR) + " minecraft:spawner");
+            world.getServer().runCommand("forceload remove " + FAR.getX() + " " + FAR.getZ());
+            world.getServer().runCommand("tp @a " + FAR.getX() + " " + (FAR.getY() + 2) + " " + (FAR.getZ() - 10) + " 0 20");
+            int loadedAt = -1, foundAt = -1;
+            for (int tick = 0; tick < 300 && foundAt < 0; tick++) {
+                if (loadedAt < 0 && context.computeOnClient(c -> c.world.getChunkManager().isChunkLoaded(FAR.getX() >> 4, FAR.getZ() >> 4))) loadedAt = tick;
+                if (context.computeOnClient(c -> module.shownPositions().contains(FAR))) foundAt = tick;
+                else context.waitTick();
+            }
+            System.out.println("BLOCK ESP far chunk loaded at tick " + loadedAt + ", spawner shown at tick " + foundAt);
+            require(foundAt >= 0, "A spawner in a newly loaded chunk was never found");
+            require(foundAt - loadedAt <= 3, "A spawner in a newly loaded chunk took " + (foundAt - loadedAt) + " ticks to show");
+            world.getServer().runCommand("setblock " + at(FAR) + " minecraft:air");
         } finally {
             context.runOnClient(c -> {
                 module.setEnabled(false);

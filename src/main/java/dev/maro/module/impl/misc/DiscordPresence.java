@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.maro.Maro;
 import dev.maro.discord.DiscordIpc;
+import dev.maro.gui.notification.Notifications;
 import dev.maro.module.Category;
 import dev.maro.module.Module;
 import dev.maro.setting.BooleanSetting;
@@ -79,16 +80,46 @@ public class DiscordPresence extends Module {
         worker = null;
         if (t != null) t.interrupt();
         status = "Off";
+        told = null;
     }
 
     @Override
     public void onTick() {
         if (ticks++ % 20 == 0) wanted = activity().toString();
+        tell();
     }
 
     /** Connected, waiting for Discord, or what is wrong; shown in tests and logs. */
     public String status() {
         return status;
+    }
+
+    /** What it last told you about in a notification; for tests. */
+    public String told() {
+        return told;
+    }
+
+    /** The last thing told, so each is told once until it changes; game thread only. */
+    private String told;
+
+    /** Says in a notification when it is showing on Discord, or what it is waiting for, once each. */
+    private void tell() {
+        String now = status;
+        String kind = now.contains("Client ID") || now.contains("refused") ? "Bad ID"
+                : now.startsWith("Waiting") || now.startsWith("Lost") ? "No Discord" : now;
+        if (kind.equals(told)) return;
+        told = kind;
+        switch (kind) {
+            case "Needs an App ID" -> Notifications.push("Discord Presence", "Needs a Discord App ID: make an app at discord.com/developers and paste its Application ID in this module's settings",
+                    Notifications.Type.WARNING, 9000);
+            case "Bad ID" -> Notifications.push("Discord Presence", "Discord did not accept the App ID: copy the Application ID from discord.com/developers again",
+                    Notifications.Type.ERROR, 9000);
+            case "No Discord" -> Notifications.push("Discord Presence", "Can't reach Discord: open the Discord app on this computer (the browser version can't show it)",
+                    Notifications.Type.WARNING, 7000);
+            case "Connected" -> Notifications.push("Discord Presence", "Maro is showing on your Discord profile", Notifications.Type.SUCCESS, 4000);
+            default -> {
+            }
+        }
     }
 
     // ---- what Discord shows -----------------------------------------------------------------------
@@ -144,7 +175,8 @@ public class DiscordPresence extends Module {
         long lastSent = 0, nextTry = 0;
         try {
             while (worker == Thread.currentThread()) {
-                String id = appId.get().trim();
+                // Only the digits: an ID pasted with spaces or a label round it still works.
+                String id = appId.get().replaceAll("\\D", "");
                 if (id.isEmpty()) {
                     status = "Needs an App ID";
                 } else if (ipc == null) {

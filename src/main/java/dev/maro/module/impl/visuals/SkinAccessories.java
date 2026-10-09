@@ -39,18 +39,19 @@ public final class SkinAccessories extends Module {
     private final BooleanSetting movement = add(new BooleanSetting("React To Movement", "Stronger flaps and tail motion while moving", true));
     private final BooleanSetting hideHelmet = add(new BooleanSetting("Hide Head With Helmet", "Avoid overlap with equipped helmets", true));
     private final BooleanSetting hideElytra = add(new BooleanSetting("Hide Wings With Elytra", "Avoid overlap with equipped elytra", true));
-    // Weapon and tool skins: how your own swords, pickaxes and shovels look, drawn by tools/cosmeticgen.py.
+    // Weapon and tool skins: how your own swords, pickaxes, shovels and tridents look, drawn by tools/cosmeticgen.py.
     private final ModeSetting sword = add(new ModeSetting("Sword", "How your swords look", "None", CosmeticItems.choices(CosmeticItems.Kind.SWORD)));
     private final ModeSetting pickaxe = add(new ModeSetting("Pickaxe", "How your pickaxes look", "None", CosmeticItems.choices(CosmeticItems.Kind.PICKAXE)));
     private final ModeSetting shovel = add(new ModeSetting("Shovel", "How your shovels look", "None", CosmeticItems.choices(CosmeticItems.Kind.SHOVEL)));
+    private final ModeSetting trident = add(new ModeSetting("Trident", "How your tridents look", "None", CosmeticItems.choices(CosmeticItems.Kind.TRIDENT)));
     private final NumberSetting itemSize = add(new NumberSetting("Item Size", "How big skinned items are in your hand", 1, 0.5, 1.6, 0.05).suffix("x"));
     private final long animationOrigin = System.nanoTime();
 
     private static SkinAccessories instance;
-    public SkinAccessories() { super("Cosmetics", "Hats, wings, horns, tails, halos, and skins for your swords, pickaxes and shovels. Visible in your client.", Category.VISUALS); instance = this; }
+    public SkinAccessories() { super("Cosmetics", "Hats, wings, horns, tails, halos, and skins for your swords, pickaxes, shovels and tridents. Visible in your client.", Category.VISUALS); instance = this; }
     @Override public net.minecraft.client.gui.screen.Screen panel(net.minecraft.client.gui.screen.Screen parent) { return new SkinAccessoriesScreen(parent, this); }
     @Override public List<SettingSection> getSettingSections() {
-        return List.of(section("Looks & Preview", preset, preview, target), section("Items", sword, pickaxe, shovel, itemSize),
+        return List.of(section("Looks & Preview", preset, preview, target), section("Items", sword, pickaxe, shovel, trident, itemSize),
             section("Accessories", head, wings, tail, halo, shoulders, back),
             section("Fit", headSize, wingSize, wingSpread, tailLength, haloHeight), section("Palette", primary, accent, haloColor, rainbow, glow),
             section("Animation", motion, speed, strength, movement), section("Equipment", hideHelmet, hideElytra));
@@ -137,6 +138,7 @@ public final class SkinAccessories extends Module {
         if (stack.isIn(net.minecraft.registry.tag.ItemTags.SWORDS)) return CosmeticItems.byName(CosmeticItems.Kind.SWORD, m.sword.get());
         if (stack.isIn(net.minecraft.registry.tag.ItemTags.PICKAXES)) return CosmeticItems.byName(CosmeticItems.Kind.PICKAXE, m.pickaxe.get());
         if (stack.isIn(net.minecraft.registry.tag.ItemTags.SHOVELS)) return CosmeticItems.byName(CosmeticItems.Kind.SHOVEL, m.shovel.get());
+        if (stack.isOf(net.minecraft.item.Items.TRIDENT)) return CosmeticItems.byName(CosmeticItems.Kind.TRIDENT, m.trident.get());
         return null;
     }
 

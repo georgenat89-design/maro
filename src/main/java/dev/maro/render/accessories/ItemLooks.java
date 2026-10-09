@@ -35,7 +35,7 @@ public final class ItemLooks {
         return skinned;
     }
 
-    /** How big to draw a stack held in your hand: Cosmetics' Item Size for a skinned sword, pickaxe or shovel, else 1. */
+    /** How big to draw a stack held in your hand: Cosmetics' Item Size for a skinned sword, pickaxe, shovel or trident, else 1. */
     public static float handScale(ItemStack stack, ItemDisplayContext context, HeldItemContext holder) {
         boolean hand = context == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND || context == ItemDisplayContext.FIRST_PERSON_LEFT_HAND
                 || context == ItemDisplayContext.THIRD_PERSON_RIGHT_HAND || context == ItemDisplayContext.THIRD_PERSON_LEFT_HAND;

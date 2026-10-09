@@ -104,6 +104,16 @@ final class DiscordPresenceChecks {
             require(activity.getAsJsonObject("assets").get("large_image").getAsString().equals(DiscordPresence.LOGO), "The activity has no logo: " + activity);
             require(activity.has("details") && activity.has("timestamps"), "The activity has no details or time: " + activity);
             require(module.status().equals("Connected"), "Discord Presence is not connected: " + module.status());
+            context.waitTicks(2);
+            require("Connected".equals(context.computeOnClient(c -> module.told())), "Connecting was not told: " + module.told());
+            // With no App ID it says so instead of failing quietly.
+            context.runOnClient(c -> {
+                module.setEnabled(false);
+                appId.set("");
+                module.setEnabled(true);
+            });
+            for (int i = 0; i < 20 && !"Needs an App ID".equals(context.computeOnClient(c -> module.told())); i++) context.waitTicks(5);
+            require("Needs an App ID".equals(context.computeOnClient(c -> module.told())), "A missing App ID was not told: " + module.told() + " / " + module.status());
         } finally {
             context.runOnClient(c -> {
                 module.setEnabled(false);

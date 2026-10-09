@@ -38,6 +38,7 @@
     "StaffPacketsMixin",
     "StaffConnectionMixin",
     "BlockEventsMixin",
+    "ChunkLoadMixin",
     "EntityRenderStateMixin",
     "EntityRenderManagerMixin",
     "OrderedRenderCommandQueueImplAccessor",
