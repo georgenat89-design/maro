@@ -44,20 +44,23 @@ public final class ClientSettings {
     // ---- Theme page --------------------------------------------------------------------
 
     public static final SettingSection ACCENT = new SettingSection("Accent");
-    public static final ColorSetting accent = ACCENT.add(new ColorSetting("Accent Color", "Main highlight colour", 0xFF8B5CF6));
+    public static final ColorSetting accent = ACCENT.add(new ColorSetting("Accent Color", "Main highlight colour", 0xFF3391FC));
     public static final BooleanSetting gradient = ACCENT.add(new BooleanSetting("Gradient", "Blend the accent into a second hue", true));
-    public static final NumberSetting gradientShift = ACCENT.add(new NumberSetting("Gradient Shift", "Hue distance of the second colour", 0.1, 0.02, 0.4, 0.01)
+    public static final NumberSetting gradientShift = ACCENT.add(new NumberSetting("Gradient Shift",
+            "Hue distance of the second colour: below 0 it turns one way round the wheel (Maro's blue towards cyan), above 0 the other",
+            -0.07, -0.4, 0.4, 0.01)
             .visible(gradient::get));
     public static final BooleanSetting rainbow = ACCENT.add(new BooleanSetting("Rainbow", "Cycle the accent through every hue", false));
     public static final NumberSetting rainbowSpeed = ACCENT.add(new NumberSetting("Rainbow Speed", "Seconds per full cycle", 8, 2, 30, 1).suffix("s")
             .visible(rainbow::get));
 
     public static final SettingSection WINDOW = new SettingSection("Window");
-    public static final ColorSetting background = WINDOW.add(new ColorSetting("Background Color", "Colour of the menu window", 0xFF000000));
+    public static final ColorSetting background = WINDOW.add(new ColorSetting("Background Color", "Colour of the menu window", 0xFF04070D));
     public static final NumberSetting opacity = WINDOW.add(new NumberSetting("Background Opacity", "How see-through the menu window is", 94, 0, 100, 1).suffix("%"));
     public static final NumberSetting radius = WINDOW.add(new NumberSetting("Corner Radius", "Roundness of panels and cards", 6, 0, 10, 0.5));
     public static final BooleanSetting glow = WINDOW.add(new BooleanSetting("Accent Glow", "Soft glow around active elements", true));
     public static final BooleanSetting shadow = WINDOW.add(new BooleanSetting("Window Shadow", "Drop shadow behind the window", true));
+    public static final BooleanSetting contourLines = WINDOW.add(new BooleanSetting("Contour Lines", "Faint map lines behind the menu, like the logo's", true));
 
     public static final List<SettingSection> GENERAL_PAGE = List.of(INTERFACE, BEHAVIOUR);
     public static final List<SettingSection> THEME_PAGE = List.of(ACCENT, WINDOW);

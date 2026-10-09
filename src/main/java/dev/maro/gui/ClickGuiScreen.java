@@ -11,6 +11,7 @@ import dev.maro.gui.page.SettingsPage;
 import dev.maro.gui.page.SocialsPage;
 import dev.maro.gui.page.ThemePage;
 import dev.maro.gui.render.Fonts;
+import dev.maro.gui.render.Logo;
 import dev.maro.gui.render.Icons;
 import dev.maro.gui.render.Render2D;
 import dev.maro.gui.theme.Theme;
@@ -93,7 +94,6 @@ public class ClickGuiScreen extends Screen {
     // remembered between openings
     private static int lastEntry = 0;
     private static float dragX, dragY;
-    private static float logoSpin;
 
     public TextField focused;
     public KeybindSetting listening;
@@ -366,6 +366,8 @@ public class ClickGuiScreen extends Screen {
             Render2D.rectGradient(ctx, 0, 0, width, height, ColorUtil.withAlpha(0, Math.round(dim * 0.85f)), ColorUtil.withAlpha(0, Math.round(dim * 0.85f)),
                     ColorUtil.withAlpha(0, dim), ColorUtil.withAlpha(0, dim));
         }
+        // The contour lines of the logo, faint, behind everything.
+        Logo.contours(ctx, width, height, 0.16f);
 
         // The panels, fading back while the window is over them; a click outside the window returns to them.
         float win = 1f;
@@ -467,12 +469,9 @@ public class ClickGuiScreen extends Screen {
         // logo
         boolean logoHover = hovered(x, y, 70, h);
         float lh = Anims.of(WINDOW, "logo", logoHover);
-        logoSpin = (logoSpin + 1.2f + lh * 9f) % 360f;
         float lcx = x + h / 2f + 1;
-        if (Theme.glow()) Render2D.shadow(ctx, lcx - 7, cy - 7, 14, 14, 7, 5 + lh * 4, Theme.accent(0x30));
-        Render2D.arc(ctx, lcx, cy, 7f, 2.6f, logoSpin, 290f, Theme.accent2(), Theme.accent());
-        Render2D.circle(ctx, lcx, cy, 1.5f + lh * 0.5f, Theme.accent());
-        float tx = lcx + 11;
+        Logo.mark(ctx, lcx, cy, 17f + lh * 1.5f, lh);
+        float tx = lcx + 12;
         Fonts.beginRaw(); // the wordmark keeps its lowercase look
         float tw = Fonts.width("maro", true, 1.05f);
         Fonts.drawV(ctx, "maro", tx, cy, Theme.TEXT, true, 1.05f);

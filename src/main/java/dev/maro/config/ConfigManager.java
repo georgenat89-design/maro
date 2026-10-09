@@ -36,7 +36,8 @@ public final class ConfigManager {
     private static final Path CLIENT_FILE = DIR.resolve("client.json");
 
     /** Bumped when defaults change in a way old files should not override (v3: black redesign). */
-    private static final int CLIENT_VERSION = 3;
+    /** Bumped when the menu gets a new look, so saved themes take it once: 4 is Maro's blue logo theme. */
+    private static final int CLIENT_VERSION = 4;
     private static String current = "default";
 
     public record ConfigInfo(String name, long lastModified) {

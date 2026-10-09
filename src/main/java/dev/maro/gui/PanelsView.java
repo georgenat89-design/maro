@@ -4,6 +4,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import dev.maro.config.ClientSettings;
 import dev.maro.gui.render.Fonts;
+import dev.maro.gui.render.Logo;
 import dev.maro.gui.render.Icons;
 import dev.maro.gui.render.Render2D;
 import dev.maro.gui.theme.Theme;
@@ -83,7 +84,6 @@ public final class PanelsView {
     private final Map<PageLink, float[]> dockAnchors = new HashMap<>();
     /** Each panel's {x, y, width} last frame. */
     private final Map<Category, float[]> panelRects = new HashMap<>();
-    private float logoSpin;
     private Popover popover;
     private long popoverSince;
     private final Scroll popoverScroll = new Scroll();
@@ -566,16 +566,13 @@ public final class PanelsView {
         Render2D.roundOutline(ctx, x, y, w, DOCK_H, DOCK_H / 2f, 1f, Theme.BORDER);
         float cy = y + DOCK_H / 2f;
 
-        // The spinning maro.gg mark, as on the window's bar.
+        // The M and maro.gg, as on the window's bar.
         boolean logoHover = gui.hovered(x, y, logoW, DOCK_H);
         float lh = Anims.of(DOCK, "logo", logoHover);
-        logoSpin = (logoSpin + 1.2f + lh * 9f) % 360f;
         float lcx = x + DOCK_H / 2f + 1f;
-        if (Theme.glow()) Render2D.shadow(ctx, lcx - 6, cy - 6, 12, 12, 6, 4 + lh * 4, Theme.accent(0x30));
-        Render2D.arc(ctx, lcx, cy, 6f, 2.3f, logoSpin, 290f, Theme.accent2(), Theme.accent());
-        Render2D.circle(ctx, lcx, cy, 1.3f + lh * 0.5f, Theme.accent());
+        Logo.mark(ctx, lcx, cy, 15f + lh * 1.5f, lh);
         Fonts.beginRaw();
-        float tx = lcx + 9.5f, tw = Fonts.width("maro", true, 0.92f);
+        float tx = lcx + 10.5f, tw = Fonts.width("maro", true, 0.92f);
         Fonts.drawV(ctx, "maro", tx, cy, Theme.TEXT, true, 0.92f);
         Fonts.drawV(ctx, ".gg", tx + tw, cy, Theme.accent(), true, 0.92f);
         Fonts.endRaw();
