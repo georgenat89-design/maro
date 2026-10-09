@@ -344,6 +344,7 @@ public final class AutoBuilder extends Module {
     private int placementDeadline;
     private BlockPos routeMining;
     private final Map<BlockPos,Integer> floorAccessWork=new HashMap<>();
+    private final Map<BlockPos,Set<BlockPos>> cleanupOpeningSupports=new HashMap<>();
     private final Map<BlockPos,Set<BlockPos>> accessDropSources=new HashMap<>();
     private final Map<Item,Set<BlockPos>> accessStockSources=new HashMap<>();
     private int accessPickupId=-1,accessPickupUntil,accessPickupCount;
@@ -518,7 +519,7 @@ public final class AutoBuilder extends Module {
             }));
     }
     private static String rootMessage(Throwable error){while(error.getCause()!=null)error=error.getCause();return error.getMessage()==null?error.getClass().getSimpleName():error.getMessage();}
-    public void install(Schematic data){if(!restoringPlacement){checkpoint();activeBuildSlot=-1;placementName="";}pause("Schematic loaded");floorAccessWork.clear();openingRepairDepth.clear();accessDropSources.clear();accessStockSources.clear();schematic=data;unconfirmedPlacements.clear();latePlacements.clear();supports.clear();escapeSupports.clear();escapeSupportWork.clear();cleanupStands.clear();recoveryAttempts=0;replan();}
+    public void install(Schematic data){if(!restoringPlacement){checkpoint();activeBuildSlot=-1;placementName="";}pause("Schematic loaded");floorAccessWork.clear();cleanupOpeningSupports.clear();openingRepairDepth.clear();accessDropSources.clear();accessStockSources.clear();schematic=data;unconfirmedPlacements.clear();latePlacements.clear();supports.clear();escapeSupports.clear();escapeSupportWork.clear();cleanupStands.clear();recoveryAttempts=0;replan();}
     public Schematic schematic(){return schematic;}
     public String status(){return status;}
     public boolean loading(){return loading;}
@@ -604,7 +605,7 @@ public final class AutoBuilder extends Module {
     public int inventoryCount(Item item){if(mc.player==null)return 0;int count=0;for(int i=0;i<36;i++){var stack=mc.player.getInventory().getStack(i);if(stack.isOf(item))count+=stack.getCount();}return count;}
     public void setOrigin(BlockPos pos){
         if(pos==null||!inGame())return;pause("Origin moved");
-        if(!pos.equals(origin)){floorAccessWork.clear();openingRepairDepth.clear();accessDropSources.clear();accessStockSources.clear();}
+        if(!pos.equals(origin)){floorAccessWork.clear();cleanupOpeningSupports.clear();openingRepairDepth.clear();accessDropSources.clear();accessStockSources.clear();}
         String nextDimension=mc.world.getRegistryKey().getValue().toString();
         String nextScope=scope();
         if(!dimension.isEmpty()&&(!dimension.equals(nextDimension)||!worldScope.equals(nextScope))){homes.reset();containers.clear();supports.clear();escapeSupports.clear();escapeSupportWork.clear();}
@@ -1089,6 +1090,15 @@ public final class AutoBuilder extends Module {
         // Retaining walls and basin floors must close before any bucket work,
         // even when the other temporary route still needs later cleanup.
         if(liquidBoundary(pos))return false;
+        // Picking up a mined repair block can interrupt the access climb.
+        // Its opening still serves the actual cleanup target and route posts;
+        // a missing schematic owner must not make that exit ready to close.
+        var cleanupPosts=cleanupOpeningSupports.get(pos);
+        if(cleanup.get()&&cleanupPosts!=null){
+            if(cleanupPosts.stream().anyMatch(post->supports.contains(post)
+                &&(!mc.world.isChunkLoaded(post)||mc.world.getBlockState(post).isOf(Blocks.DIRT))))return true;
+            cleanupOpeningSupports.remove(pos);
+        }
         // Confirmed homes provide the return route. Restore each completed
         // access job as soon as the body clears it, rather than after all dirt.
         boolean ownerReady=work<0||work>=states.length||states[work]==CORRECT||states[work]==IGNORED;
@@ -1136,7 +1146,7 @@ public final class AutoBuilder extends Module {
                     &&!matchesBuildState(mc.world.getBlockState(other),desired(cell)))return true;
             }
             int cell=schematic.indexAt(pos.subtract(anchor()),turns(),mirror.get());
-            if(cell<0||states[cell]==IGNORED||mc.world.isChunkLoaded(pos)&&matchesBuildState(mc.world.getBlockState(pos),desired(cell))){floorAccessWork.remove(pos);openingRepairDepth.remove(pos);accessDropSources.remove(pos);}
+            if(cell<0||states[cell]==IGNORED||mc.world.isChunkLoaded(pos)&&matchesBuildState(mc.world.getBlockState(pos),desired(cell))){floorAccessWork.remove(pos);cleanupOpeningSupports.remove(pos);openingRepairDepth.remove(pos);accessDropSources.remove(pos);}
             return false;
         }
         return true;
@@ -1694,7 +1704,7 @@ public final class AutoBuilder extends Module {
             commitColumnAccess(base,top);ceilingBase=base;ceilingTop=top;ceilingBlocks.addAll(removed);passageBlocks.addAll(removed);
             if(cleaning)openingRestoration=false;
             ceilingStarted=ceilingProgressAt=ticks;ceilingProgressPos=mc.player.getEntityPos();
-            for(var opening:removed){floorAccessWork.put(opening,work);openingRepairDepth.put(opening,opening.getY()-base.getY());}
+            for(var opening:removed){floorAccessWork.put(opening,work);openingRepairDepth.put(opening,opening.getY()-base.getY());recordCleanupOpening(opening,work);}
             walker.stop();status="Opening checked ceiling access";return true;
         }
         if(search.ceilingCursor<search.ceilingViews.size()){walker.release();status="Checking ceiling access column";return true;}
@@ -1876,6 +1886,14 @@ public final class AutoBuilder extends Module {
         for(int y=base.getY();y<top.getY();y++)posts.add(new BlockPos(base.getX(),y,base.getZ()));
         accessColumn=Collections.unmodifiableSet(posts);accessSupports.addAll(posts);
         if(supports.contains(base.down()))accessSupports.add(base.down());
+        if(cleanupTarget!=null)for(var postsForOpening:cleanupOpeningSupports.values())if(postsForOpening.contains(cleanupTarget))postsForOpening.addAll(accessSupports);
+    }
+    /** Keep only the cleanup job and its committed route attached to this cut. */
+    private void recordCleanupOpening(BlockPos opening,int work){
+        if(cleanupTarget==null||!supports.contains(cleanupTarget)||!mc.world.getBlockState(cleanupTarget).isOf(Blocks.DIRT)
+            ||work>=0&&!position(work).equals(cleanupTarget))return;
+        var posts=cleanupOpeningSupports.computeIfAbsent(opening,unused->new LinkedHashSet<>());
+        posts.add(cleanupTarget);posts.addAll(accessColumn);posts.addAll(accessSupports);
     }
     /** Prefer the shortest proved pillar right here before searching side stairs. */
     private boolean prepareDirectColumn(List<BlockPos> views,int work,ViewSearch search){
@@ -2806,7 +2824,7 @@ public final class AutoBuilder extends Module {
             passageBlocks.clear();passageBlocks.addAll(removed);passageStand=destination;
             if(cleanupTarget!=null)openingRestoration=false;
             for(var opening:removed)if(passageCell(opening)){
-                floorAccessWork.put(opening,work);openingRepairDepth.put(opening,Math.abs(opening.getX()-feet.getX())+Math.abs(opening.getZ()-feet.getZ()));
+                floorAccessWork.put(opening,work);openingRepairDepth.put(opening,Math.abs(opening.getX()-feet.getX())+Math.abs(opening.getZ()-feet.getZ()));recordCleanupOpening(opening,work);
             }
             placement=null;accessStand=accessBase=null;accessFloor=false;accessSupports.clear();accessStairs=Set.of();descentPost=descentView=null;standGoal=null;
             walker.stop();status="Opening verified placement passage";return true;
@@ -2962,6 +2980,7 @@ public final class AutoBuilder extends Module {
                 if(states[candidate]!=CORRECT&&states[candidate]!=IGNORED&&!desired(candidate).isAir()&&!position(candidate).equals(cover)){pendingWork=candidate;break;}
             }
             if(pendingWork<0||!position(pendingWork).equals(cover))floorAccessWork.put(cover,pendingWork);
+            recordCleanupOpening(cover,work);
             if(cleanupTarget!=null)openingRestoration=false;
             routeOpening=cover;descentPost=cover;descentView=lower;standGoal=cover.up();
             standStarted=standProgressAt=ticks;standProgressPos=mc.player.getEntityPos();walker.stop();status="Opening checked temporary floor access";return true;
@@ -3271,7 +3290,7 @@ public final class AutoBuilder extends Module {
     }
     private void abandonHopperCut(BlockPos blocked){
         resetAccessRouting();routeOpening=null;
-        floorAccessWork.remove(blocked);openingRepairDepth.remove(blocked);
+        floorAccessWork.remove(blocked);cleanupOpeningSupports.remove(blocked);openingRepairDepth.remove(blocked);
         descentEscapes.clear();hatchSearchFeet=null;
         digging=false;releaseSneak();walker.stop();mc.interactionManager.cancelBlockBreaking();
         status="Keeping blocks above hoppers — checking another route";
@@ -4265,19 +4284,20 @@ public final class AutoBuilder extends Module {
     @Override public JsonObject saveExtra(){
         var result=new JsonObject();result.addProperty("file",selected);result.addProperty("dimension",dimension);result.addProperty("world-scope",worldScope);result.addProperty("active-build-slot",activeBuildSlot);
         var ignored=new JsonArray();for(var item:ignoredMaterials)ignored.add(Registries.ITEM.getId(item).toString());result.add("ignored-materials",ignored);
-        var openings=new JsonArray();for(var entry:floorAccessWork.entrySet()){var opening=new JsonObject();opening.add("pos",posJson(entry.getKey()));opening.addProperty("work",entry.getValue());opening.addProperty("depth",openingRepairDepth.getOrDefault(entry.getKey(),0));var receivers=new JsonArray();for(var receiver:accessDropSources.getOrDefault(entry.getKey(),Set.of()))receivers.add(posJson(receiver));opening.add("drop-receivers",receivers);openings.add(opening);}result.add("access-openings",openings);
+        var openings=new JsonArray();for(var entry:floorAccessWork.entrySet()){var opening=new JsonObject();opening.add("pos",posJson(entry.getKey()));opening.addProperty("work",entry.getValue());opening.addProperty("depth",openingRepairDepth.getOrDefault(entry.getKey(),0));var receivers=new JsonArray();for(var receiver:accessDropSources.getOrDefault(entry.getKey(),Set.of()))receivers.add(posJson(receiver));opening.add("drop-receivers",receivers);var posts=new JsonArray();for(var post:cleanupOpeningSupports.getOrDefault(entry.getKey(),Set.of()))posts.add(posJson(post));if(!posts.isEmpty())opening.add("cleanup-supports",posts);openings.add(opening);}result.add("access-openings",openings);
         var sources=new JsonArray();for(var entry:accessStockSources.entrySet()){var source=new JsonObject();source.addProperty("item",Registries.ITEM.getId(entry.getKey()).toString());var receivers=new JsonArray();for(var receiver:entry.getValue())receivers.add(posJson(receiver));source.add("receivers",receivers);sources.add(source);}result.add("access-stock-sources",sources);
         result.add("builder-homes",homes.saveData());if(selectedSupplyChest()!=null)result.add("supply-chest",posJson(selectedSupplyChest()));if(origin!=null)result.add("origin",posJson(origin));var marks=new JsonArray();for(var pos:containers)marks.add(posJson(pos));result.add("restock",marks);return result;
     }
     private static JsonArray posJson(BlockPos pos){var a=new JsonArray();a.add(pos.getX());a.add(pos.getY());a.add(pos.getZ());return a;}
     private static BlockPos jsonPos(JsonElement value){var a=value.getAsJsonArray();if(a.size()!=3)throw new IllegalArgumentException("Position");return new BlockPos(a.get(0).getAsInt(),a.get(1).getAsInt(),a.get(2).getAsInt());}
     private void loadOpenings(JsonObject data){
-        floorAccessWork.clear();openingRepairDepth.clear();accessDropSources.clear();accessStockSources.clear();
+        floorAccessWork.clear();cleanupOpeningSupports.clear();openingRepairDepth.clear();accessDropSources.clear();accessStockSources.clear();
         if(data.has("access-stock-sources"))for(var value:data.getAsJsonArray("access-stock-sources")){var source=value.getAsJsonObject();var item=Registries.ITEM.get(net.minecraft.util.Identifier.of(source.get("item").getAsString()));if(item==Items.AIR)continue;var receivers=new LinkedHashSet<BlockPos>();if(source.getAsJsonArray("receivers").size()>1024)throw new IllegalArgumentException("Access stock receivers");for(var receiver:source.getAsJsonArray("receivers"))receivers.add(jsonPos(receiver));accessStockSources.put(item,receivers);}
         if(!data.has("access-openings"))return;
         var entries=data.getAsJsonArray("access-openings");if(entries.size()>1024)throw new IllegalArgumentException("Access openings");
         for(var value:entries){var opening=value.getAsJsonObject();var pos=jsonPos(opening.get("pos"));
             floorAccessWork.put(pos,opening.get("work").getAsInt());openingRepairDepth.put(pos,opening.get("depth").getAsInt());
+            if(opening.has("cleanup-supports")){var posts=new LinkedHashSet<BlockPos>();if(opening.getAsJsonArray("cleanup-supports").size()>1024)throw new IllegalArgumentException("Cleanup opening supports");for(var post:opening.getAsJsonArray("cleanup-supports"))posts.add(jsonPos(post));cleanupOpeningSupports.put(pos,posts);}
             if(opening.has("drop-receivers")){var receivers=new LinkedHashSet<BlockPos>();if(opening.getAsJsonArray("drop-receivers").size()>16)throw new IllegalArgumentException("Access drop receivers");for(var receiver:opening.getAsJsonArray("drop-receivers"))receivers.add(jsonPos(receiver));accessDropSources.put(pos,receivers);}}
     }
     @Override public void loadExtra(JsonObject data){

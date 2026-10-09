@@ -137,6 +137,7 @@ final class BuilderHomeChecks {
         existingViewBeforeRoof(context,world,builder,start);
         hopperCutProtection(context,world,builder,start);
         hopperRepairStock(context,world,builder,start);
+        cleanupCeilingOwnership(context,world,builder,start);
         offsetRepairReceiver(context,world,builder,start);
         closedDoorAccess(context,world,builder,start);
         restockRoundTrip(context,world,builder,home2,chest);
