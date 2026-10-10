@@ -45,8 +45,6 @@ final class NametagsChecks {
                 ((ModeSetting) setting(tags, "Armor")).set("Above");
                 ((BooleanSetting) setting(tags, "Held Item")).set(true);
                 ((BooleanSetting) setting(tags, "Enchants")).set(true);
-                ((BooleanSetting) setting(tags, "Ping")).set(true);
-                ((BooleanSetting) setting(tags, "Gamemode")).set(true);
                 ((BooleanSetting) setting(tags, "Outline")).set(true);
                 tags.setEnabled(true);
                 c.options.setPerspective(Perspective.FIRST_PERSON);
@@ -72,6 +70,8 @@ final class NametagsChecks {
             context.runOnClient(c -> {
                 require(Nametags.hidesVanilla(fake), "The game's own label is still drawn over a tagged player");
                 String said = tags.describe(fake);
+                require(tags.getSettings().stream().noneMatch(s -> s.getName().equals("Ping") || s.getName().equals("Gamemode")), "Unused ping/game-mode options remain");
+                require(!said.contains("ms") && said.startsWith("FakePlayer"), "Ping or game-mode prefix remains: " + said);
                 require(said.contains("FakePlayer") && said.contains("m"), "The tag does not name it with its distance: " + said);
                 require(tags.drawnTags().stream().anyMatch(t -> t.contains("FakePlayer")), "No tag was drawn: " + tags.drawnTags());
                 var helmetLabels = Nametags.enchantLines(fake.getEquippedStack(EquipmentSlot.HEAD));
