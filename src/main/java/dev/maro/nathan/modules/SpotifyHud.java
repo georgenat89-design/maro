@@ -5,6 +5,7 @@ import com.mojang.blaze3d.textures.TextureFormat;
 
 import dev.maro.nathan.NameeProtectAddon;
 import dev.maro.nathan.audio.SpotifyMedia;
+import dev.maro.nathan.audio.SpotifySession;
 import dev.maro.nathan.audio.SpotifyLyrics;
 import dev.maro.nathan.audio.SpotifySeekPreview;
 import dev.maro.nathan.audio.SpotifyTimeline;
@@ -154,7 +155,7 @@ public class SpotifyHud extends Module {
             else if (mc.currentScreen == null) mc.setScreen(new SpotifyControlsScreen(this));
         }).build());
 
-    private final SpotifyMedia media = new SpotifyMedia();
+    private final SpotifyMedia media = SpotifySession.media();
     private SpotifyLyrics lyrics = new SpotifyLyrics();
     private String lyricsKey = "", lyricLine = "";
     private int plainLyricIndex;
@@ -209,14 +210,14 @@ public class SpotifyHud extends Module {
         visibility = autoHide.get() ? 0 : 1;
         scrollAge = 0;
         animation.reset(false);
-        media.start();
+        SpotifySession.acquire();
     }
 
     @Override
     public void onDeactivate() {
         cancelScrub();
         seekPreview.cancel();
-        media.close();
+        SpotifySession.release();
         lyrics.close();
         lyricsKey = ""; lyricLine = ""; plainLyricIndex = 0; lyricScroll = 0; lyricPosition = -1; liveWord = "";
         if (coverTexture != null) coverTexture.close();

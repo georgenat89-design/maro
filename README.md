@@ -6,6 +6,16 @@ Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 
 ## Included modules
 
+**Spotify Phone** (Misc) opens a handheld music player with **F10**. Click previous,
+play/pause or next, or use **Left / Space / Right**. Drag the progress bar to seek;
+**F10**, **Esc**, the close button or the bottom home bar puts the phone away.
+The phone shows live Spotify metadata and album artwork, slides up beside the world,
+and uses your skin for its hand. Choose **Hand → Left/Right**, adjust **Size**, or hide
+the hand. Change its keybind in the module settings. It shares Spotify HUD's Windows
+media connection and works with desktop Spotify or the browser media session, without
+an API login. Start a song in Spotify first; an idle phone offers **Open Spotify**.
+Closing the phone keeps your music playing. It does not pause the world.
+
 **Staff Notifier** (Visuals) recreates SignalDebug's recovered staff-list settings
 and default account names in Maro. Edit **staff names** for your server. It shows
 staff currently listed in tab, their heads and ping, and join/leave toast and sound
