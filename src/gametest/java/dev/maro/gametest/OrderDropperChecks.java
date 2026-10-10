@@ -328,8 +328,16 @@ final class OrderDropperChecks {
             world.getServer().runCommand("clear @a");
             world.getServer().runCommand("give @a minecraft:diamond_sword");
             context.waitTicks(5);
+            // With no block picked it asks for one.
             context.runOnClient(c -> {
                 module.getSettings().forEach(Setting::reset);
+                module.setEnabled(true);
+            });
+            context.waitTicks(2);
+            require(!context.computeOnClient(c -> module.isEnabled()) && context.computeOnClient(c -> module.result()).contains("Pick the block"),
+                    "With no block picked it should ask for one: " + context.computeOnClient(c -> module.result()));
+            context.runOnClient(c -> {
+                ((dev.maro.setting.ModeSetting) setting(module, "Orders To Empty")).set("All");
                 module.setEnabled(true);
             });
             boolean seenCollect = false;
@@ -351,21 +359,24 @@ final class OrderDropperChecks {
             require(context.computeOnClient(c -> c.player.getInventory().count(Items.DIAMOND_SWORD)) == 1, "Your own sword was thrown out");
             world.getServer().runCommand("kill @e[type=minecraft:item]");
 
-            // Only the order for the picked item: the stone order is left alone.
+            // Only the orders for the picked block (both cobblestone ones): the stone order is left alone.
             world.getServer().runOnServer(server -> {
                 own.clear();
                 own.add(new Own(Items.STONE, 3));
                 own.add(new Own(Items.COBBLESTONE, 4));
+                own.add(new Own(Items.COBBLESTONE, 2));
                 thrownOnServer = 0;
             });
             context.runOnClient(c -> {
-                ((dev.maro.setting.ModeSetting) setting(module, "Orders To Empty")).set("Picked Item");
-                ((TextSetting) setting(module, "Item")).set("minecraft:cobblestone");
+                module.getSettings().forEach(Setting::reset);
+                ((TextSetting) setting(module, "Block To Drop")).set("minecraft:cobblestone");
                 module.setEnabled(true);
             });
             for (int i = 0; i < 80 && context.computeOnClient(c -> module.isEnabled()); i++) context.waitTicks(5);
-            require(world.getServer().computeOnServer(s -> own.get(0).left() == 3 * 64 && own.get(1).left() == 0),
-                    "Picked Item emptied the wrong order: " + context.computeOnClient(c -> module.result()));
+            System.out.println("ORDER DROPPER picked: " + context.computeOnClient(c -> module.result()));
+            require(world.getServer().computeOnServer(s -> own.get(0).left() == 3 * 64 && own.get(1).left() == 0 && own.get(2).left() == 0),
+                    "Picked Block emptied the wrong orders: " + context.computeOnClient(c -> module.result()));
+            require(context.computeOnClient(c -> module.ordersEmptied()) == 2, "Both cobblestone orders should be emptied");
             world.getServer().runCommand("kill @e[type=minecraft:item]");
             context.runOnClient(c -> module.getSettings().forEach(Setting::reset));
 
