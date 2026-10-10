@@ -8,7 +8,8 @@ public enum Category {
     MOVEMENT("Movement", Icons.MOVEMENT),
     PLAYER("Player", Icons.PLAYER),
     VISUALS("Visuals", Icons.VISUALS),
-    MISC("Misc", Icons.MISC);
+    MISC("Misc", Icons.MISC),
+    ANTI_CHEAT_OFF("Anti-Cheat Off", Icons.LOCK);
 
     private final String displayName;
     private final Icons.Icon icon;

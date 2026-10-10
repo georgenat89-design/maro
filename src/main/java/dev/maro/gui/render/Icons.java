@@ -6,6 +6,13 @@ import org.joml.Matrix3x2fStack;
 
 /** Vector icons drawn with {@link Render2D}; crisp at every GUI scale, no textures needed. */
 public final class Icons {
+    public static final Icon LOCK = (ctx, cx, cy, s, c, h) -> {
+        float t = Math.max(1f, s * 0.09f);
+        Render2D.arc(ctx, cx, cy - s * 0.12f, s * 0.25f, t, 180, 180, c, c);
+        Render2D.roundOutline(ctx, cx - s * 0.36f, cy - s * 0.1f, s * 0.72f, s * 0.55f, s * 0.1f, t, c);
+        Render2D.circle(ctx, cx, cy + s * 0.12f, t, c);
+        Render2D.line(ctx, cx, cy + s * 0.13f, cx, cy + s * 0.26f, t, c);
+    };
     private Icons() {
     }
 

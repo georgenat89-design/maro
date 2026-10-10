@@ -80,6 +80,7 @@ tasks.register('runProductionClientGameTest', net.fabricmc.loom.task.prod.Client
     jvmArgs.add("-Dmaro.gametest.relogOnly=" + providers.gradleProperty("relogTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.chestTagsOnly=" + providers.gradleProperty("chestTagsTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.airFallOnly=" + providers.gradleProperty("airFallTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.acOffOnly=" + providers.gradleProperty("acOffTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.spotifyOnly=" + providers.gradleProperty("spotifyTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.hudOnly=" + providers.gradleProperty("hudTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.builderOnly=" + providers.gradleProperty("builderTestOnly").getOrElse("false"))

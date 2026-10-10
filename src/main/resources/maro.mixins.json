@@ -80,7 +80,25 @@
     "FakePlayerAttackMixin",
     "ItemLooksMixin",
     "ItemScaleMixin",
-    "FakeBlockWorldMixin"
+    "FakeBlockWorldMixin",
+    "TridentMixins$Item",
+    "TridentMixins$Corrections",
+    "TridentMixins$Use",
+    "BoatMixins$Movement",
+    "BoatMixins$Boat",
+    "BoatMixins$Packets",
+    "BoatMixins$Corrections",
+    "FlightPlayerAccessor",
+    "FlightMixins$Player",
+    "FlightMixins$Speed",
+    "FlightMixins$Abilities",
+    "FlightMixins$Packets",
+    "MiningAccessor",
+    "MiningMixins$Tick",
+    "MiningMixins$Speed",
+    "MiningMixins$Interaction",
+    "MiningMixins$Clicks",
+    "MiningMixins$Packets"
   ],
   "injectors": {
     "defaultRequire": 1

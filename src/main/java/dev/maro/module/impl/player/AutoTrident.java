@@ -24,16 +24,17 @@ public final class AutoTrident extends Module {
         if (mc.player.isUsingItem()) {
             // Leave other item uses alone, including food, shields and bows.
             if (mc.player.getActiveItem().isOf(Items.TRIDENT)
-                && mc.player.getItemUseTime() >= TridentItem.MIN_DRAW_DURATION + (10 - speed.getInt()) * 2) {
+                && TridentUtil.ready()
+                && mc.player.getItemUseTime() >= TridentUtil.minChargeTicks(TridentItem.MIN_DRAW_DURATION, mc.player) + (10 - speed.getInt()) * 2) {
                 mc.interactionManager.stopUsingItem(mc.player);
+                TridentUtil.released();
             }
             return;
         }
 
         Hand hand = mc.player.getMainHandStack().isOf(Items.TRIDENT) ? Hand.MAIN_HAND
             : mc.player.getOffHandStack().isOf(Items.TRIDENT) ? Hand.OFF_HAND : null;
-        if (hand == null || mc.player.getItemCooldownManager().isCoolingDown(mc.player.getStackInHand(hand))) return;
-        // Vanilla validates durability and the water/rain requirement for Riptide.
+        if (hand == null || !TridentUtil.ready() || !TridentUtil.eligible(mc.player.getStackInHand(hand))) return;
         mc.interactionManager.interactItem(mc.player, hand);
     }
 }

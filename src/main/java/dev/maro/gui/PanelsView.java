@@ -266,6 +266,16 @@ public final class PanelsView {
     }
 
     private void renderPanel(DrawContext ctx, Panel panel, float x, float y, float w, float screenH, Set<Module> matches) {
+        if (panel.category == Category.ANTI_CHEAT_OFF && !gui.antiCheatSectionUnlocked()) {
+            places.put(panel.category, new float[] {x + w / 2, y + HEADER / 2});
+            Render2D.roundRect(ctx, x, y, w, HEADER + 23, Theme.radius() + 2, Theme.windowBg());
+            Render2D.roundOutline(ctx, x, y, w, HEADER + 23, Theme.radius() + 2, 1, 0xFF7D5B34);
+            Icons.LOCK.draw(ctx, x + 11, y + HEADER / 2, 9, 0xFFFFC36A, 0);
+            Fonts.drawV(ctx, "Anti-Cheat Off", x + 20, y + HEADER / 2, Theme.TEXT, true, 0.7f);
+            Fonts.drawCentered(ctx, "Enter Section", x + w / 2, y + HEADER + 10, 0xFFFFC36A, false, 0.7f);
+            gui.hit(x, y, w, HEADER + 23, (button, mx, my) -> { if (button == 0) gui.openPage(Category.ANTI_CHEAT_OFF.ordinal()); });
+            return;
+        }
         List<Module> rows = new ArrayList<>();
         for (Module m : ModuleManager.byCategory(panel.category)) if (matches == null || matches.contains(m)) rows.add(m);
         boolean searching = matches != null;

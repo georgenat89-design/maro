@@ -36,6 +36,11 @@ public class MaroClientGameTest implements FabricClientGameTest {
             // make sure nothing (pause menu, toasts...) is in the way before testing the keybind
             context.setScreen(() -> null);
             context.waitTicks(5);
+            if (Boolean.getBoolean("maro.gametest.acOffOnly")) {
+                AutoTridentChecks.run(context, singleplayer);
+                AntiCheatOffChecks.run(context, singleplayer);
+                return;
+            }
             if (Boolean.getBoolean("maro.gametest.airFallOnly")) {
                 AirFallChecks.run(context, singleplayer);
                 return;
@@ -101,6 +106,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             checkKeySounds(context);
             checkRegionMap(context);
             AutoTridentChecks.run(context, singleplayer);
+            AntiCheatOffChecks.run(context, singleplayer);
             AutoToolChecks.run(context, singleplayer);
             CrosshairChecks.run(context);
             CrosshairPngChecks.run(context);
@@ -149,7 +155,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             context.takeScreenshot("maro-01-open");
             PanelChecks.run(context);
 
-            String[] pages = {"combat", "movement", "player", "visuals", "misc", "settings", "configs", "theme", "socials"};
+            String[] pages = {"combat", "movement", "player", "visuals", "misc", "anti-cheat-off", "settings", "configs", "theme", "socials"};
             for (int i = 0; i < pages.length; i++) {
                 final int index = i;
                 context.runOnClient(client -> ((ClickGuiScreen) client.currentScreen).openPage(index));

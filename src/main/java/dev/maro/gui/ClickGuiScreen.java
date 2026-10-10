@@ -107,6 +107,34 @@ public class ClickGuiScreen extends Screen {
     private int selected;
     private long pageSwitchedAt = System.currentTimeMillis();
     private boolean wasSearching;
+    private boolean antiCheatSectionUnlocked;
+    private float[] antiCheatEnterPlace, antiCheatCancelPlace;
+
+    public boolean antiCheatSectionUnlocked() { return antiCheatSectionUnlocked; }
+    public float[] antiCheatEnterPlace() { return antiCheatEnterPlace; }
+    public float[] antiCheatCancelPlace() { return antiCheatCancelPlace; }
+
+    /** Deliberate entry into the user's anti-cheat-off modules; renewed on each menu opening. */
+    public void renderAntiCheatPrompt(DrawContext ctx, float x, float y, float w, float h) {
+        float cx = x + w / 2, cy = y + h / 2;
+        int amber = 0xFFFFC36A;
+        Icons.LOCK.draw(ctx, cx, cy - 49, 21, amber, 0);
+        Fonts.drawCentered(ctx, "ANTI-CHEAT OFF", cx, cy - 19, Theme.TEXT, true, 1.15f);
+        Fonts.drawCentered(ctx, "Are you sure you want to enter this section?", cx, cy + 1, Theme.TEXT_DIM, false, 0.8f);
+        Fonts.drawCentered(ctx, "These modules are highly detectable.", cx, cy + 16, Theme.TEXT_MUTED, false, 0.73f);
+        Fonts.drawCentered(ctx, "Use them only where anti-cheat is switched off.", cx, cy + 28, Theme.TEXT_MUTED, false, 0.73f);
+        float by = cy + 47, cancelW = 76, enterW = 110, gap = 8, left = cx - (cancelW + enterW + gap) / 2;
+        antiCheatCancelPlace = new float[] {left + cancelW / 2, by + 11};
+        antiCheatEnterPlace = new float[] {left + cancelW + gap + enterW / 2, by + 11};
+        Widgets.button(this, ctx, "ac-cancel", left, by, cancelW, 22, "Cancel", Widgets.Style.SECONDARY, null,
+            () -> { if (showingPanels() || panelsStyle()) showPanels(); else openPage(Category.MOVEMENT.ordinal()); });
+        float ex = left + cancelW + gap;
+        boolean hov = hovered(ex, by, enterW, 22);
+        Render2D.roundRect(ctx, ex, by, enterW, 22, 5, hov ? 0xFF62441F : 0xFF3D2C19);
+        Render2D.roundOutline(ctx, ex, by, enterW, 22, 5, 1, amber);
+        Fonts.drawCentered(ctx, "Enter Section", ex + enterW / 2, by + 11, amber, true, 0.82f);
+        hit(ex, by, enterW, 22, (button, mx, my) -> { if (button == 0) { antiCheatSectionUnlocked = true; Sounds.click(); } });
+    }
 
     private Object dragOwner;
     private DragHandler drag;

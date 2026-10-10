@@ -14,5 +14,6 @@ public abstract class AirFallProbe {
     @Inject(method = "sendImmediately", at = @At("HEAD"))
     private void maroTest$sent(Packet<?> packet, ChannelFutureListener listener, boolean flush, CallbackInfo info) {
         AirFallChecks.sent((ClientConnection) (Object) this, packet);
+        dev.maro.gametest.AntiCheatOffChecks.sent((ClientConnection) (Object) this, packet);
     }
 }

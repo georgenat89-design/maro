@@ -19,6 +19,12 @@ public final class ModuleManager {
     public static void init() {
         register(new dev.maro.module.impl.player.AutoTool());
         register(new dev.maro.module.impl.player.AutoTrident());
+        register(new dev.maro.module.impl.player.TridentUtil());
+        register(new dev.maro.module.impl.player.SpeedMine());
+        register(new dev.maro.module.impl.player.BreakDelay());
+        register(new dev.maro.module.impl.movement.Flight());
+        register(new dev.maro.module.impl.movement.BoatFly());
+        register(new dev.maro.module.impl.movement.BoatNoClip());
         register(new dev.maro.module.impl.misc.ScreenHider());
         register(new dev.maro.module.impl.misc.InventoryHider());
         register(new dev.maro.module.impl.misc.BlockDisconnect());
