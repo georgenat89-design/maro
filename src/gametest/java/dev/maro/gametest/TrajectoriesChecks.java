@@ -22,6 +22,10 @@ final class TrajectoriesChecks {
         if (!value) throw new AssertionError(message);
     }
 
+    private static dev.maro.setting.BooleanSetting arrowSetting(Trajectories module) {
+        return (dev.maro.setting.BooleanSetting) module.getSettings().stream().filter(s -> s.getName().equals("Arrow")).findFirst().orElseThrow();
+    }
+
     static void run(ClientGameTestContext context, TestSingleplayerContext world) {
         Trajectories module = ModuleManager.get(Trajectories.class);
         FakePlayer fakes = ModuleManager.get(FakePlayer.class);
@@ -66,7 +70,20 @@ final class TrajectoriesChecks {
             context.takeScreenshot("maro-trajectories-hit");
             context.runOnClient(c -> fakes.setEnabled(false));
 
-            // An arrow in the air is followed.
+            // Pearls only by default: a snowball in hand shows nothing, and a saved config from before is moved over.
+            context.runOnClient(c -> {
+                c.player.getInventory().setStack(0, new ItemStack(Items.SNOWBALL, 16));
+                require(module.heldPaths(1f).isEmpty(), "A snowball showed a path with only pearls on");
+                var old = module.saveExtra();
+                old.remove("projectile-revision");
+                arrowSetting(module).set(true);
+                module.loadExtra(old);
+                require(!arrowSetting(module).get(), "An old config kept arrows on");
+                c.player.getInventory().setStack(0, new ItemStack(Items.ENDER_PEARL, 16));
+            });
+
+            // With arrows switched on, an arrow in the air is followed.
+            context.runOnClient(c -> arrowSetting(module).set(true));
             world.getServer().runCommand("summon minecraft:arrow ~ ~3 ~4 {Motion:[0.0d,0.6d,0.8d]}");
             boolean seen = false;
             for (int i = 0; i < 30 && !seen; i++) {
