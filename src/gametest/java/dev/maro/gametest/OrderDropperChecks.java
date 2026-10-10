@@ -74,7 +74,7 @@ final class OrderDropperChecks {
     }
 
     private static final List<Own> own = new ArrayList<>();
-    private static int thrownOnServer;
+    private static int thrownOnServer, dropAllPresses;
     private static final List<Order> orders = new ArrayList<>();
     private static final List<ItemStack> listings = new ArrayList<>();
     private static final List<Integer> prices = new ArrayList<>();
@@ -152,7 +152,10 @@ final class OrderDropperChecks {
                 }, Text.literal("Orders -> Edit Order")));
     }
 
-    /** Collect Items: 45 stacks a page, previous and next arrows in the bottom row; Ctrl+Q throws a stack out. */
+    /**
+     * Collect Items: 45 stacks a page, previous and next arrows in the bottom row, and the order's item
+     * beside the emerald, which drops the whole page; Ctrl+Q throws one stack out.
+     */
     private static void openCollect(ServerPlayerEntity player, Own order, int page) {
         SimpleInventory menu = new SimpleInventory(54);
         Runnable fill = () -> {
@@ -172,7 +175,17 @@ final class OrderDropperChecks {
                     @Override
                     public void onSlotClick(int slot, int button, SlotActionType action, PlayerEntity entity) {
                         int at = page * 45 + slot;
-                        if (slot >= 0 && slot < 45 && at < order.waiting.size() && order.waiting.get(at) != null && action == SlotActionType.THROW) {
+                        if (slot == 52 && action == SlotActionType.PICKUP) {
+                            dropAllPresses++;
+                            for (int i = 0; i < 45; i++) {
+                                int index = page * 45 + i;
+                                if (index >= order.waiting.size() || order.waiting.get(index) == null) continue;
+                                ItemStack stack = order.waiting.set(index, null);
+                                thrownOnServer += stack.getCount();
+                                player.dropItem(stack, false, true);
+                                menu.setStack(i, ItemStack.EMPTY);
+                            }
+                        } else if (slot >= 0 && slot < 45 && at < order.waiting.size() && order.waiting.get(at) != null && action == SlotActionType.THROW) {
                             ItemStack stack = order.waiting.set(at, null);
                             thrownOnServer += stack.getCount();
                             player.dropItem(stack, false, true);
@@ -324,6 +337,7 @@ final class OrderDropperChecks {
                 own.add(new Own(Items.STONE, 65));
                 own.add(new Own(Items.COBBLESTONE, 10));
                 thrownOnServer = 0;
+                dropAllPresses = 0;
             });
             world.getServer().runCommand("clear @a");
             world.getServer().runCommand("give @a minecraft:diamond_sword");
@@ -350,7 +364,9 @@ final class OrderDropperChecks {
             for (int i = 0; i < 120 && context.computeOnClient(c -> module.isEnabled()); i++) context.waitTicks(5);
             String dropResult = context.computeOnClient(c -> module.result());
             int thrown = world.getServer().computeOnServer(s -> thrownOnServer);
-            System.out.println("ORDER DROPPER drop: " + dropResult + " | server thrown " + thrown);
+            int presses = world.getServer().computeOnServer(s -> dropAllPresses);
+            System.out.println("ORDER DROPPER drop: " + dropResult + " | server thrown " + thrown + " · drop all pressed " + presses);
+            require(presses >= 3 && presses <= 4, "The drop all button should be pressed about once a page (2 stone pages, 1 cobblestone): " + presses);
             require(!context.computeOnClient(c -> module.isEnabled()), "Order Dropper did not finish dropping: " + context.computeOnClient(c -> module.status()));
             require(thrown == 75 * 64, "Not every stack was thrown out: " + thrown + " of " + 75 * 64 + " · " + dropResult);
             require(world.getServer().computeOnServer(s -> own.get(0).left() == 0 && own.get(1).left() == 0), "An order still has items waiting");
@@ -370,6 +386,7 @@ final class OrderDropperChecks {
             context.runOnClient(c -> {
                 module.getSettings().forEach(Setting::reset);
                 ((TextSetting) setting(module, "Block To Drop")).set("minecraft:cobblestone");
+                ((dev.maro.setting.ModeSetting) setting(module, "Drop How")).set("Throw Each Stack");
                 module.setEnabled(true);
             });
             for (int i = 0; i < 80 && context.computeOnClient(c -> module.isEnabled()); i++) context.waitTicks(5);
