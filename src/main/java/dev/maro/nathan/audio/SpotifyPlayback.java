@@ -4,6 +4,8 @@ package dev.maro.nathan.audio;
 public interface SpotifyPlayback {
     SpotifyMedia.State state();
     SpotifyMedia.Artwork artwork();
+    SpotifyMedia.Volume volume();
+    void setVolume(double level, boolean muted);
     void control(String action);
     void seekTo(long positionMs);
     void openSpotify();

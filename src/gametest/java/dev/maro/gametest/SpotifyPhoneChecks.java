@@ -10,6 +10,8 @@ import dev.maro.nathan.modules.SpotifyHud;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.input.MouseInput;
+import net.minecraft.client.input.KeyInput;
+import net.minecraft.client.util.InputUtil;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -23,7 +25,7 @@ final class SpotifyPhoneChecks {
         catch (ReflectiveOperationException e) { throw new AssertionError(e); }
     }
     private static Click click(SpotifyPhoneScreen screen, float x, float y) {
-        var l = screen.layout(); return new Click(l.screenX(x), l.screenY(y), new MouseInput(0, 0));
+        var l = screen.layout(); return new Click(l.screenX(x, y), l.screenY(x, y), new MouseInput(0, 0));
     }
     static void run(ClientGameTestContext context) {
         var phone = ModuleManager.get(SpotifyPhone.class);
@@ -45,7 +47,7 @@ final class SpotifyPhoneChecks {
                 require(field(SpotifySession.media(), "worker") == bridge, "Phone started a second media bridge");
             });
             context.getInput().pressKey(GLFW.GLFW_KEY_F10);
-            context.waitTicks(2);
+            context.waitTicks(7);
             context.runOnClient(client -> {
                 require(!phone.isEnabled() && client.currentScreen == null, "F10 did not close phone");
                 require(hud.isEnabled() && field(SpotifySession.media(), "worker") == bridge, "Closing phone disconnected HUD");
@@ -57,7 +59,7 @@ final class SpotifyPhoneChecks {
                 require(phone.isEnabled() && field(SpotifySession.media(), "worker") == bridge, "Disabling HUD disconnected phone");
             });
             context.getInput().pressKey(GLFW.GLFW_KEY_ESCAPE);
-            context.waitTicks(2);
+            context.waitTicks(7);
             context.runOnClient(client -> {
                 require(!phone.isEnabled() && client.currentScreen == null, "Escape left phone enabled");
                 require(field(SpotifySession.media(), "worker") == null, "Last player left media process running");
@@ -73,13 +75,15 @@ final class SpotifyPhoneChecks {
                 });
                 context.waitTicks(7);
             }
-            context.getInput().pressKey(GLFW.GLFW_KEY_SPACE);
+            context.runOnClient(client -> ((SpotifyPhoneScreen) client.currentScreen)
+                .keyPressed(new KeyInput(GLFW.GLFW_KEY_SPACE, 0, GLFW.GLFW_MOD_CONTROL)));
             context.waitTicks(7);
-            context.runOnClient(client -> require(playback.controls.getLast().equals("toggle"), "Space did not play/pause"));
+            context.runOnClient(client -> require(playback.controls.getLast().equals("toggle"), "Ctrl+Space did not play/pause"));
             context.getInput().pressKey(GLFW.GLFW_KEY_RIGHT);
             context.waitTicks(7);
             context.runOnClient(client -> require(playback.controls.getLast().equals("next"), "Arrow did not skip"));
-            for (String hand : new String[]{"Right", "Left"}) for (double size : new double[]{.8, 1.2}) {
+            movement(context, phone, playback);
+            for (String hand : new String[]{"Right", "Left"}) for (double size : new double[]{.55, 1, 1.45}) {
                 context.runOnClient(client -> {
                     phone.hand.set(hand); phone.size.set(size);
                     var screen = (SpotifyPhoneScreen) client.currentScreen;
@@ -95,6 +99,12 @@ final class SpotifyPhoneChecks {
                     screen.mouseReleased(click(screen, 184, 307));
                     require(playback.seeks.isEmpty(), "Scrub applied to a different song");
                     playback.state = track("Midnight Drive", true, true);
+                    volume(screen, playback);
+                    double oldSize = phone.size.get();
+                    screen.mouseClicked(click(screen, 96, 437), false);
+                    require(phone.size.get() == Math.max(.55, Math.round((oldSize - .05) * 100) / 100.0), "Inline size minus failed");
+                    screen.mouseClicked(click(screen, 173, 437), false);
+                    require(phone.size.get() <= 1.45, "Inline size exceeded its bound");
                 });
             }
             context.runOnClient(client -> {
@@ -106,12 +116,25 @@ final class SpotifyPhoneChecks {
             });
             context.waitTicks(4);
             context.takeScreenshot("maro-spotify-phone-playing");
-            context.runOnClient(client -> {
+            SpotifyPhoneScreen closing = context.computeOnClient(client -> {
                 var screen = (SpotifyPhoneScreen) client.currentScreen;
                 require(field(screen, "cover") != null, "Album artwork was not uploaded");
                 screen.mouseClicked(click(screen, 182, 56), false);
-                require(client.currentScreen == null && field(screen, "cover") == null, "Closing phone leaked album texture");
-                client.setScreen(new SpotifyPhoneScreen(phone, playback));
+                require(client.currentScreen == screen && field(screen, "cover") != null, "Close skipped pocket animation");
+                return screen;
+            });
+            context.waitTicks(2);
+            context.runOnClient(client -> require(closing.layout().rotation() > 0 && closing.layout().y() > 0, "Phone did not move into pocket"));
+            context.takeScreenshot("maro-spotify-phone-pocket-away");
+            context.waitTicks(6);
+            context.runOnClient(client -> {
+                require(client.currentScreen == null && field(closing, "cover") == null, "Closing phone leaked album texture");
+                var opening = new SpotifyPhoneScreen(phone, playback);
+                client.setScreen(opening);
+                require(opening.layout().rotation() > .1, "Opening skipped pocket animation");
+                var l = opening.layout();
+                require(Math.abs(l.localX(l.screenX(80, 100), l.screenY(80, 100)) - 80) < .001,
+                    "Animated hit transform did not match phone pose");
             });
             context.waitTicks(6);
             context.runOnClient(client -> phone.hand.set("Left"));
@@ -136,9 +159,10 @@ final class SpotifyPhoneChecks {
             context.runOnClient(client -> {
                 var screen = (SpotifyPhoneScreen) client.currentScreen;
                 screen.mouseClicked(click(screen, 182, 56), false);
-                require(client.currentScreen == null && field(screen, "cover") == null, "Close button leaked the phone texture");
             });
-            System.out.println("[spotify-phone] PASS: real F10/Escape, shared bridge lifecycle, isolated previous/play/next, keyboard controls, seek/track-change guards, both hands, small-window render and cleanup");
+            context.waitTicks(7);
+            context.runOnClient(client -> require(client.currentScreen == null, "Offline phone did not finish pocket animation"));
+            System.out.println("[spotify-phone] PASS: F10/Escape pocket animation, shared bridge, isolated transport, volume/mute/scroll/clamps, inline size 55–145%, real held movement/release/remap/focus/close, look drag, seek guards, both hands, small window and texture cleanup");
         } finally {
             context.runOnClient(client -> {
                 client.setScreen(null); phone.setEnabled(false); hud.setEnabled(false);
@@ -149,6 +173,87 @@ final class SpotifyPhoneChecks {
         }
     }
 
+    private static void volume(SpotifyPhoneScreen screen, IsolatedPlayback playback) {
+        screen.mouseClicked(click(screen, 85, 412), false);
+        screen.mouseDragged(click(screen, 151, 412), 66, 0);
+        screen.mouseReleased(click(screen, 151, 412));
+        require(Math.abs(playback.volume.level() - .75) < .0001, "Phone volume ignored scale/hand");
+        screen.mouseClicked(click(screen, 32, 413), false);
+        require(playback.volume.muted(), "Phone mute failed");
+        screen.mouseClicked(click(screen, 32, 413), false);
+        require(!playback.volume.muted() && Math.abs(playback.volume.level() - .75) < .0001, "Phone unmute lost volume");
+        var point = click(screen, 100, 412);
+        screen.mouseScrolled(point.x(), point.y(), 0, -1);
+        require(Math.abs(playback.volume.level() - .73) < .0001, "Phone wheel volume failed");
+        screen.mouseClicked(click(screen, 100, 412), false);
+        screen.mouseDragged(click(screen, -200, 412), -300, 0);
+        require(playback.volume.level() == 0, "Phone volume did not clamp to zero");
+        screen.mouseReleased(click(screen, 400, 412));
+        require(playback.volume.level() == 1, "Phone volume did not clamp to one");
+        playback.volume = SpotifyMedia.Volume.waiting();
+        int count = playback.volumes;
+        screen.mouseClicked(click(screen, 100, 412), false);
+        screen.mouseDragged(click(screen, 184, 412), 84, 0);
+        screen.mouseReleased(click(screen, 184, 412));
+        screen.mouseClicked(click(screen, 32, 413), false);
+        require(playback.volumes == count, "Unavailable Windows volume accepted commands");
+        playback.volume = new SpotifyMedia.Volume(true, .65, false, "");
+    }
+
+    private static void movement(ClientGameTestContext context, SpotifyPhone phone, IsolatedPlayback playback) {
+        int count = playback.controls.size();
+        var start = context.computeOnClient(c -> c.player.getEntityPos());
+        context.getInput().holdKey(GLFW.GLFW_KEY_W);
+        context.waitTicks(6);
+        context.runOnClient(c -> {
+            var screen = (SpotifyPhoneScreen) c.currentScreen;
+            require(screen.movementInput().forward() && c.player.input.playerInput.forward(), "Phone did not pass held forward input");
+            require(c.player.getEntityPos().squaredDistanceTo(start) > .01, "Player did not move with phone open");
+        });
+        context.getInput().releaseKey(GLFW.GLFW_KEY_W);
+        context.getInput().holdKey(GLFW.GLFW_KEY_SPACE);
+        context.getInput().holdKey(GLFW.GLFW_KEY_LEFT_SHIFT);
+        context.getInput().holdKey(GLFW.GLFW_KEY_LEFT_CONTROL);
+        context.waitTicks(2);
+        context.runOnClient(c -> {
+            var input = c.player.input.playerInput;
+            require(!input.forward() && input.jump() && input.sneak() && input.sprint(), "Jump/sneak/sprint keys were not preserved");
+            require(playback.controls.size() == count, "Jump key changed the song");
+        });
+        context.getInput().releaseKey(GLFW.GLFW_KEY_SPACE);
+        context.getInput().releaseKey(GLFW.GLFW_KEY_LEFT_SHIFT);
+        context.getInput().releaseKey(GLFW.GLFW_KEY_LEFT_CONTROL);
+        var oldForward = context.computeOnClient(c -> InputUtil.fromTranslationKey(c.options.forwardKey.getBoundKeyTranslationKey()));
+        context.runOnClient(c -> c.options.forwardKey.setBoundKey(InputUtil.Type.KEYSYM.createFromCode(GLFW.GLFW_KEY_UP)));
+        context.getInput().holdKey(GLFW.GLFW_KEY_UP);
+        context.waitTicks(2);
+        context.runOnClient(c -> require(c.player.input.playerInput.forward(), "Remapped movement binding ignored"));
+        context.getInput().releaseKey(GLFW.GLFW_KEY_UP);
+        context.runOnClient(c -> {
+            c.options.forwardKey.setBoundKey(oldForward);
+            phone.moveWhileOpen.set(false);
+        });
+        context.getInput().holdKey(GLFW.GLFW_KEY_W);
+        context.waitTicks(2);
+        context.runOnClient(c -> require(!c.player.input.playerInput.forward(), "Disabled movement option still moved player"));
+        context.getInput().releaseKey(GLFW.GLFW_KEY_W);
+        context.runOnClient(c -> {
+            phone.moveWhileOpen.set(true);
+            var screen = (SpotifyPhoneScreen) c.currentScreen;
+            screen.keyPressed(new KeyInput(GLFW.GLFW_KEY_W, 0, 0));
+            c.onWindowFocusChanged(false); screen.tick();
+            require(!screen.movementInput().forward(), "Focus loss retained movement");
+            c.onWindowFocusChanged(true);
+            float yaw = c.player.getYaw();
+            var click = new Click(4, 4, new MouseInput(1, 0));
+            screen.mouseClicked(click, false); screen.mouseDragged(click, 20, 0); screen.mouseReleased(click);
+            require(c.player.getYaw() != yaw, "Outside-phone right drag did not look around");
+            yaw = c.player.getYaw(); screen.mouseDragged(click, 20, 0);
+            require(c.player.getYaw() == yaw, "Look drag persisted after release");
+            require(!c.options.attackKey.isPressed() && !c.options.useKey.isPressed(), "Phone clicks leaked game actions");
+        });
+    }
+
     private static SpotifyMedia.State track(String title, boolean available, boolean seek) {
         return new SpotifyMedia.State(available, title, "Maro Radio", "After Hours", "Spotify", false, seek,
             62000, 180000, System.currentTimeMillis(), "");
@@ -157,6 +262,8 @@ final class SpotifyPhoneChecks {
         SpotifyMedia.State state = track("Midnight Drive", true, true);
         final List<String> controls = new ArrayList<>();
         final List<Long> seeks = new ArrayList<>();
+        SpotifyMedia.Volume volume = new SpotifyMedia.Volume(true, .65, false, "");
+        int volumes;
         int opened;
         final byte[] pixels = new byte[128 * 128 * 4];
         IsolatedPlayback() {
@@ -169,6 +276,11 @@ final class SpotifyPhoneChecks {
             }
         }
         public SpotifyMedia.State state() { return state; }
+        public SpotifyMedia.Volume volume() { return volume; }
+        public void setVolume(double level, boolean muted) {
+            require(Double.isFinite(level) && level >= 0 && level <= 1, "Invalid phone volume");
+            volumes++; volume = new SpotifyMedia.Volume(true, level, muted, "");
+        }
         private SpotifyMedia.Artwork art;
         public SpotifyMedia.Artwork artwork() {
             if (!state.available()) return null;

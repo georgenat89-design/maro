@@ -13,14 +13,19 @@ arrays to the needed size; queued GUI batches keep independent snapshots.
 ## Included modules
 
 **Spotify Phone** (Misc) opens a handheld music player with **F10**. Click previous,
-play/pause or next, or use **Left / Space / Right**. Drag the progress bar to seek;
+play/pause or next, or use **Left / Ctrl+Space / Right**. Drag the progress bar to seek;
 **F10**, **Esc**, the close button or the bottom home bar puts the phone away.
-The phone shows live Spotify metadata and album artwork, slides up beside the world,
-and uses your skin for its hand. Choose **Hand → Left/Right**, adjust **Size**, or hide
+The phone shows live Spotify metadata and album artwork, pulls out of your pocket,
+and slips back when closed. Its hand uses your skin. Choose **Hand → Left/Right**, adjust **Size**, or hide
 the hand. Change its keybind in the module settings. It shares Spotify HUD's Windows
 media connection and works with desktop Spotify or the browser media session, without
 an API login. Start a song in Spotify first; an idle phone offers **Open Spotify**.
-Closing the phone keeps your music playing. It does not pause the world.
+Closing the phone keeps your music playing. It does not pause the world. **Move While Open**
+keeps your configured movement, jump, sneak and sprint keys active; hold right mouse outside
+the phone to look around. Space jumps; Ctrl+Space plays/pauses. Disable the option for
+stationary controls with Space to play/pause. The phone's **− / +** buttons resize it from
+**55% to 145%**. Drag or scroll **Output volume**, or click its speaker to mute. This controls
+Windows output volume for all apps, including both desktop and browser Spotify.
 
 **Staff Notifier** (Visuals) recreates SignalDebug's recovered staff-list settings
 and default account names in Maro. Edit **staff names** for your server. It shows

@@ -35,6 +35,7 @@
     "NoRenderMixins$Entities",
     "InGameHudMixin",
     "KeyboardMixin",
+    "SpotifyPhoneInputMixin",
     "MinecraftClientAccessor",
     "MouseMixin",
     "ModuleEventsMixin",

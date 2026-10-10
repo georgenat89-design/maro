@@ -17,6 +17,8 @@ public final class AutoTrident extends Module {
         "Use full native charges, wait through Riptide spins and adapt after server corrections", true));
     private final NumberSetting speed = add(new NumberSetting("Speed",
         "Higher is faster: 10 charges for 10 ticks; 1 charges for 28 ticks", 10, 1, 10, 1));
+    private final NumberSetting repeatDelay = add(new NumberSetting("Repeat Delay",
+        "Ticks between accepted releases and the next charge; Riptide spins and server backoff still take priority", 1, 1, 10, 1));
     private Object player,world;
     private int nextUseAge,lastUseAge=-100,lastCorrectionAge=-1000,chargePenalty;
     private long chargeStartedAt;
@@ -35,7 +37,7 @@ public final class AutoTrident extends Module {
             ||m.ready()&&TridentUtil.eligible(stack)&&(!TridentUtil.riptide(stack)||mc.player.isTouchingWaterOrRain());
     }
     public static void useStarted(){var m=active;if(m!=null&&m.current()){m.chargeStartedAt=System.nanoTime();m.lastUseAge=mc.player.age;}}
-    public static void useFinished(){var m=active;if(m!=null&&m.current()){m.nextUseAge=Math.max(m.nextUseAge,mc.player.age+2);m.lastUseAge=mc.player.age;m.chargeStartedAt=0;}}
+    public static void useFinished(){var m=active;if(m!=null&&m.current()){m.nextUseAge=Math.max(m.nextUseAge,mc.player.age+m.repeatDelay.getInt());m.lastUseAge=mc.player.age;m.chargeStartedAt=0;}}
     public static void serverCorrection(){
         var m=active;if(m==null||!m.current()||!m.serverTiming.get()||mc.player.age-m.lastUseAge>40)return;
         m.nextUseAge=Math.max(m.nextUseAge,mc.player.age+20);m.chargePenalty=Math.min(10,m.chargePenalty+2);m.lastCorrectionAge=mc.player.age;
@@ -43,7 +45,8 @@ public final class AutoTrident extends Module {
 
     @Override
     public void onTick() {
-        if (!current() || mc.interactionManager == null || mc.currentScreen != null || !mc.options.useKey.isPressed()) return;
+        if (!current() || mc.interactionManager == null || mc.currentScreen != null || !mc.isWindowFocused()
+            || !mc.options.useKey.isPressed()) { chargeStartedAt=0; return; }
         if(mc.player.age-lastCorrectionAge>200)chargePenalty=0;
 
         if (mc.player.isUsingItem()) {
@@ -53,7 +56,7 @@ public final class AutoTrident extends Module {
             if (mc.player.getActiveItem().isOf(Items.TRIDENT)
                 && ready() && TridentUtil.ready()
                 && mc.player.getItemUseTime() >= charge
-                && (!serverTiming.get()||chargeStartedAt!=0&&System.nanoTime()-chargeStartedAt>=(charge+1)*50_000_000L)) {
+                && (!serverTiming.get()||chargeStartedAt!=0&&System.nanoTime()-chargeStartedAt>=charge*50_000_000L)) {
                 mc.interactionManager.stopUsingItem(mc.player);
             }
             return;
