@@ -129,6 +129,8 @@ public class BlockESP extends Module implements dev.maro.render.esp.EspStyle {
     private static final int SOFT_EDGES = 300, GLOWING = 400;
 
     private static BlockESP instance;
+    /** Saved settings from before tracers went to every block by default have revision 1 (none written). */
+    private static final int TRACER_REVISION = 2;
 
     // ---- blocks: picked in BlockEspScreen, each with its own colour, kept in the order they were added
     private final Map<Block, Integer> picked = new LinkedHashMap<>();
@@ -163,8 +165,8 @@ public class BlockESP extends Module implements dev.maro.render.esp.EspStyle {
     // ---- tracers
     protected final BooleanSetting tracers = add(new BooleanSetting("Tracers", "Clean glowing lines from your crosshair to the blocks", true));
     protected final ModeSetting tracerTo = add(new ModeSetting("Tracer To",
-            "Each Group: one line to each cluster of the same block (a row of chests gets one), to its nearest. Each Block: a line to every block",
-            "Each Group", "Each Group", "Each Block").visible(tracers::get));
+            "Each Block: a line to every block. Each Group: one line to each cluster of the same block (a row of chests gets one), to its nearest",
+            "Each Block", "Each Block", "Each Group").visible(tracers::get));
     protected final ModeSetting tracerStart = add(new ModeSetting("Tracer Start", "Where the lines start", "Crosshair", "Crosshair", "Bottom")
             .visible(tracers::get));
     protected final ModeSetting tracerColor = add(new ModeSetting("Tracer Color",
@@ -181,7 +183,7 @@ public class BlockESP extends Module implements dev.maro.render.esp.EspStyle {
     protected final NumberSetting pulseSpeed = add(new NumberSetting("Pulse Speed", "How fast the pulses travel", 1, 0.25, 3, 0.05)
             .suffix("x").visible(() -> tracers.get() && pulses.get()));
     protected final NumberSetting maxTracers = add(new NumberSetting("Max Tracers", "At most this many lines, nearest first",
-            500, 1, BlockEspRenderer.MAX_TRACERS, 1).visible(tracers::get));
+            1000, 1, BlockEspRenderer.MAX_TRACERS, 1).visible(tracers::get));
 
     // ---- bloom
     protected final BooleanSetting espBloom = add(new BooleanSetting("ESP Bloom", "The boxes glow, their light bleeding out round them", true));
@@ -423,6 +425,7 @@ public class BlockESP extends Module implements dev.maro.render.esp.EspStyle {
     @Override
     public JsonObject saveExtra() {
         JsonObject data = super.saveExtra();
+        data.addProperty("tracer-revision", TRACER_REVISION);
         JsonObject blocks = new JsonObject();
         picked.forEach((block, color) -> blocks.addProperty(Registries.BLOCK.getId(block).toString(),
                 String.format(Locale.ROOT, "#%06X", color & 0xFFFFFF)));
@@ -433,6 +436,11 @@ public class BlockESP extends Module implements dev.maro.render.esp.EspStyle {
     @Override
     public void loadExtra(JsonObject data) {
         super.loadExtra(data);
+        // Saved before tracers went to every block by default: the old defaults move up, once.
+        if (!data.has("tracer-revision")) {
+            if (tracerTo.is("Each Group")) tracerTo.set("Each Block");
+            if (maxTracers.getInt() == 500) maxTracers.set(1000.0);
+        }
         if (!data.has("blocks") || !data.get("blocks").isJsonObject()) return;
         Map<Block, Integer> loaded = new LinkedHashMap<>();
         for (var entry : data.getAsJsonObject("blocks").entrySet()) {
@@ -943,6 +951,11 @@ public class BlockESP extends Module implements dev.maro.render.esp.EspStyle {
         List<BlockPos> out = new ArrayList<>(shownCount);
         for (int i = 0; i < shownCount; i++) out.add(BlockPos.fromLong(shown[i]));
         return out;
+    }
+
+    /** How many of the shown blocks get a tracer. */
+    public int tracerTargets() {
+        return tracerTargetCount;
     }
 
     /** Whether nothing is waiting to be scanned. */

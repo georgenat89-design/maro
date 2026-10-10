@@ -90,6 +90,20 @@ final class BlockEspChecks {
             await(context, () -> module.shownPositions().containsAll(List.of(SPAWNER, DIAMOND)),
                     "Block ESP did not find the underground spawner and diamond ore: " + context.computeOnClient(c -> module.shownPositions()));
             System.out.printf(Locale.ROOT, "BLOCK ESP found the blocks after %.0f ms%n", (System.nanoTime() - searching) / 1e6);
+            // Every block gets a tracer by default; a config saved on the old grouping moves over once.
+            context.runOnClient(c -> {
+                require(module.tracerTargets() == module.shownPositions().size(),
+                        "Not every block has a tracer: " + module.tracerTargets() + " of " + module.shownPositions().size());
+                var tracerTo = (dev.maro.setting.ModeSetting) setting(module, "Tracer To");
+                tracerTo.set("Each Group");
+                var copy = new BlockESP();
+                copy.getSettings().stream().filter(s -> s.getName().equals("Tracer To")).findFirst()
+                        .ifPresent(s -> ((dev.maro.setting.ModeSetting) s).set("Each Group"));
+                copy.loadExtra(new com.google.gson.JsonObject());
+                require(copy.getSettings().stream().anyMatch(s -> s.getName().equals("Tracer To") && ((dev.maro.setting.ModeSetting) s).is("Each Block")),
+                        "An old config's Each Group did not move to Each Block");
+                tracerTo.reset();
+            });
             // Storage is Storage ESP's now: Block ESP neither finds nor offers it; Storage ESP finds the chest.
             require(context.computeOnClient(c -> !module.shownPositions().contains(CHEST) && !module.allows(net.minecraft.block.Blocks.CHEST)
                     && !module.isPicked(net.minecraft.block.Blocks.CHEST)), "Block ESP still finds chests");
