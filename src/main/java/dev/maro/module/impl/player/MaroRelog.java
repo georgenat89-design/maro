@@ -12,6 +12,7 @@ import dev.maro.setting.NumberSetting;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
+import net.minecraft.network.ClientConnection;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
@@ -34,6 +35,7 @@ public final class MaroRelog extends Module {
 
     private Phase phase = Phase.IDLE;
     private ClientPlayNetworkHandler connection;
+    private ClientConnection transport;
     private Vec3d homePosition, rtpOrigin;
     private RegistryKey<World> homeWorld, rtpWorld;
     private int clock, sentAt, queuedAt, nextCommandTick, cooldownTick, slot, retries, rounds;
@@ -54,12 +56,14 @@ public final class MaroRelog extends Module {
         clear();
         clock = rounds = 0;
         connection = mc.getNetworkHandler();
+        transport = connection == null ? null : connection.getConnection();
         status = "Waiting for underground Y";
     }
 
     @Override protected void onDisable() {
         clear();
         connection = null;
+        transport = null;
     }
 
     private void clear() {
@@ -75,17 +79,27 @@ public final class MaroRelog extends Module {
     @Override public void onTick() {
         clock++;
         if (!inGame() || mc.getNetworkHandler() == null) {
-            if (phase != Phase.IDLE) stop("Disconnected; the relog sequence was stopped");
-            else connection = null;
+            // Backend reconfiguration can replace the play handler and briefly remove
+            // the world while the same live connection completes a teleport.
+            if (travelling() && transport != null && transport.isOpen()
+                    && clock - sentAt <= timeout.getInt() * 20) {
+                status = "Waiting for teleport world to load";
+                return;
+            }
+            if (phase != Phase.IDLE) stop("Disconnected or transfer timed out; the relog sequence was stopped");
+            else { connection = null; transport = null; }
             return;
         }
         if (connection != mc.getNetworkHandler()) {
-            if (phase != Phase.IDLE) { stop("Connection changed; the relog sequence was stopped"); return; }
+            if (phase != Phase.IDLE && (!travelling() || transport != mc.getNetworkHandler().getConnection())) {
+                stop("Connection changed; the relog sequence was stopped"); return;
+            }
             connection = mc.getNetworkHandler();
+            transport = connection.getConnection();
         }
         if (!mc.player.isAlive()) { stop("Player died; the relog sequence was stopped"); return; }
         var builder = ModuleManager.get(AutoBuilder.class);
-        if (builder != null && builder.isEnabled()) {
+        if (builder != null && builder.isEnabled() && builder.busy()) {
             if (phase != Phase.IDLE) stop("Builder started; relog stopped with the saved home kept");
             else status = "Waiting for Auto Builder";
             return;
@@ -109,7 +123,7 @@ public final class MaroRelog extends Module {
                 return;
             }
             if (clock < nextCommandTick || now < nextCommandTime || mc.currentScreen != null
-                    || !mc.player.isOnGround()) return;
+                    || phase != Phase.HOME && !mc.player.isOnGround()) return;
             queued = confirmed = arrived = false;
             sentAt = clock;
             if (phase == Phase.SAVE) {
@@ -169,6 +183,8 @@ public final class MaroRelog extends Module {
         mc.options.sprintKey.setPressed(false);
     }
 
+    private boolean travelling() { return phase == Phase.RTP || phase == Phase.HOME; }
+
     private void message(String raw) {
         if (!isEnabled() || phase == Phase.IDLE || queued) return;
         String text = raw.replaceAll("§.", "").toLowerCase(Locale.ROOT);
@@ -210,7 +226,11 @@ public final class MaroRelog extends Module {
 
     /** Called after the native server teleport packet has actually moved the player. */
     public void serverTeleport() {
-        if (!isEnabled() || queued || !inGame() || connection != mc.getNetworkHandler()) return;
+        if (!isEnabled() || queued || !inGame() || !travelling()) return;
+        var current = mc.getNetworkHandler();
+        if (current == null || current.getConnection() != transport) return;
+        // A native position packet may arrive before onTick binds the new play handler.
+        connection = current;
         Vec3d position = mc.player.getEntityPos();
         var dimension = mc.world.getRegistryKey();
         if (phase == Phase.RTP && rtpOrigin != null)
@@ -222,6 +242,7 @@ public final class MaroRelog extends Module {
     private void stop(String reason) {
         status = reason;
         setEnabled(false);
+        dev.maro.Maro.LOGGER.warn("Maro Relog stopped: {}", reason);
         Notifications.push("Maro Relog stopped", reason, Notifications.Type.WARNING, 5000);
     }
 

@@ -4549,4 +4549,6 @@ public final class AutoBuilder extends Module {
         }catch(RuntimeException e){Maro.LOGGER.warn("Invalid Auto Builder saved placement",e);}
     }
     private String scope(){return mc.getCurrentServerEntry()!=null?"server:"+mc.getCurrentServerEntry().address:mc.getServer()!=null?"local:"+mc.getServer().getSaveProperties().getLevelName():"";}
+    /** Active work and pending home/preparation commands, excluding an idle preview. */
+    public boolean busy(){return builderCameraActive()||homeSetupResume||preparationStage>0;}
 }
