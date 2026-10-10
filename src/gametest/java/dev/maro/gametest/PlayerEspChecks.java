@@ -39,7 +39,10 @@ final class PlayerEspChecks {
         require(esp != null, "Player ESP was not registered");
         var original = context.computeOnClient(c -> c.player.getEntityPos());
         var perspective = context.computeOnClient(c -> c.options.getPerspective());
+        boolean hudHidden = context.computeOnClient(c -> c.options.hudHidden);
         try {
+            // Companion command feedback must not dim the silhouette under the chat overlay.
+            context.runOnClient(c -> c.options.hudHidden = true);
             world.getServer().runCommand("fill -6 99 -6 6 99 6 minecraft:stone");
             world.getServer().runCommand("fill -6 100 -6 6 104 6 minecraft:air");
             world.getServer().runCommand("time set noon");
@@ -188,6 +191,7 @@ final class PlayerEspChecks {
                 esp.setEnabled(false);
                 esp.getSettings().forEach(Setting::reset);
                 c.options.setPerspective(perspective);
+                c.options.hudHidden = hudHidden;
                 c.options.getEntityDistanceScaling().setValue(1.0);
             });
             world.getServer().runCommand("tp @a " + original.x + " " + original.y + " " + original.z);

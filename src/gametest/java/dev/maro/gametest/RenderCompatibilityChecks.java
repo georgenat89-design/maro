@@ -23,6 +23,9 @@ final class RenderCompatibilityChecks {
             throw new AssertionError("No solid block under the test player's crosshair");
         RenderFaultChecks.assertClean();
         HandShaderChecks.run(context);
+        // This world uses bounded readiness because companion scanners continuously rebuild
+        // chunks. Exercise the phone here too, rather than requiring a quiescent chunk queue.
+        SpotifyPhoneChecks.run(context);
         if (!Boolean.getBoolean("maro.gametest.renderCompatProfileOnly")) {
             context.runOnClient(c -> c.player.setPitch(0));
             PlayerEspChecks.run(context, world);
@@ -31,7 +34,6 @@ final class RenderCompatibilityChecks {
             GuiMeshChecks.run(context);
             ArmorHudChecks.run(context, world);
             HudReadabilityChecks.run(context);
-            SpotifyPhoneChecks.run(context);
             OrderDropperChecks.run(context, world);
             System.out.println("[render-compat] Individual renderers passed");
         }
