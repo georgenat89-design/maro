@@ -102,6 +102,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             NametagsChecks.run(context);
             TrajectoriesChecks.run(context, singleplayer);
             HandShaderChecks.run(context);
+            OrderDropperChecks.run(context, singleplayer);
             FakeBlockChecks.run(context, singleplayer);
             BetterLooksChecks.run(context);
             SkyChecks.run(context, singleplayer);
