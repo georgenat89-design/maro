@@ -1,6 +1,7 @@
 package dev.maro.module.impl.visuals;
 
 import dev.maro.gui.hud.SkinAccessoriesScreen;
+import dev.maro.render.accessories.CosmeticItems;
 import dev.maro.module.Category;
 import dev.maro.module.Module;
 import dev.maro.setting.*;
@@ -38,11 +39,20 @@ public final class SkinAccessories extends Module {
     private final BooleanSetting movement = add(new BooleanSetting("React To Movement", "Stronger flaps and tail motion while moving", true));
     private final BooleanSetting hideHelmet = add(new BooleanSetting("Hide Head With Helmet", "Avoid overlap with equipped helmets", true));
     private final BooleanSetting hideElytra = add(new BooleanSetting("Hide Wings With Elytra", "Avoid overlap with equipped elytra", true));
+    // Weapon and tool skins: how your own swords, pickaxes, shovels and tridents look, drawn by tools/cosmeticgen.py.
+    private final ModeSetting sword = add(new ModeSetting("Sword", "How your swords look", "None", CosmeticItems.choices(CosmeticItems.Kind.SWORD)));
+    private final ModeSetting pickaxe = add(new ModeSetting("Pickaxe", "How your pickaxes look", "None", CosmeticItems.choices(CosmeticItems.Kind.PICKAXE)));
+    private final ModeSetting shovel = add(new ModeSetting("Shovel", "How your shovels look", "None", CosmeticItems.choices(CosmeticItems.Kind.SHOVEL)));
+    private final ModeSetting trident = add(new ModeSetting("Trident", "How your tridents look", "None", CosmeticItems.choices(CosmeticItems.Kind.TRIDENT)));
+    private final NumberSetting itemSize = add(new NumberSetting("Item Size", "How big skinned items are in your hand", 1, 0.5, 1.6, 0.05).suffix("x"));
     private final long animationOrigin = System.nanoTime();
 
-    public SkinAccessories() { super("Skin Accessories", "Custom 3D horns, wings, tails, halos, and more. Visible in your client.", Category.VISUALS); }
+    private static SkinAccessories instance;
+    public SkinAccessories() { super("Cosmetics", "Hats, wings, horns, tails, halos, and skins for your swords, pickaxes, shovels and tridents. Visible in your client.", Category.VISUALS); instance = this; }
+    @Override public net.minecraft.client.gui.screen.Screen panel(net.minecraft.client.gui.screen.Screen parent) { return new SkinAccessoriesScreen(parent, this); }
     @Override public List<SettingSection> getSettingSections() {
-        return List.of(section("Looks & Preview", preset, preview, target), section("Accessories", head, wings, tail, halo, shoulders, back),
+        return List.of(section("Looks & Preview", preset, preview, target), section("Items", sword, pickaxe, shovel, trident, itemSize),
+            section("Accessories", head, wings, tail, halo, shoulders, back),
             section("Fit", headSize, wingSize, wingSpread, tailLength, haloHeight), section("Palette", primary, accent, haloColor, rainbow, glow),
             section("Animation", motion, speed, strength, movement), section("Equipment", hideHelmet, hideElytra));
     }
@@ -76,11 +86,69 @@ public final class SkinAccessories extends Module {
     }
     public boolean showHead(PlayerEntityRenderState s) { return !hideHelmet.get() || s.equippedHeadStack.isEmpty(); }
     public boolean showWings(PlayerEntityRenderState s) { return !hideElytra.get() || !s.equippedChestStack.isOf(Items.ELYTRA); }
+    /** Each player's wingbeat: how far through it they are, and how hard they are flapping. */
+    private static final class Flap { float phase, intensity = 0.3f; long last; }
+    private final java.util.Map<Integer, Flap> flaps = new java.util.HashMap<>();
+
+    /**
+     * How hard a player is moving, 0.3 standing to 1 at a sprint, more in the air: wings beat
+     * slowly and gently at rest and fast and wide when running, jumping, falling or flying.
+     */
+    private float effort(PlayerEntityRenderState s) {
+        net.minecraft.entity.Entity entity = mc.world == null ? null : mc.world.getEntityById(s.id);
+        if (entity == null) return 0.3f + Math.min(1, Math.abs(s.limbAmplitudeInverse) * 3) * 0.7f;
+        var v = entity.getVelocity();
+        double ground = Math.hypot(v.x, v.z);
+        float e = (float) Math.min(1, 0.3 + ground * 4.2);
+        if (!entity.isOnGround()) e += v.y < -0.2 ? 0.55f : 0.35f;
+        return Math.min(1.6f, e);
+    }
+
+    private Flap flap(PlayerEntityRenderState s) {
+        Flap f = flaps.computeIfAbsent(s.id, k -> { Flap n = new Flap(); n.phase = k * 0.31f; return n; });
+        long now = System.nanoTime();
+        if (f.last != 0) {
+            float dt = Math.min(0.1f, (now - f.last) / 1e9f);
+            if (dt > 0.0005f) {
+                float target = movement.get() ? effort(s) : 0.6f;
+                f.intensity += (target - f.intensity) * Math.min(1, dt * 4);
+                f.phase = (f.phase + dt * speed.getFloat() * (0.9f + f.intensity * 3.4f)) % (float) (Math.PI * 200);
+                f.last = now;
+            }
+        } else f.last = now;
+        if (flaps.size() > 64) flaps.keySet().removeIf(id -> id != s.id && (mc.world == null || mc.world.getEntityById(id) == null));
+        return f;
+    }
+
     public float phase(PlayerEntityRenderState s) {
-        return motion.get() ? (float)(((System.nanoTime() - animationOrigin) / 1e9 * speed.get()) % (Math.PI * 200)) + s.id * 0.31f : 0;
+        return motion.get() ? flap(s).phase : 0;
     }
     public float motionAmount(PlayerEntityRenderState s) {
-        return motion.get() ? strength.getFloat() * (movement.get() ? 0.45f + Math.min(1, Math.abs(s.limbAmplitudeInverse) * 3) * 0.55f : 1) : 0;
+        return motion.get() ? strength.getFloat() * (movement.get() ? flap(s).intensity : 1) : 0;
+    }
+
+    // ---- weapon and tool skins ----------------------------------------------------------------
+
+    public static SkinAccessories get() { return instance; }
+
+    /** The skin to draw an item with, for your own items while Cosmetics is on (or previewing), else null. */
+    public static CosmeticItems.Skin skinFor(net.minecraft.item.ItemStack stack) {
+        SkinAccessories m = instance;
+        if (m == null || stack.isEmpty() || !(m.isEnabled() || mc.currentScreen instanceof SkinAccessoriesScreen)) return null;
+        if (stack.isIn(net.minecraft.registry.tag.ItemTags.SWORDS)) return CosmeticItems.byName(CosmeticItems.Kind.SWORD, m.sword.get());
+        if (stack.isIn(net.minecraft.registry.tag.ItemTags.PICKAXES)) return CosmeticItems.byName(CosmeticItems.Kind.PICKAXE, m.pickaxe.get());
+        if (stack.isIn(net.minecraft.registry.tag.ItemTags.SHOVELS)) return CosmeticItems.byName(CosmeticItems.Kind.SHOVEL, m.shovel.get());
+        if (stack.isOf(net.minecraft.item.Items.TRIDENT)) return CosmeticItems.byName(CosmeticItems.Kind.TRIDENT, m.trident.get());
+        return null;
+    }
+
+    public static float itemScale() {
+        SkinAccessories m = instance;
+        return m == null ? 1 : m.itemSize.getFloat();
+    }
+
+    public float itemSize() {
+        return itemSize.getFloat();
     }
     public void selectPreset(String name) { preset.set(name); applyPreset(preset.get()); }
     private void applyPreset(String name) {

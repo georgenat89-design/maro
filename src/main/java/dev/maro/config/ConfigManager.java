@@ -36,7 +36,8 @@ public final class ConfigManager {
     private static final Path CLIENT_FILE = DIR.resolve("client.json");
 
     /** Bumped when defaults change in a way old files should not override (v3: black redesign). */
-    private static final int CLIENT_VERSION = 3;
+    /** Bumped when the menu gets a new look, so saved themes take it once: 4 is Maro's blue logo theme. */
+    private static final int CLIENT_VERSION = 4;
     private static String current = "default";
 
     public record ConfigInfo(String name, long lastModified) {
@@ -53,6 +54,7 @@ public final class ConfigManager {
         }
         loadClient();
         if (exists(current)) load(current);
+        else for (Module m : ModuleManager.all()) if (m.enabledByDefault()) m.setEnabled(true);
     }
 
     public static String getCurrent() {
@@ -75,6 +77,7 @@ public final class ConfigManager {
         FriendManager.list().forEach(friends::add);
         root.add("friends", friends);
         root.addProperty("config", current);
+        root.add("panels", dev.maro.gui.PanelsView.save());
         root.addProperty("version", CLIENT_VERSION);
         write(CLIENT_FILE, root);
     }
@@ -99,6 +102,7 @@ public final class ConfigManager {
             String name = sanitize(root.get("config").getAsString());
             if (!name.isEmpty()) current = name;
         }
+        dev.maro.gui.PanelsView.load(root.get("panels"));
     }
 
     // ---- module configs -----------------------------------------------------------------
@@ -110,7 +114,7 @@ public final class ConfigManager {
         JsonObject modules = new JsonObject();
         for (Module m : ModuleManager.all()) {
             JsonObject o = new JsonObject();
-            o.addProperty("enabled", m.isEnabled());
+            o.addProperty("enabled", m.persistEnabled() && m.isEnabled());
             o.add("bind", m.getBind().toJson());
             JsonObject settings = new JsonObject();
             writeSettings(settings, m.getSettings());
@@ -131,7 +135,8 @@ public final class ConfigManager {
         JsonObject modules = root.has("modules") && root.get("modules").isJsonObject() ? root.getAsJsonObject("modules") : new JsonObject();
         for (Module m : ModuleManager.all()) {
             if (!modules.has(m.getName()) || !modules.get(m.getName()).isJsonObject()) {
-                m.setEnabled(false);
+                // Never saved in this config: as it comes (on, for one that starts on).
+                m.setEnabled(m.enabledByDefault());
                 continue;
             }
             JsonObject o = modules.getAsJsonObject(m.getName());
@@ -139,11 +144,13 @@ public final class ConfigManager {
                 if (o.has("settings") && o.get("settings").isJsonObject()) readSettings(o.getAsJsonObject("settings"), m.getSettings());
                 if (o.has("bind")) m.getBind().fromJson(o.get("bind"));
                 if (o.has("extra") && o.get("extra").isJsonObject()) m.loadExtra(o.getAsJsonObject("extra"));
-                if (o.has("enabled")) m.setEnabled(o.get("enabled").getAsBoolean());
+                if (o.has("enabled")) m.setEnabled(m.persistEnabled() && o.get("enabled").getAsBoolean());
             } catch (Exception e) {
                 Maro.LOGGER.warn("Failed to load module {} from config {}", m.getName(), name, e);
             }
         }
+        dev.maro.module.impl.visuals.NoRender nr = dev.maro.module.impl.visuals.NoRender.get();
+        if (nr != null) nr.carryOver();
         current = name;
         return true;
     }

@@ -12,7 +12,21 @@ import net.minecraft.util.Hand;
 import org.lwjgl.glfw.GLFW;
 
 /** Verifies actual server-accepted throws with held mouse input, not just client prediction. */
-final class AutoTridentChecks {
+public final class AutoTridentChecks {
+    private static net.minecraft.network.ClientConnection watched;
+    private static final java.util.List<net.minecraft.network.packet.Packet<?>> sent=new java.util.ArrayList<>();
+    private static final java.util.List<Integer> releaseAges = new java.util.ArrayList<>();
+    private static boolean startedWhileSpinning;
+    public static void sent(net.minecraft.network.ClientConnection connection,net.minecraft.network.packet.Packet<?> packet){
+        if(connection!=watched)return;
+        sent.add(packet);
+        if(packet instanceof net.minecraft.network.packet.c2s.play.PlayerInteractItemC2SPacket)
+            startedWhileSpinning |= net.minecraft.client.MinecraftClient.getInstance().player.isUsingRiptide();
+        if(packet instanceof net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket action
+            &&action.getAction()==net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket.Action.RELEASE_USE_ITEM)
+            releaseAges.add(net.minecraft.client.MinecraftClient.getInstance().player.age);
+    }
+    private static void record(ClientGameTestContext context){context.runOnClient(c->{sent.clear();releaseAges.clear();startedWhileSpinning=false;watched=c.getNetworkHandler().getConnection();});}
     private static void require(boolean condition, String message) {
         if (!condition) throw new AssertionError(message);
     }
@@ -80,6 +94,8 @@ final class AutoTridentChecks {
             context.getInput().releaseMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
             context.waitTicks(5);
 
+            riptide(context,world,module);
+
             world.getServer().runOnServer(server -> {
                 var player = server.getPlayerManager().getPlayerList().getFirst();
                 player.getInventory().setStack(player.getInventory().getSelectedSlot(), new ItemStack(Items.BOW));
@@ -92,8 +108,9 @@ final class AutoTridentChecks {
                 && client.player.getActiveItem().isOf(Items.BOW) && client.player.getItemUseTime() >= 20),
                 "Auto Trident interrupted a bow charge");
         } finally {
+            watched=null;
             context.getInput().releaseMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
-            context.runOnClient(client -> { module.setEnabled(false); speed.reset(); client.player.setPitch(pitch); });
+            context.runOnClient(client -> { module.setEnabled(false); module.getSettings().forEach(dev.maro.setting.Setting::reset); client.player.setPitch(pitch); });
             world.getServer().runOnServer(server -> {
                 var player = server.getPlayerManager().getPlayerList().getFirst();
                 player.getInventory().setStack(player.getInventory().getSelectedSlot(), original[0]);
@@ -103,4 +120,83 @@ final class AutoTridentChecks {
             context.waitTicks(5);
         }
     }
+    private static void riptide(ClientGameTestContext context,TestSingleplayerContext world,AutoTrident module){
+        var position=context.computeOnClient(c->c.player.getEntityPos());
+        try{
+            world.getServer().runCommand("weather clear");
+            world.getServer().runCommand("tp @a 200.5 90 200.5 0 -90");
+            world.getServer().runCommand("item replace entity @a weapon.offhand with air");
+            world.getServer().runCommand("item replace entity @a weapon.mainhand with minecraft:trident[minecraft:enchantments={\"minecraft:riptide\":3}]");
+            context.waitTicks(8);
+            require(context.computeOnClient(c->!c.player.isTouchingWaterOrRain()),"Standalone dry Riptide fixture was wet");
+            record(context);context.getInput().holdMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);context.waitTicks(20);
+            require(sent.stream().noneMatch(p->p instanceof net.minecraft.network.packet.c2s.play.PlayerInteractItemC2SPacket),"Auto Trident without Trident Util sent rejected dry-use packets");
+            context.getInput().releaseMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
+            world.getServer().runCommand("fill 196 80 196 204 83 204 minecraft:water");
+            world.getServer().runCommand("weather rain");
+            world.getServer().runCommand("tp @a 200.5 82 200.5 0 -90");context.waitTicks(8);
+            require(context.computeOnClient(c->c.player.isTouchingWaterOrRain()),"Wet Riptide fixture did not synchronize");
+            // Start a fresh cadence measurement after the fixture's setup teleports. The
+            // following correction test separately verifies the real backoff behavior.
+            context.runOnClient(c->{module.setEnabled(false);module.setEnabled(true);});
+            record(context);
+            int before=throwsAccepted(world);
+            context.getInput().holdMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
+            boolean precharged = false;
+            for (int i = 0; i < 70; i++) {
+                context.waitTick();
+                precharged |= context.computeOnClient(c -> c.player.isUsingRiptide() && c.player.isUsingItem()
+                    && c.player.getActiveItem().isOf(Items.TRIDENT));
+            }
+            int launches = throwsAccepted(world)-before;
+            require(precharged, "Held Riptide did not start the next charge during its spin");
+            require(launches>=3,"Precharged Riptide did not repeat at the faster cadence: " + launches);
+            int fastInterval = context.computeOnClient(c -> releaseAges.get(1) - releaseAges.get(0));
+            require(context.computeOnClient(c -> startedWhileSpinning), "Precharge did not send a native use during the spin");
+            context.getInput().releaseMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
+            context.runOnClient(c -> {
+                module.setEnabled(false);
+                if (c.player.isUsingItem()) c.interactionManager.stopUsingItem(c.player);
+            });
+            context.waitTicks(25);
+            var precharge = (dev.maro.setting.BooleanSetting) module.getSettings().stream()
+                .filter(s -> s.getName().equals("Precharge")).findFirst().orElseThrow();
+            context.runOnClient(c -> { module.setEnabled(false); precharge.set(false); module.setEnabled(true); });
+            before = throwsAccepted(world);
+            record(context);
+            context.getInput().holdMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
+            context.waitTicks(75);
+            require(!context.computeOnClient(c -> startedWhileSpinning), "Disabled precharge started a native use during the spin");
+            require(throwsAccepted(world)-before>=2, "Sequential Riptide comparison did not reach the server");
+            int sequentialInterval = context.computeOnClient(c -> releaseAges.get(1) - releaseAges.get(0));
+            System.out.println("[auto-trident-cadence-measurement] precharged=" + fastInterval + "; sequential=" + sequentialInterval);
+            require(fastInterval <= sequentialInterval - 5,
+                "Precharge did not shorten the native launch interval: " + fastInterval + " vs " + sequentialInterval);
+            System.out.println("[auto-trident-precharge-proof] native launch interval=" + fastInterval
+                + " ticks vs sequential=" + sequentialInterval + "; accepted precharged launches=" + launches);
+            context.getInput().releaseMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
+            context.waitTicks(5);
+            context.runOnClient(c -> precharge.set(true));
+            context.getInput().holdMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
+            context.waitTicks(30);
+            // The real server sends a position correction. It must be accepted, then
+            // held input must wait instead of immediately launching another burst.
+            int correctionBefore=context.computeOnClient(c->(int)field(module,"lastCorrectionAge"));
+            world.getServer().runCommand("execute as @a at @s run tp @s ~ ~ ~");
+            for(int i=0;i<20&&context.computeOnClient(c->(int)field(module,"lastCorrectionAge")==correctionBefore);i++)context.waitTick();
+            require(context.computeOnClient(c->(int)field(module,"lastCorrectionAge")>correctionBefore),"Native correction did not reach standalone Auto Trident");
+            record(context);context.waitTicks(15);
+            require(sent.stream().noneMatch(p->p instanceof net.minecraft.network.packet.c2s.play.PlayerInteractItemC2SPacket||p instanceof net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket a&&a.getAction()==net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket.Action.RELEASE_USE_ITEM),"Auto Trident repeated a burst during correction backoff");
+            before=throwsAccepted(world);context.waitTicks(50);
+            require(throwsAccepted(world)>before,"Auto Trident did not resume after correction backoff");
+            System.out.println("[auto-trident-server-timing-proof] standalone dry-use packets=0; repeated native wet Riptide accepted; real position correction backoff and resume passed");
+        }finally{
+            watched=null;context.getInput().releaseMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
+            world.getServer().runCommand("weather clear");
+            world.getServer().runCommand("fill 196 80 196 204 83 204 minecraft:air");
+            world.getServer().runCommand("tp @a "+position.x+" "+position.y+" "+position.z);
+            context.waitTicks(5);
+        }
+    }
+    private static Object field(Object owner,String name){try{var f=owner.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(owner);}catch(ReflectiveOperationException e){throw new AssertionError(e);}}
 }

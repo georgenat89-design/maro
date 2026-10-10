@@ -81,6 +81,12 @@ import dev.maro.nathan.render.PostEffect;
  * <p>Visual only. Nothing here touches an entity, a packet or the server.
  */
 public class Bloom extends Module {
+    /** Set from Better Looks' panel, so not listed on its own. */
+    @Override
+    public boolean hiddenInGui() {
+        return true;
+    }
+
     /** The pyramid. Index 0 is half the screen, 1 a quarter, 2 an eighth. */
     private static final Identifier[] LEVEL = {
         PostEffect.ours("bloom_0"), PostEffect.ours("bloom_1"), PostEffect.ours("bloom_2")

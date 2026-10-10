@@ -39,7 +39,10 @@ final class PlayerEspChecks {
         require(esp != null, "Player ESP was not registered");
         var original = context.computeOnClient(c -> c.player.getEntityPos());
         var perspective = context.computeOnClient(c -> c.options.getPerspective());
+        boolean hudHidden = context.computeOnClient(c -> c.options.hudHidden);
         try {
+            // Companion command feedback must not dim the silhouette under the chat overlay.
+            context.runOnClient(c -> c.options.hudHidden = true);
             world.getServer().runCommand("fill -6 99 -6 6 99 6 minecraft:stone");
             world.getServer().runCommand("fill -6 100 -6 6 104 6 minecraft:air");
             world.getServer().runCommand("time set noon");
@@ -67,6 +70,18 @@ final class PlayerEspChecks {
             require(on[0] > 1500 && on[0] > baseline[0] * 10, "Player ESP did not draw the silhouette: " + on[0] + " vs " + baseline[0]);
             require(Math.abs(on[1] - on[2] / 2) < on[2] * 0.12, "Player ESP silhouette is not where the player is: centre x " + on[1] + " of " + on[2]);
 
+            // An elytra on your back is part of the silhouette too; armour-style layers have no
+            // outline of their own, so it used to be left out and stuck out of the ESP.
+            world.getServer().runCommand("item replace entity @a armor.chest with minecraft:elytra");
+            context.runOnClient(c -> esp.setEnabled(true));
+            context.waitTicks(6);
+            int[] winged = magenta(context.takeScreenshot("maro-player-esp-elytra"));
+            context.runOnClient(c -> esp.setEnabled(false));
+            world.getServer().runCommand("item replace entity @a armor.chest with minecraft:air");
+            context.waitTicks(3);
+            System.out.println("PLAYER ESP elytra magenta=" + winged[0] + " without=" + on[0]);
+            require(winged[0] > on[0] * 1.03, "Player ESP left the elytra out of the silhouette: " + winged[0] + " vs " + on[0] + " without it");
+
             // The preview: with the module and Self both off, it still shows you, facing the camera.
             context.runOnClient(c -> {
                 c.options.setPerspective(Perspective.FIRST_PERSON);
@@ -83,6 +98,11 @@ final class PlayerEspChecks {
             context.runOnClient(c -> ((ModeSetting) setting(esp, "Fill Style")).set("Galaxy"));
             context.waitTicks(3);
             context.takeScreenshot("maro-player-esp-preview-galaxy");
+            context.runOnClient(c -> esp.applyNeonGlow());
+            context.waitTicks(3);
+            int neon = pink(context.takeScreenshot("maro-player-esp-preview-neon"));
+            System.out.println("PLAYER ESP neon pink=" + neon);
+            require(neon > 80, "Neon Glow did not draw its pink edge: " + neon);
             context.runOnClient(c -> c.currentScreen.close());
             context.waitTicks(3);
             require(context.computeOnClient(c -> c.currentScreen == null && c.options.getPerspective() == Perspective.FIRST_PERSON && !PlayerESP.previewing()),
@@ -171,6 +191,7 @@ final class PlayerEspChecks {
                 esp.setEnabled(false);
                 esp.getSettings().forEach(Setting::reset);
                 c.options.setPerspective(perspective);
+                c.options.hudHidden = hudHidden;
                 c.options.getEntityDistanceScaling().setValue(1.0);
             });
             world.getServer().runCommand("tp @a " + original.x + " " + original.y + " " + original.z);
@@ -190,6 +211,24 @@ final class PlayerEspChecks {
         other.setHeadYaw(180f);
         client.world.addEntity(other);
         return other.getId();
+    }
+
+    /** Pixels in Neon Glow's pink edge colour. */
+    private static int pink(Path screenshot) {
+        try {
+            var image = ImageIO.read(screenshot.toFile());
+            int count = 0;
+            for (int y = 0; y < image.getHeight(); y++) {
+                for (int x = 0; x < image.getWidth(); x++) {
+                    int rgb = image.getRGB(x, y);
+                    int r = rgb >> 16 & 0xFF, g = rgb >> 8 & 0xFF, b = rgb & 0xFF;
+                    if (r > 200 && g < 160 && b > 150) count++;
+                }
+            }
+            return count;
+        } catch (IOException e) {
+            throw new AssertionError("Cannot read " + screenshot, e);
+        }
     }
 
     /** {count, centre x, image width, centre y} of strongly magenta pixels. */

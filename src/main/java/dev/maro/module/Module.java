@@ -87,6 +87,27 @@ public abstract class Module {
         return List.of(section);
     }
 
+    /**
+     * A screen of its own for this module's settings, opened instead of the settings box when the
+     * module is right-clicked in the GUI; null for the usual box.
+     */
+    public net.minecraft.client.gui.screen.Screen panel(net.minecraft.client.gui.screen.Screen parent) {
+        return null;
+    }
+
+    /** Left out of the GUI's module lists and search: its settings live in another module's panel. */
+    public boolean hiddenInGui() {
+        return false;
+    }
+
+    /** Whether the module is on in a config that has never saved it: true for ones that should start with the client. */
+    public boolean enabledByDefault() {
+        return false;
+    }
+
+    /** Momentary movement freezes should never reactivate from a saved config. */
+    public boolean persistEnabled() { return true; }
+
     public com.google.gson.JsonObject saveExtra() { return new com.google.gson.JsonObject(); }
     public void loadExtra(com.google.gson.JsonObject data) { }
 

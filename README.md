@@ -4,7 +4,31 @@ A **Fabric 1.21.11 / Java 21** client with a smooth, modern ClickGUI and the 20 
 
 Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 
+When the optional Zen companion is installed, Maro reserves the missing native vertex/index
+capacity for its Block Outlines star before it draws. This prevents the address-zero crash
+when first aiming at a block, and protects later draws as the mesh fills. The integration
+does not require or bundle the companion. HUD meshes reuse CPU geometry and reserve shape
+arrays to the needed size; queued GUI batches keep independent snapshots.
+Rounded shapes reuse precomputed corner normals, module lookups use a class index and
+shared read-only registry views, and unchanged keybinds are retained between ticks.
+The phone reuses its immutable album-art geometry across frames.
+
 ## Included modules
+
+**Spotify Phone** (Misc) opens a handheld music player with **F10**. Click previous,
+play/pause or next, or use **Left / Ctrl+Space / Right**. Drag the progress bar to seek;
+**F10**, **Esc**, the close button or the bottom home bar puts the phone away.
+The phone shows live Spotify metadata and album artwork, pulls out of your pocket,
+and slips back when closed. Its hand uses your skin. Choose **Hand → Left/Right**, adjust **Size**, or hide
+the hand. Change its keybind in the module settings. It shares Spotify HUD's Windows
+media connection and works with desktop Spotify or the browser media session, without
+an API login. Start a song in Spotify first; an idle phone offers **Open Spotify**.
+Closing the phone keeps your music playing. It does not pause the world. **Move While Open**
+keeps your configured movement, jump, sneak and sprint keys active; hold right mouse outside
+the phone to look around. Space jumps; Ctrl+Space plays/pauses. Disable the option for
+stationary controls with Space to play/pause. The phone's **− / +** buttons resize it from
+**55% to 145%**. Drag or scroll **Output volume**, or click its speaker to mute. This controls
+Windows output volume for all apps, including both desktop and browser Spotify.
 
 **Staff Notifier** (Visuals) recreates SignalDebug's recovered staff-list settings
 and default account names in Maro. Edit **staff names** for your server. It shows
@@ -147,8 +171,10 @@ It leaves item use and creative mode alone and does not move items out of your i
 **Auto Trident** (Player) repeatedly charges and releases a trident while you hold
 right-click (or your bound Use key). **Speed** ranges from **1–10**, defaulting to **10**:
 10 releases after the normal minimum of 10 charge ticks (0.5 seconds at 20 TPS),
-and 1 holds for 28 ticks (1.4 seconds). The next charge starts on the next client tick.
-Works in either hand, pauses in menus, and leaves other active item uses alone.
+and 1 holds for 28 ticks (1.4 seconds). **Repeat Delay** defaults to one tick between
+releases and new charges. **Server Timing** waits for the full charge duration and native
+Riptide spin, and backs off after position corrections before resuming held use.
+Works in either hand, pauses in menus or on focus loss, and leaves other active item uses alone.
 Riptide still needs water or rain; thrown tridents must be returned or replaced before
 the next throw in survival. Uses normal item interactions and release actions.
 

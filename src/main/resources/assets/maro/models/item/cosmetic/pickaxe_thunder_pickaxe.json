@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/handheld",
+  "textures": {
+    "layer0": "maro:item/cosmetic/pickaxe_thunder_pickaxe"
+  }
+}
