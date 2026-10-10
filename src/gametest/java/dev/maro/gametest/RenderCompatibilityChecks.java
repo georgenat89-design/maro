@@ -22,6 +22,7 @@ final class RenderCompatibilityChecks {
         if (!context.computeOnClient(c -> c.crosshairTarget != null && c.crosshairTarget.getType() == net.minecraft.util.hit.HitResult.Type.BLOCK))
             throw new AssertionError("No solid block under the test player's crosshair");
         RenderFaultChecks.assertClean();
+        HandShaderChecks.run(context);
         if (!Boolean.getBoolean("maro.gametest.renderCompatProfileOnly")) {
             context.runOnClient(c -> c.player.setPitch(0));
             PlayerEspChecks.run(context, world);
@@ -36,7 +37,7 @@ final class RenderCompatibilityChecks {
         }
         System.out.println("[render-compat] Enabling combined visuals");
         var names = Set.of("Nametags", "Trajectories", "Player ESP", "Custom Sky", "Custom Crosshair", "Compass",
-            "Region Map", "Keystrokes", "Spotify Hud", "Motion Blur", "Color Correct", "View Model", "Inventory", "Better Looks");
+            "Region Map", "Keystrokes", "Spotify Hud", "Motion Blur", "Color Correct", "View Model", "Inventory", "Better Looks", "Hand Shader");
         String profile = System.getProperty("maro.gametest.renderProfile", "");
         try {
             context.runOnClient(c -> {
