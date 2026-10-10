@@ -91,6 +91,7 @@ final class AutoBuilderChecks {
         AutoBuilder builder=ModuleManager.get(AutoBuilder.class);
         BlockPos start=context.computeOnClient(client->client.player.getBlockPos().up(30));
         try{
+            if(Boolean.getBoolean("maro.gametest.builderGhostOnly")){rejectedPlacement(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderNetworkOnly")){fixture(context,singleplayer,builder,start);BuilderHomeChecks.run(context,singleplayer,builder,start);ghostMining(context,singleplayer,builder,start);fixture(context,singleplayer,builder,start);rejectedPlacement(context,singleplayer,builder,start);retainedPredictions(context,singleplayer,builder,start);return;}
             if(Boolean.getBoolean("maro.gametest.builderShoppingOnly")||Boolean.getBoolean("maro.gametest.builderAuctionOnly")||Boolean.getBoolean("maro.gametest.builderRecoveryOnly")){fixture(context,singleplayer,builder,start);BuilderMarketRecoveryChecks.run(context,singleplayer,builder);if(!Boolean.getBoolean("maro.gametest.builderRecoveryOnly")){fixture(context,singleplayer,builder,start);BuilderAuctionChecks.run(context,singleplayer,builder);}return;}
             if(Boolean.getBoolean("maro.gametest.builderSealedEscapeOnly")){sealedBuildEscape(context,singleplayer,builder,start);return;}
@@ -392,29 +393,36 @@ final class AutoBuilderChecks {
         context.runOnClient(client->require(builder.inventoryCount(Items.STONE)==0,"Resume bought/placed an already completed block"));
     }
     private static void rejectedPlacement(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
-        for(boolean closer:List.of(false,true)){fixture(context,world,builder,start);rejectedPlacementCase(context,world,builder,start,closer);}
+        for(boolean closer:List.of(false,true)){fixture(context,world,builder,start);rejectedPlacementCase(context,world,builder,start,closer,false);}
+        fixture(context,world,builder,start);rejectedPlacementCase(context,world,builder,start,true,true);
     }
-    private static void rejectedPlacementCase(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,boolean closer){
+    private static void rejectedPlacementCase(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,boolean closer,boolean missingReceipt){
         var target=start.add(0,0,closer?4:2);var rejected=new java.util.concurrent.atomic.AtomicInteger();var gate=new java.util.concurrent.atomic.AtomicBoolean(true);
         net.fabricmc.fabric.api.event.player.UseBlockCallback.EVENT.register((player,level,hand,hit)->{
             if(!level.isClient()&&gate.get()&&hit.getBlockPos().equals(target.down())&&player.getStackInHand(hand).isOf(Items.STONE)&&rejected.getAndIncrement()<3){((net.minecraft.server.network.ServerPlayerEntity)player).playerScreenHandler.syncState();return net.minecraft.util.ActionResult.FAIL;}
             return net.minecraft.util.ActionResult.PASS;
         });
         try{
-            world.getServer().runCommand("give @a stone 1");context.waitTicks(6);
-            context.runOnClient(client->{set(builder,"Auto Move",closer);builder.install(new Schematic("rejected-placement.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(18,14);BuilderPlacementProbe.begin(target);builder.startBuild();});
+            world.getServer().runCommand(missingReceipt?"item replace entity @a hotbar.5 with stone 1":"give @a stone 1");context.waitTicks(6);
+            context.runOnClient(client->{set(builder,"Auto Move",closer);builder.install(new Schematic("rejected-placement.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(18,14);BuilderPlacementProbe.begin(target,missingReceipt?5:0);if(missingReceipt)BuilderBlockDelay.begin(target);builder.startBuild();});
+            if(missingReceipt){
+                for(int i=0;i<100&&context.computeOnClient(client->BuilderPlacementProbe.attempts.isEmpty());i++)context.waitTick();
+                context.runOnClient(client->{require(BuilderPlacementProbe.attempts.size()==1,"Missing-receipt fixture did not place once");client.player.getInventory().setSelectedSlot(2);((dev.maro.mixin.ClientPlayerInteractionManagerAccessor)client.interactionManager).maro$syncSelectedSlot();});
+                for(int i=0;i<120&&context.computeOnClient(client->BuilderPlacementProbe.slotClicks<2);i++)context.waitTick();
+                context.runOnClient(client->{require(BuilderPlacementProbe.slotClicks==2&&BuilderPlacementProbe.firstSlotClick-BuilderPlacementProbe.attempts.getFirst()>=80&&client.player.getInventory().getSelectedSlot()==5,"Missing placement response did not revisit the original slot after its deadline: "+builder.status());BuilderBlockDelay.release();});
+            }
             await(context,builder,200);require(rejected.get()==4,"Server did not reject exactly three attempts before accepting");verify(world,target,1,1,1,y->Blocks.STONE);
             context.waitTicks(8);
             context.runOnClient(client->{
-                require(BuilderPlacementProbe.attempts.size()==4&&BuilderPlacementProbe.slotClicks==6&&BuilderPlacementProbe.emptySlotClicks>=3&&BuilderPlacementProbe.withheld>0,"Missing inventory correction was not recovered through the original slot: attempts="+BuilderPlacementProbe.attempts+" clicks="+BuilderPlacementProbe.slotClicks+" empty="+BuilderPlacementProbe.emptySlotClicks+" withheld="+BuilderPlacementProbe.withheld);
+                require(BuilderPlacementProbe.attempts.size()==4&&BuilderPlacementProbe.slotClicks==6&&BuilderPlacementProbe.emptySlotClicks>=3&&BuilderPlacementProbe.withheld>0&&BuilderPlacementProbe.wrongSelectedClicks==0,"Missing inventory correction was not recovered through the original slot: attempts="+BuilderPlacementProbe.attempts+" clicks="+BuilderPlacementProbe.slotClicks+" empty="+BuilderPlacementProbe.emptySlotClicks+" withheld="+BuilderPlacementProbe.withheld);
                 int maxGap=0;for(int i=1;i<BuilderPlacementProbe.attempts.size();i++)maxGap=Math.max(maxGap,BuilderPlacementProbe.attempts.get(i)-BuilderPlacementProbe.attempts.get(i-1));
                 if(closer)require(BuilderPlacementProbe.distances.getLast()<BuilderPlacementProbe.distances.getFirst()-.5,"Ghost placement did not move closer on native footing: "+BuilderPlacementProbe.distances);
                 else require(maxGap<=10,"Ghost retry retained a long placement pause: "+BuilderPlacementProbe.attempts);
                 require(builder.inventoryCount(Items.STONE)==0&&client.player.playerScreenHandler.getCursorStack().isEmpty(),"Ghost recovery lost/duplicated stock or left it on the cursor");BuilderPacketChecks.verify(4);
-                System.out.println("[ghost-placement-proof] closer="+closer+" attempts="+BuilderPlacementProbe.attempts+" distances="+BuilderPlacementProbe.distances+" slotClicks="+BuilderPlacementProbe.slotClicks+" emptySlotClicks="+BuilderPlacementProbe.emptySlotClicks+" withheld="+BuilderPlacementProbe.withheld+" maxGap="+maxGap);
+                System.out.println("[ghost-placement-proof] closer="+closer+" missingReceipt="+missingReceipt+" originalSlot="+(missingReceipt?5:0)+" attempts="+BuilderPlacementProbe.attempts+" distances="+BuilderPlacementProbe.distances+" slotClicks="+BuilderPlacementProbe.slotClicks+" emptySlotClicks="+BuilderPlacementProbe.emptySlotClicks+" withheld="+BuilderPlacementProbe.withheld+" maxGap="+maxGap);
             });
             world.getServer().runOnServer(server->{var player=server.getPlayerManager().getPlayerList().getFirst();require(player.getInventory().count(Items.STONE)==0&&player.playerScreenHandler.getCursorStack().isEmpty(),"Actual server ghost recovery inventory/cursor mismatch");});
-        }finally{gate.set(false);context.runOnClient(client->{BuilderPlacementProbe.end();BuilderPacketChecks.recording=false;});}
+        }finally{gate.set(false);context.runOnClient(client->{BuilderBlockDelay.release();BuilderPlacementProbe.end();BuilderPacketChecks.recording=false;});}
     }
     private static void ghostMining(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         var target=start.south(2);

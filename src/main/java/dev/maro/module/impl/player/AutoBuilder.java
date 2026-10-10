@@ -2572,7 +2572,8 @@ public final class AutoBuilder extends Module {
     /** A native pickup/return asks the server to resend the rejected placement's original slot. */
     private boolean resyncGhostSlot(){
         var handler=mc.player.playerScreenHandler;
-        if(mc.player.currentScreenHandler!=handler||!handler.getCursorStack().isEmpty())return false;
+        if(ghostSlot<0||ghostSlot>8||mc.player.currentScreenHandler!=handler||!handler.getCursorStack().isEmpty())return false;
+        select(ghostSlot);
         ghostSlotReceived=false;ghostSlotHadMaterial=placement!=null&&mc.player.getInventory().getStack(ghostSlot).isOf(placement.item);ghostSlotDeadline=ticks+20;
         int slot=36+ghostSlot;
         mc.interactionManager.clickSlot(handler.syncId,slot,0,SlotActionType.PICKUP,mc.player);
@@ -2588,7 +2589,7 @@ public final class AutoBuilder extends Module {
         if(mc.player.currentScreenHandler!=mc.player.playerScreenHandler||!mc.player.playerScreenHandler.getCursorStack().isEmpty()){
             status="Waiting for rejected block to return to its slot";return true;
         }
-        if(placementAttemptTarget!=null&&ticks-placementAttemptStarted>80){
+        if(placementAttemptTarget!=null&&ticks-placementAttemptStarted>80&&ticks>=ghostSlotDeadline){
             var job=placement;ghostSlot=-1;deferPlacement(job,"Ghost placement still refused — checking another view");return true;
         }
         // Vanilla omits slot packets when both clicks already match the server.
@@ -3334,14 +3335,15 @@ public final class AutoBuilder extends Module {
             // A refused prediction must not remain as collision geometry or as a face for
             // the next placement. Only reconcile this builder's own predicted block.
             reconcilePrediction(job,actual);
-            if(actual!=null&&actual.equals(pendingBefore)&&!matchesBuildState(actual,job.state)
+            if((actual==null||actual.equals(pendingBefore)&&!matchesBuildState(actual,job.state))
                 &&mc.player.currentScreenHandler==mc.player.playerScreenHandler&&mc.player.playerScreenHandler.getCursorStack().isEmpty()){
                 // Keep the checked view and the original attempt deadline. A permanently
                 // refused position still reaches normal repositioning after the fast burst.
+                // A missing acknowledgement also needs one inventory correction window.
                 ghostSlot=placementInventorySlot;ghostRetryAt=ticks+2;placement=job;
-                ghostApproachStand=closerGhostStand(job);ghostApproachStarted=ticks;if(ghostApproachStand!=null)walker.stop();
+                ghostApproachStand=actual==null?null:closerGhostStand(job);ghostApproachStarted=ticks;if(ghostApproachStand!=null)walker.stop();
                 failedPlacementUntil.remove(job.target);if(job.index>=0)retryAt.remove(job.index);
-                resyncGhostSlot();status="Ghost placement rejected — recovering its slot";return;
+                resyncGhostSlot();status=actual==null?"Placement response delayed — recovering its slot":"Ghost placement rejected — recovering its slot";return;
             }
             placementAttemptTarget=null;failedPlacementUntil.put(job.target,ticks+20);
             if(job.index>=0){retryAt.put(job.index,ticks+10);if(autoMove.get())reposition(job.index);}
