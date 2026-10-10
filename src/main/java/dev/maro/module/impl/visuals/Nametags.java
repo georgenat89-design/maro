@@ -188,7 +188,7 @@ public class Nametags extends Module {
         try {
             for (PlayerEntity p : players) {
                 Vec3d at = p.getLerpedPos(tickDelta);
-                float[] screen = BlockEspRenderer.toScreen(at.x, at.y + p.getHeight() + 0.45, at.z, camera, w, h);
+                float[] screen = BlockEspRenderer.toScreen(at.x, at.y + tagHeight(p), at.z, camera, w, h);
                 if (screen == null || screen[0] < -150 || screen[0] > w + 150 || screen[1] < -100 || screen[1] > h + 100) continue;
                 double dist = Math.sqrt(p.squaredDistanceTo(camera));
                 float s = scale.getFloat() * (constantSize.get() ? 1f : (float) Math.max(0.45, Math.min(1, 10 / Math.max(1, dist))));
@@ -197,6 +197,14 @@ public class Nametags extends Module {
         } finally {
             Fonts.endRaw();
         }
+    }
+
+    /**
+     * How far above their feet the tag sits: over their head as if standing, since a player flying
+     * with an elytra, swimming or crawling is only 0.6 tall and a tag from there would sit on their body.
+     */
+    public double tagHeight(PlayerEntity p) {
+        return Math.max(p.getHeight(), p.getDimensions(net.minecraft.entity.EntityPose.STANDING).height()) + 0.45;
     }
 
     private void draw(DrawContext ctx, PlayerEntity p, float x, float y, float s, double dist) {
@@ -252,7 +260,8 @@ public class Nametags extends Module {
         List<Part> parts = new ArrayList<>();
         PlayerListEntry entry = entry(p);
         if (gamemode.get() && entry != null && entry.getGameMode() != null) parts.add(new Part(shortMode(entry.getGameMode()), GREY, true));
-        if (ping.get() && entry != null) {
+        // A ping of 0 is a server not saying (or a player still joining): no reading rather than a wrong one.
+        if (ping.get() && entry != null && entry.getLatency() > 0) {
             int ms = entry.getLatency();
             parts.add(new Part(ms + "ms", ms < 80 ? GREEN : ms < 150 ? YELLOW : RED, false));
         }

@@ -82,7 +82,7 @@ public final class Renderer3D {
         WorldRenderEvents.END_MAIN.register(context -> {
             BaseESP module = ModuleManager.get(BaseESP.class);
             AutoBuilder builder=ModuleManager.get(AutoBuilder.class);
-            // Block ESP and the modules built on it (Storage ESP, Hole ESP).
+            // Block ESP and the modules built on it (Storage ESP).
             java.util.List<BlockESP> esps=new java.util.ArrayList<>();
             for(var m:ModuleManager.all())if(m instanceof BlockESP esp&&esp.isEnabled())esps.add(esp);
             dev.maro.module.impl.visuals.Trajectories paths=ModuleManager.get(dev.maro.module.impl.visuals.Trajectories.class);
