@@ -22,6 +22,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
     @Override
     public void runTest(ClientGameTestContext context) {
         MiningCadenceChecks.run();
+        ClientPerformanceChecks.run();
         context.getInput().resizeWindow(1280, 720);
         context.runOnClient(client -> {
             if (ModuleManager.getByName("Example") == null) ModuleManager.register(new ExampleModule());
@@ -53,6 +54,10 @@ public class MaroClientGameTest implements FabricClientGameTest {
             if (Boolean.getBoolean("maro.gametest.acOffOnly")) {
                 AutoTridentChecks.run(context, singleplayer);
                 AntiCheatOffChecks.run(context, singleplayer);
+                return;
+            }
+            if (Boolean.getBoolean("maro.gametest.autoTridentOnly")) {
+                AutoTridentChecks.run(context, singleplayer);
                 return;
             }
             if (Boolean.getBoolean("maro.gametest.airFallOnly")) {

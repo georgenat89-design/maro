@@ -21,6 +21,21 @@ public final class Render2D {
     private static final int MAX_SEG = 32;
     private static final float[] OUTER = new float[4 * 4 * (MAX_SEG + 1)];
     private static final float[] INNER = new float[4 * 4 * (MAX_SEG + 1)];
+    private static final float[][] ROUND_NORMALS = new float[MAX_SEG + 1][];
+    static {
+        for (int seg = 1; seg <= MAX_SEG; seg++) {
+            float[] normals = ROUND_NORMALS[seg] = new float[4 * (seg + 1) * 2];
+            int index = 0;
+            for (int corner = 0; corner < 4; corner++) {
+                float base = (float) Math.PI + corner * HALF_PI;
+                for (int step = 0; step <= seg; step++) {
+                    float angle = base + HALF_PI * step / seg;
+                    normals[index++] = (float) Math.cos(angle);
+                    normals[index++] = (float) Math.sin(angle);
+                }
+            }
+        }
+    }
 
     private static float alpha = 1f;
     private static ScreenRect scissor;
@@ -92,13 +107,13 @@ public final class Render2D {
     /** Writes a clockwise rounded-rect outline into {@code out} as (x, y, nx, ny) tuples. */
     private static int roundPath(float[] out, float x, float y, float w, float h, float r, int seg) {
         int i = 0;
+        float[] normals = ROUND_NORMALS[seg];
+        int normal = 0;
         for (int c = 0; c < 4; c++) {
             float cx = c == 0 || c == 3 ? x + r : x + w - r;
             float cy = c < 2 ? y + r : y + h - r;
-            float base = (float) Math.PI + c * HALF_PI;
             for (int s = 0; s <= seg; s++) {
-                float a = base + HALF_PI * s / seg;
-                float cos = (float) Math.cos(a), sin = (float) Math.sin(a);
+                float cos = normals[normal++], sin = normals[normal++];
                 out[i++] = cx + cos * r;
                 out[i++] = cy + sin * r;
                 out[i++] = cos;

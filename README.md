@@ -9,6 +9,9 @@ capacity for its Block Outlines star before it draws. This prevents the address-
 when first aiming at a block, and protects later draws as the mesh fills. The integration
 does not require or bundle the companion. HUD meshes reuse CPU geometry and reserve shape
 arrays to the needed size; queued GUI batches keep independent snapshots.
+Rounded shapes reuse precomputed corner normals, module lookups use a class index and
+shared read-only registry views, and unchanged keybinds are retained between ticks.
+The phone reuses its immutable album-art geometry across frames.
 
 ## Included modules
 
@@ -168,8 +171,10 @@ It leaves item use and creative mode alone and does not move items out of your i
 **Auto Trident** (Player) repeatedly charges and releases a trident while you hold
 right-click (or your bound Use key). **Speed** ranges from **1–10**, defaulting to **10**:
 10 releases after the normal minimum of 10 charge ticks (0.5 seconds at 20 TPS),
-and 1 holds for 28 ticks (1.4 seconds). The next charge starts on the next client tick.
-Works in either hand, pauses in menus, and leaves other active item uses alone.
+and 1 holds for 28 ticks (1.4 seconds). **Repeat Delay** defaults to one tick between
+releases and new charges. **Server Timing** waits for the full charge duration and native
+Riptide spin, and backs off after position corrections before resuming held use.
+Works in either hand, pauses in menus or on focus loss, and leaves other active item uses alone.
 Riptide still needs water or rain; thrown tridents must be returned or replaced before
 the next throw in survival. Uses normal item interactions and release actions.
 

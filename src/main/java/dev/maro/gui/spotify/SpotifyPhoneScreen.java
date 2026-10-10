@@ -167,7 +167,11 @@ public final class SpotifyPhoneScreen extends Screen {
             if (owner.showHand.get()) hand(ctx, true);
         } finally { Fonts.endRaw(); matrices.popMatrix(); }
         if (allowsMovement() && closingAt == 0) {
-            Fonts.draw(ctx, "Move normally · Hold right mouse outside phone to look", 8, height - 13, 0xDDE6ECE8, false, .85f);
+            float hintX = owner.hand.is("Left") ? layout.x + (PHONE_WIDTH + 30) * layout.scale : 8;
+            Fonts.beginRaw();
+            try { Fonts.draw(ctx, Fonts.trim("Move keys · Right-drag outside phone to look", width - hintX - 8, false, .7f),
+                hintX, height - 11, 0xBDE6ECE8, false, .7f); }
+            finally { Fonts.endRaw(); }
         }
     }
 

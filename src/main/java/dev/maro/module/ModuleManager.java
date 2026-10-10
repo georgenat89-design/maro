@@ -9,9 +9,15 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.IdentityHashMap;
+import java.util.Map;
 
 public final class ModuleManager {
     private static final List<Module> MODULES = new ArrayList<>();
+    private static final List<Module> MODULE_VIEW = Collections.unmodifiableList(MODULES);
+    private static final Map<Class<?>, Module> BY_CLASS = new IdentityHashMap<>();
+    private static final List<dev.maro.runtime.systems.modules.Module> PORTED_MODULES = new ArrayList<>();
+    private static final List<dev.maro.runtime.systems.modules.Module> PORTED_VIEW = Collections.unmodifiableList(PORTED_MODULES);
 
     private ModuleManager() {
     }
@@ -80,12 +86,18 @@ public final class ModuleManager {
     public static void register(Module module) {
         if (getByName(module.getName()) != null) throw new IllegalStateException("Duplicate module name: " + module.getName());
         MODULES.add(module);
-        if(module instanceof dev.maro.runtime.systems.modules.Module ported) module.getBind().set(ported.keybind.code());
+        BY_CLASS.putIfAbsent(module.getClass(), module);
+        if(module instanceof dev.maro.runtime.systems.modules.Module ported) {
+            PORTED_MODULES.add(ported);
+            module.getBind().set(ported.keybind.code());
+        }
     }
 
     public static List<Module> all() {
-        return Collections.unmodifiableList(MODULES);
+        return MODULE_VIEW;
     }
+
+    public static List<dev.maro.runtime.systems.modules.Module> ported() { return PORTED_VIEW; }
 
     /** A category's modules in alphabetical order. */
     public static List<Module> byCategory(Category category) {
@@ -117,8 +129,7 @@ public final class ModuleManager {
 
     @SuppressWarnings("unchecked")
     public static <T extends Module> T get(Class<T> type) {
-        for (Module m : MODULES) if (m.getClass() == type) return (T) m;
-        return null;
+        return (T) BY_CLASS.get(type);
     }
 
     public static Module getByName(String name) {
