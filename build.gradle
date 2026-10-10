@@ -71,6 +71,12 @@ tasks.register('runProductionClientGameTest', net.fabricmc.loom.task.prod.Client
     if (providers.gradleProperty("meteorTestJar").isPresent()) {
         mods.from(file(providers.gradleProperty("meteorTestJar").get()))
     }
+    if (providers.gradleProperty("compatibilityTestJars").isPresent()) {
+        providers.gradleProperty("compatibilityTestJars").get().split('\\|').each { mods.from(file(it)) }
+    }
+    jvmArgs.add("-Dmaro.gametest.renderCompatOnly=" + providers.gradleProperty("renderCompatTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.renderCompatProfileOnly=" + providers.gradleProperty("renderCompatProfileOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.renderProfile=" + providers.gradleProperty("renderTestProfile").getOrElse(""))
     jvmArgs.add("-Dmaro.gametest.projectionOnly=" + providers.gradleProperty("projectionTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.petOnly=" + providers.gradleProperty("petTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.skyOnly=" + providers.gradleProperty("skyTestOnly").getOrElse("false"))

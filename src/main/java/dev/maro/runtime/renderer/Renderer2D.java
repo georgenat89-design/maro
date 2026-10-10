@@ -19,8 +19,15 @@ public final class Renderer2D {
  public void texQuad(double x,double y,double w,double h,double u0,double v0,double u1,double v1,Color color){texQuad(x,y,w,h,0,u0,v0,u1,v1,color);}
  public void texQuad(double x,double y,double w,double h,double degrees,double u0,double v0,double u1,double v1,Color color){
   double cx=x+w/2,cy=y+h/2,cos=Math.cos(Math.toRadians(degrees)),sin=Math.sin(Math.toRadians(degrees));
-  double[] px={x,x,x+w,x+w},py={y,y+h,y+h,y},us={u0,u0,u1,u1},vs={v0,v1,v1,v0};int[] ids=new int[4];
-  for(int i=0;i<4;i++){double dx=px[i]-cx,dy=py[i]-cy;ids[i]=triangles.vec2(cx+dx*cos-dy*sin,cy+dx*sin+dy*cos).vec2(us[i],vs[i]).color(color).next();}
-  triangles.quad(ids[0],ids[1],ids[2],ids[3]);
+  triangles.ensureQuadCapacity();
+  int a=texVertex(x,y,cx,cy,cos,sin,u0,v0,color);
+  int b=texVertex(x,y+h,cx,cy,cos,sin,u0,v1,color);
+  int c=texVertex(x+w,y+h,cx,cy,cos,sin,u1,v1,color);
+  int d=texVertex(x+w,y,cx,cy,cos,sin,u1,v0,color);
+  triangles.quad(a,b,c,d);
+ }
+ private int texVertex(double x,double y,double cx,double cy,double cos,double sin,double u,double v,Color color){
+  double dx=x-cx,dy=y-cy;
+  return triangles.vec2(cx+dx*cos-dy*sin,cy+dx*sin+dy*cos).vec2(u,v).color(color).next();
  }
 }

@@ -31,11 +31,17 @@ public class MaroClientGameTest implements FabricClientGameTest {
 
         if(Boolean.getBoolean("maro.gametest.builderGrimOnly")){BuilderGrimChecks.run(context);return;}
         try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
-            singleplayer.getClientWorld().waitForChunksRender();
+            // Companion chunk scanners can keep scheduling rebuilds indefinitely.
+            if (Boolean.getBoolean("maro.gametest.renderCompatOnly")) context.waitTicks(40);
+            else singleplayer.getClientWorld().waitForChunksRender();
 
             // make sure nothing (pause menu, toasts...) is in the way before testing the keybind
             context.setScreen(() -> null);
             context.waitTicks(5);
+            if (Boolean.getBoolean("maro.gametest.renderCompatOnly")) {
+                RenderCompatibilityChecks.run(context, singleplayer);
+                return;
+            }
             if (Boolean.getBoolean("maro.gametest.acOffOnly")) {
                 AutoTridentChecks.run(context, singleplayer);
                 AntiCheatOffChecks.run(context, singleplayer);

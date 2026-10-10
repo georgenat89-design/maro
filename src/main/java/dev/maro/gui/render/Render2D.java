@@ -66,8 +66,8 @@ public final class Render2D {
 
     // ---- low level ----------------------------------------------------------------------
 
-    private static ShapeRenderState.Builder begin(DrawContext ctx) {
-        return new ShapeRenderState.Builder(ctx);
+    private static ShapeRenderState.Builder begin(DrawContext ctx, int vertices) {
+        return new ShapeRenderState.Builder(ctx, vertices);
     }
 
     private static void end(ShapeRenderState.Builder b) {
@@ -92,15 +92,15 @@ public final class Render2D {
     /** Writes a clockwise rounded-rect outline into {@code out} as (x, y, nx, ny) tuples. */
     private static int roundPath(float[] out, float x, float y, float w, float h, float r, int seg) {
         int i = 0;
-        float[] cx = {x + r, x + w - r, x + w - r, x + r};
-        float[] cy = {y + r, y + r, y + h - r, y + h - r};
         for (int c = 0; c < 4; c++) {
+            float cx = c == 0 || c == 3 ? x + r : x + w - r;
+            float cy = c < 2 ? y + r : y + h - r;
             float base = (float) Math.PI + c * HALF_PI;
             for (int s = 0; s <= seg; s++) {
                 float a = base + HALF_PI * s / seg;
                 float cos = (float) Math.cos(a), sin = (float) Math.sin(a);
-                out[i++] = cx[c] + cos * r;
-                out[i++] = cy[c] + sin * r;
+                out[i++] = cx + cos * r;
+                out[i++] = cy + sin * r;
                 out[i++] = cos;
                 out[i++] = sin;
             }
@@ -123,7 +123,7 @@ public final class Render2D {
     /** Hard-edged rectangle with per-corner colours (top-left, top-right, bottom-right, bottom-left). */
     public static void rectGradient(DrawContext ctx, float x, float y, float w, float h, int tl, int tr, int br, int bl) {
         if (w <= 0 || h <= 0) return;
-        ShapeRenderState.Builder b = begin(ctx);
+        ShapeRenderState.Builder b = begin(ctx, 4);
         quad(b, x, y, col(tl), x + w, y, col(tr), x + w, y + h, col(br), x, y + h, col(bl));
         end(b);
     }
@@ -150,7 +150,7 @@ public final class Render2D {
         float cx = x + w / 2f, cy = y + h / 2f;
         int cc = col(uniform ? tl : bilerp(cx, cy, x, y, w, h, tl, tr, br, bl));
 
-        ShapeRenderState.Builder b = begin(ctx);
+        ShapeRenderState.Builder b = begin(ctx, n * 6);
         for (int i = 0; i < n; i++) {
             int a = i * 4, o = ((i + 1) % n) * 4;
             float xi = OUTER[a], yi = OUTER[a + 1], xj = OUTER[o], yj = OUTER[o + 1];
@@ -185,7 +185,7 @@ public final class Render2D {
         boolean uniform = tl == tr && tr == br && br == bl;
         float f = px();
 
-        ShapeRenderState.Builder b = begin(ctx);
+        ShapeRenderState.Builder b = begin(ctx, n * 12);
         for (int i = 0; i < n; i++) {
             int a = i * 4, o = ((i + 1) % n) * 4;
             float oxi = OUTER[a], oyi = OUTER[a + 1], oxj = OUTER[o], oyj = OUTER[o + 1];
@@ -209,7 +209,7 @@ public final class Render2D {
         int c1 = ColorUtil.mulAlpha(c0, 0.35f);
         float mid = size * 0.35f;
 
-        ShapeRenderState.Builder b = begin(ctx);
+        ShapeRenderState.Builder b = begin(ctx, n * 8);
         for (int i = 0; i < n; i++) {
             int a = i * 4, o = ((i + 1) % n) * 4;
             float xi = OUTER[a], yi = OUTER[a + 1], xj = OUTER[o], yj = OUTER[o + 1];
@@ -243,7 +243,7 @@ public final class Render2D {
         seg = Math.min(seg, 256);
         float start = (float) Math.toRadians(startDeg), sweep = (float) Math.toRadians(sweepDeg);
 
-        ShapeRenderState.Builder b = begin(ctx);
+        ShapeRenderState.Builder b = begin(ctx, seg * (rIn > 0 ? 12 : 8));
         for (int s = 0; s < seg; s++) {
             float t0 = (float) s / seg, t1 = (float) (s + 1) / seg;
             float a0 = start + sweep * t0, a1 = start + sweep * t1;
@@ -271,7 +271,7 @@ public final class Render2D {
         float nx = -dy / len, ny = dx / len, h = thickness / 2f, f = px();
         int c = col(color), z = clear(c);
 
-        ShapeRenderState.Builder b = begin(ctx);
+        ShapeRenderState.Builder b = begin(ctx, 108);
         quad(b, x1 + nx * h, y1 + ny * h, c, x2 + nx * h, y2 + ny * h, c, x2 - nx * h, y2 - ny * h, c, x1 - nx * h, y1 - ny * h, c);
         quad(b, x1 + nx * h, y1 + ny * h, c, x2 + nx * h, y2 + ny * h, c, x2 + nx * (h + f), y2 + ny * (h + f), z, x1 + nx * (h + f), y1 + ny * (h + f), z);
         quad(b, x1 - nx * h, y1 - ny * h, c, x2 - nx * h, y2 - ny * h, c, x2 - nx * (h + f), y2 - ny * (h + f), z, x1 - nx * (h + f), y1 - ny * (h + f), z);

@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_21",
   "client": [
     "SkinAccessoriesMixin",
+    "CompanionBlockOutlineMixin",
     "PetRenderMixin",
     "AutoToolMixin",
     "BlockItemAccessor",
