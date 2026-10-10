@@ -176,7 +176,8 @@ void main() {
         float heat;
         float fire = flames(uv, px, t, heat);
         float bright = 0.5 + Flame.w * 1.3;
-        vec3 flame = fireRamp(fire * (0.8 + heat * 0.35)) * smoothstep(0.02, 0.35, fire) * bright * (0.4 + Tint.a);
+        // Kept below white-hot except at the brightest tongues, so the flames read as fire, not a glow.
+        vec3 flame = fireRamp(fire * (0.55 + heat * 0.35)) * smoothstep(0.02, 0.35, fire) * bright * (0.4 + Tint.a);
         color += flame * (1.0 - cover * 0.65);
     }
     fragColor = vec4(color, 1.0);
