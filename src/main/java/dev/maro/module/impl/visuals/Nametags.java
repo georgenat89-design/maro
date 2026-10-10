@@ -392,8 +392,14 @@ public class Nametags extends Module {
             matrices.pushMatrix();
             matrices.translate(ix, top);
             ctx.drawItem(stack, 0, 0);
-            if (bar) ctx.drawStackOverlay(mc.textRenderer, stack, 0, 0);
             matrices.popMatrix();
+            if (stack.getCount() > 1) small(ctx, Integer.toString(stack.getCount()), ix + 13, top + 11.5f, 0xFFF4F6FA);
+            float wear = ArmorHud.left(stack);
+            if (bar && wear >= 0) {
+                // A thin bar under the piece, green to red, in place of the game's chunky one.
+                Render2D.roundRect(ctx, ix + 2, top + 16.5f, 12, 1.4f, 0.7f, 0x40000000);
+                Render2D.roundRect(ctx, ix + 2, top + 16.5f, Math.max(1.4f, 12 * wear), 1.4f, 0.7f, ArmorHud.wearColor(wear));
+            }
             float above = top - 1;
             if (percent && stack.isDamageable() && stack.getMaxDamage() > 0) {
                 float left01 = 1 - stack.getDamage() / (float) stack.getMaxDamage();

@@ -177,7 +177,8 @@ public class OrderDropper extends Module {
     private String currentOrder;
     private int dropped, stacksDropped, ordersEmptied, dropPage, refills, lastDropTick, clickedSync = -1, clickedAt, repeatAt;
     private boolean pageEmptied, lookAlikes, checking;
-    private int droppedAtOrder, pageSync = -1, pageItems;
+    private int droppedAtOrder, pageSync = -1, pageItems, navRetries;
+    private String clickedTitle = "";
 
     public OrderDropper() {
         super("Order Dropper", "Empties your DonutSMP orders fast: opens Collect Items and throws every stack out, page after page", Category.MISC);
@@ -430,6 +431,7 @@ public class OrderDropper extends Module {
     private void startDropping() {
         emptied.clear();
         lookAlikes = checking = false;
+        navRetries = 0;
         freeSlots.clear();
         dropped = stacksDropped = ordersEmptied = 0;
         item = switch (which.get()) {
@@ -475,8 +477,17 @@ public class OrderDropper extends Module {
             collectPage(handler);
             return;
         }
-        // A click in this window is on its way: give the server a moment before trying again.
-        if (handler.syncId == clickedSync && ticks - clickedAt < 20) return;
+        if (handler.syncId == clickedSync && title.equals(clickedTitle)) {
+            // A click in this menu is on its way: give the server a moment, then start again if it never answered.
+            if (ticks - clickedAt < 20) return;
+            if (navRetries++ < 3) {
+                status = "No answer, opening the orders again";
+                go(Stage.DROP_OPEN, pageDelay.getInt() + 5);
+                return;
+            }
+            finish("The orders menu stopped answering", false);
+            return;
+        }
         if (OrderMarket.has(title, yourOrdersWords.get())) {
             pickOrder(handler);
             return;
@@ -491,9 +502,19 @@ public class OrderDropper extends Module {
         button = named(handler, yourOrdersWords.get(), true);
         if (button == null) button = chest(handler, true);
         if (button == null) {
-            // Menu contents can arrive after the title and decorative slots. Keep
-            // the existing deadline instead of stopping on that partial window.
-            status = "Waiting for Your Orders button";
+            // Contents can arrive after the title. Wait for that partial window, but a
+            // stranded cursor or the deadline means the navigation must start again.
+            if (handler.getCursorStack().isEmpty() && ticks < deadline - 1) {
+                status = "Waiting for Your Orders button";
+                return;
+            }
+            // A click the server missed leaves its button on the cursor, gone from the menu: start the menus again.
+            if (navRetries++ < 3) {
+                status = "Opening the orders again";
+                go(Stage.DROP_OPEN, pageDelay.getInt() + 5);
+                return;
+            }
+            finish("No Your Orders button in the orders menu", false);
             return;
         }
         status = "Opening your orders";
@@ -503,6 +524,7 @@ public class OrderDropper extends Module {
     private void menuClick(ScreenHandler handler, Slot slot) {
         click(handler, slot.id, SlotActionType.PICKUP);
         clickedSync = handler.syncId;
+        clickedTitle = mc.currentScreen == null ? "" : mc.currentScreen.getTitle().getString();
         clickedAt = ticks;
         deadline = ticks + 100;
         wait = pageDelay.getInt();
@@ -606,6 +628,7 @@ public class OrderDropper extends Module {
      * page and drops that, and so on; with no next page the order is empty and it goes on to the next.
      */
     private void collectPage(ScreenHandler handler) {
+        navRetries = 0;
         boolean take = how.is("Take Then Throw");
         if (take && throwTaken(handler)) return;
         List<Slot> items = new java.util.ArrayList<>();
