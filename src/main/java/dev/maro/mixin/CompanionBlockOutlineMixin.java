@@ -13,7 +13,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class CompanionBlockOutlineMixin {
     @Inject(method = "onRender", at = @At(value = "INVOKE",
         target = "Lmeteordevelopment/meteorclient/renderer/MeshBuilder;vec3(DDD)Lmeteordevelopment/meteorclient/renderer/MeshBuilder;",
-        ordinal = 0), cancellable = true)
+        ordinal = 0), cancellable = true, require = 0)
     private void maro$reserveStar(@Coerce Object event, CallbackInfo ci) {
         if (!CompanionBlockOutlineBuffers.reserve(event)) ci.cancel();
     }

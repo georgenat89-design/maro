@@ -4,6 +4,12 @@ A **Fabric 1.21.11 / Java 21** client with a smooth, modern ClickGUI and the 20 
 
 Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 
+When the optional Zen companion is installed, Maro reserves the missing native vertex/index
+capacity for its Block Outlines star before it draws. This prevents the address-zero crash
+when first aiming at a block, and protects later draws as the mesh fills. The integration
+does not require or bundle the companion. HUD meshes reuse CPU geometry and reserve shape
+arrays to the needed size; queued GUI batches keep independent snapshots.
+
 ## Included modules
 
 **Spotify Phone** (Misc) opens a handheld music player with **F10**. Click previous,

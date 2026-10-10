@@ -23,6 +23,7 @@ final class RenderCompatibilityChecks {
             throw new AssertionError("No solid block under the test player's crosshair");
         RenderFaultChecks.assertClean();
         if (!Boolean.getBoolean("maro.gametest.renderCompatProfileOnly")) {
+            context.runOnClient(c -> c.player.setPitch(0));
             PlayerEspChecks.run(context, world);
             TrajectoriesChecks.run(context, world);
             NametagsChecks.run(context);
