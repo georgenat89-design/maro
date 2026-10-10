@@ -41,6 +41,7 @@
     "InventoryHiderMixins$WholeMenu",
     "InventoryHiderMixins$Model",
     "InventoryHiderMixins$Hotbar",
+    "InventoryHiderMixins$HeldItem",
     "NametagsMixins$HideLabel",
     "NametagsMixins$Pops",
     "HandShaderMixin",
