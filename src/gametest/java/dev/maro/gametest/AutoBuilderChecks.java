@@ -395,6 +395,7 @@ final class AutoBuilderChecks {
     private static void rejectedPlacement(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         for(boolean closer:List.of(false,true)){fixture(context,world,builder,start);rejectedPlacementCase(context,world,builder,start,closer,false);}
         fixture(context,world,builder,start);rejectedPlacementCase(context,world,builder,start,true,true);
+        fixture(context,world,builder,start);delayedAcceptedPlacement(context,world,builder,start);
     }
     private static void rejectedPlacementCase(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,boolean closer,boolean missingReceipt){
         var target=start.add(0,0,closer?4:2);var rejected=new java.util.concurrent.atomic.AtomicInteger();var gate=new java.util.concurrent.atomic.AtomicBoolean(true);
@@ -409,7 +410,10 @@ final class AutoBuilderChecks {
                 for(int i=0;i<100&&context.computeOnClient(client->BuilderPlacementProbe.attempts.isEmpty());i++)context.waitTick();
                 context.runOnClient(client->{require(BuilderPlacementProbe.attempts.size()==1,"Missing-receipt fixture did not place once");client.player.getInventory().setSelectedSlot(2);((dev.maro.mixin.ClientPlayerInteractionManagerAccessor)client.interactionManager).maro$syncSelectedSlot();});
                 for(int i=0;i<120&&context.computeOnClient(client->BuilderPlacementProbe.slotClicks<2);i++)context.waitTick();
-                context.runOnClient(client->{require(BuilderPlacementProbe.slotClicks==2&&BuilderPlacementProbe.firstSlotClick-BuilderPlacementProbe.attempts.getFirst()>=80&&client.player.getInventory().getSelectedSlot()==5,"Missing placement response did not revisit the original slot after its deadline: "+builder.status());BuilderBlockDelay.release();});
+                context.runOnClient(client->{
+                    System.out.println("[ghost-timeout-proof] clicks="+BuilderPlacementProbe.slotClicks+" packetAgeGap="+(BuilderPlacementProbe.firstSlotClick-BuilderPlacementProbe.attempts.getFirst())+" builderTick="+field(builder,"ticks")+" receiptDeadline="+field(builder,"placementDeadline")+" selected="+client.player.getInventory().getSelectedSlot());
+                    require(BuilderPlacementProbe.slotClicks==2&&(int)field(builder,"ticks")>=(int)field(builder,"placementDeadline")&&client.player.getInventory().getSelectedSlot()==5,"Missing placement response did not revisit the original slot after its deadline: "+builder.status());BuilderBlockDelay.release();
+                });
             }
             await(context,builder,200);require(rejected.get()==4,"Server did not reject exactly three attempts before accepting");verify(world,target,1,1,1,y->Blocks.STONE);
             context.waitTicks(8);
@@ -423,6 +427,18 @@ final class AutoBuilderChecks {
             });
             world.getServer().runOnServer(server->{var player=server.getPlayerManager().getPlayerList().getFirst();require(player.getInventory().count(Items.STONE)==0&&player.playerScreenHandler.getCursorStack().isEmpty(),"Actual server ghost recovery inventory/cursor mismatch");});
         }finally{gate.set(false);context.runOnClient(client->{BuilderBlockDelay.release();BuilderPlacementProbe.end();BuilderPacketChecks.recording=false;});}
+    }
+    private static void delayedAcceptedPlacement(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
+        var target=start.south(2);world.getServer().runCommand("give @a stone 1");context.waitTicks(6);
+        try{
+            context.runOnClient(client->{builder.install(new Schematic("delayed-placement.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);BuilderPacketChecks.begin();BuilderPacketChecks.expectLookLimits(18,14);BuilderPlacementProbe.begin(target);BuilderBlockDelay.begin(target);builder.startBuild();});
+            for(int i=0;i<180&&context.computeOnClient(client->BuilderPlacementProbe.slotClicks<2);i++)context.waitTick();
+            verify(world,target,1,1,1,y->Blocks.STONE);
+            context.runOnClient(client->{require(BuilderPlacementProbe.attempts.size()==1&&BuilderPlacementProbe.slotClicks==2&&(int)field(builder,"ticks")>=(int)field(builder,"placementDeadline"),"Delayed successful placement was repeated before its actual receipt");BuilderBlockDelay.release();});
+            await(context,builder,200);context.waitTicks(8);
+            context.runOnClient(client->{require(BuilderPlacementProbe.attempts.size()==1&&BuilderPlacementProbe.slotClicks==2&&builder.inventoryCount(Items.STONE)==0&&client.player.playerScreenHandler.getCursorStack().isEmpty(),"Delayed successful placement duplicated an attempt or inventory");BuilderPacketChecks.verify(1);System.out.println("[ghost-accepted-timeout-proof] attempts="+BuilderPlacementProbe.attempts+" slotClicks="+BuilderPlacementProbe.slotClicks+" finalStock=0 cursorEmpty=true");});
+            world.getServer().runOnServer(server->{var player=server.getPlayerManager().getPlayerList().getFirst();require(player.getInventory().count(Items.STONE)==0&&player.playerScreenHandler.getCursorStack().isEmpty(),"Delayed successful placement changed actual server inventory");});
+        }finally{context.runOnClient(client->{BuilderBlockDelay.release();BuilderPlacementProbe.end();BuilderPacketChecks.recording=false;});}
     }
     private static void ghostMining(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         var target=start.south(2);
