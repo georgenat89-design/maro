@@ -23,8 +23,9 @@ import java.util.List;
  * Inventory Hider: your loot never shows. Your inventory's items (and your armor, off hand, crafting
  * grid and the figure of you wearing it all) are not drawn, nor are your own items at the bottom of
  * chests and other menus; no tooltip or item on the cursor gives them away either. The slots can look
- * empty, be covered, or the whole menu can vanish while it stays open. Chest contents, the hotbar and
- * the Inventory HUD can be hidden too. Holding the peek key shows everything for a moment.
+ * empty, be covered, or the whole menu can vanish while it stays open. The hotbar and what you hold
+ * are hidden too, and chest contents and the Inventory HUD can be. Holding the peek key shows
+ * everything for a moment.
  *
  * <p>Only drawing changes: the items are still there and every click works as usual.
  */
@@ -40,13 +41,14 @@ public class InventoryHider extends Module {
     private final BooleanSetting playerModel = add(new BooleanSetting("Player Model", "The figure of you in your inventory, which shows your armor and what you hold", true));
     private final BooleanSetting yourSlots = add(new BooleanSetting("Your Slots In Chests", "Your own items at the bottom of chests, shulkers and other menus", true));
     private final BooleanSetting contents = add(new BooleanSetting("Chest Contents", "What is in chests, shulkers, ender chests and other menus too", false));
-    private final BooleanSetting hotbar = add(new BooleanSetting("Hotbar", "Your hotbar and off hand on screen, and the item name shown when you switch", false));
+    private final BooleanSetting hotbar = add(new BooleanSetting("Hotbar", "Your hotbar and off hand on screen, and the item name shown when you switch", true));
+    private final BooleanSetting heldItem = add(new BooleanSetting("Held Item", "What you hold, in first person: your empty hand shows instead", true));
     private final BooleanSetting inventoryHud = add(new BooleanSetting("Inventory HUD", "The Inventory HUD module's panel", true));
     private final KeybindSetting peek = add(new KeybindSetting("Peek Key", "Hold it to see your items for a moment", GLFW.GLFW_KEY_LEFT_ALT));
 
     private final List<SettingSection> sections = List.of(
             SettingSection.of("Look", style, cover, peek),
-            SettingSection.of("Hide", inventory, playerModel, yourSlots, contents, hotbar, inventoryHud));
+            SettingSection.of("Hide", inventory, playerModel, yourSlots, contents, hotbar, heldItem, inventoryHud));
 
     public InventoryHider() {
         super("Inventory Hider", "Hides your items so no loot shows: in your inventory, in chests, and on the hotbar if you like", Category.MISC);
@@ -56,6 +58,22 @@ public class InventoryHider extends Module {
     @Override
     public List<SettingSection> getSettingSections() {
         return sections;
+    }
+
+    /** Saved before the hotbar was hidden by default: it is hidden from now on, once. */
+    private static final int HIDER_REVISION = 1;
+
+    @Override
+    public com.google.gson.JsonObject saveExtra() {
+        var data = super.saveExtra();
+        data.addProperty("hider-revision", HIDER_REVISION);
+        return data;
+    }
+
+    @Override
+    public void loadExtra(com.google.gson.JsonObject data) {
+        super.loadExtra(data);
+        if (!data.has("hider-revision")) hotbar.set(true);
     }
 
     private static InventoryHider on() {
@@ -117,6 +135,12 @@ public class InventoryHider extends Module {
     public static boolean hidesHotbar() {
         InventoryHider m = on();
         return m != null && m.hotbar.get();
+    }
+
+    /** Whether the item in your hand is left out in first person. */
+    public static boolean hidesHeldItem() {
+        InventoryHider m = on();
+        return m != null && m.heldItem.get();
     }
 
     public static boolean hidesInventoryHud() {

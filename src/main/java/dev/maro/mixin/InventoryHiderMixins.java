@@ -66,6 +66,15 @@ public final class InventoryHiderMixins {
         }
     }
 
+    /** What you hold, in first person: an empty hand is drawn instead. */
+    @Mixin(net.minecraft.client.render.item.HeldItemRenderer.class)
+    public abstract static class HeldItem {
+        @org.spongepowered.asm.mixin.injection.ModifyVariable(method = "renderFirstPersonItem", at = @At("HEAD"), argsOnly = true)
+        private ItemStack maro$hideHeld(ItemStack item) {
+            return InventoryHider.hidesHeldItem() ? ItemStack.EMPTY : item;
+        }
+    }
+
     /** The hotbar's items, and the name shown when you switch. */
     @Mixin(InGameHud.class)
     public abstract static class Hotbar {

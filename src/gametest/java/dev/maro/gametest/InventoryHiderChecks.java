@@ -26,7 +26,7 @@ import java.nio.file.Path;
 /**
  * Inventory Hider: with it on, your inventory's items are not drawn (the screenshot changes where
  * they were), your own slots in a chest are hidden but the chest's are not unless asked, the whole
- * menu can vanish, and the hotbar can be hidden too.
+ * menu can vanish, and the hotbar and the sword in your hand are hidden too.
  */
 final class InventoryHiderChecks {
     private InventoryHiderChecks() {
@@ -79,6 +79,8 @@ final class InventoryHiderChecks {
     static void run(ClientGameTestContext context, TestSingleplayerContext world) {
         InventoryHider module = ModuleManager.get(InventoryHider.class);
         require(module != null, "Inventory Hider was not registered");
+        var perspective = context.computeOnClient(c -> c.options.getPerspective());
+        int selected = context.computeOnClient(c -> c.player.getInventory().getSelectedSlot());
         try {
             world.getServer().runCommand("clear @a");
             world.getServer().runCommand("item replace entity @a hotbar.0 with minecraft:diamond_block 64");
@@ -152,16 +154,32 @@ final class InventoryHiderChecks {
             context.runOnClient(c -> c.player.closeHandledScreen());
             context.waitTicks(2);
 
-            // The hotbar.
-            context.runOnClient(c -> ((BooleanSetting) setting(module, "Hotbar")).set(true));
-            context.waitTicks(2);
+            // The hotbar and what you hold are hidden by default; a config saved before is moved over.
+            context.runOnClient(c -> {
+                ((BooleanSetting) setting(module, "Hotbar")).set(false);
+                var old = module.saveExtra();
+                old.remove("hider-revision");
+                module.loadExtra(old);
+                c.player.getInventory().setSelectedSlot(1);
+                c.options.setPerspective(net.minecraft.client.option.Perspective.FIRST_PERSON);
+            });
+            context.waitTicks(3);
             require(context.computeOnClient(c -> InventoryHider.hidesHotbar()), "Hotbar is not hidden");
-            context.takeScreenshot("maro-inventory-hider-hotbar");
+            require(context.computeOnClient(c -> InventoryHider.hidesHeldItem()), "The held item is not hidden");
+            BufferedImage handHidden = read(context.takeScreenshot("maro-inventory-hider-hotbar"));
+            context.runOnClient(c -> module.setEnabled(false));
+            context.waitTicks(2);
+            BufferedImage handShown = read(context.takeScreenshot("maro-inventory-hider-hotbar-off"));
+            int handDiff = changed(handShown, handHidden);
+            System.out.println("INVENTORY HIDER hotbar and hand changed=" + handDiff);
+            require(handDiff > 150, "Hiding the hotbar and held sword changed almost nothing on screen: " + handDiff + " pixels");
         } finally {
             context.runOnClient(c -> {
                 module.setEnabled(false);
                 module.getSettings().forEach(Setting::reset);
                 if (c.currentScreen != null) c.player.closeHandledScreen();
+                c.options.setPerspective(perspective);
+                c.player.getInventory().setSelectedSlot(selected);
             });
             world.getServer().runCommand("clear @a");
             context.waitTicks(3);
