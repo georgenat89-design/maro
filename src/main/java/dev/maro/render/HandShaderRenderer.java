@@ -48,7 +48,7 @@ public final class HandShaderRenderer {
         .withCull(false)
         .build();
 
-    private static final int DATA_BYTES = 3 * 16;
+    private static final int DATA_BYTES = 4 * 16;
     private static final ByteBuffer SCREEN_VERTICES = BufferUtils.createByteBuffer(4 * 3 * Float.BYTES);
     private static final ByteBuffer SCREEN_INDICES = BufferUtils.createByteBuffer(6 * Integer.BYTES);
 
@@ -121,6 +121,9 @@ public final class HandShaderRenderer {
                 bytes.putFloat(32, m.rainbowOutline() ? 1f : 0f);
                 bytes.putFloat(36, 1f / w);
                 bytes.putFloat(40, 1f / h);
+                bytes.putFloat(44, m.naturalFire() ? 1f : 0f);
+                float[] flame = m.flame();
+                for (int i = 0; i < 4; i++) bytes.putFloat(48 + i * 4, flame[i]);
                 device.createCommandEncoder().writeToBuffer(slice, bytes);
             } finally {
                 MemoryUtil.memFree(bytes);
