@@ -53,6 +53,8 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.HandShader());
         register(new dev.maro.module.impl.misc.OrderDropper());
         register(new dev.maro.module.impl.movement.CoordsFly());
+        register(new dev.maro.module.impl.movement.AirStuck());
+        register(new dev.maro.module.impl.movement.NoFall());
         register(new dev.maro.module.impl.visuals.SpawnerNotifier());
         register(new dev.maro.module.impl.visuals.BetterTextures());
         register(new dev.maro.module.impl.visuals.BetterLooks());

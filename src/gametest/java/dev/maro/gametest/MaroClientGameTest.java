@@ -36,6 +36,10 @@ public class MaroClientGameTest implements FabricClientGameTest {
             // make sure nothing (pause menu, toasts...) is in the way before testing the keybind
             context.setScreen(() -> null);
             context.waitTicks(5);
+            if (Boolean.getBoolean("maro.gametest.airFallOnly")) {
+                AirFallChecks.run(context, singleplayer);
+                return;
+            }
             if (Boolean.getBoolean("maro.gametest.chestTagsOnly")) {
                 ChestTransferChecks.run(context, singleplayer);
                 NametagsChecks.run(context);
@@ -115,6 +119,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             HandShaderChecks.run(context);
             OrderDropperChecks.run(context, singleplayer);
             CoordsFlyChecks.run(context, singleplayer);
+            AirFallChecks.run(context, singleplayer);
             InventoryHiderChecks.run(context, singleplayer);
             FakeBlockChecks.run(context, singleplayer);
             BetterLooksChecks.run(context);

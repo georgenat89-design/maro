@@ -11,6 +11,8 @@
     "FlowableFluidAccessor",
     "BuilderUseMixin",
     "BuilderMovementMixin",
+    "AirFallMixins$Player",
+    "AirFallMixins$Packets",
     "BuilderCameraMixin",
     "BuilderHeadLookMixin",
     "ClientPlayerInteractionManagerAccessor",

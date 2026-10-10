@@ -114,7 +114,7 @@ public final class ConfigManager {
         JsonObject modules = new JsonObject();
         for (Module m : ModuleManager.all()) {
             JsonObject o = new JsonObject();
-            o.addProperty("enabled", m.isEnabled());
+            o.addProperty("enabled", m.persistEnabled() && m.isEnabled());
             o.add("bind", m.getBind().toJson());
             JsonObject settings = new JsonObject();
             writeSettings(settings, m.getSettings());
@@ -144,7 +144,7 @@ public final class ConfigManager {
                 if (o.has("settings") && o.get("settings").isJsonObject()) readSettings(o.getAsJsonObject("settings"), m.getSettings());
                 if (o.has("bind")) m.getBind().fromJson(o.get("bind"));
                 if (o.has("extra") && o.get("extra").isJsonObject()) m.loadExtra(o.getAsJsonObject("extra"));
-                if (o.has("enabled")) m.setEnabled(o.get("enabled").getAsBoolean());
+                if (o.has("enabled")) m.setEnabled(m.persistEnabled() && o.get("enabled").getAsBoolean());
             } catch (Exception e) {
                 Maro.LOGGER.warn("Failed to load module {} from config {}", m.getName(), name, e);
             }

@@ -105,6 +105,9 @@ public abstract class Module {
         return false;
     }
 
+    /** Momentary movement freezes should never reactivate from a saved config. */
+    public boolean persistEnabled() { return true; }
+
     public com.google.gson.JsonObject saveExtra() { return new com.google.gson.JsonObject(); }
     public void loadExtra(com.google.gson.JsonObject data) { }
 
