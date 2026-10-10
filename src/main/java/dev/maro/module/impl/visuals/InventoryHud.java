@@ -163,7 +163,7 @@ public class InventoryHud extends Module implements HudElement {
 
     @Override
     public void onRender2D(DrawContext ctx, float tickDelta) {
-        if (!inGame() || mc.options.hudHidden) return;
+        if (!inGame() || mc.options.hudHidden || dev.maro.module.impl.misc.InventoryHider.hidesInventoryHud()) return;
         if (hideInInventory.get() && mc.currentScreen instanceof HandledScreen<?>) return;
 
         PlayerEntity player = mc.player;
