@@ -54,8 +54,13 @@ public class OrderDropper extends Module {
 
     // ---- collect and drop
     private final dev.maro.setting.ModeSetting which = add(new dev.maro.setting.ModeSetting("Orders To Empty",
-            "Every order you have, only the one for the item in your hand, or only the one for the item you pick", "All", "All", "Held Item", "Picked Item")
-            .visible(this::dropping));
+            "Picked Block: only your orders for the block you pick. Held Item: for what is in your hand. All: every order you have",
+            "Picked Block", "Picked Block", "Held Item", "All").visible(this::dropping));
+    private final TextSetting dropItem = add(new TextSetting("Block To Drop", "The block (or item) whose orders it empties: every order of yours for it",
+            "", 64, "Pick one").visible(() -> dropping() && which.is("Picked Block")));
+    private final ButtonSetting pickDrop = add(new ButtonSetting("Pick Block", "Choose the block to drop from every block and item", "Pick",
+            () -> mc.setScreen(new ItemPickerScreen(mc.currentScreen, "Block To Drop", picked -> dropItem.set(Registries.ITEM.getId(picked).toString()))))
+            .visible(() -> dropping() && which.is("Picked Block")));
     private final dev.maro.setting.ModeSetting how = add(new dev.maro.setting.ModeSetting("Drop How",
             "Throw the stacks straight out of the Collect Items window (fastest), or take them and throw them from your inventory",
             "Throw From Menu", "Throw From Menu", "Take Then Throw").visible(this::dropping));
@@ -112,12 +117,28 @@ public class OrderDropper extends Module {
             .visible(this::dropping));
 
     private final List<SettingSection> sections = List.of(
-            SettingSection.of("Order Dropper", mode, which, how, dropsPerTick, pageDelay, repeat, repeatEvery),
+            SettingSection.of("Order Dropper", mode, which, dropItem, pickDrop, how, dropsPerTick, pageDelay, repeat, repeatEvery),
             SettingSection.of("Item", useHeld, itemId, pickItem),
             SettingSection.of("Selling", minPrice, keep, skipSpecial, stacksPerTick, delay, keepGoing, pages),
             SettingSection.of("Flip", flip, margin, maxSpend, maxBuyEach, rounds),
             SettingSection.of("Menus", openCommand, yourOrdersWords, collectWords, ordersCommand, ahCommand, ordersTitle, deliverTitle, ahTitle,
                     priceWords, confirmWords, cancelWords, nextWords));
+
+    /** Saved before you picked the block to drop: All becomes Picked Block, once. */
+    private static final int DROP_REVISION = 1;
+
+    @Override
+    public com.google.gson.JsonObject saveExtra() {
+        var data = super.saveExtra();
+        data.addProperty("drop-revision", DROP_REVISION);
+        return data;
+    }
+
+    @Override
+    public void loadExtra(com.google.gson.JsonObject data) {
+        super.loadExtra(data);
+        if (!data.has("drop-revision") && which.is("All")) which.set("Picked Block");
+    }
 
     private boolean dropping() {
         return mode.is(DROP);
@@ -132,7 +153,7 @@ public class OrderDropper extends Module {
     }
 
     private boolean picksItem() {
-        return selling() ? !useHeld.get() : which.is("Picked Item");
+        return selling() && !useHeld.get();
     }
 
     private Item item = Items.AIR;
@@ -152,7 +173,8 @@ public class OrderDropper extends Module {
     private final java.util.Set<Integer> freeSlots = new java.util.HashSet<>();
     private String currentOrder;
     private int dropped, stacksDropped, ordersEmptied, dropPage, refills, lastDropTick, clickedSync = -1, clickedAt, repeatAt;
-    private boolean pageEmptied;
+    private boolean pageEmptied, lookAlikes, checking;
+    private int droppedAtOrder;
 
     public OrderDropper() {
         super("Order Dropper", "Empties your DonutSMP orders fast: opens Collect Items and throws every stack out, page after page", Category.MISC);
@@ -246,6 +268,7 @@ public class OrderDropper extends Module {
                 deadline = ticks + 100;
                 if (ticks >= repeatAt) {
                     emptied.clear();
+                    lookAlikes = checking = false;
                     go(Stage.DROP_OPEN, 0);
                 }
             }
@@ -403,15 +426,16 @@ public class OrderDropper extends Module {
 
     private void startDropping() {
         emptied.clear();
+        lookAlikes = checking = false;
         freeSlots.clear();
         dropped = stacksDropped = ordersEmptied = 0;
         item = switch (which.get()) {
             case "Held Item" -> mc.player.getMainHandStack().getItem();
-            case "Picked Item" -> itemOf(itemId.get());
+            case "Picked Block" -> itemOf(dropItem.get());
             default -> Items.AIR;
         };
         if (!which.is("All") && item == Items.AIR) {
-            finish(which.is("Held Item") ? "Hold the item whose order to empty first" : "Pick the item whose order to empty first", false);
+            finish(which.is("Held Item") ? "Hold the block whose orders to empty first" : "Pick the block to drop first (Block To Drop)", false);
             return;
         }
         for (int i = 0; i < 36; i++) if (mc.player.getInventory().getStack(i).isEmpty()) freeSlots.add(i);
@@ -524,14 +548,19 @@ public class OrderDropper extends Module {
 
     /** In Your Orders: opens the next order not emptied yet, or ends the round. */
     private void pickOrder(ScreenHandler handler) {
+        java.util.Map<String, Integer> seen = new java.util.HashMap<>();
         for (Slot slot : handler.slots) {
             ItemStack stack = slot.getStack();
             if (slot.inventory == mc.player.getInventory() || stack.isEmpty() || bottomRow(handler, slot) || filler(stack)) continue;
             if (!which.is("All") && !stack.isOf(item)) continue;
             if (OrderMarket.has(stack.getName().getString(), "create;new order")) continue;
-            String key = key(stack);
+            // Two orders can look the same: told apart by which of them it is.
+            int nth = seen.merge(key(stack), 1, Integer::sum) - 1;
+            if (nth > 0) lookAlikes = true;
+            String key = key(stack) + "#" + nth;
             if (emptied.contains(key)) continue;
             currentOrder = key;
+            droppedAtOrder = dropped;
             dropPage = 1;
             refills = 0;
             pageEmptied = false;
@@ -545,7 +574,16 @@ public class OrderDropper extends Module {
     /** Every order is empty: again after a while, or done. */
     private void roundDone() {
         close();
-        String summary = ordersEmptied == 0 && dropped == 0 ? "No orders to empty" : "Emptied " + ordersEmptied + " order" + (ordersEmptied == 1 ? "" : "s");
+        // Orders that look the same may have moved up as others went: one more look round catches any left.
+        if (lookAlikes && !checking && dropped > 0) {
+            checking = true;
+            emptied.clear();
+            status = "Checking your orders once more";
+            go(Stage.DROP_OPEN, pageDelay.getInt());
+            return;
+        }
+        String none = which.is("All") ? "No orders to empty" : "You have no orders for " + name();
+        String summary = ordersEmptied == 0 && dropped == 0 ? none : "Emptied " + ordersEmptied + " order" + (ordersEmptied == 1 ? "" : "s");
         if (repeat.get()) {
             result = summary;
             Notifications.push("Order Dropper", summary + " · dropped " + dropped + " · again in " + repeatEvery.getInt() + "s", Notifications.Type.INFO);
@@ -601,13 +639,9 @@ public class OrderDropper extends Module {
             return;
         }
         emptied.add(currentOrder == null ? "" : currentOrder);
-        ordersEmptied++;
+        if (dropped > droppedAtOrder) ordersEmptied++;
         status = "Order empty · " + dropped + " items dropped";
-        if (!which.is("All")) {
-            roundDone();
-            return;
-        }
-        // Back round for the next order.
+        // Back round for the next order (another for the same block, or any with All).
         go(Stage.DROP_OPEN, pageDelay.getInt());
     }
 
@@ -843,7 +877,7 @@ public class OrderDropper extends Module {
     @Override
     public void onRender2D(DrawContext ctx, float tickDelta) {
         if (stage == null || mc.options.hudHidden) return;
-        String line1 = dropping() ? (which.is("All") ? "Emptying your orders" : "Emptying your " + name() + " order") : (flip.get() ? "Flipping " : "Selling ") + name();
+        String line1 = dropping() ? (which.is("All") ? "Emptying your orders" : "Dropping your " + name() + " orders") : (flip.get() ? "Flipping " : "Selling ") + name();
         String line2 = status;
         String line3 = dropping() ? "Dropped " + dropped + " items · " + stacksDropped + " stacks · " + ordersEmptied + " done"
                 : "Sold " + sold + " · " + OrderMarket.money(earned) + (spent > 0 ? " · spent " + OrderMarket.money(spent) : "");
