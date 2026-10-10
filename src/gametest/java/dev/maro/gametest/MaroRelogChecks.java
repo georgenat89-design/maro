@@ -21,7 +21,8 @@ import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /** Native command packets, server chat receipts and delayed native teleport packets. */
-final class MaroRelogChecks {
+public final class MaroRelogChecks {
+    public static volatile boolean keepServerTicking;
     private record Attempt(String command, int tick, long nanos, boolean grounded, boolean water) { }
     private static final Vec3d START = new Vec3d(220.5, -10, 220.5);
     private static final Vec3d AWAY = new Vec3d(252.5, 10, 220.5);
@@ -135,12 +136,13 @@ final class MaroRelogChecks {
             reset(context, world, module);
             var handlerBefore = context.computeOnClient(c -> c.getNetworkHandler());
             var transportBefore = handlerBefore.getConnection();
-            world.getServer().runOnServer(s -> { reconfigureRtp = true; reconfigureHome = true; });
+            world.getServer().runOnServer(s -> { reconfigureRtp = true; reconfigureHome = true; keepServerTicking = true; });
             context.runOnClient(c -> module.setEnabled(true));
             waitFor(context, () -> context.computeOnClient(c -> module.rounds()) == 1, 380, "Native backend reconfiguration stopped relog", module);
             context.runOnClient(c -> { require(c.getNetworkHandler() != handlerBefore && c.getNetworkHandler().getConnection() == transportBefore, "Fixture did not replace the native play handler on the same connection"); module.setEnabled(false); });
             world.getServer().runOnServer(s -> {
                 require(reconfigurations == 2 && attempts.stream().map(Attempt::command).toList().equals(List.of("delhome 3", "sethome 3", "rtp", "home 3")), "Native transfer repeated or skipped commands: " + attempts);
+                keepServerTicking = false;
                 System.out.println("[maro-relog-transfer-proof] two actual native server reconfigurations replaced play handlers during RTP/home; confirmed return; no repeated commands");
             });
 
@@ -174,9 +176,9 @@ final class MaroRelogChecks {
             System.out.println("[maro-relog-failure-proof] rejected delete, wrong home slot and missing native RTP stop safely; disabled/re-enabled module ignores late teleport");
         } finally {
             context.runOnClient(c -> { module.setEnabled(false); ModuleManager.get(AutoMine.class).setEnabled(false); ModuleManager.get(AutoBuilder.class).setEnabled(false); module.getSettings().forEach(s -> s.reset()); });
-            world.getServer().runOnServer(s -> waiting = null);
+            world.getServer().runOnServer(s -> { waiting = null; keepServerTicking = false; });
             teleport(world, original);
-            world.getServer().runOnServer(s -> s.getPlayerManager().getPlayerList().getFirst().changeGameMode(mode));
+            world.getServer().runOnServer(s -> s.getPlayerManager().getPlayerList().forEach(p -> p.changeGameMode(mode)));
             context.waitTicks(8);
         }
     }
@@ -251,6 +253,7 @@ final class MaroRelogChecks {
         attempts.clear();
         rejectOnce.clear();
         waiting = null;
+        keepServerTicking = false;
         reconfigureAt = reconfigurations = 0;
         expectedSlot = 3;
         bareReceipts = reconfigureRtp = reconfigureHome = false;
