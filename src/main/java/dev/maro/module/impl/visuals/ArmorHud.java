@@ -40,11 +40,13 @@ public class ArmorHud extends Module implements HudElement {
             Identifier.ofVanilla("container/slot/boots")};
     private static final Identifier EMPTY_OFFHAND = Identifier.ofVanilla("container/slot/shield");
 
-    private final ButtonSetting position = add(new ButtonSetting("Position", "Drag it where you want it and scroll to resize it", "Place",
+    private final ButtonSetting position = add(new ButtonSetting("Position", "Drag it where you want it and scroll to resize it (it starts beside the hotbar)", "Place",
             () -> mc.setScreen(new HudPlacementScreen(mc.currentScreen, this))));
     private final NumberSetting x = add(new NumberSetting("X", "Across the screen: 0 is the left edge, 100 the right", 50, 0, 100, 0.5).suffix("%"));
     private final NumberSetting y = add(new NumberSetting("Y", "Down the screen: 0 is the top, 100 the bottom", 86, 0, 100, 0.5).suffix("%"));
     private final NumberSetting scale = add(new NumberSetting("Scale", "How big it is", 1, 0.5, 2.5, 0.05).suffix("x"));
+    /** Dragged somewhere by you; until then it sits beside the hotbar. */
+    private final BooleanSetting placed = add(new BooleanSetting("Placed", "", false).visible(() -> false));
 
     private final ModeSetting layout = add(new ModeSetting("Layout", "A row or a column", "Row", "Row", "Column"));
     private final ModeSetting durability = add(new ModeSetting("Durability", "A thin bar, the percent left, both, or nothing",
@@ -145,18 +147,32 @@ public class ArmorHud extends Module implements HudElement {
         return Math.max(0, mc.getWindow().getScaledHeight() - hudHeight() - MARGIN * 2);
     }
 
+    /** Beside the right end of the hotbar, bottoms level; above the health bars when there is no room there. */
+    private boolean besideHotbar() {
+        return mc.getWindow().getScaledWidth() / 2f + 97 + hudWidth() <= mc.getWindow().getScaledWidth() - MARGIN;
+    }
+
     @Override
     public float hudLeft() {
+        if (!placed.get()) {
+            int sw = mc.getWindow().getScaledWidth();
+            return besideHotbar() ? sw / 2f + 97 : Math.round((sw - hudWidth()) / 2f);
+        }
         return MARGIN + Math.round(roomX() * x.getFloat() / 100f);
     }
 
     @Override
     public float hudTop() {
+        if (!placed.get()) {
+            int sh = mc.getWindow().getScaledHeight();
+            return besideHotbar() ? sh - hudHeight() - 1 : sh - 50 - hudHeight();
+        }
         return MARGIN + Math.round(roomY() * y.getFloat() / 100f);
     }
 
     @Override
     public void hudMove(float left, float top) {
+        placed.set(true);
         float rx = roomX(), ry = roomY();
         x.set(rx <= 0 ? 0.0 : Math.max(0.0, Math.min(100.0, (left - MARGIN) / rx * 100.0)));
         y.set(ry <= 0 ? 0.0 : Math.max(0.0, Math.min(100.0, (top - MARGIN) / ry * 100.0)));
@@ -169,6 +185,7 @@ public class ArmorHud extends Module implements HudElement {
 
     @Override
     public void hudReset() {
+        placed.reset();
         x.reset();
         y.reset();
         scale.reset();

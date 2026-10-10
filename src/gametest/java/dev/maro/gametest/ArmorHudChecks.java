@@ -43,6 +43,11 @@ final class ArmorHudChecks {
                 int red = ArmorHud.wearColor(0.05f), green = ArmorHud.wearColor(1f);
                 require((red >> 16 & 0xFF) > (red >> 8 & 0xFF) && (green >> 8 & 0xFF) > (green >> 16 & 0xFF), "Wear colours should go green to red");
                 require(module.hudWidth() > module.hudHeight(), "A row should be wider than it is tall");
+                // Out of the way by default: beside the hotbar, or above the health bars, never over them.
+                int sw = c.getWindow().getScaledWidth(), sh = c.getWindow().getScaledHeight();
+                boolean beside = module.hudLeft() >= sw / 2f + 91;
+                require(beside || module.hudTop() + module.hudHeight() <= sh - 49, "The Armor HUD sits over the health bars: top "
+                        + module.hudTop() + " of " + sh);
             });
             context.takeScreenshot("maro-armor-hud");
             context.runOnClient(c -> ((ModeSetting) module.getSettings().stream().filter(s -> s.getName().equals("Layout")).findFirst().orElseThrow()).set("Column"));
