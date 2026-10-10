@@ -50,6 +50,7 @@ public class Compass extends Module implements HudElement {
     private final BooleanSetting deathMarker = new BooleanSetting("Last Death", "Point to where you last died", true);
     private final BooleanSetting spawnMarker = new BooleanSetting("Spawn", "Point to the world spawn", false);
     private final BooleanSetting homeMarker = new BooleanSetting("Home", "Point to the home you set", true);
+    private final BooleanSetting coordsMarker = new BooleanSetting("Coords Fly", "Point to where Coords Fly is taking you, while it is on", true);
     private final BooleanSetting distances = new BooleanSetting("Distances", "How far away each marker is", true);
     private final ButtonSetting setHome = new ButtonSetting("Set Home Here", "Make where you stand your home", "Set", this::markHome);
     private final ButtonSetting clearHome = new ButtonSetting("Clear Home", "Forget your home", "Clear", this::forgetHome);
@@ -76,7 +77,7 @@ public class Compass extends Module implements HudElement {
         width.visible(() -> style.is("Strip"));
         view.visible(() -> style.is("Strip"));
         SettingSection markers = new SettingSection("Markers");
-        for (var s : new dev.maro.setting.Setting<?>[]{deathMarker, spawnMarker, homeMarker, distances, setHome, clearHome}) markers.add(add(s));
+        for (var s : new dev.maro.setting.Setting<?>[]{deathMarker, spawnMarker, homeMarker, coordsMarker, distances, setHome, clearHome}) markers.add(add(s));
         for (var s : new dev.maro.setting.Setting<?>[]{homeX, homeY, homeZ, homeSet, homeWorld}) add(s);
         sections = List.of(look, markers, placement);
     }
@@ -161,6 +162,11 @@ public class Compass extends Module implements HudElement {
         }
         if (homeMarker.get() && homeSet.get() && homeWorld.get().equals(worldName())) {
             list.add(marker("Home", Theme.accent(), new BlockPos(homeX.getInt(), homeY.getInt(), homeZ.getInt())));
+        }
+        var coordsFly = dev.maro.module.ModuleManager.get(dev.maro.module.impl.movement.CoordsFly.class);
+        if (coordsMarker.get() && coordsFly != null && coordsFly.showsTarget()) {
+            var t = coordsFly.target();
+            list.add(new Marker("Coords", Theme.accent2(), bearingTo(t.x(), t.z()), coordsFly.distance(t)));
         }
         return list;
     }

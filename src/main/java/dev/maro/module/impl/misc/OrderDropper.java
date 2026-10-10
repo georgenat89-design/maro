@@ -30,63 +30,110 @@ import net.minecraft.util.Identifier;
 import java.util.List;
 
 /**
- * Order Dropper, for DonutSMP's orders: sells an item into the orders that pay most for it, fast.
- * It opens the orders for the item, picks the best-paying order that still wants some, clicks it
- * and drops your stacks into the delivery window several a tick, then goes on to the next order
- * until you are sold out or no order pays your minimum.
+ * Order Dropper, for DonutSMP's orders. Collect &amp; Drop (the usual way) empties your own orders: it
+ * opens /orders, goes to Your Orders, opens each order's Collect Items window and throws every stack
+ * out, a whole page at a time, flipping through the pages until the order is empty, then goes on to
+ * your next order. Repeat starts it again after a while for what has been delivered since.
  *
- * <p>Flip buys the item off the auction house first, below what the best order pays by your
- * margin and within your spend, then sells it into the orders. A purchase is only confirmed when
- * the confirmation shows the price it was chosen at.
+ * <p>Sell To Orders instead sells an item into the orders that pay most for it: it picks the best
+ * order, drops your stacks into its delivery window and goes on to the next until you are sold out.
+ * Flip buys the item off the auction house first, below what the best order pays by your margin.
  *
  * <p>Every menu word is a setting, as server menus change. Anything unexpected (a menu that does not
  * open, a price that moved, an order that takes nothing) stops it with a message rather than guessing.
  */
 public class OrderDropper extends Module {
-    private enum Stage {SCAN_OPEN, SCAN_READ, BUY_OPEN, BUY_PICK, BUY_CONFIRM, SELL_OPEN, SELL_PICK, DELIVER_OPEN, DELIVER, DELIVER_FINISH}
+    private enum Stage {SCAN_OPEN, SCAN_READ, BUY_OPEN, BUY_PICK, BUY_CONFIRM, SELL_OPEN, SELL_PICK, DELIVER_OPEN, DELIVER, DELIVER_FINISH,
+        DROP_OPEN, DROP, DROP_AGAIN}
+
+    private static final String DROP = "Collect & Drop", SELL = "Sell To Orders";
+
+    private final dev.maro.setting.ModeSetting mode = add(new dev.maro.setting.ModeSetting("Mode",
+            "Collect & Drop: empty your own orders by throwing out what was delivered. Sell To Orders: sell an item into other people's orders",
+            DROP, DROP, SELL));
+
+    // ---- collect and drop
+    private final dev.maro.setting.ModeSetting which = add(new dev.maro.setting.ModeSetting("Orders To Empty",
+            "Every order you have, only the one for the item in your hand, or only the one for the item you pick", "All", "All", "Held Item", "Picked Item")
+            .visible(this::dropping));
+    private final dev.maro.setting.ModeSetting how = add(new dev.maro.setting.ModeSetting("Drop How",
+            "Throw the stacks straight out of the Collect Items window (fastest), or take them and throw them from your inventory",
+            "Throw From Menu", "Throw From Menu", "Take Then Throw").visible(this::dropping));
+    private final NumberSetting dropsPerTick = add(new NumberSetting("Drops Per Tick", "How many stacks it throws each tick: 45 is a whole page at once",
+            45, 1, 45, 1).visible(this::dropping));
+    private final NumberSetting pageDelay = add(new NumberSetting("Page Delay", "Ticks to wait for the next page or menu (more if the server is slow)",
+            2, 0, 20, 1).suffix(" ticks").visible(this::dropping));
+    private final BooleanSetting repeat = add(new BooleanSetting("Repeat", "When every order is empty, start again after a while for what was delivered since",
+            false).visible(this::dropping));
+    private final NumberSetting repeatEvery = add(new NumberSetting("Repeat Every", "How long to wait before going round again", 30, 5, 600, 5)
+            .suffix("s").visible(() -> dropping() && repeat.get()));
 
     // ---- what to sell
-    private final BooleanSetting useHeld = add(new BooleanSetting("Use Held Item", "Sell what is in your hand when it starts", true));
-    private final TextSetting itemId = add(new TextSetting("Item", "The item to sell or flip", "", 64, "None").visible(() -> !useHeld.get()));
+    private final BooleanSetting useHeld = add(new BooleanSetting("Use Held Item", "Sell what is in your hand when it starts", true).visible(this::selling));
+    private final TextSetting itemId = add(new TextSetting("Item", "The item to sell or flip, or whose order to empty", "", 64, "None")
+            .visible(this::picksItem));
     private final ButtonSetting pickItem = add(new ButtonSetting("Pick Item", "Choose it from every item", "Edit",
             () -> mc.setScreen(new ItemPickerScreen(mc.currentScreen, "Item", picked -> itemId.set(Registries.ITEM.getId(picked).toString()))))
-            .visible(() -> !useHeld.get()));
+            .visible(this::picksItem));
 
     // ---- selling
-    private final TextSetting minPrice = add(new TextSetting("Min Price", "Only orders paying at least this per item (1.5k, 2m)", "0", 16, "0"));
-    private final NumberSetting keep = add(new NumberSetting("Keep", "How many to keep for yourself", 0, 0, 2304, 1));
-    private final BooleanSetting skipSpecial = add(new BooleanSetting("Skip Special Items", "Never sell enchanted, damaged or renamed ones", true));
-    private final NumberSetting stacksPerTick = add(new NumberSetting("Stacks Per Tick", "How many stacks it drops into an order each tick", 4, 1, 9, 1));
-    private final NumberSetting delay = add(new NumberSetting("Action Delay", "Ticks between menu clicks (more if the server is slow)", 2, 0, 20, 1).suffix(" ticks"));
-    private final BooleanSetting keepGoing = add(new BooleanSetting("Keep Going", "After an order, go on to the next until sold out", true));
-    private final NumberSetting pages = add(new NumberSetting("Pages To Search", "How many pages of orders or listings it looks through", 3, 1, 10, 1));
+    private final TextSetting minPrice = add(new TextSetting("Min Price", "Only orders paying at least this per item (1.5k, 2m)", "0", 16, "0").visible(this::selling));
+    private final NumberSetting keep = add(new NumberSetting("Keep", "How many to keep for yourself", 0, 0, 2304, 1).visible(this::selling));
+    private final BooleanSetting skipSpecial = add(new BooleanSetting("Skip Special Items", "Never sell enchanted, damaged or renamed ones", true).visible(this::selling));
+    private final NumberSetting stacksPerTick = add(new NumberSetting("Stacks Per Tick", "How many stacks it drops into an order each tick", 4, 1, 9, 1).visible(this::selling));
+    private final NumberSetting delay = add(new NumberSetting("Action Delay", "Ticks between menu clicks (more if the server is slow)", 2, 0, 20, 1).suffix(" ticks").visible(this::selling));
+    private final BooleanSetting keepGoing = add(new BooleanSetting("Keep Going", "After an order, go on to the next until sold out", true).visible(this::selling));
+    private final NumberSetting pages = add(new NumberSetting("Pages To Search", "How many pages of orders or listings it looks through", 3, 1, 10, 1).visible(this::selling));
 
     // ---- flipping
-    private final BooleanSetting flip = add(new BooleanSetting("Flip", "Buy it off the auction house below the order price, then sell it into orders", false));
+    private final BooleanSetting flip = add(new BooleanSetting("Flip", "Buy it off the auction house below the order price, then sell it into orders", false).visible(this::selling));
     private final NumberSetting margin = add(new NumberSetting("Min Margin", "Buy only this much under what the best order pays", 10, 1, 90, 1)
-            .suffix("%").visible(flip::get));
+            .suffix("%").visible(this::flipping));
     private final TextSetting maxSpend = add(new TextSetting("Max Spend", "The most it spends on the auction house in one go", "100k", 16, "100k")
-            .visible(flip::get));
+            .visible(this::flipping));
     private final TextSetting maxBuyEach = add(new TextSetting("Max Buy Each", "Never pay more than this per item (empty: only the margin)", "", 16, "None")
-            .visible(flip::get));
-    private final NumberSetting rounds = add(new NumberSetting("Flip Rounds", "Buy and sell rounds before it stops", 3, 1, 50, 1).visible(flip::get));
+            .visible(this::flipping));
+    private final NumberSetting rounds = add(new NumberSetting("Flip Rounds", "Buy and sell rounds before it stops", 3, 1, 50, 1).visible(this::flipping));
 
     // ---- the server's menus
-    private final TextSetting ordersCommand = add(new TextSetting("Orders Command", "Opens the orders for the item ({item} is its id, {name} its name)", "orders {item}", 64, "orders {item}"));
-    private final TextSetting ahCommand = add(new TextSetting("AH Command", "Searches the auction house for the item", "ah {item}", 64, "ah {item}").visible(flip::get));
-    private final TextSetting ordersTitle = add(new TextSetting("Orders Title", "Words in the orders menu's title, separated by ;", "order", 64, "order"));
-    private final TextSetting deliverTitle = add(new TextSetting("Deliver Title", "Words in the delivery window's title", "deliver;sell;fill", 64, "deliver"));
-    private final TextSetting ahTitle = add(new TextSetting("AH Title", "Words in the auction house's title", "auction;ah", 64, "auction").visible(flip::get));
-    private final TextSetting priceWords = add(new TextSetting("Price Words", "Words on the line with an order's price per item", "each;per;price", 64, "each"));
-    private final TextSetting confirmWords = add(new TextSetting("Confirm Words", "Names of confirm buttons", "confirm;deliver;sell;yes;buy;purchase", 128, "confirm"));
-    private final TextSetting cancelWords = add(new TextSetting("Cancel Words", "Names of cancel buttons", "cancel;no;back;close;deny", 64, "cancel"));
+    private final TextSetting ordersCommand = add(new TextSetting("Orders Command", "Opens the orders for the item ({item} is its id, {name} its name)", "orders {item}", 64, "orders {item}").visible(this::selling));
+    private final TextSetting ahCommand = add(new TextSetting("AH Command", "Searches the auction house for the item", "ah {item}", 64, "ah {item}").visible(this::flipping));
+    private final TextSetting ordersTitle = add(new TextSetting("Orders Title", "Words in the orders menu's title, separated by ;", "order", 64, "order").visible(this::selling));
+    private final TextSetting deliverTitle = add(new TextSetting("Deliver Title", "Words in the delivery window's title", "deliver;sell;fill", 64, "deliver").visible(this::selling));
+    private final TextSetting ahTitle = add(new TextSetting("AH Title", "Words in the auction house's title", "auction;ah", 64, "auction").visible(this::flipping));
+    private final TextSetting priceWords = add(new TextSetting("Price Words", "Words on the line with an order's price per item", "each;per;price", 64, "each").visible(this::selling));
+    private final TextSetting confirmWords = add(new TextSetting("Confirm Words", "Names of confirm buttons", "confirm;deliver;sell;yes;buy;purchase", 128, "confirm").visible(this::selling));
+    private final TextSetting cancelWords = add(new TextSetting("Cancel Words", "Names of cancel buttons", "cancel;no;back;close;deny", 64, "cancel").visible(this::selling));
     private final TextSetting nextWords = add(new TextSetting("Next Page Words", "Names of the next page button", "next", 64, "next"));
+    private final TextSetting openCommand = add(new TextSetting("Open Command", "Opens the orders menu", "orders", 64, "orders").visible(this::dropping));
+    private final TextSetting yourOrdersWords = add(new TextSetting("Your Orders Words", "The Your Orders button and window", "your orders;my orders", 64, "your orders")
+            .visible(this::dropping));
+    private final TextSetting collectWords = add(new TextSetting("Collect Words", "The Collect Items button and window", "collect", 64, "collect")
+            .visible(this::dropping));
 
     private final List<SettingSection> sections = List.of(
+            SettingSection.of("Order Dropper", mode, which, how, dropsPerTick, pageDelay, repeat, repeatEvery),
             SettingSection.of("Item", useHeld, itemId, pickItem),
             SettingSection.of("Selling", minPrice, keep, skipSpecial, stacksPerTick, delay, keepGoing, pages),
             SettingSection.of("Flip", flip, margin, maxSpend, maxBuyEach, rounds),
-            SettingSection.of("Menus", ordersCommand, ahCommand, ordersTitle, deliverTitle, ahTitle, priceWords, confirmWords, cancelWords, nextWords));
+            SettingSection.of("Menus", openCommand, yourOrdersWords, collectWords, ordersCommand, ahCommand, ordersTitle, deliverTitle, ahTitle,
+                    priceWords, confirmWords, cancelWords, nextWords));
+
+    private boolean dropping() {
+        return mode.is(DROP);
+    }
+
+    private boolean selling() {
+        return mode.is(SELL);
+    }
+
+    private boolean flipping() {
+        return selling() && flip.get();
+    }
+
+    private boolean picksItem() {
+        return selling() ? !useHeld.get() : which.is("Picked Item");
+    }
 
     private Item item = Items.AIR;
     private Stage stage;
@@ -98,8 +145,17 @@ public class OrderDropper extends Module {
     private volatile boolean listingGone;
     private String status = "Off", result = "";
 
+    // ---- collect and drop state
+    /** The orders emptied this round, by what they are, so a list that shifts does not repeat or skip one. */
+    private final java.util.Set<String> emptied = new java.util.HashSet<>();
+    /** Inventory slots that were empty at the start: the only ones Take Then Throw throws from. */
+    private final java.util.Set<Integer> freeSlots = new java.util.HashSet<>();
+    private String currentOrder;
+    private int dropped, stacksDropped, ordersEmptied, dropPage, refills, lastDropTick, clickedSync = -1, clickedAt, repeatAt;
+    private boolean pageEmptied;
+
     public OrderDropper() {
-        super("Order Dropper", "Sells an item into DonutSMP's best-paying orders fast, and can flip it from the auction house first", Category.MISC);
+        super("Order Dropper", "Empties your DonutSMP orders fast: opens Collect Items and throws every stack out, page after page", Category.MISC);
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (stage == Stage.BUY_CONFIRM && AuctionMarket.unavailable(message.getString())) listingGone = true;
         });
@@ -115,10 +171,14 @@ public class OrderDropper extends Module {
     @Override
     protected void onEnable() {
         result = "";
-        sold = bought = roundsDone = page = 0;
+        sold = bought = roundsDone = page = dropped = stacksDropped = ordersEmptied = 0;
         spent = earned = 0;
         if (!inGame()) {
             setEnabled(false);
+            return;
+        }
+        if (dropping()) {
+            startDropping();
             return;
         }
         item = useHeld.get() ? mc.player.getMainHandStack().getItem() : itemOf(itemId.get());
@@ -140,6 +200,7 @@ public class OrderDropper extends Module {
     private void finish(String why, boolean good) {
         result = why;
         String summary = why;
+        if (dropping() && dropped > 0) summary += " · dropped " + dropped + " items";
         if (sold > 0) summary += " · sold " + sold + " for " + OrderMarket.money(earned);
         if (spent > 0) summary += " · spent " + OrderMarket.money(spent) + " · profit " + OrderMarket.money(Math.max(0, earned - spent));
         Notifications.push("Order Dropper", summary, good ? Notifications.Type.SUCCESS : Notifications.Type.WARNING, 7000);
@@ -167,6 +228,8 @@ public class OrderDropper extends Module {
         }
         if (ticks > deadline) {
             finish(switch (stage) {
+                case DROP_OPEN -> "The orders menu did not open";
+                case DROP -> "The orders menu stopped answering";
                 case SCAN_OPEN, SELL_OPEN -> "The orders menu did not open";
                 case BUY_OPEN -> "The auction house did not open";
                 case DELIVER_OPEN -> "The order's delivery window did not open";
@@ -176,6 +239,16 @@ public class OrderDropper extends Module {
             return;
         }
         switch (stage) {
+            case DROP_OPEN -> openForDrop();
+            case DROP -> dropStep();
+            case DROP_AGAIN -> {
+                status = "Again in " + Math.max(0, (repeatAt - ticks + 19) / 20) + "s";
+                deadline = ticks + 100;
+                if (ticks >= repeatAt) {
+                    emptied.clear();
+                    go(Stage.DROP_OPEN, 0);
+                }
+            }
             case SCAN_OPEN, SELL_OPEN -> openOrders();
             case SCAN_READ, SELL_PICK -> readOrders();
             case BUY_OPEN -> openAuction();
@@ -324,6 +397,239 @@ public class OrderDropper extends Module {
             return;
         }
         finish(why, sold > 0);
+    }
+
+    // ---- collect and drop ---------------------------------------------------------------------------
+
+    private void startDropping() {
+        emptied.clear();
+        freeSlots.clear();
+        dropped = stacksDropped = ordersEmptied = 0;
+        item = switch (which.get()) {
+            case "Held Item" -> mc.player.getMainHandStack().getItem();
+            case "Picked Item" -> itemOf(itemId.get());
+            default -> Items.AIR;
+        };
+        if (!which.is("All") && item == Items.AIR) {
+            finish(which.is("Held Item") ? "Hold the item whose order to empty first" : "Pick the item whose order to empty first", false);
+            return;
+        }
+        for (int i = 0; i < 36; i++) if (mc.player.getInventory().getStack(i).isEmpty()) freeSlots.add(i);
+        go(Stage.DROP_OPEN, 0);
+    }
+
+    private void openForDrop() {
+        if (!clicked) {
+            close();
+            mc.getNetworkHandler().sendChatCommand(openCommand.get().trim().replaceFirst("^/", ""));
+            clicked = true;
+            status = "Opening orders";
+            return;
+        }
+        if (filled() == null) return;
+        clickedSync = -1;
+        go(Stage.DROP, pageDelay.getInt());
+    }
+
+    /** The open menu once its slots have arrived, else null. */
+    private ScreenHandler filled() {
+        ScreenHandler handler = current();
+        if (handler == null) return null;
+        for (Slot slot : handler.slots) if (slot.inventory != mc.player.getInventory() && !slot.getStack().isEmpty()) return handler;
+        return null;
+    }
+
+    /** Works out which orders menu is open and does the next thing in it. */
+    private void dropStep() {
+        ScreenHandler handler = filled();
+        if (handler == null) return;
+        String title = ((HandledScreen<?>) mc.currentScreen).getTitle().getString();
+        if (OrderMarket.has(title, collectWords.get())) {
+            collectPage(handler);
+            return;
+        }
+        // A click in this window is on its way: give the server a moment before trying again.
+        if (handler.syncId == clickedSync && ticks - clickedAt < 20) return;
+        if (OrderMarket.has(title, yourOrdersWords.get())) {
+            pickOrder(handler);
+            return;
+        }
+        Slot button = named(handler, collectWords.get(), false);
+        if (button == null && OrderMarket.has(title, "edit")) button = chest(handler, false);
+        if (button != null) {
+            status = "Opening Collect Items";
+            menuClick(handler, button);
+            return;
+        }
+        button = named(handler, yourOrdersWords.get(), true);
+        if (button == null) button = chest(handler, true);
+        if (button == null) {
+            finish("No Your Orders button in the orders menu", false);
+            return;
+        }
+        status = "Opening your orders";
+        menuClick(handler, button);
+    }
+
+    private void menuClick(ScreenHandler handler, Slot slot) {
+        click(handler, slot.id, SlotActionType.PICKUP);
+        clickedSync = handler.syncId;
+        clickedAt = ticks;
+        deadline = ticks + 100;
+        wait = pageDelay.getInt();
+    }
+
+    /** The container's own slots: everything but your inventory. */
+    private int containerSize(ScreenHandler handler) {
+        int n = 0;
+        for (Slot slot : handler.slots) if (slot.inventory != mc.player.getInventory()) n++;
+        return n;
+    }
+
+    /** Whether a slot is in the bottom row, where menus keep their buttons. */
+    private boolean bottomRow(ScreenHandler handler, Slot slot) {
+        return slot.id >= containerSize(handler) - 9;
+    }
+
+    /** A button named with one of the words; only in the bottom row if asked. */
+    private Slot named(ScreenHandler handler, String words, boolean bottom) {
+        for (Slot slot : handler.slots) {
+            if (slot.inventory == mc.player.getInventory() || slot.getStack().isEmpty()) continue;
+            if (bottom && !bottomRow(handler, slot)) continue;
+            if (OrderMarket.has(slot.getStack().getName().getString(), words)) return slot;
+        }
+        return null;
+    }
+
+    /** A chest-like button: DonutSMP's Your Orders and Collect Items buttons are chests. */
+    private Slot chest(ScreenHandler handler, boolean bottom) {
+        for (Slot slot : handler.slots) {
+            if (slot.inventory == mc.player.getInventory() || bottom && !bottomRow(handler, slot)) continue;
+            ItemStack stack = slot.getStack();
+            if (stack.isOf(Items.CHEST) || stack.isOf(Items.BARREL) || stack.isOf(Items.ENDER_CHEST)) return slot;
+        }
+        return null;
+    }
+
+    private static boolean filler(ItemStack stack) {
+        return Registries.ITEM.getId(stack.getItem()).getPath().endsWith("glass_pane");
+    }
+
+    private static String key(ItemStack stack) {
+        StringBuilder key = new StringBuilder(Registries.ITEM.getId(stack.getItem()).toString()).append('|').append(stack.getName().getString());
+        var lore = stack.get(DataComponentTypes.LORE);
+        if (lore != null) for (var line : lore.lines()) key.append('|').append(line.getString());
+        return key.toString();
+    }
+
+    /** In Your Orders: opens the next order not emptied yet, or ends the round. */
+    private void pickOrder(ScreenHandler handler) {
+        for (Slot slot : handler.slots) {
+            ItemStack stack = slot.getStack();
+            if (slot.inventory == mc.player.getInventory() || stack.isEmpty() || bottomRow(handler, slot) || filler(stack)) continue;
+            if (!which.is("All") && !stack.isOf(item)) continue;
+            if (OrderMarket.has(stack.getName().getString(), "create;new order")) continue;
+            String key = key(stack);
+            if (emptied.contains(key)) continue;
+            currentOrder = key;
+            dropPage = 1;
+            refills = 0;
+            pageEmptied = false;
+            status = "Opening your " + stack.getItem().getName().getString() + " order";
+            menuClick(handler, slot);
+            return;
+        }
+        roundDone();
+    }
+
+    /** Every order is empty: again after a while, or done. */
+    private void roundDone() {
+        close();
+        String summary = ordersEmptied == 0 && dropped == 0 ? "No orders to empty" : "Emptied " + ordersEmptied + " order" + (ordersEmptied == 1 ? "" : "s");
+        if (repeat.get()) {
+            result = summary;
+            Notifications.push("Order Dropper", summary + " · dropped " + dropped + " · again in " + repeatEvery.getInt() + "s", Notifications.Type.INFO);
+            repeatAt = ticks + repeatEvery.getInt() * 20;
+            go(Stage.DROP_AGAIN, 0);
+            return;
+        }
+        finish(summary, dropped > 0);
+    }
+
+    /** In Collect Items: throws the page out, then flips to the next page, then on to the next order. */
+    private void collectPage(ScreenHandler handler) {
+        boolean take = how.is("Take Then Throw");
+        if (take && throwTaken(handler)) return;
+        int done = 0;
+        for (Slot slot : handler.slots) {
+            if (done >= dropsPerTick.getInt()) break;
+            ItemStack stack = slot.getStack();
+            if (slot.inventory == mc.player.getInventory() || stack.isEmpty() || bottomRow(handler, slot)) continue;
+            if (pageEmptied) {
+                // Filled again without a page flip: the server put more on this page.
+                pageEmptied = false;
+                if (++refills > 400) {
+                    finish("The order keeps filling up again, stopped to be safe", false);
+                    return;
+                }
+            }
+            dropped += stack.getCount();
+            stacksDropped++;
+            // Ctrl+Q on the slot throws the whole stack; or shift-click it into your inventory.
+            if (take) click(handler, slot.id, SlotActionType.QUICK_MOVE);
+            else mc.interactionManager.clickSlot(handler.syncId, slot.id, 1, SlotActionType.THROW, mc.player);
+            done++;
+        }
+        if (take) throwTaken(handler);
+        if (done > 0) {
+            lastDropTick = ticks;
+            deadline = ticks + 100;
+            status = "Dropping · page " + dropPage + " · " + dropped + " items";
+            return;
+        }
+        pageEmptied = true;
+        // Let the server catch up with the throws (and refill the page if it does) before flipping.
+        if (ticks - lastDropTick < pageDelay.getInt() + 2) return;
+        if (handler.syncId == clickedSync && ticks - clickedAt < pageDelay.getInt() + 4) return;
+        Slot next = named(handler, nextWords.get(), true);
+        if (next == null) next = nextArrow(handler);
+        if (next != null) {
+            dropPage++;
+            pageEmptied = false;
+            status = "Page " + dropPage;
+            menuClick(handler, next);
+            return;
+        }
+        emptied.add(currentOrder == null ? "" : currentOrder);
+        ordersEmptied++;
+        status = "Order empty · " + dropped + " items dropped";
+        if (!which.is("All")) {
+            roundDone();
+            return;
+        }
+        // Back round for the next order.
+        go(Stage.DROP_OPEN, pageDelay.getInt());
+    }
+
+    /** The arrow in the right half of the bottom row: the next page. */
+    private Slot nextArrow(ScreenHandler handler) {
+        int size = containerSize(handler);
+        for (Slot slot : handler.slots) {
+            if (slot.inventory == mc.player.getInventory() || !slot.getStack().isOf(Items.ARROW) || !bottomRow(handler, slot)) continue;
+            if (slot.id >= size - 4) return slot;
+        }
+        return null;
+    }
+
+    /** Take Then Throw: throws what landed in the inventory slots that were empty at the start; true if it threw any. */
+    private boolean throwTaken(ScreenHandler handler) {
+        boolean any = false;
+        for (Slot slot : handler.slots) {
+            if (slot.inventory != mc.player.getInventory() || slot.getStack().isEmpty() || !freeSlots.contains(slot.getIndex())) continue;
+            mc.interactionManager.clickSlot(handler.syncId, slot.id, 1, SlotActionType.THROW, mc.player);
+            any = true;
+        }
+        return any;
     }
 
     // ---- flipping: buying off the auction house ----------------------------------------------------
@@ -537,8 +843,10 @@ public class OrderDropper extends Module {
     @Override
     public void onRender2D(DrawContext ctx, float tickDelta) {
         if (stage == null || mc.options.hudHidden) return;
-        String line1 = (flip.get() ? "Flipping " : "Selling ") + name(), line2 = status;
-        String line3 = "Sold " + sold + " · " + OrderMarket.money(earned) + (spent > 0 ? " · spent " + OrderMarket.money(spent) : "");
+        String line1 = dropping() ? (which.is("All") ? "Emptying your orders" : "Emptying your " + name() + " order") : (flip.get() ? "Flipping " : "Selling ") + name();
+        String line2 = status;
+        String line3 = dropping() ? "Dropped " + dropped + " items · " + stacksDropped + " stacks · " + ordersEmptied + " done"
+                : "Sold " + sold + " · " + OrderMarket.money(earned) + (spent > 0 ? " · spent " + OrderMarket.money(spent) : "");
         Fonts.beginRaw();
         try {
             float w = Math.max(Fonts.width(line1, true, 0.75f), Math.max(Fonts.width(line2, false, 0.65f), Fonts.width(line3, false, 0.65f))) + 34;
@@ -548,7 +856,7 @@ public class OrderDropper extends Module {
             var matrices = ctx.getMatrices();
             matrices.pushMatrix();
             matrices.translate(x + 7, y + 10);
-            ctx.drawItem(new ItemStack(item), 0, 0);
+            ctx.drawItem(new ItemStack(item == Items.AIR ? Items.CHEST : item), 0, 0);
             matrices.popMatrix();
             Fonts.drawV(ctx, line1, x + 28, y + 9, Theme.TEXT, true, 0.75f);
             Fonts.drawV(ctx, line2, x + 28, y + 19, Theme.TEXT_DIM, false, 0.65f);
@@ -582,5 +890,13 @@ public class OrderDropper extends Module {
 
     public boolean running() {
         return stage != null;
+    }
+
+    public int droppedCount() {
+        return dropped;
+    }
+
+    public int ordersEmptied() {
+        return ordersEmptied;
     }
 }
