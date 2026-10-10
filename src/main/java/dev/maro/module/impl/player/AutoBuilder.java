@@ -420,6 +420,12 @@ public final class AutoBuilder extends Module {
     private int bestMarketPage,marketRechecks,marketRefreshDeadline;
     private boolean returningToOffer;
     private boolean marketInventoryBlocked;
+    private final LinkedHashMap<Item,Integer> deferredShopping=new LinkedHashMap<>();
+    private boolean retryingDeferredShopping;
+    private int marketOpenRetries,marketEmptyRetries,marketCommandRetries,marketCommandAt,marketLastCommand=-25,marketContentsAt=Integer.MAX_VALUE;
+    private long marketCommandTime,marketLastCommandTime;
+    private String queuedMarketCommand="",lastMarketSearch="";
+    private static final java.util.regex.Pattern MARKET_COMMAND_WAIT=java.util.regex.Pattern.compile("wait(?: another)?\\s+([0-9]+(?:\\.[0-9]+)?)\\s*seconds?");
     private boolean depositing;
     private BlockPos depositTarget;
     private final Deque<BlockPos> depositQueue=new ArrayDeque<>();
@@ -465,7 +471,7 @@ public final class AutoBuilder extends Module {
                 if(saveBuilds.get()&&infos.containsKey(selectedSlot)){buildSlot.set(selectedSlot==0?"Last Session":String.valueOf(selectedSlot));loadPlacement();}
             });
         },IO);
-        ClientReceiveMessageEvents.GAME.register((message,overlay)->{homes.message(message.getString());if(buying&&pendingOffer!=null&&(marketStage==2||marketStage==3)&&AuctionMarket.unavailable(message.getString()))soldNotice=true;});
+        ClientReceiveMessageEvents.GAME.register((message,overlay)->{homes.message(message.getString());auctionMessage(message.getString());if(buying&&pendingOffer!=null&&(marketStage==2||marketStage==3)&&AuctionMarket.unavailable(message.getString()))soldNotice=true;});
     }
     // Rendering/protocol defaults are internal; they no longer clutter the saved settings UI.
     private BooleanSetting fixedBool(String n,String d,boolean value){return new BooleanSetting(n,d,value);}
@@ -719,7 +725,7 @@ public final class AutoBuilder extends Module {
         building=false;pasting=false;depositing=false;depositTarget=null;depositSlot=-1;resumeShoppingAfterDeposit=false;depositedShopping.clear();placement=pendingPlacement=null;pendingServerState=null;routeMining=null;mining=null;tuningTarget=tuningSession=null;tuningClicks=0;standGoal=null;approachingDoor=null;approachingDoorWork=-2;descentPost=descentView=null;descentLanding=false;cleanupTarget=null;accessStand=accessBase=null;recycleTarget=null;accessFloor=false;accessSupports.clear();accessStairs=Set.of();viewSearches.clear();digging=false;walker.stop();releaseSneak();endRecovery();
         if(mc.interactionManager!=null)mc.interactionManager.cancelBlockBreaking();
         if(ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler&&ownedHandler.getCursorStack().isEmpty())mc.player.closeHandledScreen();
-        ownedHandler=null;restockTarget=null;recoveringAccessStock=false;routeOpening=null;restockBatch=Map.of();chestAccessRetryAt.clear();buying=false;pendingOffer=null;shopping.clear();status=reason;
+        ownedHandler=null;restockTarget=null;recoveringAccessStock=false;routeOpening=null;restockBatch=Map.of();chestAccessRetryAt.clear();buying=false;pendingOffer=null;shopping.clear();queuedMarketCommand="";status=reason;
         floorSearchFeet=floorSearchView=null;floorSearchCursor=0;floorSearchWork=-2;floorProbes.clear();ceilingBase=ceilingTop=null;ceilingBlocks.clear();ceilingProgressPos=null;accessColumn=Set.of();
         entrySearchFeet=null;entrySearchWork=-2;entrySearchCursor=entryRetryAt=0;passageBlocks.clear();passageStand=passageSearchFeet=null;passageSearchWork=-2;passageSearchCursor=passageRetryAt=0;
         descentSearchFeet=descentSearchDestination=null;descentSearchPosts=descentSearchViews=descentHatchViews=List.of();descentSearchCursor=descentRetryAt=descentSearchPhase=0;descentHatchesReady=false;
@@ -3646,6 +3652,7 @@ public final class AutoBuilder extends Module {
     public void chestInventoryReceived(int syncId){
         if(!inGame()||!mc.isOnThread())return;
         var handler=mc.player.currentScreenHandler;
+        if(buying&&marketStage==1&&queuedMarketCommand.isEmpty()&&handler.syncId==syncId)marketContentsAt=ticks+10;
         if((depositing&&depositOpenWait>0||restockTarget!=null&&restockWait>0)
             &&handler.syncId==syncId&&(recoveringAccessStock?accessRecoveryMenu(handler):handler instanceof GenericContainerScreenHandler chest&&chest.getRows()==6))
             receivedChestInventory=handler;
@@ -4114,7 +4121,7 @@ public final class AutoBuilder extends Module {
         if(!success){preparationStage=0;return;}
         if(prep==1){preparationStage=2;startBuying(false);}
         else if(prep==3){preparationStage=0;preparationReady=true;triedContainers.clear();emptyChestItems.clear();startBuild();status="Whole-build supplies stored — building nearby sections";}
-        else if(prep==4){preparationStage=0;status=preparationStopReason;notify(status);}
+        else if(prep==4){preparationStage=0;status=preparationStopReason;}
     }
     private void depositTick(){
         if(!doubleChest(depositTarget)){finishDeposit("Deposit stopped — double chest is no longer available");return;}
@@ -4219,6 +4226,7 @@ public final class AutoBuilder extends Module {
         boolean resume=building&&!estimateOnly&&autoBuy.get();
         int prep=preparationStage;pause(estimateOnly?"Estimating auction cost":"Buying materials");preparationStage=prep;setEnabled(true);building=false;buying=true;resumeAfterMarket=resume;estimating=estimateOnly;wholeMarket=wholeSchematic;shopping.clear();
         spent=buildBudgetActive?buildBudgetSpent:0;estimate=0;buyingItem=null;marketWait=marketStage=0;pendingOffer=null;boughtListings.clear();unavailableListings.clear();pendingListing="";soldNotice=false;soldSkips=marketRechecks=0;
+        deferredShopping.clear();retryingDeferredShopping=false;marketOpenRetries=marketEmptyRetries=marketCommandRetries=0;queuedMarketCommand="";
         marketStage=-1;
         if(buyNotifications.get())notify(estimateOnly?"Reading auction prices":"Material buying started — budget "+(long)maxSpend.get().doubleValue());
     }
@@ -4233,19 +4241,61 @@ public final class AutoBuilder extends Module {
         ownedHandler=null;marketPage=1;returningToOffer=returnToBest;
         if(!returnToBest){bestMarketOffer=null;bestMarketKey="";bestMarketPage=0;marketInventoryBlocked=false;}
         boughtListings.clear();
-        mc.getNetworkHandler().sendChatCommand(command+" "+key);marketWait=10;marketStage=1;marketDeadline=ticks+160;status="Searching "+buyingItem.getName().getString();
+        queuedMarketCommand=command+" "+key;marketCommandRetries=0;marketCommandAt=Math.max(ticks,marketLastCommand+25);marketCommandTime=Math.max(System.nanoTime(),marketLastCommandTime+1_250_000_000L);
+        marketWait=0;marketStage=1;marketContentsAt=Integer.MAX_VALUE;status="Searching "+buyingItem.getName().getString();
+    }
+    private void auctionMessage(String raw){
+        // Only search commands are retried. A purchase with no receipt is never repeated.
+        if(!buying||marketStage!=1||!queuedMarketCommand.isEmpty()||buyingItem==null)return;
+        String text=raw.replaceAll("§.","").toLowerCase(Locale.ROOT);
+        var wait=MARKET_COMMAND_WAIT.matcher(text);
+        if(!(text.contains("command")||text.contains("cooldown"))||!wait.find())return;
+        double seconds=Double.parseDouble(wait.group(1));
+        if(!Double.isFinite(seconds)||seconds>60||++marketCommandRetries>3){deferMarketItem("Auction command cooldown did not clear");return;}
+        // Keep the exact query and accounting while the server's cooldown expires.
+        queuedMarketCommand=lastMarketSearch;
+        marketCommandAt=Math.max(marketLastCommand+25,ticks+(int)Math.ceil(seconds*20)+3);
+        marketCommandTime=Math.max(marketLastCommandTime+1_250_000_000L,System.nanoTime()+(long)((seconds+.15)*1_000_000_000L));
+        status="Waiting for auction command cooldown";
+    }
+    private void retryMarketSearch(String reason,boolean missingMenu){
+        int attempts=missingMenu?++marketOpenRetries:++marketEmptyRetries;
+        if(attempts<=2){searchMarket();status="Retrying "+buyingItem.getName().getString()+" — "+reason;}
+        else deferMarketItem(reason);
+    }
+    private void deferMarketItem(String reason){
+        if(buyingItem==null)return;
+        int outstanding=shopping.getOrDefault(buyingItem,0);
+        if(outstanding>0)deferredShopping.put(buyingItem,outstanding);
+        shopping.remove(buyingItem);
+        status=reason+" for "+buyingItem.getName().getString()+" — checking remaining materials";
+        if(ownedHandler!=null&&mc.player.currentScreenHandler==ownedHandler)mc.player.closeHandledScreen();
+        ownedHandler=null;buyingItem=null;pendingOffer=null;queuedMarketCommand="";marketStage=0;marketWait=buySpacing.getInt();
+    }
+    private String missingMarketItems(){
+        return deferredShopping.entrySet().stream().map(e->e.getValue()+" "+e.getKey().getName().getString()).collect(java.util.stream.Collectors.joining(", "));
     }
     private void refreshMarket(){
-        if(ticks>=marketRefreshDeadline){finishBuying("No eligible auction listing stayed available — refresh later");return;}
+        if(ticks>=marketRefreshDeadline){deferMarketItem("No eligible listing stayed available");return;}
         marketRechecks++;searchMarket();status="Auction changed — checking current listings";
     }
     private void marketTick(){
+        if(!queuedMarketCommand.isEmpty()){
+            if(ticks<marketCommandAt||System.nanoTime()<marketCommandTime)return;
+            String command=queuedMarketCommand;queuedMarketCommand="";lastMarketSearch=command;
+            marketLastCommand=ticks;marketLastCommandTime=System.nanoTime();
+            mc.getNetworkHandler().sendChatCommand(command);marketWait=10;marketDeadline=ticks+160;return;
+        }
         if(marketWait>0){marketWait--;return;}
         if(marketStage==-1){if(completedScans==0){status="Scanning material requirements";return;}var needs=foodShopping?Map.of(Items.COOKED_BEEF,Math.max(0,steakReserve.getInt()-inventoryCount(Items.COOKED_BEEF))):supportShopping?Map.of(Items.DIRT,Math.max(0,supportReserve()-inventoryCount(Items.DIRT))):preparationStage==2?wholeBuildNeeds():shoppingNeeds(buyDirt.getInt());needs.entrySet().stream().filter(e->e.getValue()>0).sorted(Comparator.comparing(e->Registries.ITEM.getId(e.getKey()).toString())).forEach(e->shopping.put(e.getKey(),e.getValue()));marketStage=0;}
         if(buyingItem==null){
             if(!estimating&&!shopping.isEmpty()&&maxSpend.get()<=spent){finishBuying("AH budget exhausted — increase the budget for missing supplies");return;}
+            if(shopping.isEmpty()&&!deferredShopping.isEmpty()){
+                if(!retryingDeferredShopping){shopping.putAll(deferredShopping);deferredShopping.clear();unavailableListings.clear();retryingDeferredShopping=true;status="Retrying missing materials after the rest of the shopping queue";return;}
+                finishBuying((estimating?"Estimate incomplete":"Buying incomplete")+" — still missing "+missingMarketItems()+"; no eligible listing or auction response");return;
+            }
             if(shopping.isEmpty()){boolean preparing=preparationStage==2;boolean resume=resumeAfterMarket&&!estimating;boolean deposit=!estimating&&depositWhen.is("After Buying");finishBuying(estimating?"Estimated material cost: "+Math.round(estimate):"Buying finished — spent "+Math.round(spent));if(preparing)return;if(deposit)depositAll();else if(resume){building=true;delay=6;status="Continuing build after buying";}return;}
-            buyingItem=shopping.keySet().iterator().next();marketPage=1;marketRechecks=0;marketRefreshDeadline=ticks+600;searchMarket();return;
+            buyingItem=shopping.keySet().iterator().next();marketPage=1;marketRechecks=marketOpenRetries=marketEmptyRetries=0;marketRefreshDeadline=ticks+600;searchMarket();return;
         }
         // Some AH servers buy on the listing click; others reuse the same handler for confirmation.
         // Observe actual inventory receipt before deciding which menu transition happened.
@@ -4274,7 +4324,7 @@ public final class AutoBuilder extends Module {
             if(marketStage==3){if(ticks>=marketDeadline)finishBuying("Purchase not confirmed in inventory; no retry");else status="Waiting for purchased items";return;}
         }
         if(!(mc.currentScreen instanceof HandledScreen<?> screen)){
-            if(ticks>=marketDeadline)finishBuying(marketStage==2?"No purchase receipt or recognized confirmation; no retry":"Auction menu did not open");return;
+            if(ticks>=marketDeadline){if(marketStage==1)retryMarketSearch("Auction menu did not open",true);else finishBuying("No purchase receipt or recognized confirmation; no retry");}return;
         }
         ScreenHandler handler=screen.getScreenHandler();
         if(!handler.getCursorStack().isEmpty()){if(ticks>=marketDeadline)finishBuying("Buying stopped — cursor is occupied");return;}
@@ -4306,7 +4356,7 @@ public final class AutoBuilder extends Module {
             if(buildBudgetActive)buildBudgetSpent=spent;
             mc.interactionManager.clickSlot(handler.syncId,yes.id,0,SlotActionType.PICKUP,mc.player);marketStage=3;marketWait=buySpacing.getInt();marketDeadline=ticks+160;return;
         }
-        if(!AuctionMarket.word(title,ahTitle.get())){if(ticks>=marketDeadline)finishBuying("Unexpected auction menu title: "+title);return;}
+        if(!AuctionMarket.word(title,ahTitle.get())){if(ticks>=marketDeadline)retryMarketSearch("Unexpected auction menu title: "+title,true);return;}
         ownedHandler=handler;
         var offers=AuctionMarket.offers(handler,mc.player.getInventory(),buyingItem,priceKeyword.get()).stream()
             .filter(o->!boughtListings.contains(handler.syncId+":"+o.slot()+":"+o.total()+":"+o.count())&&!unavailableListings.contains(listingKey(handler,o))).toList();
@@ -4347,7 +4397,9 @@ public final class AutoBuilder extends Module {
             }
         }
         if(estimating&&nextMarketPage(handler))return;
-        if(ticks>=marketDeadline)finishBuying("No suitable listing for "+buyingItem.getName().getString()+" within price / quantity limits");
+        boolean emptyReported=handler.slots.stream().anyMatch(slot->slot.inventory!=mc.player.getInventory()
+            &&AuctionMarket.word(slot.getStack().getName().getString(),"no items found;no results;no listings;no auctions found;no auction items"));
+        if(ticks>=marketDeadline||ticks>=marketContentsAt&&(!offers.isEmpty()||emptyReported))retryMarketSearch("No suitable listing within price / quantity limits",false);
     }
     private boolean nextMarketPage(ScreenHandler handler){
         int limit=maxPages.getInt();
@@ -4358,7 +4410,7 @@ public final class AutoBuilder extends Module {
         }
         if(marketPage<limit)for(var slot:handler.slots){
             if(slot.inventory!=mc.player.getInventory()&&!slot.getStack().isEmpty()&&AuctionMarket.word(slot.getStack().getName().getString(),nextWord.get())&&!AuctionMarket.disabledNext(slot.getStack())){
-                mc.interactionManager.clickSlot(handler.syncId,slot.id,0,SlotActionType.PICKUP,mc.player);marketPage++;marketWait=20;marketDeadline=ticks+160;return true;
+                marketContentsAt=Integer.MAX_VALUE;mc.interactionManager.clickSlot(handler.syncId,slot.id,0,SlotActionType.PICKUP,mc.player);marketPage++;marketWait=20;marketDeadline=ticks+160;return true;
             }
         }
         return false;
@@ -4378,7 +4430,7 @@ public final class AutoBuilder extends Module {
     }
     private void finishBuying(String reason){
         boolean prepared=preparationStage==2&&!estimating,complete=shopping.isEmpty()&&reason.startsWith("Buying finished");
-        buying=false;buyingItem=null;pendingOffer=null;shopping.clear();
+        buying=false;buyingItem=null;pendingOffer=null;shopping.clear();deferredShopping.clear();queuedMarketCommand="";
         if(ownedHandler!=null&&mc.player!=null&&mc.player.currentScreenHandler==ownedHandler)mc.player.closeHandledScreen();ownedHandler=null;status=reason;if(buyNotifications.get())notify(reason);
         if(prepared){preparationStopReason=reason;preparationStage=complete?3:4;depositAll();}
     }

@@ -83,6 +83,7 @@ tasks.register('runProductionClientGameTest', net.fabricmc.loom.task.prod.Client
     jvmArgs.add("-Dmaro.gametest.builderOnly=" + providers.gradleProperty("builderTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.builderAuctionOnly=" + providers.gradleProperty("builderAuctionTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.builderShoppingOnly=" + providers.gradleProperty("builderShoppingTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderRecoveryOnly=" + providers.gradleProperty("builderRecoveryTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.builderNetworkOnly=" + providers.gradleProperty("builderNetworkTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.builderGrimOnly=" + providers.gradleProperty("builderGrimTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.grimFixture=" + providers.gradleProperty("builderGrimFixture").getOrElse(""))
