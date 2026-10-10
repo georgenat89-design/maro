@@ -89,20 +89,20 @@ vec3 fireRamp(float i) {
 
 // How strongly flames burn here: the hand somewhere below (looking down the screen, swayed by the
 // wobble) and how near it is, carved into flickering tongues by noise that rises with time. The
-// screen's y runs downwards here, so below is +y and rising is towards -y.
+// screen's y runs upwards here (0 is the bottom), so below is -y and rising is towards +y.
 float flames(vec2 uv, vec2 px, float t, out float heat) {
     float aspect = px.y / px.x;
     vec2 q = vec2(uv.x * aspect, uv.y);
     float rise = 0.25 + Flame.x * 2.0;
     float reach = 0.04 + Flame.z * 0.2;
-    float sway = (noise(q * vec2(3.0, 1.6) + vec2(-t * 0.35, t * rise * 0.9)) - 0.5) * (0.01 + Flame.y * 0.07);
-    float n = fbm(q * vec2(7.0, 4.5) + vec2(-sway * 6.0, t * rise * 1.4));
+    float sway = (noise(q * vec2(3.0, 1.6) - vec2(t * 0.35, t * rise * 0.9)) - 0.5) * (0.01 + Flame.y * 0.07);
+    float n = fbm(q * vec2(7.0, 4.5) - vec2(sway * 6.0, t * rise * 1.4));
     // Down from here, nearest first: the first step that finds the hand says how far up the flame it is.
     float jitter = hash(uv * 913.7) * 0.8;
     float h = 0.0;
     for (int j = 0; j < 20; j++) {
         float f = (float(j) + jitter) / 20.0;
-        if (handAt(uv + vec2(sway * f * 1.6, f * reach)) > 0.5) {
+        if (handAt(uv + vec2(sway * f * 1.6, -f * reach)) > 0.5) {
             h = 1.0 - f;
             break;
         }
@@ -155,7 +155,7 @@ void main() {
         } else if (mode == 6) {
             // Burning: glowing embers over the hand, brightest where it is lit.
             vec2 q = vec2(uv.x * (px.y / px.x), uv.y);
-            float e = fbm(q * 9.0 + vec2(0.0, t * (0.25 + Flame.x * 2.0) * 1.2));
+            float e = fbm(q * 9.0 - vec2(0.0, t * (0.25 + Flame.x * 2.0) * 1.2));
             fill = fireRamp(0.25 + e * 0.55 + lum * 0.3) * (0.45 + lum * 0.9) * (0.6 + Flame.w * 0.7);
         }
         color = mix(after, fill, Tint.a * cover);
