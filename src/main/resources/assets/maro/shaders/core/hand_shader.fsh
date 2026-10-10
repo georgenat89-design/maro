@@ -108,7 +108,9 @@ float flames(vec2 uv, vec2 px, float t, out float heat) {
         }
     }
     heat = n;
-    return clamp(h * 1.3 - (1.0 - n) * 0.95 + 0.05, 0.0, 1.0);
+    // Stretched so the tongues reach most of the way up, then carved by the noise.
+    float tall = pow(h, 0.6);
+    return clamp(tall * 1.55 - (1.0 - n) * 1.0, 0.0, 1.0);
 }
 
 void main() {
@@ -174,7 +176,7 @@ void main() {
         float heat;
         float fire = flames(uv, px, t, heat);
         float bright = 0.5 + Flame.w * 1.3;
-        vec3 flame = fireRamp(fire * (0.75 + heat * 0.4)) * fire * bright * (0.35 + Tint.a);
+        vec3 flame = fireRamp(fire * (0.8 + heat * 0.35)) * smoothstep(0.02, 0.35, fire) * bright * (0.4 + Tint.a);
         color += flame * (1.0 - cover * 0.65);
     }
     fragColor = vec4(color, 1.0);
