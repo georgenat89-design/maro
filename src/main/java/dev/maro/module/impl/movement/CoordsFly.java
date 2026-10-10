@@ -679,7 +679,7 @@ public class CoordsFly extends Module implements HudElement {
             Fonts.draw(ctx, coordsText(t), 10, yy, 0xFFDCE0E8, true, 0.6f);
             if (t.hasY()) {
                 long dy = Math.round(t.y() - mc.player.getY());
-                String climb = dy == 0 ? "level" : (dy > 0 ? "↑ " : "↓ ") + Math.abs(dy) + " m";
+                String climb = dy == 0 ? "level" : (dy > 0 ? "up " : "down ") + Math.abs(dy) + " m";
                 Fonts.drawRight(ctx, climb, w - 10, yy + Fonts.height(0.56f) / 2f, dy >= 0 ? 0xFF8FD3FF : 0xFFFFC27A, true, 0.56f);
             }
             yy += 11;

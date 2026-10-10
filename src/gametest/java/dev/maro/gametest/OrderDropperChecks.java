@@ -29,7 +29,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Order Dropper against a stand-in DonutSMP: /orders opens a small-caps "Orders" menu whose orders
+ * Order Dropper against a stand-in DonutSMP. Collect &amp; Drop goes /orders, Your Orders, the order,
+ * Collect Items and throws every stack out, page after page, for every order, never touching your own
+ * items. Selling: /orders <item> opens a small-caps "Orders" menu whose orders
  * say "$150 each" and "16/20 Delivered", clicking one opens a delivery window that takes what the
  * order still wants when it closes and hands the rest back, and /ah sells listings behind a
  * confirmation. Selling fills the best-paying order first and goes on to the next; flipping buys
@@ -54,6 +56,25 @@ final class OrderDropperChecks {
         }
     }
 
+    /** One of your own orders on the stand-in server, with what has been delivered and not collected yet. */
+    private static final class Own {
+        final Item item;
+        final List<ItemStack> waiting = new ArrayList<>();
+
+        Own(Item item, int stacks) {
+            this.item = item;
+            for (int i = 0; i < stacks; i++) waiting.add(new ItemStack(item, 64));
+        }
+
+        int left() {
+            int n = 0;
+            for (ItemStack stack : waiting) if (stack != null) n += stack.getCount();
+            return n;
+        }
+    }
+
+    private static final List<Own> own = new ArrayList<>();
+    private static int thrownOnServer;
     private static final List<Order> orders = new ArrayList<>();
     private static final List<ItemStack> listings = new ArrayList<>();
     private static final List<Integer> prices = new ArrayList<>();
@@ -78,6 +99,95 @@ final class OrderDropperChecks {
     }
 
     // ---- the stand-in server ------------------------------------------------------------------
+
+    /** /orders as on DonutSMP: everyone's orders, with Your Orders (a chest) in the bottom row. */
+    private static void openMain(ServerPlayerEntity player) {
+        SimpleInventory menu = new SimpleInventory(54);
+        Item[] others = {Items.DIRT, Items.BONE, Items.OAK_LOG, Items.CHEST, Items.IRON_INGOT, Items.SAND};
+        for (int i = 0; i < 30; i++) menu.setStack(i, named(others[i % others.length], null, "§a$" + (10 + i) + " ᴇᴀᴄʜ", "Click to deliver"));
+        menu.setStack(47, named(Items.HOPPER, "Sort"));
+        menu.setStack(48, named(Items.AMETHYST_SHARD, "Filter"));
+        menu.setStack(49, named(Items.BOOK, "Help"));
+        menu.setStack(50, named(Items.OAK_SIGN, "Search"));
+        menu.setStack(51, named(Items.CHEST, "ʏᴏᴜʀ ᴏʀᴅᴇʀꜱ"));
+        menu.setStack(53, named(Items.ARROW, "Next Page"));
+        player.openHandledScreen(new SimpleNamedScreenHandlerFactory((syncId, inventory, owner) ->
+                new GenericContainerScreenHandler(ScreenHandlerType.GENERIC_9X6, syncId, inventory, menu, 6) {
+                    @Override
+                    public void onSlotClick(int slot, int button, SlotActionType action, PlayerEntity entity) {
+                        if (slot == 51) openYours(player);
+                        else syncState();
+                    }
+                }, Text.literal("Orders (Page 1)")));
+    }
+
+    private static void openYours(ServerPlayerEntity player) {
+        SimpleInventory menu = new SimpleInventory(54);
+        for (int i = 0; i < own.size(); i++) menu.setStack(i, named(own.get(i).item, null, "Click to edit"));
+        for (int i = 18; i < 45; i++) menu.setStack(i, named(Items.RED_STAINED_GLASS_PANE, "Locked"));
+        menu.setStack(47, named(Items.HOPPER, "Sort"));
+        menu.setStack(51, named(Items.CHEST, "ʏᴏᴜʀ ᴏʀᴅᴇʀꜱ"));
+        player.openHandledScreen(new SimpleNamedScreenHandlerFactory((syncId, inventory, owner) ->
+                new GenericContainerScreenHandler(ScreenHandlerType.GENERIC_9X6, syncId, inventory, menu, 6) {
+                    @Override
+                    public void onSlotClick(int slot, int button, SlotActionType action, PlayerEntity entity) {
+                        if (slot >= 0 && slot < own.size()) openEdit(player, own.get(slot));
+                        else syncState();
+                    }
+                }, Text.literal("Orders -> Your Orders")));
+    }
+
+    private static void openEdit(ServerPlayerEntity player, Own order) {
+        SimpleInventory menu = new SimpleInventory(27);
+        for (int i : new int[] {0, 1, 2, 9, 11, 18, 19, 20}) menu.setStack(i, named(Items.GRAY_STAINED_GLASS_PANE, " "));
+        menu.setStack(10, new ItemStack(order.item));
+        menu.setStack(13, named(Items.CHEST, "ᴄᴏʟʟᴇᴄᴛ ɪᴛᴇᴍꜱ"));
+        player.openHandledScreen(new SimpleNamedScreenHandlerFactory((syncId, inventory, owner) ->
+                new GenericContainerScreenHandler(ScreenHandlerType.GENERIC_9X3, syncId, inventory, menu, 3) {
+                    @Override
+                    public void onSlotClick(int slot, int button, SlotActionType action, PlayerEntity entity) {
+                        if (slot == 13) openCollect(player, order, 0);
+                        else syncState();
+                    }
+                }, Text.literal("Orders -> Edit Order")));
+    }
+
+    /** Collect Items: 45 stacks a page, previous and next arrows in the bottom row; Ctrl+Q throws a stack out. */
+    private static void openCollect(ServerPlayerEntity player, Own order, int page) {
+        SimpleInventory menu = new SimpleInventory(54);
+        Runnable fill = () -> {
+            for (int i = 0; i < 45; i++) {
+                int at = page * 45 + i;
+                ItemStack stack = at < order.waiting.size() ? order.waiting.get(at) : null;
+                menu.setStack(i, stack == null ? ItemStack.EMPTY : stack.copy());
+            }
+            menu.setStack(45, page > 0 ? named(Items.ARROW, "Previous Page") : ItemStack.EMPTY);
+            menu.setStack(51, named(Items.EMERALD, "Info"));
+            menu.setStack(52, new ItemStack(order.item));
+            menu.setStack(53, (page + 1) * 45 < order.waiting.size() ? named(Items.ARROW, "Next Page") : ItemStack.EMPTY);
+        };
+        fill.run();
+        player.openHandledScreen(new SimpleNamedScreenHandlerFactory((syncId, inventory, owner) ->
+                new GenericContainerScreenHandler(ScreenHandlerType.GENERIC_9X6, syncId, inventory, menu, 6) {
+                    @Override
+                    public void onSlotClick(int slot, int button, SlotActionType action, PlayerEntity entity) {
+                        int at = page * 45 + slot;
+                        if (slot >= 0 && slot < 45 && at < order.waiting.size() && order.waiting.get(at) != null && action == SlotActionType.THROW) {
+                            ItemStack stack = order.waiting.set(at, null);
+                            thrownOnServer += stack.getCount();
+                            player.dropItem(stack, false, true);
+                            menu.setStack(slot, ItemStack.EMPTY);
+                        } else if (slot == 53 && !menu.getStack(53).isEmpty()) {
+                            openCollect(player, order, page + 1);
+                            return;
+                        } else if (slot == 45 && page > 0) {
+                            openCollect(player, order, page - 1);
+                            return;
+                        }
+                        syncState();
+                    }
+                }, Text.literal("Orders -> Collect Items")));
+    }
 
     private static void openOrders(ServerPlayerEntity player) {
         SimpleInventory menu = new SimpleInventory(27);
@@ -189,7 +299,10 @@ final class OrderDropperChecks {
 
         world.getServer().computeOnServer(server -> {
             var dispatcher = server.getCommandManager().getDispatcher();
-            dispatcher.register(CommandManager.literal("orders").then(CommandManager.argument("query", StringArgumentType.greedyString())
+            dispatcher.register(CommandManager.literal("orders").executes(command -> {
+                        if (command.getSource().getPlayer() != null) openMain(command.getSource().getPlayer());
+                        return 1;
+                    }).then(CommandManager.argument("query", StringArgumentType.greedyString())
                     .executes(command -> {
                         if (command.getSource().getPlayer() != null) openOrders(command.getSource().getPlayer());
                         return 1;
@@ -204,6 +317,58 @@ final class OrderDropperChecks {
         });
 
         try {
+            // ---- collect and drop, as on DonutSMP: /orders, Your Orders, the order, Collect Items, throw
+            // everything out page by page. Stone has 65 stacks waiting (two pages), cobblestone 10.
+            world.getServer().runOnServer(server -> {
+                own.clear();
+                own.add(new Own(Items.STONE, 65));
+                own.add(new Own(Items.COBBLESTONE, 10));
+                thrownOnServer = 0;
+            });
+            world.getServer().runCommand("clear @a");
+            world.getServer().runCommand("give @a minecraft:diamond_sword");
+            context.waitTicks(5);
+            context.runOnClient(c -> {
+                module.getSettings().forEach(Setting::reset);
+                module.setEnabled(true);
+            });
+            boolean seenCollect = false;
+            for (int i = 0; i < 40 && !seenCollect; i++) {
+                context.waitTick();
+                seenCollect = context.computeOnClient(c -> c.currentScreen != null && c.currentScreen.getTitle().getString().contains("Collect"));
+            }
+            require(seenCollect, "Order Dropper did not get to Collect Items: " + context.computeOnClient(c -> module.status()));
+            context.takeScreenshot("maro-order-dropper-collect");
+            for (int i = 0; i < 120 && context.computeOnClient(c -> module.isEnabled()); i++) context.waitTicks(5);
+            String dropResult = context.computeOnClient(c -> module.result());
+            int thrown = world.getServer().computeOnServer(s -> thrownOnServer);
+            System.out.println("ORDER DROPPER drop: " + dropResult + " | server thrown " + thrown);
+            require(!context.computeOnClient(c -> module.isEnabled()), "Order Dropper did not finish dropping: " + context.computeOnClient(c -> module.status()));
+            require(thrown == 75 * 64, "Not every stack was thrown out: " + thrown + " of " + 75 * 64 + " · " + dropResult);
+            require(world.getServer().computeOnServer(s -> own.get(0).left() == 0 && own.get(1).left() == 0), "An order still has items waiting");
+            require(context.computeOnClient(c -> module.ordersEmptied()) == 2 && context.computeOnClient(c -> module.droppedCount()) == 75 * 64,
+                    "The count is off: " + dropResult);
+            require(context.computeOnClient(c -> c.player.getInventory().count(Items.DIAMOND_SWORD)) == 1, "Your own sword was thrown out");
+            world.getServer().runCommand("kill @e[type=minecraft:item]");
+
+            // Only the order for the picked item: the stone order is left alone.
+            world.getServer().runOnServer(server -> {
+                own.clear();
+                own.add(new Own(Items.STONE, 3));
+                own.add(new Own(Items.COBBLESTONE, 4));
+                thrownOnServer = 0;
+            });
+            context.runOnClient(c -> {
+                ((dev.maro.setting.ModeSetting) setting(module, "Orders To Empty")).set("Picked Item");
+                ((TextSetting) setting(module, "Item")).set("minecraft:cobblestone");
+                module.setEnabled(true);
+            });
+            for (int i = 0; i < 80 && context.computeOnClient(c -> module.isEnabled()); i++) context.waitTicks(5);
+            require(world.getServer().computeOnServer(s -> own.get(0).left() == 3 * 64 && own.get(1).left() == 0),
+                    "Picked Item emptied the wrong order: " + context.computeOnClient(c -> module.result()));
+            world.getServer().runCommand("kill @e[type=minecraft:item]");
+            context.runOnClient(c -> module.getSettings().forEach(Setting::reset));
+
             // ---- selling: the $150 order (wanting 4) first, then the $100 one (wanting 32)
             world.getServer().runOnServer(server -> {
                 orders.clear();
@@ -218,13 +383,14 @@ final class OrderDropperChecks {
             context.waitTicks(5);
             context.runOnClient(c -> {
                 module.getSettings().forEach(Setting::reset);
+                ((dev.maro.setting.ModeSetting) setting(module, "Mode")).set("Sell To Orders");
                 ((BooleanSetting) setting(module, "Use Held Item")).set(false);
                 ((TextSetting) setting(module, "Item")).set("minecraft:diamond");
                 ((NumberSetting) setting(module, "Action Delay")).set(1.0);
                 module.setEnabled(true);
             });
             context.waitTicks(10);
-            context.takeScreenshot("maro-order-dropper");
+            context.takeScreenshot("maro-order-dropper-sell");
             for (int i = 0; i < 120 && context.computeOnClient(c -> module.isEnabled()); i++) context.waitTicks(5);
             String sellResult = context.computeOnClient(c -> module.result());
             System.out.println("ORDER DROPPER sell: " + sellResult + " | server delivered " + world.getServer().computeOnServer(s -> delivered));
