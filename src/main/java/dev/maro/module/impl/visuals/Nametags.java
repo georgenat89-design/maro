@@ -200,7 +200,7 @@ public class Nametags extends Module {
         try {
             for (PlayerEntity p : players) {
                 Vec3d at = p.getLerpedPos(tickDelta);
-                float[] screen = BlockEspRenderer.toScreen(at.x, at.y + p.getHeight() + 0.45, at.z, camera, w, h);
+                float[] screen = BlockEspRenderer.toScreen(at.x, at.y + tagHeight(p), at.z, camera, w, h);
                 double dist = Math.sqrt(p.squaredDistanceTo(camera));
                 if (screen == null || screen[0] < 0 || screen[0] > w || screen[1] < 0 || screen[1] > h) {
                     if (edgeTags.get() && edges.size() < 12) drawEdge(ctx, p, camera, w, h, dist, edges);
@@ -212,6 +212,14 @@ public class Nametags extends Module {
         } finally {
             Fonts.endRaw();
         }
+    }
+
+    /**
+     * How far above their feet the tag sits: over their head as if standing, since a player flying
+     * with an elytra, swimming or crawling is only 0.6 tall and a tag from there would sit on their body.
+     */
+    public double tagHeight(PlayerEntity p) {
+        return Math.max(p.getHeight(), p.getDimensions(net.minecraft.entity.EntityPose.STANDING).height()) + 0.45;
     }
 
     private void draw(DrawContext ctx, PlayerEntity p, float x, float y, float s, double dist) {

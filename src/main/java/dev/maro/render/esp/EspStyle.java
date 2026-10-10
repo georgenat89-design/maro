@@ -1,7 +1,7 @@
 package dev.maro.render.esp;
 
 /**
- * How one ESP module wants its tracers and glow drawn. Block ESP, Storage ESP and Hole ESP share one
+ * How one ESP module wants its tracers and glow drawn. Block ESP and Storage ESP share one
  * renderer; each tracer remembers the module that queued it and is drawn in that module's style.
  */
 public interface EspStyle {

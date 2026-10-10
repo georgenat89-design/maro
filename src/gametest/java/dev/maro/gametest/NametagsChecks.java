@@ -92,6 +92,17 @@ final class NametagsChecks {
             context.runOnClient(c -> {((ModeSetting) setting(tags, "Font")).set("Client");((ModeSetting) setting(tags, "Gear Style")).set("Cards");});
             context.runOnClient(c -> ((BooleanSetting) setting(tags, "Enchants")).set(true));
 
+            // Lying flat (as when flying with an elytra or swimming), the tag stays over their head, not on their body.
+            context.runOnClient(c -> {
+                double standing = tags.tagHeight(fake);
+                fake.setPose(net.minecraft.entity.EntityPose.SWIMMING);
+                require(fake.getHeight() < 1, "The fake player did not lie flat: " + fake.getHeight());
+                require(Math.abs(tags.tagHeight(fake) - standing) < 0.01, "Lying flat moved the tag down onto the body: "
+                        + tags.tagHeight(fake) + " instead of " + standing);
+                require(!tags.describe(fake).contains("0ms"), "A ping the server does not give reads 0ms: " + tags.describe(fake));
+                fake.setPose(net.minecraft.entity.EntityPose.STANDING);
+            });
+
             // A popped totem counts.
             for (int i = 0; i < 20 && context.computeOnClient(c -> tags.popsOf(fake)) == 0; i++) {
                 context.runOnClient(c -> c.interactionManager.attackEntity(c.player, fake));

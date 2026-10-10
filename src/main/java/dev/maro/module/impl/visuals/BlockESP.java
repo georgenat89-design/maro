@@ -229,7 +229,7 @@ public class BlockESP extends Module implements dev.maro.render.esp.EspStyle {
         this("Block ESP", "Boxes round the blocks you pick through walls, with glowing tracers, bloom and a Y limit");
     }
 
-    /** For the modules built on this one (Storage ESP, Hole ESP): the same settings, their own name. */
+    /** For the modules built on this one (Storage ESP): the same settings, their own name. */
     protected BlockESP(String name, String description) {
         super(name, description, Category.VISUALS);
         if (getClass() == BlockESP.class && instance == null) instance = this;
