@@ -26,6 +26,11 @@ final class RenderCompatibilityChecks {
             PlayerEspChecks.run(context, world);
             TrajectoriesChecks.run(context, world);
             NametagsChecks.run(context);
+            GuiMeshChecks.run(context);
+            ArmorHudChecks.run(context, world);
+            HudReadabilityChecks.run(context);
+            SpotifyPhoneChecks.run(context);
+            OrderDropperChecks.run(context, world);
             System.out.println("[render-compat] Individual renderers passed");
         }
         System.out.println("[render-compat] Enabling combined visuals");

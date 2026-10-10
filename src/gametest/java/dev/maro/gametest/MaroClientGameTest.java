@@ -30,18 +30,26 @@ public class MaroClientGameTest implements FabricClientGameTest {
         });
 
         if(Boolean.getBoolean("maro.gametest.builderGrimOnly")){BuilderGrimChecks.run(context);return;}
+        if (Boolean.getBoolean("maro.gametest.renderCompatOnly")) {
+            int passes = Boolean.getBoolean("maro.gametest.renderCompatProfileOnly") ? 3 : 1;
+            for (int pass = 0; pass < passes; pass++) {
+                try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
+                    // Companion chunk scanners keep scheduling rebuilds after the world is ready.
+                    context.waitTicks(40);
+                    context.setScreen(() -> null);
+                    context.waitTicks(5);
+                    RenderCompatibilityChecks.run(context, singleplayer);
+                }
+                System.out.println("[render-compat] World join/leave pass " + (pass + 1) + "/" + passes);
+            }
+            return;
+        }
         try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
-            // Companion chunk scanners can keep scheduling rebuilds indefinitely.
-            if (Boolean.getBoolean("maro.gametest.renderCompatOnly")) context.waitTicks(40);
-            else singleplayer.getClientWorld().waitForChunksRender();
+            singleplayer.getClientWorld().waitForChunksRender();
 
             // make sure nothing (pause menu, toasts...) is in the way before testing the keybind
             context.setScreen(() -> null);
             context.waitTicks(5);
-            if (Boolean.getBoolean("maro.gametest.renderCompatOnly")) {
-                RenderCompatibilityChecks.run(context, singleplayer);
-                return;
-            }
             if (Boolean.getBoolean("maro.gametest.acOffOnly")) {
                 AutoTridentChecks.run(context, singleplayer);
                 AntiCheatOffChecks.run(context, singleplayer);

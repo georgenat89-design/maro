@@ -12,10 +12,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class RenderBufferProbe {
     @Inject(method="beginVertex", at=@At("RETURN"))
     private void maroTest$vertexPointer(CallbackInfoReturnable<Long> result) {
-        if (result.getReturnValue() == 0) throw new AssertionError("Null native vertex allocation");
+        if (result.getReturnValue() == 0) dev.maro.gametest.RenderFaultChecks.fail("Null native vertex allocation");
     }
     @Inject(method="beginElement", at=@At("RETURN"))
     private void maroTest$elementPointer(VertexFormatElement element, CallbackInfoReturnable<Long> result) {
-        if (result.getReturnValue() == 0) throw new AssertionError("Null native vertex attribute: " + element);
+        if (result.getReturnValue() == 0) dev.maro.gametest.RenderFaultChecks.fail("Null native vertex attribute: " + element);
     }
 }
