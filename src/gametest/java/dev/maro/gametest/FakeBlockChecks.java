@@ -54,6 +54,21 @@ final class FakeBlockChecks {
                 ItemStack shown = FakeBlock.itemLook(new ItemStack(Items.GOLD_BLOCK));
                 require(shown != null && Items.DIAMOND_BLOCK.getComponents().get(DataComponentTypes.ITEM_MODEL).equals(shown.get(DataComponentTypes.ITEM_MODEL)),
                         "A gold block item is not drawn as diamond");
+                // Use Its Name: called a Block of Diamond; a stack named by hand keeps its name; off, its own.
+                String diamond = Items.DIAMOND_BLOCK.getName().getString(), gold = Items.GOLD_BLOCK.getName().getString();
+                require(new ItemStack(Items.GOLD_BLOCK).getName().getString().equals(diamond),
+                        "A gold block is not called " + diamond + ": " + new ItemStack(Items.GOLD_BLOCK).getName().getString());
+                ItemStack named = new ItemStack(Items.GOLD_BLOCK);
+                named.set(DataComponentTypes.CUSTOM_NAME, net.minecraft.text.Text.literal("Mine"));
+                require(named.getName().getString().equals("Mine"), "A named stack lost its name");
+                module.getSettings().stream().filter(s -> s.getName().equals("Use Its Name")).findFirst()
+                        .ifPresent(s -> ((dev.maro.setting.BooleanSetting) s).set(false));
+                require(new ItemStack(Items.GOLD_BLOCK).getName().getString().equals(gold), "With Use Its Name off, gold kept the other's name");
+                // Enchanted works for any look, a block as well as gear.
+                module.getSettings().stream().filter(s -> s.getName().equals("Enchanted")).findFirst()
+                        .ifPresent(s -> ((dev.maro.setting.BooleanSetting) s).set(true));
+                ItemStack shiny = FakeBlock.itemLook(new ItemStack(Items.GOLD_BLOCK));
+                require(shiny != null && Boolean.TRUE.equals(shiny.get(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE)), "A block look did not shine as enchanted");
                 module.setSource(Items.GOLDEN_SWORD);
                 module.setReplace(Items.NETHERITE_SWORD);
                 module.getSettings().stream().filter(s -> s.getName().equals("Enchanted")).findFirst()

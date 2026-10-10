@@ -85,11 +85,54 @@ final class BlockEspChecks {
             BufferedImage plain = read(context.takeScreenshot("maro-block-esp-off"));
             context.runOnClient(c -> module.setEnabled(true));
 
-            // Spawners, chests and diamonds are on by default, and the Y limit keeps to Y 0 and below.
+            // Spawners and diamonds are on by default, and the Y limit keeps to Y 0 and below.
             long searching = System.nanoTime();
-            await(context, () -> module.shownPositions().containsAll(List.of(SPAWNER, CHEST, DIAMOND)),
-                    "Block ESP did not find the underground spawner, chest and diamond ore: " + context.computeOnClient(c -> module.shownPositions()));
+            await(context, () -> module.shownPositions().containsAll(List.of(SPAWNER, DIAMOND)),
+                    "Block ESP did not find the underground spawner and diamond ore: " + context.computeOnClient(c -> module.shownPositions()));
             System.out.printf(Locale.ROOT, "BLOCK ESP found the blocks after %.0f ms%n", (System.nanoTime() - searching) / 1e6);
+            // Every block gets a tracer by default; a config saved on the old grouping moves over once.
+            context.runOnClient(c -> {
+                require(module.tracerTargets() == module.shownPositions().size(),
+                        "Not every block has a tracer: " + module.tracerTargets() + " of " + module.shownPositions().size());
+                var tracerTo = (dev.maro.setting.ModeSetting) setting(module, "Tracer To");
+                tracerTo.set("Each Group");
+                var copy = new BlockESP();
+                copy.getSettings().stream().filter(s -> s.getName().equals("Tracer To")).findFirst()
+                        .ifPresent(s -> ((dev.maro.setting.ModeSetting) s).set("Each Group"));
+                copy.loadExtra(new com.google.gson.JsonObject());
+                require(copy.getSettings().stream().anyMatch(s -> s.getName().equals("Tracer To") && ((dev.maro.setting.ModeSetting) s).is("Each Block")),
+                        "An old config's Each Group did not move to Each Block");
+                tracerTo.reset();
+            });
+            // Storage is Storage ESP's now: Block ESP neither finds nor offers it; Storage ESP finds the chest.
+            require(context.computeOnClient(c -> !module.shownPositions().contains(CHEST) && !module.allows(net.minecraft.block.Blocks.CHEST)
+                    && !module.isPicked(net.minecraft.block.Blocks.CHEST)), "Block ESP still finds chests");
+            dev.maro.module.impl.visuals.StorageESP storage = ModuleManager.get(dev.maro.module.impl.visuals.StorageESP.class);
+            require(storage != null, "Storage ESP was not registered");
+            context.runOnClient(c -> {
+                storage.getSettings().forEach(Setting::reset);
+                storage.resetBlocks();
+                require(storage.isPicked(net.minecraft.block.Blocks.CHEST) && storage.isPicked(net.minecraft.block.Blocks.BARREL)
+                        && !storage.allows(net.minecraft.block.Blocks.SPAWNER), "Storage ESP's pick is not storage: " + storage.pickedBlocks());
+                storage.setEnabled(true);
+            });
+            await(context, () -> storage.shownPositions().contains(CHEST) && !storage.shownPositions().contains(SPAWNER),
+                    "Storage ESP did not find the chest (alone): " + context.computeOnClient(c -> storage.shownPositions()));
+            context.waitTicks(5);
+            context.takeScreenshot("maro-storage-esp");
+            // An old Block ESP config that picked chests gives them up on loading.
+            context.runOnClient(c -> {
+                storage.setEnabled(false);
+                var old = new com.google.gson.JsonObject();
+                var blocks = new com.google.gson.JsonObject();
+                blocks.addProperty("minecraft:chest", "#FFA733");
+                blocks.addProperty("minecraft:spawner", "#FF3B6B");
+                old.add("blocks", blocks);
+                var copy = new BlockESP();
+                copy.loadExtra(old);
+                require(copy.isPicked(net.minecraft.block.Blocks.SPAWNER) && !copy.isPicked(net.minecraft.block.Blocks.CHEST),
+                        "An old Block ESP pick kept its chests: " + copy.pickedBlocks());
+            });
             require(context.computeOnClient(c -> !module.shownPositions().contains(HIGH_SPAWNER)), "A spawner above the Y limit was drawn");
             context.waitTicks(10);
             int withBloom = changed(plain, read(context.takeScreenshot("maro-block-esp")));

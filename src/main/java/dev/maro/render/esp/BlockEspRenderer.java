@@ -12,8 +12,6 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.FilterMode;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import dev.maro.Maro;
-import dev.maro.module.ModuleManager;
-import dev.maro.module.impl.visuals.BlockESP;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.gl.SimpleFramebuffer;
@@ -28,6 +26,8 @@ import org.lwjgl.BufferUtils;
 import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.OptionalInt;
 
 /**
@@ -120,20 +120,19 @@ public final class BlockEspRenderer {
     private static GpuBuffer tracerUniforms, glowUniforms;
     /** How many batches tracerUniforms has room for, two slices each (the bloom pass and the frame). */
     private static int tracerBatches;
-    private static BlockESP module;
+    /** The module that queued each tracer, so each is drawn in its own module's style. */
+    private static final EspStyle[] owners = new EspStyle[MAX_TRACERS];
+    /** The modules that drew into the glow target this frame. */
+    private static final java.util.List<EspStyle> glowing = new java.util.ArrayList<>();
 
     private BlockEspRenderer() {
-    }
-
-    private static BlockESP module() {
-        if (module == null) module = ModuleManager.get(BlockESP.class);
-        return module;
     }
 
     /** Start of world rendering: forget last frame's tracers and remember the matrices. */
     public static void beginFrame(Matrix4f positionMatrix, Matrix4f projectionMatrix) {
         count = 0;
         glowDrawn = false;
+        glowing.clear();
         viewProjection.set(projectionMatrix).mul(positionMatrix);
         frustum.set(viewProjection);
         haveMatrices = true;
@@ -163,8 +162,13 @@ public final class BlockEspRenderer {
         return glow;
     }
 
-    /** Makes the glow target the size of the frame and clears it, ready for this frame's boxes. */
-    public static void prepareGlow() {
+    /**
+     * Makes the glow target the size of the frame and clears it, ready for this frame's boxes; the
+     * first module to glow in a frame clears it, the others add to it.
+     */
+    public static void prepareGlow(EspStyle owner) {
+        if (!glowing.contains(owner)) glowing.add(owner);
+        if (glowDrawn) return;
         Framebuffer main = mc.getFramebuffer();
         int width = main.textureWidth, height = main.textureHeight;
         if (width <= 0 || height <= 0) return;
@@ -184,7 +188,7 @@ public final class BlockEspRenderer {
     }
 
     /** Queues a tracer to the point {@code (x, y, z)}. */
-    public static void addTracer(double x, double y, double z, Vec3d camera, int color, float weight) {
+    public static void addTracer(EspStyle owner, double x, double y, double z, Vec3d camera, int color, float weight) {
         if (!haveMatrices || count >= MAX_TRACERS) return;
         Vector4f p = new Vector4f((float) (x - camera.x), (float) (y - camera.y), (float) (z - camera.z), 1f);
         viewProjection.transform(p);
@@ -206,6 +210,7 @@ public final class BlockEspRenderer {
         targets[count * 2] = nx;
         targets[count * 2 + 1] = ny;
         colors[count] = color;
+        owners[count] = owner;
         weights[count++] = weight;
     }
 
@@ -218,56 +223,97 @@ public final class BlockEspRenderer {
 
     /** Bloom, then tracers, over the frame. Called after the world and hand, before the interface. */
     public static void composite() {
-        BlockESP m = module();
         int tracers = count;
         boolean bloom = glowDrawn;
         count = 0;
         glowDrawn = false;
-        if (m == null || !m.isEnabled() || mc.world == null || (tracers == 0 && !bloom)) return;
+        List<EspStyle> glows = new ArrayList<>(glowing);
+        glowing.clear();
+        if (mc.world == null || (tracers == 0 && !bloom)) return;
 
         Framebuffer main = mc.getFramebuffer();
         if (main == null || main.getColorAttachmentView() == null) return;
-        try {
-            float[][] lines = tracers > 0 ? lines(tracers, main.textureWidth, main.textureHeight) : null;
-            if (bloom && glow != null) {
-                if (tracers > 0 && m.tracerBloom()) drawTracers(glow, lines, tracers, true);
-                bloom(main, m);
+        // The tracers, grouped by the module that queued them, each group in that module's style.
+        List<EspStyle> styles = new ArrayList<>();
+        List<int[]> groups = new ArrayList<>();
+        for (int i = 0; i < tracers; i++) {
+            int at = styles.indexOf(owners[i]);
+            if (at < 0) {
+                styles.add(owners[i]);
+                groups.add(new int[] {0});
+                at = styles.size() - 1;
             }
-            if (tracers > 0) drawTracers(main, lines, tracers, false);
+            groups.get(at)[0]++;
+        }
+        int[][] members = new int[styles.size()][];
+        for (int g = 0; g < styles.size(); g++) members[g] = new int[groups.get(g)[0]];
+        int[] filled = new int[styles.size()];
+        for (int i = 0; i < tracers; i++) {
+            int g = styles.indexOf(owners[i]);
+            members[g][filled[g]++] = i;
+        }
+        int totalBatches = 0;
+        int[] firstBatch = new int[styles.size()];
+        for (int g = 0; g < styles.size(); g++) {
+            firstBatch[g] = totalBatches;
+            totalBatches += (members[g].length + BATCH - 1) / BATCH;
+        }
+        try {
+            ensureTracerBuffer(totalBatches);
+            if (bloom && glow != null) {
+                for (int g = 0; g < styles.size(); g++) {
+                    if (styles.get(g).tracerBloom()) drawTracers(glow, styles.get(g), members[g], firstBatch[g], true);
+                }
+                float strength = 0, size = 0;
+                for (EspStyle style : glows) {
+                    if (!style.bloomOn()) continue;
+                    strength = Math.max(strength, style.bloomStrength());
+                    size = Math.max(size, style.bloomSize());
+                }
+                if (strength > 0) bloom(main, strength, size);
+            }
+            for (int g = 0; g < styles.size(); g++) drawTracers(main, styles.get(g), members[g], firstBatch[g], false);
         } catch (RuntimeException e) {
-            // One bad frame must not take the renderer down; the module reports and switches off.
-            m.renderFailed(e);
+            // One bad frame must not take the renderer down; the modules report and switch off.
+            List<EspStyle> involved = new ArrayList<>(styles);
+            for (EspStyle style : glows) if (!involved.contains(style)) involved.add(style);
+            for (EspStyle style : involved) style.renderFailed(e);
         }
     }
 
-    /** Each tracer as {x0, y0, x1, y1} in framebuffer pixels, from the start point to the block. */
-    private static float[][] lines(int n, int width, int height) {
+    private static void ensureTracerBuffer(int batches) {
+        if (tracerUniforms != null && tracerBatches >= batches) return;
+        if (tracerUniforms != null) tracerUniforms.close();
+        tracerBatches = Math.max(batches, 4);
+        tracerUniforms = RenderSystem.getDevice().createBuffer(() -> "maro block esp tracers",
+            GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST, (long) TRACER_STRIDE * 2 * tracerBatches);
+    }
+
+    /** One module's tracers, {x0, y0, x1, y1} in framebuffer pixels, from its start point to each block. */
+    private static float[][] lines(EspStyle style, int[] members, int width, int height) {
         float halfW = width / 2f, halfH = height / 2f;
-        float startX = halfW, startY = module().tracersFromBottom() ? 0f : halfH;
-        float[][] lines = new float[n][];
-        for (int i = 0; i < n; i++) {
-            lines[i] = new float[] {startX, startY, (targets[i * 2] + 1) * halfW, (targets[i * 2 + 1] + 1) * halfH};
+        float startX = halfW, startY = style.tracersFromBottom() ? 0f : halfH;
+        float[][] lines = new float[members.length][];
+        for (int k = 0; k < members.length; k++) {
+            int i = members[k];
+            lines[k] = new float[] {startX, startY, (targets[i * 2] + 1) * halfW, (targets[i * 2 + 1] + 1) * halfH};
         }
         return lines;
     }
 
-    private static void drawTracers(Framebuffer target, float[][] lines, int n, boolean coreOnly) {
+    private static void drawTracers(Framebuffer target, EspStyle m, int[] members, int batchBase, boolean coreOnly) {
+        int n = members.length;
+        if (n == 0) return;
         int height = target.textureHeight;
-        BlockESP m = module();
+        float[][] lines = lines(m, members, target.textureWidth, height);
         float width = m.tracerWidthPx(height);
         int batches = (n + BATCH - 1) / BATCH;
-        if (tracerUniforms == null || tracerBatches < batches) {
-            if (tracerUniforms != null) tracerUniforms.close();
-            tracerBatches = Math.max(batches, 4);
-            tracerUniforms = RenderSystem.getDevice().createBuffer(() -> "maro block esp tracers",
-                GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST, (long) TRACER_STRIDE * 2 * tracerBatches);
-        }
         // Tracers go in batches of BATCH, each its own draw with its own slice of the uniforms.
         for (int batch = 0; batch < batches; batch++) {
             int first = batch * BATCH, k = Math.min(BATCH, n - first);
             for (int i = 0; i < k; i++) writeTracerQuad(i, lines[first + i], width, target.textureWidth, height);
 
-            GpuBufferSlice data = tracerUniforms.slice((long) (batch * 2 + (coreOnly ? 1 : 0)) * TRACER_STRIDE, TRACER_BYTES);
+            GpuBufferSlice data = tracerUniforms.slice((long) ((batchBase + batch) * 2 + (coreOnly ? 1 : 0)) * TRACER_STRIDE, TRACER_BYTES);
             ByteBuffer bytes = MemoryUtil.memCalloc(TRACER_BYTES);
             try {
                 bytes.putFloat(0, k);
@@ -280,11 +326,12 @@ public final class BlockEspRenderer {
                 bytes.putFloat(28, coreOnly ? 1f : 0f);
                 for (int i = 0; i < k; i++) {
                     for (int c = 0; c < 4; c++) bytes.putFloat(LINES_AT + i * 16 + c * 4, lines[first + i][c]);
-                    int color = colors[first + i];
+                    int at = members[first + i];
+                    int color = colors[at];
                     bytes.putFloat(COLORS_AT + i * 16, (color >> 16 & 0xFF) / 255f);
                     bytes.putFloat(COLORS_AT + i * 16 + 4, (color >> 8 & 0xFF) / 255f);
                     bytes.putFloat(COLORS_AT + i * 16 + 8, (color & 0xFF) / 255f);
-                    bytes.putFloat(COLORS_AT + i * 16 + 12, weights[first + i] * (color >>> 24) / 255f);
+                    bytes.putFloat(COLORS_AT + i * 16 + 12, weights[at] * (color >>> 24) / 255f);
                 }
                 RenderSystem.getDevice().createCommandEncoder().writeToBuffer(data, bytes);
             } finally {
@@ -338,7 +385,7 @@ public final class BlockEspRenderer {
     }
 
     /** Blurs the glow target at half size, twice and wider the second time, and adds it onto the frame. */
-    private static void bloom(Framebuffer main, BlockESP m) {
+    private static void bloom(Framebuffer main, float strength, float size) {
         int width = Math.max(1, glow.textureWidth / 2), height = Math.max(1, glow.textureHeight / 2);
         halfA = sized(halfA, "maro block esp bloom a", width, height);
         halfB = sized(halfB, "maro block esp bloom b", width, height);
@@ -347,12 +394,12 @@ public final class BlockEspRenderer {
                 GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST, (long) GLOW_STRIDE * GLOW_PASSES);
         }
         // The blur's reach follows the screen's height, so it looks the same at any resolution.
-        float spread = m.bloomSize() * main.textureHeight / 1080f;
+        float spread = size * main.textureHeight / 1080f;
         glowPass(0, BLUR, glow, halfA, spread / width, 0, 0, 0);
         glowPass(1, BLUR, halfA, halfB, 0, spread / height, 0, 0);
         glowPass(2, BLUR, halfB, halfA, 2 * spread / width, 0, 0, 0);
         glowPass(3, BLUR, halfA, halfB, 0, 2 * spread / height, 0, 0);
-        glowPass(4, BLOOM, halfB, main, 0, 0, 1, m.bloomStrength());
+        glowPass(4, BLOOM, halfB, main, 0, 0, 1, strength);
     }
 
     private static void glowPass(int slot, RenderPipeline pipeline, Framebuffer source, Framebuffer target,

@@ -1,5 +1,7 @@
 package dev.maro.render.esp;
 
+import net.minecraft.client.MinecraftClient;
+
 import com.mojang.blaze3d.pipeline.BlendFunction;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.platform.DepthTestFunction;
@@ -80,11 +82,16 @@ public final class Renderer3D {
         WorldRenderEvents.END_MAIN.register(context -> {
             BaseESP module = ModuleManager.get(BaseESP.class);
             AutoBuilder builder=ModuleManager.get(AutoBuilder.class);
-            BlockESP blocks=ModuleManager.get(BlockESP.class);
-            if ((module == null || !module.isEnabled())&&(builder==null||!builder.isEnabled())&&(blocks==null||!blocks.isEnabled())) return;
+            // Block ESP and the modules built on it (Storage ESP, Hole ESP).
+            java.util.List<BlockESP> esps=new java.util.ArrayList<>();
+            for(var m:ModuleManager.all())if(m instanceof BlockESP esp&&esp.isEnabled())esps.add(esp);
+            dev.maro.module.impl.visuals.Trajectories paths=ModuleManager.get(dev.maro.module.impl.visuals.Trajectories.class);
+            boolean pathsOn=paths!=null&&paths.isEnabled();
+            if ((module == null || !module.isEnabled())&&(builder==null||!builder.isEnabled())&&esps.isEmpty()&&!pathsOn) return;
             try {
                 if(module!=null&&module.isEnabled())module.render(new Renderer3D(context));
-                if(blocks!=null&&blocks.isEnabled())blocks.render(new Renderer3D(context));
+                if(pathsOn)paths.render(new Renderer3D(context),MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(true));
+                for(BlockESP esp:esps)esp.render(new Renderer3D(context));
                 if(builder!=null&&builder.isEnabled())SchematicRenderer.render(builder,new Renderer3D(context),context);
             }
             finally { BUFFERS.draw(); }

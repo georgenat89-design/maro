@@ -43,6 +43,12 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.Pet());
         register(new dev.maro.module.impl.visuals.BaseESP());
         register(new dev.maro.module.impl.visuals.BlockESP());
+        register(new dev.maro.module.impl.visuals.StorageESP());
+        register(new dev.maro.module.impl.visuals.HoleESP());
+        register(new dev.maro.module.impl.visuals.Nametags());
+        register(new dev.maro.module.impl.visuals.Trajectories());
+        register(new dev.maro.module.impl.visuals.HandShader());
+        register(new dev.maro.module.impl.misc.OrderDropper());
         register(new dev.maro.module.impl.visuals.SpawnerNotifier());
         register(new dev.maro.module.impl.visuals.BetterTextures());
         register(new dev.maro.module.impl.visuals.BetterLooks());
