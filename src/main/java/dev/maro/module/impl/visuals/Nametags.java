@@ -48,7 +48,8 @@ public class Nametags extends Module {
     // ---- who
     private final BooleanSetting self = add(new BooleanSetting("Self", "Your own tag, in third person", false));
     private final BooleanSetting hideNpcs = add(new BooleanSetting("Hide NPCs", "No tag on players missing from the tab list (server NPCs and bots)", true));
-    private final NumberSetting range = add(new NumberSetting("Range", "Tags on players this close", 256, 16, 512, 8).suffix(" blocks"));
+    private final NumberSetting range = add(new NumberSetting("Range", "Maximum distance for players the server sends to you", 1024, 16, 4096, 8).suffix(" blocks"));
+    private final BooleanSetting edgeTags = add(new BooleanSetting("Edge Tags", "Names and distances at the screen edge for players outside your view", true));
 
     // ---- what the tag says
     private final BooleanSetting health = add(new BooleanSetting("Health", "Their health", true));
@@ -64,14 +65,23 @@ public class Nametags extends Module {
     private final ModeSetting armor = add(new ModeSetting("Armor", "Their armour over the tag", "None", "None", "Above"));
     private final BooleanSetting heldItem = add(new BooleanSetting("Held Item", "What is in their hands, beside the armour", false));
     private final BooleanSetting itemName = add(new BooleanSetting("Item Name", "The name of what they hold, over everything", false));
-    private final BooleanSetting enchants = add(new BooleanSetting("Enchants", "Short enchantment names over each piece (Prot4, Shrp5)", false)
+    private final ModeSetting gearStyle = add(new ModeSetting("Gear Style", "Clean equipment cards or a minimal icon row", "Cards", "Cards", "Minimal")
+            .visible(this::showsItems));
+    private final BooleanSetting enchants = add(new BooleanSetting("Enchants", "Readable enchantment labels with Roman levels, such as Prot IV and Sharp V", false)
             .visible(this::showsItems));
     private final ModeSetting durability = add(new ModeSetting("Durability", "Off, the item's bar, a percent, or both (Full)", "Full",
             "Off", "Bar", "Percent", "Full").visible(this::showsItems));
     private final BooleanSetting itemBackground = add(new BooleanSetting("Item Background", "A dark square behind each piece", false)
-            .visible(this::showsItems));
+            .visible(() -> showsItems() && gearStyle.is("Minimal")));
 
     // ---- look
+    private final ModeSetting style = add(new ModeSetting("Style", "Ember fire accents, Aurora neon, your own colours, or the original card", "Ember", "Ember", "Aurora", "Custom", "Classic"));
+    private final BooleanSetting glow = add(new BooleanSetting("Glow", "A soft accent glow around the card", true).visible(() -> !style.is("Classic")));
+    private final NumberSetting glowStrength = add(new NumberSetting("Glow Strength", "How bright the card's glow is", 0.75, 0, 1, 0.05).visible(() -> !style.is("Classic") && glow.get()));
+    private final BooleanSetting pulse = add(new BooleanSetting("Pulse", "Slowly breathe the accent glow", true).visible(() -> !style.is("Classic")));
+    private final ColorSetting accent = add(new ColorSetting("Accent Color", "The gradient's first colour", 0xFFFFA84A).visible(() -> style.is("Custom")));
+    private final ColorSetting accentEnd = add(new ColorSetting("Second Accent", "The gradient's second colour", 0xFFFF4567).visible(() -> style.is("Custom")));
+    private final BooleanSetting healthStrip = add(new BooleanSetting("Health Strip", "A slim health meter under the name, also with numeric health", true).visible(() -> !style.is("Classic") && health.get()));
     private final BooleanSetting background = add(new BooleanSetting("Background", "A dark rounded card behind the tag", true));
     private final ColorSetting backgroundColor = add(new ColorSetting("Background Color", "The card's colour", 0xB00C0E14, true)
             .visible(background::get));
@@ -86,10 +96,10 @@ public class Nametags extends Module {
     private final BooleanSetting shadow = add(new BooleanSetting("Text Shadow", "A shadow under Minecraft's font", true).visible(() -> font.is("Minecraft")));
 
     private final List<SettingSection> sections = List.of(
-            SettingSection.of("Players", self, hideNpcs, range),
+            SettingSection.of("Players", self, hideNpcs, range, edgeTags),
             SettingSection.of("Tag", health, healthMode, absorption, distance, ping, gamemode, pops),
-            SettingSection.of("Items", armor, heldItem, itemName, enchants, durability, itemBackground),
-            SettingSection.of("Look", background, backgroundColor, outline, textColor, healthColors, friendBackground, friendColor,
+            SettingSection.of("Items", armor, heldItem, gearStyle, itemName, enchants, durability, itemBackground),
+            SettingSection.of("Look", style, glow, glowStrength, pulse, accent, accentEnd, healthStrip, background, backgroundColor, outline, textColor, healthColors, friendBackground, friendColor,
                     scale, constantSize, font, shadow));
 
     private static Nametags instance;
@@ -100,7 +110,7 @@ public class Nametags extends Module {
     private final List<String> drawn = new ArrayList<>();
 
     public Nametags() {
-        super("Nametags", "Clean tags over players with health, distance, ping, pops, armour and enchants", Category.VISUALS);
+        super("Nametags", "Glowing player cards, long-range tags and edge indicators, with health, gear and totem pops", Category.VISUALS);
         instance = this;
     }
 
@@ -184,13 +194,17 @@ public class Nametags extends Module {
         for (PlayerEntity p : mc.world.getPlayers()) if (tags(p)) players.add(p);
         // Farthest first, so nearer tags sit on top.
         players.sort(Comparator.comparingDouble((PlayerEntity p) -> p.squaredDistanceTo(camera)).reversed());
+        List<float[]> edges = new ArrayList<>();
         Fonts.beginRaw();
         try {
             for (PlayerEntity p : players) {
                 Vec3d at = p.getLerpedPos(tickDelta);
                 float[] screen = BlockEspRenderer.toScreen(at.x, at.y + p.getHeight() + 0.45, at.z, camera, w, h);
-                if (screen == null || screen[0] < -150 || screen[0] > w + 150 || screen[1] < -100 || screen[1] > h + 100) continue;
                 double dist = Math.sqrt(p.squaredDistanceTo(camera));
+                if (screen == null || screen[0] < 0 || screen[0] > w || screen[1] < 0 || screen[1] > h) {
+                    if (edgeTags.get() && edges.size() < 12) drawEdge(ctx, p, camera, w, h, dist, edges);
+                    continue;
+                }
                 float s = scale.getFloat() * (constantSize.get() ? 1f : (float) Math.max(0.45, Math.min(1, 10 / Math.max(1, dist))));
                 draw(ctx, p, screen[0], screen[1], s, dist);
             }
@@ -205,12 +219,15 @@ public class Nametags extends Module {
         for (Part part : parts) said.append(part.text()).append(' ');
         drawn.add(said.toString().trim());
 
-        float gap = 3.5f, pad = 5, tagH = 13;
+        boolean styled = !style.is("Classic");
+        float gap = styled ? 4.5f : 3.5f, pad = styled ? 7 : 5, tagH = styled ? 17 : 13;
         float textW = -gap;
         for (Part part : parts) textW += width(part.text(), part.bold()) + gap;
         float tagW = textW + pad * 2;
         boolean friend = FriendManager.isFriend(p.getName().getString());
-        boolean bar = health.get() && healthMode.is("Bar");
+        boolean bar = health.get() && (healthMode.is("Bar") || styled && healthStrip.get());
+        int[] colors = accents(friend);
+        x = Math.max(tagW * s / 2 + 4, Math.min(ctx.getScaledWindowWidth() - tagW * s / 2 - 4, x));
 
         var matrices = ctx.getMatrices();
         matrices.pushMatrix();
@@ -218,10 +235,20 @@ public class Nametags extends Module {
         matrices.scale(s, s);
         float left = -tagW / 2f, top = -tagH - (bar ? 2.5f : 0);
         if (background.get()) {
+            float height = tagH + (bar ? 2.5f : 0);
+            if (styled && glow.get()) glow(ctx, left, top, tagW, height, colors);
             int bg = backgroundColor.get();
             if (friend && friendBackground.get()) bg = ColorUtil.withAlpha(friendColor.get(), Math.max(0x90, bg >>> 24));
-            Render2D.roundRect(ctx, left, top, tagW, tagH + (bar ? 2.5f : 0), 4, bg);
-            if (outline.get()) Render2D.roundOutline(ctx, left, top, tagW, tagH + (bar ? 2.5f : 0), 4, 1, friend ? friendColor.get() : Theme.accent(0xA0));
+            if (styled) {
+                Render2D.roundGradientV(ctx, left, top, tagW, height, 5, ColorUtil.lerp(bg, ColorUtil.withAlpha(colors[0], bg >>> 24), 0.12f), bg);
+                Render2D.roundOutline(ctx, left, top, tagW, height, 5, 0.75f,
+                        ColorUtil.withAlpha(colors[0], 150), ColorUtil.withAlpha(colors[1], 150), ColorUtil.withAlpha(colors[1], 70), ColorUtil.withAlpha(colors[0], 70));
+                Render2D.roundGradientH(ctx, left + 5, top, tagW - 10, 1.25f, 0.6f, colors[0], colors[1]);
+            } else Render2D.roundRect(ctx, left, top, tagW, height, 4, bg);
+            if (outline.get()) {
+                if (styled) Render2D.roundOutline(ctx, left, top, tagW, height, 5, 1, colors[0], colors[1], colors[1], colors[0]);
+                else Render2D.roundOutline(ctx, left, top, tagW, height, 4, 1, friend ? friendColor.get() : Theme.accent(0xA0));
+            }
         }
         float tx = left + pad, cy = top + tagH / 2f;
         for (Part part : parts) {
@@ -245,6 +272,54 @@ public class Nametags extends Module {
             matrices.popMatrix();
         }
         matrices.popMatrix();
+    }
+
+    private int[] accents(boolean friend) {
+        if (friend) return new int[] {friendColor.get() | 0xFF000000, ColorUtil.shade(friendColor.get() | 0xFF000000, 0.4f)};
+        if (style.is("Aurora")) return new int[] {0xFFB68AFF, 0xFF53E8EF};
+        if (style.is("Custom")) return new int[] {accent.get() | 0xFF000000, accentEnd.get() | 0xFF000000};
+        return new int[] {0xFFFFAA4C, 0xFFFF4D69};
+    }
+
+    private void glow(DrawContext ctx, float x, float y, float w, float h, int[] colors) {
+        float strength = glowStrength.getFloat() * (pulse.get() ? 0.82f + 0.18f * (float) Math.sin(System.nanoTime() / 900_000_000.0) : 1);
+        for (int i = 3; i >= 1; i--) {
+            float spread = i * 1.6f;
+            int opacity = Math.round((45 - i * 8) * strength);
+            Render2D.roundOutline(ctx, x - spread, y - spread, w + spread * 2, h + spread * 2, 5 + spread, 1.8f,
+                    ColorUtil.withAlpha(colors[0], opacity), ColorUtil.withAlpha(colors[1], opacity),
+                    ColorUtil.withAlpha(colors[1], opacity), ColorUtil.withAlpha(colors[0], opacity));
+        }
+    }
+
+    private void drawEdge(DrawContext ctx, PlayerEntity player, Vec3d camera, int w, int h, double dist, List<float[]> placed) {
+        double angle = Math.atan2(-(player.getX() - camera.x), player.getZ() - camera.z)
+                - Math.toRadians(mc.gameRenderer.getCamera().getYaw());
+        float dx = (float) Math.sin(angle), dy = -(float) Math.cos(angle);
+        String label = player.getName().getString() + "  " + Math.round(dist) + "m";
+        float tagW = width(label, true) + 18, halfW = w / 2f - tagW / 2 - 14, halfH = h / 2f - (dy > 0 ? 68 : 24);
+        if (halfW <= 0 || halfH <= 0) return;
+        float length = Math.min(halfW / Math.max(0.001f, Math.abs(dx)), halfH / Math.max(0.001f, Math.abs(dy)));
+        float x = w / 2f + dx * length, y = h / 2f + dy * length;
+        for (int tries = 0; tries < 12; tries++) {
+            boolean overlaps = false;
+            for (float[] tag : placed) if (Math.abs(x - tag[0]) < (tagW + tag[2]) / 2 + 5 && Math.abs(y - tag[1]) < 21) { overlaps = true; break; }
+            if (!overlaps) break;
+            y += y > h / 2f ? -22 : 22;
+            if (tries == 11 || y < 15 || y > h - 68) return;
+        }
+        placed.add(new float[] {x, y, tagW});
+        drawn.add(label);
+        int[] colors = accents(FriendManager.isFriend(player.getName().getString()));
+        if (glow.get() && !style.is("Classic")) glow(ctx, x - tagW / 2, y - 8, tagW, 16, colors);
+        Render2D.roundRect(ctx, x - tagW / 2, y - 8, tagW, 16, 5, 0xDC0C0E14);
+        Render2D.roundOutline(ctx, x - tagW / 2, y - 8, tagW, 16, 5, 0.8f,
+                colors[0], colors[1], colors[1], colors[0]);
+        text(ctx, label, x - width(label, true) / 2, y, 0xFFF5F1FF, true);
+        // The chevron points towards the player's bearing, including players behind the camera.
+        float tipX = x + dx * (Math.abs(dx) > 0.7f ? tagW / 2 + 6 : 12), tipY = y + dy * 13;
+        Render2D.line(ctx, tipX, tipY, tipX - dx * 4 + dy * 3, tipY - dy * 4 - dx * 3, 1.4f, colors[0]);
+        Render2D.line(ctx, tipX, tipY, tipX - dx * 4 - dy * 3, tipY - dy * 4 + dx * 3, 1.4f, colors[1]);
     }
 
     /** The pieces of the tag, left to right. */
@@ -285,13 +360,19 @@ public class Nametags extends Module {
         if (heldItem.get()) stacks.add(p.getOffHandStack());
         stacks.removeIf(ItemStack::isEmpty);
         if (stacks.isEmpty()) return bottom;
-        float cell = 18, rowW = stacks.size() * cell, left = -rowW / 2f, top = bottom - 17;
+        if (gearStyle.is("Cards")) return itemCards(ctx, p, stacks, bottom);
+        float cell = 18;
+        if (enchants.get()) for (ItemStack stack : stacks) for (String line : enchantLines(stack)) {
+            String label = line.startsWith("!") ? line.substring(1) : line;
+            cell = Math.max(cell, width(label, false) * 0.65f + 5);
+        }
+        float rowW = stacks.size() * cell, left = -rowW / 2f, top = bottom - 17;
         boolean bar = durability.is("Bar") || durability.is("Full"), percent = durability.is("Percent") || durability.is("Full");
         float highest = top;
         var matrices = ctx.getMatrices();
         for (int i = 0; i < stacks.size(); i++) {
             ItemStack stack = stacks.get(i);
-            float ix = left + i * cell + 1;
+            float ix = left + i * cell + (cell - 16) / 2;
             if (itemBackground.get()) Render2D.roundRect(ctx, ix - 0.5f, top - 0.5f, 17, 17, 3, 0x90000000);
             matrices.pushMatrix();
             matrices.translate(ix, top);
@@ -301,14 +382,14 @@ public class Nametags extends Module {
             float above = top - 1;
             if (percent && stack.isDamageable() && stack.getMaxDamage() > 0) {
                 float left01 = 1 - stack.getDamage() / (float) stack.getMaxDamage();
-                small(ctx, Math.round(left01 * 100) + "%", ix + 8, above - 3, healthColor(left01));
-                above -= 6;
+                small(ctx, Math.round(left01 * 100) + "%", ix + 8, above - 3, left01 < 0.25f ? RED : 0xFFCDD3DF);
+                above -= 8;
             }
             if (enchants.get()) {
                 for (String line : enchantLines(stack)) {
                     boolean curse = line.startsWith("!");
-                    small(ctx, curse ? line.substring(1) : line, ix + 8, above - 3, curse ? RED : 0xFFE0D2FF);
-                    above -= 6;
+                    small(ctx, curse ? line.substring(1) : line, ix + 8, above - 3, curse ? 0xFFFF8B96 : 0xFFCDD3DF);
+                    above -= 8;
                 }
             }
             highest = Math.min(highest, above);
@@ -316,18 +397,85 @@ public class Nametags extends Module {
         return highest;
     }
 
-    /** Text drawn small and centred on (cx, cy), for durability and enchantments. */
-    private void small(DrawContext ctx, String s, float cx, float cy, int color) {
+    private float itemCards(DrawContext ctx, PlayerEntity player, List<ItemStack> stacks, float bottom) {
+        boolean bar = durability.is("Bar") || durability.is("Full");
+        boolean percent = durability.is("Percent") || durability.is("Full");
+        List<List<String>> labels = new ArrayList<>();
+        float cardW = 26;
+        int lines = 0;
+        for (ItemStack stack : stacks) {
+            List<String> itemLabels = enchants.get() ? enchantLines(stack) : List.of();
+            labels.add(itemLabels);
+            lines = Math.max(lines, itemLabels.size());
+            for (String label : itemLabels) {
+                String shown = label.startsWith("!") ? label.substring(1) : label;
+                cardW = Math.max(cardW, width(shown, false) * GEAR_TEXT_SCALE + 10);
+            }
+        }
+        float headerH = 23 + (percent ? 8 : 0) + (bar ? 3 : 0);
+        float cardH = headerH + (lines > 0 ? 5 + lines * 8.5f : 0);
+        float rowW = stacks.size() * (cardW + 3) - 3, left = -rowW / 2, top = bottom - cardH - 1;
+        int[] colors = accents(FriendManager.isFriend(player.getName().getString()));
         var matrices = ctx.getMatrices();
-        float k = 0.55f;
+        for (int i = 0; i < stacks.size(); i++) {
+            ItemStack stack = stacks.get(i);
+            float x = left + i * (cardW + 3), cx = x + cardW / 2;
+            Render2D.roundRect(ctx, x, top, cardW, cardH, 4, 0xDF10131B);
+            Render2D.roundOutline(ctx, x, top, cardW, cardH, 4, 0.6f,
+                    ColorUtil.withAlpha(colors[0], 65), ColorUtil.withAlpha(colors[1], 65),
+                    0x305C6576, 0x305C6576);
+            matrices.pushMatrix();
+            matrices.translate(cx - 8, top + 3);
+            ctx.drawItem(stack, 0, 0);
+            matrices.popMatrix();
+            float fraction = stack.isDamageable() && stack.getMaxDamage() > 0
+                    ? Math.max(0, Math.min(1, 1 - stack.getDamage() / (float) stack.getMaxDamage())) : -1;
+            if (percent && fraction >= 0) gearText(ctx, Math.round(fraction * 100) + "%", cx, top + 24,
+                    fraction < 0.25f ? RED : 0xFFCDD3DF);
+            if (bar && fraction >= 0) {
+                float by = top + headerH - 4;
+                Render2D.roundRect(ctx, x + 4, by, cardW - 8, 1.5f, 0.75f, 0xFF303746);
+                Render2D.roundRect(ctx, x + 4, by, (cardW - 8) * fraction, 1.5f, 0.75f,
+                        fraction < 0.25f ? RED : ColorUtil.lerp(colors[0], colors[1], 0.4f));
+            }
+            if (lines > 0) {
+                Render2D.rect(ctx, x + 4, top + headerH, cardW - 8, 0.5f, 0x305C6576);
+                List<String> itemLabels = labels.get(i);
+                for (int j = 0; j < itemLabels.size(); j++) {
+                    String label = itemLabels.get(j);
+                    boolean curse = label.startsWith("!");
+                    gearText(ctx, curse ? label.substring(1) : label, cx, top + headerH + 6 + j * 8.5f,
+                            curse ? 0xFFFF8B96 : 0xFFCDD3DF);
+                }
+            }
+            if (stack.getCount() > 1) gearText(ctx, String.valueOf(stack.getCount()), x + cardW - 6, top + 16, 0xFFF3F5FA);
+        }
+        return top;
+    }
+
+    private static final float GEAR_TEXT_SCALE = 0.75f;
+
+    private void gearText(DrawContext ctx, String label, float cx, float cy, int color) {
+        var matrices = ctx.getMatrices();
         matrices.pushMatrix();
-        matrices.translate(cx - width(s, true) * k / 2f, cy);
-        matrices.scale(k, k);
-        text(ctx, s, 0, 0, color, true);
+        matrices.translate(cx - width(label, false) * GEAR_TEXT_SCALE / 2, cy);
+        matrices.scale(GEAR_TEXT_SCALE, GEAR_TEXT_SCALE);
+        text(ctx, label, 0, 0, color, false);
         matrices.popMatrix();
     }
 
-    /** "Prot4", "Mend": each enchantment shortened, curses marked with a leading '!'. */
+    /** Text drawn small and centred on (cx, cy), for durability and enchantments. */
+    private void small(DrawContext ctx, String s, float cx, float cy, int color) {
+        var matrices = ctx.getMatrices();
+        float k = 0.65f;
+        matrices.pushMatrix();
+        matrices.translate(cx - width(s, false) * k / 2f, cy);
+        matrices.scale(k, k);
+        text(ctx, s, 0, 0, color, false);
+        matrices.popMatrix();
+    }
+
+    /** Readable, consistently ordered labels; curses retain their colour marker. */
     public static List<String> enchantLines(ItemStack stack) {
         List<String> out = new ArrayList<>();
         ItemEnchantmentsComponent enchantments = stack.getEnchantments();
@@ -335,25 +483,41 @@ public class Nametags extends Module {
             int level = enchantments.getLevel(e);
             String path = e.getKey().map(k -> k.getValue().getPath()).orElse("?");
             String name = SHORT.getOrDefault(path, shorten(path));
-            String line = level > 1 ? name + level : name;
+            String line = level > 1 ? name + " " + romanLevel(level) : name;
             out.add(e.isIn(EnchantmentTags.CURSE) ? "!" + line : line);
         }
+        out.sort(Comparator.comparing((String label) -> label.startsWith("!")).thenComparing(String.CASE_INSENSITIVE_ORDER));
         return out;
     }
 
+    private static String romanLevel(int level) {
+        return switch (level) {
+            case 2 -> "II";
+            case 3 -> "III";
+            case 4 -> "IV";
+            case 5 -> "V";
+            case 6 -> "VI";
+            case 7 -> "VII";
+            case 8 -> "VIII";
+            case 9 -> "IX";
+            case 10 -> "X";
+            default -> String.valueOf(level);
+        };
+    }
+
     private static final Map<String, String> SHORT = Map.ofEntries(
-            Map.entry("protection", "Prot"), Map.entry("sharpness", "Shrp"), Map.entry("unbreaking", "Unb"), Map.entry("mending", "Mend"),
-            Map.entry("efficiency", "Eff"), Map.entry("fortune", "Fort"), Map.entry("silk_touch", "Silk"), Map.entry("fire_aspect", "FA"),
-            Map.entry("looting", "Loot"), Map.entry("feather_falling", "FF"), Map.entry("blast_protection", "Blast"),
-            Map.entry("projectile_protection", "Proj"), Map.entry("fire_protection", "FP"), Map.entry("thorns", "Thrn"),
-            Map.entry("depth_strider", "DS"), Map.entry("respiration", "Resp"), Map.entry("aqua_affinity", "Aqua"),
-            Map.entry("knockback", "KB"), Map.entry("power", "Pow"), Map.entry("punch", "Pnch"), Map.entry("flame", "Flm"),
-            Map.entry("infinity", "Inf"), Map.entry("swift_sneak", "SS"), Map.entry("soul_speed", "Soul"), Map.entry("smite", "Smt"),
-            Map.entry("bane_of_arthropods", "BoA"), Map.entry("sweeping_edge", "Swp"), Map.entry("binding_curse", "Bind"),
-            Map.entry("vanishing_curse", "Van"), Map.entry("density", "Dens"), Map.entry("breach", "Brch"), Map.entry("wind_burst", "Wind"),
-            Map.entry("riptide", "Rip"), Map.entry("loyalty", "Loy"), Map.entry("channeling", "Chan"), Map.entry("impaling", "Imp"),
-            Map.entry("multishot", "Multi"), Map.entry("piercing", "Pier"), Map.entry("quick_charge", "QC"), Map.entry("lure", "Lure"),
-            Map.entry("luck_of_the_sea", "Luck"), Map.entry("frost_walker", "FW"));
+            Map.entry("protection", "Prot"), Map.entry("sharpness", "Sharp"), Map.entry("unbreaking", "Unb"), Map.entry("mending", "Mending"),
+            Map.entry("efficiency", "Eff"), Map.entry("fortune", "Fort"), Map.entry("silk_touch", "Silk"), Map.entry("fire_aspect", "Fire"),
+            Map.entry("looting", "Loot"), Map.entry("feather_falling", "Feather"), Map.entry("blast_protection", "Blast"),
+            Map.entry("projectile_protection", "Proj"), Map.entry("fire_protection", "Fire Prot"), Map.entry("thorns", "Thorns"),
+            Map.entry("depth_strider", "Depth"), Map.entry("respiration", "Resp"), Map.entry("aqua_affinity", "Aqua"),
+            Map.entry("knockback", "Knock"), Map.entry("power", "Power"), Map.entry("punch", "Punch"), Map.entry("flame", "Flame"),
+            Map.entry("infinity", "Infinity"), Map.entry("swift_sneak", "Sneak"), Map.entry("soul_speed", "Soul"), Map.entry("smite", "Smite"),
+            Map.entry("bane_of_arthropods", "Bane"), Map.entry("sweeping_edge", "Sweep"), Map.entry("binding_curse", "Binding"),
+            Map.entry("vanishing_curse", "Vanishing"), Map.entry("density", "Density"), Map.entry("breach", "Breach"), Map.entry("wind_burst", "Wind"),
+            Map.entry("riptide", "Riptide"), Map.entry("loyalty", "Loyalty"), Map.entry("channeling", "Channel"), Map.entry("impaling", "Impale"),
+            Map.entry("multishot", "Multi"), Map.entry("piercing", "Pierce"), Map.entry("quick_charge", "Charge"), Map.entry("lure", "Lure"),
+            Map.entry("luck_of_the_sea", "Luck"), Map.entry("frost_walker", "Frost"));
 
     private static String shorten(String path) {
         String word = path.contains("_") ? path.substring(0, path.indexOf('_')) : path;

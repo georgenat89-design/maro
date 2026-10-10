@@ -36,6 +36,11 @@ public class MaroClientGameTest implements FabricClientGameTest {
             // make sure nothing (pause menu, toasts...) is in the way before testing the keybind
             context.setScreen(() -> null);
             context.waitTicks(5);
+            if (Boolean.getBoolean("maro.gametest.chestTagsOnly")) {
+                ChestTransferChecks.run(context, singleplayer);
+                NametagsChecks.run(context);
+                return;
+            }
             if (Boolean.getBoolean("maro.gametest.relogOnly")) {
                 MaroRelogChecks.run(context, singleplayer);
                 return;
@@ -105,6 +110,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             AutoGoliathChecks.run(context, singleplayer);
             FakePlayerChecks.run(context);
             NametagsChecks.run(context);
+            ChestTransferChecks.run(context, singleplayer);
             TrajectoriesChecks.run(context, singleplayer);
             HandShaderChecks.run(context);
             OrderDropperChecks.run(context, singleplayer);
