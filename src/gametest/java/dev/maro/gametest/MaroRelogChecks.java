@@ -30,6 +30,7 @@ public final class MaroRelogChecks {
     private static final Vec3d[] homes = new Vec3d[4];
     private static final List<Attempt> attempts = new CopyOnWriteArrayList<>();
     private static final Set<String> rejectOnce = new HashSet<>();
+    private static final Set<net.minecraft.server.network.ServerConfigurationNetworkHandler> configurationsSent = new HashSet<>();
     private static ServerPlayerEntity waiting;
     private static Vec3d destination, warmupFrom;
     private static int arriveAt, reconfigureAt, reconfigurations, expectedSlot = 3;
@@ -37,6 +38,12 @@ public final class MaroRelogChecks {
 
     static {
         ServerTickEvents.END_SERVER_TICK.register(server -> {
+            // reconfigure() switches protocol; a real server resource reload then
+            // sends configurations once the acknowledgement has installed its handler.
+            if (keepServerTicking) for (var channel : server.getNetworkIo().getConnections()) {
+                if (channel.getPacketListener() instanceof net.minecraft.server.network.ServerConfigurationNetworkHandler config
+                        && configurationsSent.add(config)) config.sendConfigurations();
+            }
             if (waiting == null || waiting.getEntityWorld().getServer() != server) return;
             var current = server.getPlayerManager().getPlayer(waiting.getUuid());
             if (current == null) return;
@@ -252,6 +259,7 @@ public final class MaroRelogChecks {
     private static void resetServer() {
         attempts.clear();
         rejectOnce.clear();
+        configurationsSent.clear();
         waiting = null;
         keepServerTicking = false;
         reconfigureAt = reconfigurations = 0;
