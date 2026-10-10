@@ -116,6 +116,28 @@ final class SpotifyPhoneChecks {
             });
             context.waitTicks(4);
             context.takeScreenshot("maro-spotify-phone-playing");
+            context.runOnClient(client -> playback.volume = new SpotifyMedia.Volume(true, .25, false, ""));
+            context.waitTicks(2);
+            context.takeScreenshot("maro-spotify-phone-volume-low");
+            context.runOnClient(client -> {
+                var screen = (SpotifyPhoneScreen) client.currentScreen;
+                screen.mouseClicked(click(screen, 32, 413), false);
+            });
+            context.waitTicks(2);
+            context.takeScreenshot("maro-spotify-phone-volume-muted");
+            context.runOnClient(client -> playback.volume = SpotifyMedia.Volume.waiting());
+            context.waitTicks(2);
+            context.takeScreenshot("maro-spotify-phone-volume-unavailable");
+            context.runOnClient(client -> {
+                playback.volume = new SpotifyMedia.Volume(true, .65, false, "");
+                phone.size.set(.55);
+            });
+            context.waitTicks(2);
+            context.takeScreenshot("maro-spotify-phone-size-55");
+            context.runOnClient(client -> phone.size.set(1.45));
+            context.waitTicks(2);
+            context.takeScreenshot("maro-spotify-phone-size-145");
+            context.runOnClient(client -> phone.size.set(1.0));
             SpotifyPhoneScreen closing = context.computeOnClient(client -> {
                 var screen = (SpotifyPhoneScreen) client.currentScreen;
                 require(field(screen, "cover") != null, "Album artwork was not uploaded");

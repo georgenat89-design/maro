@@ -112,7 +112,7 @@ public final class SpotifyPhoneScreen extends Screen {
             Render2D.roundGradientV(ctx, 6, 6, PHONE_WIDTH - 12, PHONE_HEIGHT - 12, 22,
                 ColorUtil.lerp(0xFF171B1D, tint, .18f), 0xFF111516);
             Render2D.roundRect(ctx, 84, 17, 40, 4, 2, 0xFF080A0B);
-            spotifyLogo(ctx, 30, 56);
+            PhoneIcons.spotify(ctx, 30, 56);
             text(ctx, "Spotify", 45, 51, WHITE, true, 1.2f);
             boolean closeHover = hit(mx, my, 170, 44, 24, 24);
             if (closeHover) Render2D.roundRect(ctx, 170, 44, 24, 24, 12, 0xFF303736);
@@ -123,7 +123,7 @@ public final class SpotifyPhoneScreen extends Screen {
             else {
                 Render2D.roundGradientV(ctx, 24, 86, 160, 160, 8,
                     ColorUtil.lerp(0xFF243D2F, tint, .4f), 0xFF14221A);
-                spotifyLogo(ctx, 104, 160);
+                PhoneIcons.spotify(ctx, 104, 160);
                 centered(ctx, state.available() ? "NOW PLAYING" : "YOUR MUSIC, IN GAME", 104, 195, MUTED, false, .85f);
             }
             text(ctx, Fonts.trim(state.available() ? state.title() : "Ready when you are", 160, true, 1.35f),
@@ -182,12 +182,7 @@ public final class SpotifyPhoneScreen extends Screen {
         String percent = volume.available() ? (volume.muted() ? "Muted" : volume.percent() + "%") : "—";
         text(ctx, percent, 184 - Fonts.width(percent, false, .75f), 393, color, false, .75f);
         if (hit(mx, my, 20, 403, 25, 21) && volume.available()) Render2D.circle(ctx, 32, 413, 11, 0xFF303736);
-        Render2D.roundRect(ctx, 25, 410, 4, 6, .5f, color);
-        triangle(ctx, 28, 410, 34, 406, 34, 420, color);
-        if (volume.muted() || !volume.available()) {
-            Render2D.line(ctx, 37, 410, 42, 416, 1.2f, color);
-            Render2D.line(ctx, 42, 410, 37, 416, 1.2f, color);
-        } else Render2D.arc(ctx, 34, 413, 6, 1.3f, -55, 110, color, color);
+        PhoneIcons.volume(ctx, 32, 413, volume.available(), volume.muted(), volume.level());
         float fraction = volume.available() && !volume.muted() ? (float) Math.clamp(volume.level(), 0, 1) : 0;
         Render2D.roundRect(ctx, 52, 411, 132, 3, 1.5f, 0xFF3A4240);
         if (fraction > 0) Render2D.roundRect(ctx, 52, 411, 132 * fraction, 3, 1.5f, 0xFFDCE7E0);
@@ -277,10 +272,6 @@ public final class SpotifyPhoneScreen extends Screen {
     private static boolean hit(float x, float y, float rx, float ry, float w, float h) { return x >= rx && x <= rx + w && y >= ry && y <= ry + h; }
     private static boolean circleHit(float x, float y, float cx, float cy, float r) { return (x - cx) * (x - cx) + (y - cy) * (y - cy) <= r * r; }
 
-    private static void spotifyLogo(DrawContext ctx, float x, float y) {
-        Render2D.circle(ctx, x, y, 10, GREEN);
-        for (int i = 0; i < 3; i++) Render2D.arc(ctx, x - 1, y + 7 - i * 3, 6 + i, 1.4f, 225, 85, 0xFF0B2013, 0xFF0B2013);
-    }
     private static void triangle(DrawContext ctx, float ax, float ay, float bx, float by, float cx, float cy, int color) {
         if ((bx - ax) * (cy - ay) - (by - ay) * (cx - ax) > 0) {
             float swapX = bx, swapY = by; bx = cx; by = cy; cx = swapX; cy = swapY;
