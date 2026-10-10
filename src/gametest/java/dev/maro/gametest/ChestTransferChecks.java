@@ -258,7 +258,7 @@ public final class ChestTransferChecks {
             clear(world, p);
             world.getServer().runOnServer(s -> chest(s, p).setStack(0, new ItemStack(Items.STONE, 64)));
             open(context, p);
-            context.runOnClient(c -> { stealer.setEnabled(true); ModuleManager.get(OrderDropper.class).setEnabled(true); });
+            context.runOnClient(c -> { stealer.setEnabled(true); var orders=ModuleManager.get(OrderDropper.class);((dev.maro.setting.ModeSetting)orders.getSettings().stream().filter(s->s.getName().equals("Orders To Empty")).findFirst().orElseThrow()).set("All");orders.setEnabled(true);require(orders.isEnabled(),"Coordination fixture did not start Order Dropper"); });
             context.waitTicks(5);
             require(clicks.isEmpty() && chestCount(world, p, Items.STONE) == 64, "Order Dropper's container was modified");
             context.runOnClient(c -> ModuleManager.get(OrderDropper.class).setEnabled(false));
@@ -266,7 +266,7 @@ public final class ChestTransferChecks {
         } finally {
             recording = false; reject = 0; BuilderChestDelay.end();
             close(context);
-            context.runOnClient(c -> { ModuleManager.get(OrderDropper.class).setEnabled(false); stealer.getSettings().forEach(Setting::reset); dumper.getSettings().forEach(Setting::reset); });
+            context.runOnClient(c -> { var orders=ModuleManager.get(OrderDropper.class);orders.setEnabled(false);orders.getSettings().forEach(Setting::reset);stealer.getSettings().forEach(Setting::reset); dumper.getSettings().forEach(Setting::reset); });
             world.getServer().runCommand("setblock " + at(p) + " air");
             world.getServer().runCommand("setblock " + at(p.east()) + " air");
             world.getServer().runCommand("clear @a");

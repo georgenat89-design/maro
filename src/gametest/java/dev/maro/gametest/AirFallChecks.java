@@ -202,6 +202,8 @@ public final class AirFallChecks {
             world.getServer().runCommand("execute in minecraft:overworld run tp @a " + initial.x + " " + initial.y + " " + initial.z + " " + angles[0] + " " + angles[1]);
             world.getServer().runCommand("gamemode " + mode.getId() + " @a");
             heal(world);
+            context.waitFor(c -> c.world != null && c.world.getRegistryKey() == net.minecraft.world.World.OVERWORLD
+                    && c.interactionManager.getCurrentGameMode() == mode);
             context.waitTicks(4);
         }
     }

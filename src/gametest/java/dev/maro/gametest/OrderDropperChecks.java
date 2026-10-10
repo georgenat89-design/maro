@@ -75,6 +75,12 @@ final class OrderDropperChecks {
 
     private static final List<Own> own = new ArrayList<>();
     private static int thrownOnServer, dropAllPresses;
+    private record Delayed(int tick, Runnable action) { }
+    private static final List<Delayed> delayed = new ArrayList<>();
+    static {
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(server ->
+                delayed.removeIf(task -> { if (server.getTicks() < task.tick()) return false; task.action().run(); return true; }));
+    }
     private static final List<Order> orders = new ArrayList<>();
     private static final List<ItemStack> listings = new ArrayList<>();
     private static final List<Integer> prices = new ArrayList<>();
@@ -109,7 +115,6 @@ final class OrderDropperChecks {
         menu.setStack(48, named(Items.AMETHYST_SHARD, "Filter"));
         menu.setStack(49, named(Items.BOOK, "Help"));
         menu.setStack(50, named(Items.OAK_SIGN, "Search"));
-        menu.setStack(51, named(Items.CHEST, "ʏᴏᴜʀ ᴏʀᴅᴇʀꜱ"));
         menu.setStack(53, named(Items.ARROW, "Next Page"));
         player.openHandledScreen(new SimpleNamedScreenHandlerFactory((syncId, inventory, owner) ->
                 new GenericContainerScreenHandler(ScreenHandlerType.GENERIC_9X6, syncId, inventory, menu, 6) {
@@ -119,6 +124,12 @@ final class OrderDropperChecks {
                         else syncState();
                     }
                 }, Text.literal("Orders (Page 1)")));
+        var opened = player.currentScreenHandler;
+        delayed.add(new Delayed(player.getEntityWorld().getServer().getTicks() + 8, () -> {
+            if (player.currentScreenHandler != opened) return;
+            menu.setStack(51, named(Items.CHEST, "ʏᴏᴜʀ ᴏʀᴅᴇʀꜱ"));
+            opened.syncState();
+        }));
     }
 
     private static void openYours(ServerPlayerEntity player) {

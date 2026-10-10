@@ -10,6 +10,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.*;
 import org.bukkit.event.block.*;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerRiptideEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 import java.io.*;
@@ -22,6 +23,8 @@ public final class GrimFixture extends JavaPlugin implements Listener {
     private GrimAbstractAPI grim;
     private String scenario="idle";
     private int tick,breaks,places,rejectedBreaks,rejectedPlaces,targetZ=2;
+    private int riptides;
+    private final List<Integer> riptideTicks=new ArrayList<>();
     private double firstPlaceDistance,lastPlaceDistance;
     private final List<String> placePositions=new ArrayList<>();
     private final List<Integer> breakTicks=new ArrayList<>(),placeTicks=new ArrayList<>();
@@ -66,13 +69,23 @@ public final class GrimFixture extends JavaPlugin implements Listener {
         player.getInventory().setItem(2,new ItemStack(Material.DIAMOND_PICKAXE));
         player.getInventory().setHeldItemSlot(1);player.setHealth(20);player.setFoodLevel(20);player.setSaturation(20);
         player.teleport(new Location(world,.5,64,.5,0,0));
+        if(next.equals("trident")){
+            for(int x=-5;x<=5;x++)for(int z=-12;z<=512;z++)world.getBlockAt(x,63,z).setType(Material.STONE,false);
+            world.setStorm(true);world.setThundering(false);world.setWeatherDuration(6000);
+            var trident=new ItemStack(Material.TRIDENT);var meta=trident.getItemMeta();meta.addEnchant(org.bukkit.enchantments.Enchantment.RIPTIDE,3,true);trident.setItemMeta(meta);
+            player.getInventory().clear();player.getInventory().setItem(0,trident);player.getInventory().setHeldItemSlot(0);
+            player.teleport(new Location(world,.5,64,.5,0,-15));
+        }
         targetZ=next.equals("rejected-placement")?4:2;
         if(next.contains("mining"))world.getBlockAt(0,64,targetZ).setType(next.equals("stone-mining")?Material.STONE:Material.DIRT,false);
-        breaks=places=rejectedBreaks=rejectedPlaces=0;firstPlaceDistance=lastPlaceDistance=0;breakTicks.clear();placeTicks.clear();placePositions.clear();flags.clear();
+        breaks=places=rejectedBreaks=rejectedPlaces=riptides=0;firstPlaceDistance=lastPlaceDistance=0;breakTicks.clear();placeTicks.clear();placePositions.clear();riptideTicks.clear();flags.clear();
         scenario=next;playerId=player.getUniqueId();writeProof();
         getLogger().info("[grim-fixture] prepared "+next+" player="+player.getName()+" op="+player.isOp()+" grim.exempt="+player.hasPermission("grim.exempt")+" grim.nomodifypacket="+player.hasPermission("grim.nomodifypacket")+" grim.nosetback="+player.hasPermission("grim.nosetback"));
     }
     private boolean target(Block block){return block.getX()==0&&block.getY()==64&&block.getZ()==targetZ;}
+    @EventHandler(priority=EventPriority.MONITOR) public void riptide(PlayerRiptideEvent event){
+        if(scenario.equals("trident")&&event.getPlayer().getUniqueId().equals(playerId)){riptides++;riptideTicks.add(tick);writeProof();}
+    }
     @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=false) public void mine(BlockBreakEvent event){
         if(!target(event.getBlock())||!event.getPlayer().getUniqueId().equals(playerId))return;
         breaks++;breakTicks.add(tick);
@@ -105,6 +118,7 @@ public final class GrimFixture extends JavaPlugin implements Listener {
         values.setProperty("stone",""+count(player,Material.STONE));values.setProperty("glass",""+count(player,Material.GLASS));values.setProperty("cursor",player.getItemOnCursor().getType().name());
         values.setProperty("breaks",""+breaks);values.setProperty("places",""+places);values.setProperty("rejectedBreaks",""+rejectedBreaks);values.setProperty("rejectedPlaces",""+rejectedPlaces);
         values.setProperty("breakTicks",breakTicks.toString());values.setProperty("placeTicks",placeTicks.toString());
+        values.setProperty("riptides",""+riptides);values.setProperty("riptideTicks",riptideTicks.toString());values.setProperty("health",""+player.getHealth());
         values.setProperty("flags",""+flags.size());values.setProperty("flagDetails",String.join(" | ",flags));
         try{Path temp=proof.toPath().resolveSibling("proof.tmp");try(var out=Files.newOutputStream(temp)){values.store(out,"Actual Paper/Grim server fixture");}Files.move(temp,proof.toPath(),StandardCopyOption.REPLACE_EXISTING);}
         catch(IOException error){throw new UncheckedIOException(error);}

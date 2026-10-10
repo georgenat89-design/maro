@@ -80,8 +80,11 @@ final class InventoryHiderChecks {
         InventoryHider module = ModuleManager.get(InventoryHider.class);
         require(module != null, "Inventory Hider was not registered");
         var perspective = context.computeOnClient(c -> c.options.getPerspective());
+        var gameMode = world.getServer().computeOnServer(s -> s.getPlayerManager().getPlayerList().getFirst().interactionManager.getGameMode());
         int selected = context.computeOnClient(c -> c.player.getInventory().getSelectedSlot());
         try {
+            world.getServer().runCommand("gamemode survival @a");
+            context.waitFor(c -> c.interactionManager.getCurrentGameMode() == net.minecraft.world.GameMode.SURVIVAL);
             world.getServer().runCommand("clear @a");
             world.getServer().runCommand("item replace entity @a hotbar.0 with minecraft:diamond_block 64");
             world.getServer().runCommand("item replace entity @a hotbar.1 with minecraft:netherite_sword");
@@ -89,7 +92,12 @@ final class InventoryHiderChecks {
             world.getServer().runCommand("item replace entity @a inventory.5 with minecraft:enchanted_golden_apple 16");
             world.getServer().runCommand("item replace entity @a inventory.13 with minecraft:totem_of_undying");
             world.getServer().runCommand("item replace entity @a armor.head with minecraft:diamond_helmet");
-            context.waitTicks(3);
+            context.waitFor(c -> c.player.getInventory().getStack(0).isOf(Items.DIAMOND_BLOCK)
+                    && c.player.getInventory().getStack(1).isOf(Items.NETHERITE_SWORD)
+                    && c.player.getInventory().getStack(9).isOf(Items.NETHERITE_INGOT)
+                    && c.player.getInventory().getStack(14).isOf(Items.ENCHANTED_GOLDEN_APPLE)
+                    && c.player.getInventory().getStack(22).isOf(Items.TOTEM_OF_UNDYING)
+                    && c.player.getEquippedStack(net.minecraft.entity.EquipmentSlot.HEAD).isOf(Items.DIAMOND_HELMET));
             context.runOnClient(c -> {
                 module.getSettings().forEach(Setting::reset);
                 ((BooleanSetting) setting(module, "Player Model")).set(false);
@@ -182,6 +190,7 @@ final class InventoryHiderChecks {
                 c.player.getInventory().setSelectedSlot(selected);
             });
             world.getServer().runCommand("clear @a");
+            world.getServer().runCommand("gamemode " + gameMode.getId() + " @a");
             context.waitTicks(3);
         }
     }

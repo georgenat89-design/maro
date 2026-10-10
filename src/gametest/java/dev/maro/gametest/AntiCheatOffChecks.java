@@ -43,6 +43,9 @@ public final class AntiCheatOffChecks {
         var modules = List.of(fly, clip, flight, mine, delay);
         for (var m : modules) require(m.getCategory() == Category.ANTI_CHEAT_OFF && !m.persistEnabled(), "AC module category/persistence: " + m.getName());
         var initial = ctx.computeOnClient(c -> c.player.getEntityPos());
+        var initialMode = world.getServer().computeOnServer(s -> s.getPlayerManager().getPlayerList().getFirst().interactionManager.getGameMode());
+        var initialAngles = ctx.computeOnClient(c -> new float[]{c.player.getYaw(), c.player.getPitch()});
+        var initialMenu = ClientSettings.menuStyle.get();
         try {
             ctx.runOnClient(c -> { ClientSettings.menuStyle.set("Panels"); c.setScreen(new ClickGuiScreen()); });
             ctx.waitTicks(12);
@@ -179,9 +182,11 @@ public final class AntiCheatOffChecks {
                 util.setEnabled(false); util.getSettings().forEach(Setting::reset);
                 ModuleManager.get(AutoTrident.class).setEnabled(false);
                 c.options.useKey.setPressed(false); c.options.jumpKey.setPressed(false); c.setScreen(null);
+                ClientSettings.menuStyle.set(initialMenu);
             });
-            world.getServer().runCommand("gamemode creative @a");
-            world.getServer().runCommand("tp @a " + initial.x + " " + initial.y + " " + initial.z);
+            world.getServer().runCommand("gamemode " + initialMode.getId() + " @a");
+            world.getServer().runCommand("tp @a " + initial.x + " " + initial.y + " " + initial.z + " " + initialAngles[0] + " " + initialAngles[1]);
+            ctx.waitFor(c -> c.interactionManager.getCurrentGameMode() == initialMode);
             ctx.waitTicks(5);
         }
     }

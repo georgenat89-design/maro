@@ -82,6 +82,23 @@ final class BuilderGrimChecks {
                 System.out.println("[grim-proof] PASS scenario="+scenario+" target="+actual.getProperty("target")+" mining="+actual.getProperty("breakTicks")+" placement="+actual.getProperty("placeTicks")+" enabledChecks="+actual.getProperty("enabledChecks")+" flags=0 no exempt/op cursor=empty");
                 context.takeScreenshot("maro-grim-"+scenario);
             }
+            command("marofixture prepare trident");context.waitTicks(60);
+            var trident=ModuleManager.get(dev.maro.module.impl.player.AutoTrident.class);
+            try{
+                context.runOnClient(client->{require(client.player.isTouchingWaterOrRain(),"Grim Riptide fixture did not become wet");trident.getSettings().forEach(dev.maro.setting.Setting::reset);trident.setEnabled(true);});
+                context.getInput().holdMouse(org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_RIGHT);context.waitTicks(140);
+                command("marofixture status");var initial=proof();requireActive(initial);
+                require(Integer.parseInt(initial.getProperty("riptides"))>=3,"Grim server did not accept repeated Riptide launches: "+initial);
+                require(initial.getProperty("flags").equals("0"),"Grim Riptide violations: "+initial.getProperty("flagDetails"));
+                command("execute as @a at @s run tp @s ~ ~ ~");context.waitTicks(100);
+                context.getInput().releaseMouse(org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_RIGHT);context.waitTicks(20);
+                command("marofixture status");var actual=proof();requireActive(actual);
+                require(Integer.parseInt(actual.getProperty("riptides"))>Integer.parseInt(initial.getProperty("riptides")),"Riptide did not resume after actual Grim-server teleport");
+                require(actual.getProperty("flags").equals("0")&&Double.parseDouble(actual.getProperty("health"))>0,"Grim Riptide correction/resume failed: "+actual);
+                try(var out=Files.newOutputStream(ROOT.resolve("proof-trident.properties"))){actual.store(out,"Native Paper1.21.11 Grim2.3.73 Auto Trident result");}
+                System.out.println("[grim-trident-proof] PASS acceptedRiptides="+actual.getProperty("riptides")+" serverTicks="+actual.getProperty("riptideTicks")+" real correction/resume; flags=0 no exempt/op");
+            }catch(IOException error){throw new UncheckedIOException(error);}
+            finally{context.getInput().releaseMouse(org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_RIGHT);context.runOnClient(client->trident.setEnabled(false));}
         }finally{
             context.runOnClient(client->{BuilderPacketChecks.recording=false;BuilderBlockDelay.release();builder.pause("Grim tests finished");builder.setEnabled(false);});
             context.runOnClient(client->{if(client.world!=null)client.world.disconnect(net.minecraft.text.Text.literal("Grim fixture finished"));client.disconnectWithSavingScreen();});

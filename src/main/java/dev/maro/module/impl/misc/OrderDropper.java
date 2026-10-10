@@ -491,7 +491,9 @@ public class OrderDropper extends Module {
         button = named(handler, yourOrdersWords.get(), true);
         if (button == null) button = chest(handler, true);
         if (button == null) {
-            finish("No Your Orders button in the orders menu", false);
+            // Menu contents can arrive after the title and decorative slots. Keep
+            // the existing deadline instead of stopping on that partial window.
+            status = "Waiting for Your Orders button";
             return;
         }
         status = "Opening your orders";

@@ -367,6 +367,7 @@ public class Nametags extends Module {
         if (stacks.isEmpty()) return bottom;
         if (gearStyle.is("Cards")) return itemCards(ctx, p, stacks, bottom);
         float cell = 18;
+        if (durability.is("Percent") || durability.is("Full")) cell = Math.max(cell, width("100%", true) * 0.65f + 5);
         if (enchants.get()) for (ItemStack stack : stacks) for (String line : enchantLines(stack)) {
             String label = line.startsWith("!") ? line.substring(1) : line;
             cell = Math.max(cell, width(label, false) * 0.65f + 5);
