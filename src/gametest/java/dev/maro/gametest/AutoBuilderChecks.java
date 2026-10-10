@@ -396,6 +396,7 @@ final class AutoBuilderChecks {
         for(boolean closer:List.of(false,true)){fixture(context,world,builder,start);rejectedPlacementCase(context,world,builder,start,closer,false);}
         fixture(context,world,builder,start);rejectedPlacementCase(context,world,builder,start,true,true);
         fixture(context,world,builder,start);delayedAcceptedPlacement(context,world,builder,start);
+        for(boolean manualScreen:List.of(false,true)){fixture(context,world,builder,start);interruptedGhostInventory(context,world,builder,start,manualScreen);}
     }
     private static void rejectedPlacementCase(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,boolean closer,boolean missingReceipt){
         var target=start.add(0,0,closer?4:2);var rejected=new java.util.concurrent.atomic.AtomicInteger();var gate=new java.util.concurrent.atomic.AtomicBoolean(true);
@@ -422,7 +423,8 @@ final class AutoBuilderChecks {
                 int maxGap=0;for(int i=1;i<BuilderPlacementProbe.attempts.size();i++)maxGap=Math.max(maxGap,BuilderPlacementProbe.attempts.get(i)-BuilderPlacementProbe.attempts.get(i-1));
                 if(closer)require(BuilderPlacementProbe.distances.getLast()<BuilderPlacementProbe.distances.getFirst()-.5,"Ghost placement did not move closer on native footing: "+BuilderPlacementProbe.distances);
                 else require(maxGap<=10,"Ghost retry retained a long placement pause: "+BuilderPlacementProbe.attempts);
-                require(builder.inventoryCount(Items.STONE)==0&&client.player.playerScreenHandler.getCursorStack().isEmpty(),"Ghost recovery lost/duplicated stock or left it on the cursor");BuilderPacketChecks.verify(4);
+                require(builder.inventoryCount(Items.STONE)==0&&client.player.playerScreenHandler.getCursorStack().isEmpty(),"Ghost recovery lost/duplicated stock or left it on the cursor");
+                require(BuilderPlacementProbe.hiddenClicks==0&&BuilderPlacementProbe.sameTickReturns==0&&client.currentScreen==null,"Ghost recovery did not visibly revisit and return the original slot on separate ticks");BuilderPacketChecks.verify(4);
                 System.out.println("[ghost-placement-proof] closer="+closer+" missingReceipt="+missingReceipt+" originalSlot="+(missingReceipt?5:0)+" attempts="+BuilderPlacementProbe.attempts+" distances="+BuilderPlacementProbe.distances+" slotClicks="+BuilderPlacementProbe.slotClicks+" emptySlotClicks="+BuilderPlacementProbe.emptySlotClicks+" withheld="+BuilderPlacementProbe.withheld+" maxGap="+maxGap);
             });
             world.getServer().runOnServer(server->{var player=server.getPlayerManager().getPlayerList().getFirst();require(player.getInventory().count(Items.STONE)==0&&player.playerScreenHandler.getCursorStack().isEmpty(),"Actual server ghost recovery inventory/cursor mismatch");});
@@ -436,9 +438,32 @@ final class AutoBuilderChecks {
             verify(world,target,1,1,1,y->Blocks.STONE);
             context.runOnClient(client->{require(BuilderPlacementProbe.attempts.size()==1&&BuilderPlacementProbe.slotClicks==2&&(int)field(builder,"ticks")>=(int)field(builder,"placementDeadline"),"Delayed successful placement was repeated before its actual receipt");BuilderBlockDelay.release();});
             await(context,builder,200);context.waitTicks(8);
-            context.runOnClient(client->{require(BuilderPlacementProbe.attempts.size()==1&&BuilderPlacementProbe.slotClicks==2&&builder.inventoryCount(Items.STONE)==0&&client.player.playerScreenHandler.getCursorStack().isEmpty(),"Delayed successful placement duplicated an attempt or inventory");BuilderPacketChecks.verify(1);System.out.println("[ghost-accepted-timeout-proof] attempts="+BuilderPlacementProbe.attempts+" slotClicks="+BuilderPlacementProbe.slotClicks+" finalStock=0 cursorEmpty=true");});
+            context.runOnClient(client->{require(BuilderPlacementProbe.attempts.size()==1&&BuilderPlacementProbe.slotClicks==2&&builder.inventoryCount(Items.STONE)==0&&client.player.playerScreenHandler.getCursorStack().isEmpty()&&client.currentScreen==null,"Delayed successful placement duplicated an attempt or inventory");require(BuilderPlacementProbe.hiddenClicks==0&&BuilderPlacementProbe.sameTickReturns==0,"Delayed receipt used hidden or same-tick inventory clicks");BuilderPacketChecks.verify(1);System.out.println("[ghost-accepted-timeout-proof] attempts="+BuilderPlacementProbe.attempts+" slotClicks="+BuilderPlacementProbe.slotClicks+" finalStock=0 cursorEmpty=true");});
             world.getServer().runOnServer(server->{var player=server.getPlayerManager().getPlayerList().getFirst();require(player.getInventory().count(Items.STONE)==0&&player.playerScreenHandler.getCursorStack().isEmpty(),"Delayed successful placement changed actual server inventory");});
         }finally{context.runOnClient(client->{BuilderBlockDelay.release();BuilderPlacementProbe.end();BuilderPacketChecks.recording=false;});}
+    }
+    private static void interruptedGhostInventory(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start,boolean manualScreen){
+        var target=start.south(2);var gate=new java.util.concurrent.atomic.AtomicBoolean(true);
+        net.fabricmc.fabric.api.event.player.UseBlockCallback.EVENT.register((player,level,hand,hit)->{
+            if(!level.isClient()&&gate.get()&&hit.getBlockPos().equals(target.down())&&player.getStackInHand(hand).isOf(Items.STONE)){
+                ((net.minecraft.server.network.ServerPlayerEntity)player).playerScreenHandler.syncState();return net.minecraft.util.ActionResult.FAIL;
+            }
+            return net.minecraft.util.ActionResult.PASS;
+        });
+        try{
+            world.getServer().runCommand("give @a stone 1");context.waitTicks(6);
+            context.runOnClient(client->{set(builder,"Auto Move",false);builder.install(new Schematic("interrupted-ghost.nbt","test",1,1,1,BlockPos.ORIGIN,new BlockState[]{Blocks.STONE.getDefaultState()}));builder.setOrigin(target);BuilderPlacementProbe.begin(target);if(!manualScreen)BuilderPlacementProbe.allowInventory();builder.startBuild();});
+            for(int i=0;i<150&&context.computeOnClient(client->BuilderPlacementProbe.slotClicks<1);i++)context.waitTick();
+            context.runOnClient(client->{
+                require(BuilderPlacementProbe.slotClicks==1,"Interruption fixture missed the first slot click");
+                if(!manualScreen)require(client.player.playerScreenHandler.getCursorStack().isOf(Items.STONE),"Pause fixture did not pick up its real recovered block");
+                if(manualScreen)client.setScreen(new net.minecraft.client.gui.screen.ingame.InventoryScreen(client.player));
+                else builder.pause("Pause between ghost pickup and return");
+            });
+            context.waitTicks(8);
+            context.runOnClient(client->{require(!builder.building()&&BuilderPlacementProbe.slotClicks==2&&builder.inventoryCount(Items.STONE)==1&&client.player.playerScreenHandler.getCursorStack().isEmpty(),"Interrupted ghost recovery lost stock or left an item on the cursor");require(manualScreen?client.currentScreen instanceof net.minecraft.client.gui.screen.ingame.InventoryScreen:client.currentScreen==null,"Interrupted ghost recovery closed a user screen or left its own screen open");System.out.println("[ghost-interruption-proof] manualScreen="+manualScreen+" originalSlotRestored=true cursorEmpty=true");});
+            world.getServer().runOnServer(server->{var player=server.getPlayerManager().getPlayerList().getFirst();require(player.getInventory().count(Items.STONE)==1&&player.playerScreenHandler.getCursorStack().isEmpty()&&server.getOverworld().getBlockState(target).isAir(),"Interrupted recovery changed actual server stock/world");});
+        }finally{gate.set(false);context.runOnClient(client->{builder.pause("Ghost interruption fixture complete");BuilderPlacementProbe.end();client.setScreen(null);});}
     }
     private static void ghostMining(ClientGameTestContext context,TestSingleplayerContext world,AutoBuilder builder,BlockPos start){
         var target=start.south(2);

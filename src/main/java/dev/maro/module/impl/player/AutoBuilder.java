@@ -23,6 +23,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.block.*;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
+import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.client.gui.screen.ingame.AbstractSignEditScreen;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.item.*;
@@ -343,6 +344,8 @@ public final class AutoBuilder extends Module {
     private BlockState pendingBefore,pendingServerState;
     private int placementDeadline,placementInventorySlot,ghostSlot=-1,ghostSlotDeadline,ghostRetryAt;
     private boolean ghostSlotReceived,ghostSlotHadMaterial;
+    private InventoryScreen ghostScreen;
+    private int ghostClickPhase;
     private BlockPos ghostApproachStand;
     private int ghostApproachStarted;
     private BlockPos pendingBreak;
@@ -699,6 +702,7 @@ public final class AutoBuilder extends Module {
     }
     @Override protected void onDisable(){pause("Disabled");staffStopAt=0;captureStates=null;if(mc.player!=null&&originalSlot>=0)select(originalSlot);originalSlot=-1;}
     public void pause(String reason){
+        finishGhostInventory();
         homes.cancel();homeSetupResume=false;
         peekRetryAt.clear();
         waterDeparture=false;waterWorkTarget=null;liquidTopStand=null;liquidTopBlocks.clear();
@@ -782,6 +786,7 @@ public final class AutoBuilder extends Module {
         if(!mc.player.isAlive()||mc.player.isSpectator()){pause("Player is not able to build");return;}
         buildEta.tick(System.nanoTime()/1_000_000,building&&(!mode.is("Semi Auto")||mc.options.useKey.isPressed()));
         scan();captureTick();
+        if(ghostSlot>=0&&ghostInventoryTick())return;
         if(staffStopAt>0){if(logoff.get()&&System.currentTimeMillis()-staffStopAt>=logoffDelay.get()*1000){mc.world.disconnect(Text.literal(logoffMessage.get()));setEnabled(false);}return;}
         if((building||buying||pasting||depositing||homes.busy())&&unsafe()){walker.release();return;}
         if(pendingBreak!=null){miningReceiptTick();return;}
@@ -809,7 +814,6 @@ public final class AutoBuilder extends Module {
             &&(!mode.is("Semi Auto")||mc.options.useKey.isPressed())&&collectAccessDrop())return;
         if(homeSetupResume&&homes.ready()){homeSetupResume=false;startBuild();return;}
         if(building&&!buying&&!depositing&&recoverUnexpectedBuildMenu())return;
-        if(building&&ghostSlot>=0&&ghostInventoryTick())return;
         if(building&&ghostApproachStand!=null&&ghostApproachTick())return;
         if(building&&!buying&&!depositing&&!pasting&&!loading&&restockTarget==null&&mc.currentScreen==null
             &&(!mode.is("Semi Auto")||mc.options.useKey.isPressed())&&deferUnproductiveWork())return;
@@ -2569,33 +2573,58 @@ public final class AutoBuilder extends Module {
         status=reason;
     }
     private void beginPlacementReceipt(Place job){unconfirmedPlacements.put(job.target,job);pendingPlacement=job;pendingBefore=mc.world.getBlockState(job.target);pendingServerState=null;placementInventorySlot=mc.player.getInventory().getSelectedSlot();placementDeadline=ticks+80;}
-    /** A native pickup/return asks the server to resend the rejected placement's original slot. */
+    /** Revisit the original slot in vanilla inventory, with separate pickup and return ticks. */
     private boolean resyncGhostSlot(){
         var handler=mc.player.playerScreenHandler;
-        if(ghostSlot<0||ghostSlot>8||mc.player.currentScreenHandler!=handler||!handler.getCursorStack().isEmpty())return false;
+        if(ghostSlot<0||ghostSlot>8||mc.player.currentScreenHandler!=handler||!handler.getCursorStack().isEmpty()
+            ||mc.currentScreen!=null&&mc.currentScreen!=ghostScreen)return false;
         select(ghostSlot);
         ghostSlotReceived=false;ghostSlotHadMaterial=placement!=null&&mc.player.getInventory().getStack(ghostSlot).isOf(placement.item);ghostSlotDeadline=ticks+20;
-        int slot=36+ghostSlot;
-        mc.interactionManager.clickSlot(handler.syncId,slot,0,SlotActionType.PICKUP,mc.player);
-        mc.interactionManager.clickSlot(handler.syncId,slot,0,SlotActionType.PICKUP,mc.player);
+        if(ghostScreen==null){ghostScreen=new InventoryScreen(mc.player);mc.setScreen(ghostScreen);}
+        ghostClickPhase=0;ghostRetryAt=ticks+1;
         return true;
+    }
+    private void finishGhostInventory(){
+        if(ghostScreen!=null&&inGame()&&mc.player.currentScreenHandler==ghostScreen.getScreenHandler()){
+            // Even an apparently empty client cursor can still hold the rejected block
+            // on the server. Complete our pending return before closing or pausing.
+            if(ghostClickPhase==1&&mc.interactionManager!=null)
+                mc.interactionManager.clickSlot(mc.player.currentScreenHandler.syncId,36+ghostSlot,0,SlotActionType.PICKUP,mc.player);
+            if(mc.currentScreen==ghostScreen)mc.player.closeHandledScreen();
+        }
+        ghostScreen=null;ghostClickPhase=0;ghostSlot=-1;ghostSlotReceived=false;
     }
     public void placementInventoryReceived(int syncId,int slot){
         if(inGame()&&mc.isOnThread()&&ghostSlot>=0&&syncId==mc.player.playerScreenHandler.syncId&&(slot<0||slot==36+ghostSlot))ghostSlotReceived=true;
     }
     private boolean ghostInventoryTick(){
-        walker.release();
-        if(placement==null){ghostSlot=-1;return false;}
-        if(mc.player.currentScreenHandler!=mc.player.playerScreenHandler||!mc.player.playerScreenHandler.getCursorStack().isEmpty()){
-            status="Waiting for rejected block to return to its slot";return true;
+        walker.release();releaseSneak();digging=false;
+        if(placement==null){finishGhostInventory();return false;}
+        if(ghostScreen==null||mc.currentScreen!=ghostScreen||mc.player.currentScreenHandler!=ghostScreen.getScreenHandler()){
+            pause("Ghost recovery interrupted — resume when ready");return true;
+        }
+        var handler=mc.player.playerScreenHandler;
+        if(ghostClickPhase<2){
+            if(ticks<ghostRetryAt)return true;
+            if(ghostClickPhase==0&&!handler.getCursorStack().isEmpty()){
+                pause("Put down the held item before resuming");return true;
+            }
+            mc.interactionManager.clickSlot(handler.syncId,36+ghostSlot,0,SlotActionType.PICKUP,mc.player);
+            ghostClickPhase++;ghostRetryAt=ticks+(ghostClickPhase==1?2:1);ghostSlotDeadline=ticks+20;
+            status=ghostClickPhase==1?"Clicked rejected block's original slot":"Returning recovered block to its slot";return true;
+        }
+        if(!handler.getCursorStack().isEmpty()){
+            if(ticks>=ghostSlotDeadline)pause("Inventory response delayed — resume when ready");
+            else status="Waiting for rejected block to return to its slot";
+            return true;
         }
         if(placementAttemptTarget!=null&&ticks-placementAttemptStarted>80&&ticks>=ghostSlotDeadline){
-            var job=placement;ghostSlot=-1;deferPlacement(job,"Ghost placement still refused — checking another view");return true;
+            var job=placement;finishGhostInventory();deferPlacement(job,"Ghost placement still refused — checking another view");return true;
         }
         // Vanilla omits slot packets when both clicks already match the server.
         // An empty ghost slot still needs an actual inventory correction.
         if((ghostSlotReceived||ghostSlotHadMaterial)&&mc.player.getInventory().getStack(ghostSlot).isOf(placement.item)&&ticks>=ghostRetryAt){
-            ghostSlot=-1;delay=0;status="Ghost block recovered — retrying placement";return false;
+            finishGhostInventory();delay=0;status="Ghost block recovered — retrying placement";return false;
         }
         if(ticks>=ghostSlotDeadline)resyncGhostSlot();
         status="Recovering ghost block inventory";return true;
@@ -3617,6 +3646,7 @@ public final class AutoBuilder extends Module {
         action.run();
     }
     private boolean recoverUnexpectedBuildMenu(){
+        if(mc.currentScreen==ghostScreen&&ghostScreen!=null)return false;
         if(mc.currentScreen instanceof AbstractSignEditScreen sign&&ticks-lastBuildInteraction<=160){
             walker.release();releaseSneak();sign.close();delay=4;status="Sign placed - continuing build";return true;
         }

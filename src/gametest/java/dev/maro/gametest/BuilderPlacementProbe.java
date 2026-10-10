@@ -12,22 +12,28 @@ import java.util.*;
 public final class BuilderPlacementProbe {
     private static BlockPos target;
     private static boolean holdInventory;
+    private static boolean withholdRejections;
     private static int sourceSlot;
-    public static int slotClicks,emptySlotClicks,withheld,wrongSelectedClicks,firstSlotClick;
+    public static int slotClicks,emptySlotClicks,withheld,wrongSelectedClicks,firstSlotClick,hiddenClicks,sameTickReturns;
+    private static int lastSlotClick;
     public static final List<Integer> attempts=new ArrayList<>();
     public static final List<Double> distances=new ArrayList<>();
     public static void begin(BlockPos pos){begin(pos,0);}
-    public static void begin(BlockPos pos,int slot){target=pos;sourceSlot=slot;holdInventory=false;slotClicks=emptySlotClicks=withheld=wrongSelectedClicks=0;firstSlotClick=-1;attempts.clear();distances.clear();}
+    public static void begin(BlockPos pos,int slot){target=pos;sourceSlot=slot;holdInventory=false;withholdRejections=true;slotClicks=emptySlotClicks=withheld=wrongSelectedClicks=hiddenClicks=sameTickReturns=0;firstSlotClick=lastSlotClick=-1;attempts.clear();distances.clear();}
+    public static void allowInventory(){withholdRejections=false;holdInventory=false;}
     public static void end(){target=null;holdInventory=false;}
     public static void outbound(Packet<?> packet){
         var client=MinecraftClient.getInstance();if(target==null||!client.isOnThread())return;
         if(packet instanceof PlayerInteractBlockC2SPacket block&&block.getBlockHitResult().getBlockPos().equals(target.down())){
-            attempts.add(client.player.age);distances.add(client.player.getEyePos().distanceTo(net.minecraft.util.math.Vec3d.ofCenter(target)));holdInventory=attempts.size()<=3;
+            attempts.add(client.player.age);distances.add(client.player.getEyePos().distanceTo(net.minecraft.util.math.Vec3d.ofCenter(target)));holdInventory=withholdRejections&&attempts.size()<=3;
         }
         if(packet instanceof ClickSlotC2SPacket click&&click.syncId()==0&&click.slot()==36+sourceSlot&&click.actionType()==SlotActionType.PICKUP){
             if(firstSlotClick<0)firstSlotClick=client.player.age;
             slotClicks++;if(client.player.getInventory().getStack(sourceSlot).isEmpty())emptySlotClicks++;
             if(client.player.getInventory().getSelectedSlot()!=sourceSlot)wrongSelectedClicks++;
+            if(!(client.currentScreen instanceof net.minecraft.client.gui.screen.ingame.InventoryScreen))hiddenClicks++;
+            if(slotClicks%2==0&&client.player.age<=lastSlotClick)sameTickReturns++;
+            lastSlotClick=client.player.age;
             // Discard only the missed rejection corrections. The two actual native
             // inventory clicks must now obtain fresh server slot/cursor responses.
             if(slotClicks%2==0)holdInventory=false;
