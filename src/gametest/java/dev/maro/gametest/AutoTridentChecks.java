@@ -12,7 +12,11 @@ import net.minecraft.util.Hand;
 import org.lwjgl.glfw.GLFW;
 
 /** Verifies actual server-accepted throws with held mouse input, not just client prediction. */
-final class AutoTridentChecks {
+public final class AutoTridentChecks {
+    private static net.minecraft.network.ClientConnection watched;
+    private static final java.util.List<net.minecraft.network.packet.Packet<?>> sent=new java.util.ArrayList<>();
+    public static void sent(net.minecraft.network.ClientConnection connection,net.minecraft.network.packet.Packet<?> packet){if(connection==watched)sent.add(packet);}
+    private static void record(ClientGameTestContext context){context.runOnClient(c->{sent.clear();watched=c.getNetworkHandler().getConnection();});}
     private static void require(boolean condition, String message) {
         if (!condition) throw new AssertionError(message);
     }
@@ -80,6 +84,8 @@ final class AutoTridentChecks {
             context.getInput().releaseMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
             context.waitTicks(5);
 
+            riptide(context,world,module);
+
             world.getServer().runOnServer(server -> {
                 var player = server.getPlayerManager().getPlayerList().getFirst();
                 player.getInventory().setStack(player.getInventory().getSelectedSlot(), new ItemStack(Items.BOW));
@@ -92,6 +98,7 @@ final class AutoTridentChecks {
                 && client.player.getActiveItem().isOf(Items.BOW) && client.player.getItemUseTime() >= 20),
                 "Auto Trident interrupted a bow charge");
         } finally {
+            watched=null;
             context.getInput().releaseMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
             context.runOnClient(client -> { module.setEnabled(false); speed.reset(); client.player.setPitch(pitch); });
             world.getServer().runOnServer(server -> {
@@ -103,4 +110,43 @@ final class AutoTridentChecks {
             context.waitTicks(5);
         }
     }
+    private static void riptide(ClientGameTestContext context,TestSingleplayerContext world,AutoTrident module){
+        var position=context.computeOnClient(c->c.player.getEntityPos());
+        try{
+            world.getServer().runCommand("weather clear");
+            world.getServer().runCommand("tp @a 200.5 90 200.5 0 -90");
+            world.getServer().runCommand("item replace entity @a weapon.offhand with air");
+            world.getServer().runCommand("item replace entity @a weapon.mainhand with minecraft:trident[minecraft:enchantments={\"minecraft:riptide\":3}]");
+            context.waitTicks(8);
+            require(context.computeOnClient(c->!c.player.isTouchingWaterOrRain()),"Standalone dry Riptide fixture was wet");
+            record(context);context.getInput().holdMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);context.waitTicks(20);
+            require(sent.stream().noneMatch(p->p instanceof net.minecraft.network.packet.c2s.play.PlayerInteractItemC2SPacket),"Auto Trident without Trident Util sent rejected dry-use packets");
+            context.getInput().releaseMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
+            world.getServer().runCommand("fill 196 80 196 204 83 204 minecraft:water");
+            world.getServer().runCommand("weather rain");
+            world.getServer().runCommand("tp @a 200.5 82 200.5 0 -90");context.waitTicks(8);
+            require(context.computeOnClient(c->c.player.isTouchingWaterOrRain()),"Wet Riptide fixture did not synchronize");
+            int before=throwsAccepted(world);
+            context.getInput().holdMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);context.waitTicks(70);
+            require(throwsAccepted(world)-before>=2,"Server Timing did not repeat actual server-accepted Riptide launches");
+            // The real server sends a position correction. It must be accepted, then
+            // held input must wait instead of immediately launching another burst.
+            int correctionBefore=context.computeOnClient(c->(int)field(module,"lastCorrectionAge"));
+            world.getServer().runCommand("execute as @a at @s run tp @s ~ ~ ~");
+            for(int i=0;i<20&&context.computeOnClient(c->(int)field(module,"lastCorrectionAge")==correctionBefore);i++)context.waitTick();
+            require(context.computeOnClient(c->(int)field(module,"lastCorrectionAge")>correctionBefore),"Native correction did not reach standalone Auto Trident");
+            record(context);context.waitTicks(15);
+            require(sent.stream().noneMatch(p->p instanceof net.minecraft.network.packet.c2s.play.PlayerInteractItemC2SPacket||p instanceof net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket a&&a.getAction()==net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket.Action.RELEASE_USE_ITEM),"Auto Trident repeated a burst during correction backoff");
+            before=throwsAccepted(world);context.waitTicks(50);
+            require(throwsAccepted(world)>before,"Auto Trident did not resume after correction backoff");
+            System.out.println("[auto-trident-server-timing-proof] standalone dry-use packets=0; repeated native wet Riptide accepted; real position correction backoff and resume passed");
+        }finally{
+            watched=null;context.getInput().releaseMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
+            world.getServer().runCommand("weather clear");
+            world.getServer().runCommand("fill 196 80 196 204 83 204 minecraft:air");
+            world.getServer().runCommand("tp @a "+position.x+" "+position.y+" "+position.z);
+            context.waitTicks(5);
+        }
+    }
+    private static Object field(Object owner,String name){try{var f=owner.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(owner);}catch(ReflectiveOperationException e){throw new AssertionError(e);}}
 }

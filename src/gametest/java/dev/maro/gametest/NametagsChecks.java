@@ -82,6 +82,14 @@ final class NametagsChecks {
             context.runOnClient(c -> ((BooleanSetting) setting(tags, "Enchants")).set(false));
             context.waitTicks(3);
             context.takeScreenshot("maro-nametags-armor-cards");
+            context.runOnClient(c -> ((BooleanSetting) setting(tags, "Enchanted Glow")).set(false));
+            context.waitTicks(3);
+            context.takeScreenshot("maro-nametags-enchanted-glow-off");
+            context.runOnClient(c -> ((BooleanSetting) setting(tags, "Enchanted Glow")).set(true));
+            context.runOnClient(c -> {((ModeSetting) setting(tags, "Font")).set("Minecraft");((ModeSetting) setting(tags, "Gear Style")).set("Minimal");});
+            context.waitTicks(3);
+            context.takeScreenshot("maro-nametags-bold-percent-minecraft");
+            context.runOnClient(c -> {((ModeSetting) setting(tags, "Font")).set("Client");((ModeSetting) setting(tags, "Gear Style")).set("Cards");});
             context.runOnClient(c -> ((BooleanSetting) setting(tags, "Enchants")).set(true));
 
             // A popped totem counts.

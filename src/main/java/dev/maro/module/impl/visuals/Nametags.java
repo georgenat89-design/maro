@@ -25,6 +25,7 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.registry.tag.EnchantmentTags;
+import net.minecraft.text.Text;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
@@ -66,6 +67,8 @@ public class Nametags extends Module {
             .visible(this::showsItems));
     private final BooleanSetting enchants = add(new BooleanSetting("Enchants", "Readable enchantment labels with Roman levels, such as Prot IV and Sharp V", false)
             .visible(this::showsItems));
+    private final BooleanSetting enchantedGlow = add(new BooleanSetting("Enchanted Glow", "A soft purple glow behind enchanted equipment icons", true)
+            .visible(this::showsItems));
     private final ModeSetting durability = add(new ModeSetting("Durability", "Off, the item's bar, a percent, or both (Full)", "Full",
             "Off", "Bar", "Percent", "Full").visible(this::showsItems));
     private final BooleanSetting itemBackground = add(new BooleanSetting("Item Background", "A dark square behind each piece", false)
@@ -96,7 +99,7 @@ public class Nametags extends Module {
     private final List<SettingSection> sections = List.of(
             SettingSection.of("Players", self, hideNpcs, range, edgeTags),
             SettingSection.of("Tag", health, healthMode, absorption, distance, pops),
-            SettingSection.of("Items", armor, heldItem, gearStyle, itemName, enchants, durability, itemBackground),
+            SettingSection.of("Items", armor, heldItem, gearStyle, itemName, enchants, enchantedGlow, durability, itemBackground),
             SettingSection.of("Look", layout, style, glow, glowStrength, pulse, accent, accentEnd, healthStrip, background, backgroundColor, outline, textColor, healthColors, friendBackground, friendColor,
                     scale, constantSize, font, shadow));
 
@@ -376,6 +379,7 @@ public class Nametags extends Module {
             ItemStack stack = stacks.get(i);
             float ix = left + i * cell + (cell - 16) / 2;
             if (itemBackground.get()) Render2D.roundRect(ctx, ix - 0.5f, top - 0.5f, 17, 17, 3, 0x90000000);
+            enchantedGlow(ctx, stack, ix, top, 16);
             matrices.pushMatrix();
             matrices.translate(ix, top);
             ctx.drawItem(stack, 0, 0);
@@ -384,7 +388,7 @@ public class Nametags extends Module {
             float above = top - 1;
             if (percent && stack.isDamageable() && stack.getMaxDamage() > 0) {
                 float left01 = 1 - stack.getDamage() / (float) stack.getMaxDamage();
-                small(ctx, Math.round(left01 * 100) + "%", ix + 8, above - 3, left01 < 0.25f ? RED : 0xFFCDD3DF);
+                small(ctx, Math.round(left01 * 100) + "%", ix + 8, above - 3, left01 < 0.25f ? RED : 0xFFCDD3DF, true);
                 above -= 8;
             }
             if (enchants.get()) {
@@ -429,6 +433,7 @@ public class Nametags extends Module {
             else Render2D.roundOutline(ctx, x, top, cardW, cardH, 4, 0.6f,
                     ColorUtil.withAlpha(colors[0], 65), ColorUtil.withAlpha(colors[1], 65),
                     0x305C6576, 0x305C6576);
+            enchantedGlow(ctx, stack, cx - (compact ? 6 : 8), top + (compact ? 2 : 3), compact ? 12 : 16);
             matrices.pushMatrix();
             matrices.translate(cx - (compact ? 6 : 8), top + (compact ? 2 : 3));
             if (compact) matrices.scale(0.75f, 0.75f);
@@ -437,7 +442,7 @@ public class Nametags extends Module {
             float fraction = stack.isDamageable() && stack.getMaxDamage() > 0
                     ? Math.max(0, Math.min(1, 1 - stack.getDamage() / (float) stack.getMaxDamage())) : -1;
             if (percent && fraction >= 0) gearText(ctx, Math.round(fraction * 100) + "%", cx, top + (compact ? 18.5f : 24),
-                    fraction < 0.25f ? RED : 0xFFCDD3DF);
+                    fraction < 0.25f ? RED : 0xFFCDD3DF, true);
             if (bar && fraction >= 0) {
                 float by = top + headerH - (compact ? 2 : 4);
                 Render2D.roundRect(ctx, x + 4, by, cardW - 8, 1.5f, 0.75f, 0xFF303746);
@@ -460,24 +465,35 @@ public class Nametags extends Module {
     }
 
     private static final float GEAR_TEXT_SCALE = 0.75f;
+    private void enchantedGlow(DrawContext ctx, ItemStack stack, float x, float y, float size) {
+        if(!enchantedGlow.get()||!stack.hasEnchantments())return;
+        Render2D.shadow(ctx,x+1,y+1,size-2,size-2,3,3,0xA5966EFF);
+        Render2D.roundRect(ctx,x+1,y+1,size-2,size-2,3,0x285D39A9);
+    }
 
     private void gearText(DrawContext ctx, String label, float cx, float cy, int color) {
+        gearText(ctx, label, cx, cy, color, false);
+    }
+    private void gearText(DrawContext ctx, String label, float cx, float cy, int color, boolean bold) {
         var matrices = ctx.getMatrices();
         matrices.pushMatrix();
-        matrices.translate(cx - width(label, false) * GEAR_TEXT_SCALE / 2, cy);
+        matrices.translate(cx - width(label, bold) * GEAR_TEXT_SCALE / 2, cy);
         matrices.scale(GEAR_TEXT_SCALE, GEAR_TEXT_SCALE);
-        text(ctx, label, 0, 0, color, false);
+        text(ctx, label, 0, 0, color, bold);
         matrices.popMatrix();
     }
 
     /** Text drawn small and centred on (cx, cy), for durability and enchantments. */
     private void small(DrawContext ctx, String s, float cx, float cy, int color) {
+        small(ctx, s, cx, cy, color, false);
+    }
+    private void small(DrawContext ctx, String s, float cx, float cy, int color, boolean bold) {
         var matrices = ctx.getMatrices();
         float k = 0.65f;
         matrices.pushMatrix();
-        matrices.translate(cx - width(s, false) * k / 2f, cy);
+        matrices.translate(cx - width(s, bold) * k / 2f, cy);
         matrices.scale(k, k);
-        text(ctx, s, 0, 0, color, false);
+        text(ctx, s, 0, 0, color, bold);
         matrices.popMatrix();
     }
 
@@ -553,7 +569,7 @@ public class Nametags extends Module {
     }
 
     private float width(String s, boolean bold) {
-        return vanillaFont() ? mc.textRenderer.getWidth(s) : Fonts.width(s, bold, CLIENT_SIZE);
+        return vanillaFont() ? mc.textRenderer.getWidth(Text.literal(s).styled(style -> style.withBold(bold))) : Fonts.width(s, bold, CLIENT_SIZE);
     }
 
     /** Text with its left edge at x and its middle at cy. */
@@ -565,7 +581,7 @@ public class Nametags extends Module {
         var matrices = ctx.getMatrices();
         matrices.pushMatrix();
         matrices.translate(x, cy - 4);
-        ctx.drawText(mc.textRenderer, s, 0, 0, color | 0xFF000000, shadow.get());
+        ctx.drawText(mc.textRenderer, Text.literal(s).styled(style -> style.withBold(bold)), 0, 0, color | 0xFF000000, shadow.get());
         matrices.popMatrix();
     }
 
