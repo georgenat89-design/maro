@@ -58,8 +58,8 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Trajectories: where what you are about to throw or shoot will go (pearls, arrows, tridents and
- * more), drawn as a line to where it lands, with the landing point, the time it takes and the entity
+ * Trajectories: where what you are about to throw or shoot will go (ender pearls by default; arrows,
+ * tridents and more can be switched on), drawn as a line to where it lands, with the landing point, the time it takes and the entity
  * it would hit; and the same for pearls, arrows and the rest already in the air, with whose they are.
  */
 public class Trajectories extends Module {
@@ -87,12 +87,13 @@ public class Trajectories extends Module {
     }
 
     // ---- what to show
+    // Pearls only by default; the rest can be switched on.
     private final BooleanSetting pearls = add(new BooleanSetting("Ender Pearl", "Ender pearls", true));
-    private final BooleanSetting arrows = add(new BooleanSetting("Arrow", "Arrows from bows and crossbows (all three with Multishot)", true));
-    private final BooleanSetting tridents = add(new BooleanSetting("Trident", "Thrown tridents", true));
-    private final BooleanSetting throwables = add(new BooleanSetting("Snowballs & Eggs", "Snowballs and eggs", true));
-    private final BooleanSetting potions = add(new BooleanSetting("Potions", "Splash and lingering potions and bottles o' enchanting", true));
-    private final BooleanSetting windCharges = add(new BooleanSetting("Wind Charges", "Wind charges", true));
+    private final BooleanSetting arrows = add(new BooleanSetting("Arrow", "Arrows from bows and crossbows (all three with Multishot)", false));
+    private final BooleanSetting tridents = add(new BooleanSetting("Trident", "Thrown tridents", false));
+    private final BooleanSetting throwables = add(new BooleanSetting("Snowballs & Eggs", "Snowballs and eggs", false));
+    private final BooleanSetting potions = add(new BooleanSetting("Potions", "Splash and lingering potions and bottles o' enchanting", false));
+    private final BooleanSetting windCharges = add(new BooleanSetting("Wind Charges", "Wind charges", false));
 
     // ---- labels and points
     private final BooleanSetting showOwner = add(new BooleanSetting("Show Owner", "Whose pearl, arrow or trident it is, over it in the air", true));
@@ -139,12 +140,30 @@ public class Trajectories extends Module {
     private int lastThrown;
 
     public Trajectories() {
-        super("Trajectories", "Where pearls, arrows, tridents and potions will land, yours and those in the air", Category.VISUALS);
+        super("Trajectories", "Where ender pearls will land, yours and those in the air (arrows, tridents and potions can be switched on)", Category.VISUALS);
     }
 
     @Override
     public List<SettingSection> getSettingSections() {
         return sections;
+    }
+
+    /** Saved before Trajectories went to pearls only: the other projectiles are switched off, once. */
+    private static final int PROJECTILE_REVISION = 1;
+
+    @Override
+    public com.google.gson.JsonObject saveExtra() {
+        var data = super.saveExtra();
+        data.addProperty("projectile-revision", PROJECTILE_REVISION);
+        return data;
+    }
+
+    @Override
+    public void loadExtra(com.google.gson.JsonObject data) {
+        super.loadExtra(data);
+        if (!data.has("projectile-revision")) {
+            for (BooleanSetting other : new BooleanSetting[] {arrows, tridents, throwables, potions, windCharges}) other.set(false);
+        }
     }
 
     @Override
