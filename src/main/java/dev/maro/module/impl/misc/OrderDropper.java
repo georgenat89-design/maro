@@ -62,10 +62,11 @@ public class OrderDropper extends Module {
             () -> mc.setScreen(new ItemPickerScreen(mc.currentScreen, "Block To Drop", picked -> dropItem.set(Registries.ITEM.getId(picked).toString()))))
             .visible(() -> dropping() && which.is("Picked Block")));
     private final dev.maro.setting.ModeSetting how = add(new dev.maro.setting.ModeSetting("Drop How",
-            "Throw the stacks straight out of the Collect Items window (fastest), or take them and throw them from your inventory",
-            "Throw From Menu", "Throw From Menu", "Take Then Throw").visible(this::dropping));
+            "Drop All Button: press the order's own drop button on each page, as DonutSMP has. Throw Each Stack: Ctrl+Q every stack. "
+                    + "Take Then Throw: take them and throw them from your inventory",
+            "Drop All Button", "Drop All Button", "Throw Each Stack", "Take Then Throw").visible(this::dropping));
     private final NumberSetting dropsPerTick = add(new NumberSetting("Drops Per Tick", "How many stacks it throws each tick: 45 is a whole page at once",
-            45, 1, 45, 1).visible(this::dropping));
+            45, 1, 45, 1).visible(() -> dropping() && !how.is("Drop All Button")));
     private final NumberSetting pageDelay = add(new NumberSetting("Page Delay", "Ticks to wait for the next page or menu (more if the server is slow)",
             2, 0, 20, 1).suffix(" ticks").visible(this::dropping));
     private final BooleanSetting repeat = add(new BooleanSetting("Repeat", "When every order is empty, start again after a while for what was delivered since",
@@ -115,13 +116,15 @@ public class OrderDropper extends Module {
             .visible(this::dropping));
     private final TextSetting collectWords = add(new TextSetting("Collect Words", "The Collect Items button and window", "collect", 64, "collect")
             .visible(this::dropping));
+    private final TextSetting dropAllWords = add(new TextSetting("Drop All Words", "The drop all button in Collect Items (else the button showing the order's item)",
+            "drop", 64, "drop").visible(this::dropping));
 
     private final List<SettingSection> sections = List.of(
             SettingSection.of("Order Dropper", mode, which, dropItem, pickDrop, how, dropsPerTick, pageDelay, repeat, repeatEvery),
             SettingSection.of("Item", useHeld, itemId, pickItem),
             SettingSection.of("Selling", minPrice, keep, skipSpecial, stacksPerTick, delay, keepGoing, pages),
             SettingSection.of("Flip", flip, margin, maxSpend, maxBuyEach, rounds),
-            SettingSection.of("Menus", openCommand, yourOrdersWords, collectWords, ordersCommand, ahCommand, ordersTitle, deliverTitle, ahTitle,
+            SettingSection.of("Menus", openCommand, yourOrdersWords, collectWords, dropAllWords, ordersCommand, ahCommand, ordersTitle, deliverTitle, ahTitle,
                     priceWords, confirmWords, cancelWords, nextWords));
 
     /** Saved before you picked the block to drop: All becomes Picked Block, once. */
@@ -174,7 +177,7 @@ public class OrderDropper extends Module {
     private String currentOrder;
     private int dropped, stacksDropped, ordersEmptied, dropPage, refills, lastDropTick, clickedSync = -1, clickedAt, repeatAt;
     private boolean pageEmptied, lookAlikes, checking;
-    private int droppedAtOrder;
+    private int droppedAtOrder, pageSync = -1, pageItems;
 
     public OrderDropper() {
         super("Order Dropper", "Empties your DonutSMP orders fast: opens Collect Items and throws every stack out, page after page", Category.MISC);
@@ -561,6 +564,8 @@ public class OrderDropper extends Module {
             if (emptied.contains(key)) continue;
             currentOrder = key;
             droppedAtOrder = dropped;
+            pageSync = -1;
+            pageItems = 0;
             dropPage = 1;
             refills = 0;
             pageEmptied = false;
@@ -594,15 +599,26 @@ public class OrderDropper extends Module {
         finish(summary, dropped > 0);
     }
 
-    /** In Collect Items: throws the page out, then flips to the next page, then on to the next order. */
+    /**
+     * In Collect Items: drops the page (the drop all button, or a stack at a time), then clicks next
+     * page and drops that, and so on; with no next page the order is empty and it goes on to the next.
+     */
     private void collectPage(ScreenHandler handler) {
         boolean take = how.is("Take Then Throw");
         if (take && throwTaken(handler)) return;
-        int done = 0;
+        List<Slot> items = new java.util.ArrayList<>();
+        int onPage = 0;
         for (Slot slot : handler.slots) {
-            if (done >= dropsPerTick.getInt()) break;
-            ItemStack stack = slot.getStack();
-            if (slot.inventory == mc.player.getInventory() || stack.isEmpty() || bottomRow(handler, slot)) continue;
+            if (slot.inventory == mc.player.getInventory() || slot.getStack().isEmpty() || bottomRow(handler, slot)) continue;
+            items.add(slot);
+            onPage += slot.getStack().getCount();
+        }
+        // What left the page since last time was dropped.
+        if (handler.syncId == pageSync && onPage < pageItems) dropped += pageItems - onPage;
+        pageSync = handler.syncId;
+        pageItems = onPage;
+
+        if (!items.isEmpty()) {
             if (pageEmptied) {
                 // Filled again without a page flip: the server put more on this page.
                 pageEmptied = false;
@@ -611,22 +627,32 @@ public class OrderDropper extends Module {
                     return;
                 }
             }
-            dropped += stack.getCount();
-            stacksDropped++;
-            // Ctrl+Q on the slot throws the whole stack; or shift-click it into your inventory.
-            if (take) click(handler, slot.id, SlotActionType.QUICK_MOVE);
-            else mc.interactionManager.clickSlot(handler.syncId, slot.id, 1, SlotActionType.THROW, mc.player);
-            done++;
-        }
-        if (take) throwTaken(handler);
-        if (done > 0) {
-            lastDropTick = ticks;
             deadline = ticks + 100;
             status = "Dropping · page " + dropPage + " · " + dropped + " items";
+            Slot button = how.is("Drop All Button") ? dropAllButton(handler, items) : null;
+            if (button != null) {
+                // One press drops the page; pressed again only if the page is still full a while later.
+                if (ticks - lastDropTick < pageDelay.getInt() + 6) return;
+                click(handler, button.id, SlotActionType.PICKUP);
+                stacksDropped += items.size();
+                lastDropTick = ticks;
+                return;
+            }
+            int done = 0;
+            for (Slot slot : items) {
+                if (done >= (take || how.is("Throw Each Stack") ? dropsPerTick.getInt() : 45)) break;
+                // Ctrl+Q on the slot throws the whole stack; or shift-click it into your inventory.
+                if (take) click(handler, slot.id, SlotActionType.QUICK_MOVE);
+                else mc.interactionManager.clickSlot(handler.syncId, slot.id, 1, SlotActionType.THROW, mc.player);
+                done++;
+            }
+            stacksDropped += done;
+            if (take) throwTaken(handler);
+            lastDropTick = ticks;
             return;
         }
         pageEmptied = true;
-        // Let the server catch up with the throws (and refill the page if it does) before flipping.
+        // Let the server catch up (and refill the page if it does) before clicking next page.
         if (ticks - lastDropTick < pageDelay.getInt() + 2) return;
         if (handler.syncId == clickedSync && ticks - clickedAt < pageDelay.getInt() + 4) return;
         Slot next = named(handler, nextWords.get(), true);
@@ -634,7 +660,9 @@ public class OrderDropper extends Module {
         if (next != null) {
             dropPage++;
             pageEmptied = false;
-            status = "Page " + dropPage;
+            pageItems = 0;
+            lastDropTick = ticks - 100;
+            status = "Next page · " + dropPage;
             menuClick(handler, next);
             return;
         }
@@ -643,6 +671,25 @@ public class OrderDropper extends Module {
         status = "Order empty · " + dropped + " items dropped";
         // Back round for the next order (another for the same block, or any with All).
         go(Stage.DROP_OPEN, pageDelay.getInt());
+    }
+
+    /**
+     * The page's drop all button in the bottom row: one named so, or else the one showing the order's
+     * item (DonutSMP's, next to the emerald); null if there is none.
+     */
+    private Slot dropAllButton(ScreenHandler handler, List<Slot> items) {
+        Slot byName = null, byItem = null;
+        ItemStack sample = items.getFirst().getStack();
+        for (Slot slot : handler.slots) {
+            ItemStack stack = slot.getStack();
+            if (slot.inventory == mc.player.getInventory() || stack.isEmpty() || !bottomRow(handler, slot)) continue;
+            StringBuilder text = new StringBuilder(stack.getName().getString());
+            var lore = stack.get(DataComponentTypes.LORE);
+            if (lore != null) for (var line : lore.lines()) text.append(' ').append(line.getString());
+            if (OrderMarket.has(text.toString(), dropAllWords.get())) byName = slot;
+            else if (stack.isOf(sample.getItem()) && byItem == null && !OrderMarket.has(text.toString(), nextWords.get() + ";previous;prev;back")) byItem = slot;
+        }
+        return byName != null ? byName : byItem;
     }
 
     /** The arrow in the right half of the bottom row: the next page. */
