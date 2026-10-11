@@ -49,6 +49,16 @@ stationary controls with Space to play/pause. The phone's **− / +** buttons re
 **55% to 145%**. Drag or scroll **Output volume**, or click its speaker to mute. This controls
 Windows output volume for all apps, including both desktop and browser Spotify.
 
+The phone and iPad also include **Messages**, **Playlists**, and **Connection** apps.
+Press **I** (configurable **Interact Key**) or click **Interact** to open the app grid;
+press I again to return to mouse look. Connect both testers to the same test relay to
+get separate, persistent 10-digit phone numbers. Text by number, receive unread badges
+and HUD notifications, and block unwanted numbers. Long messages open in a scrollable
+reader. Saved Spotify playlist links can be shared as cards that the recipient can
+open or save. Typing pauses movement; the normal music controls and pocket animation
+remain available. The relay runs locally or on a LAN for now; see
+[phone relay setup](tools/phone-relay/README.md) for startup and testing instructions.
+
 **Staff Notifier** (Visuals) recreates SignalDebug's recovered staff-list settings
 and default account names in Maro. Edit **staff names** for your server. It shows
 staff currently listed in tab, their heads and ping, and join/leave toast and sound

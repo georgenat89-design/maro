@@ -119,6 +119,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             }
             if (Boolean.getBoolean("maro.gametest.spotifyPhoneOnly")) {
                 SpotifyPhoneChecks.run(context);
+                PhoneSharingChecks.run(context);
                 return;
             }
             if (Boolean.getBoolean("maro.gametest.hudOnly")) {
@@ -150,6 +151,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             SpotifyLyricsChecks.run(context);
             SpotifyVolumeChecks.run(context);
             SpotifyPhoneChecks.run(context);
+            PhoneSharingChecks.run(context);
             checkSlowSwing(context);
             checkKeySounds(context);
             checkRegionMap(context);

@@ -35,6 +35,7 @@ final class SpotifyPhoneChecks {
         try {
             context.runOnClient(client -> {
                 phone.setEnabled(false); hud.setEnabled(false); client.setScreen(null);
+                phone.getSettings().forEach(setting -> setting.reset());
                 phone.getBind().set(GLFW.GLFW_KEY_F10);
                 require(!phone.persistEnabled(), "Phone can reactivate on login");
                 hud.setEnabled(true);
@@ -426,7 +427,7 @@ final class SpotifyPhoneChecks {
         return new SpotifyMedia.State(available, title, "Maro Radio", "After Hours", "Spotify", false, seek,
             62000, 180000, System.currentTimeMillis(), "");
     }
-    private static final class IsolatedPlayback implements SpotifyPlayback {
+    static final class IsolatedPlayback implements SpotifyPlayback {
         SpotifyMedia.State state = track("Midnight Drive", true, true);
         final List<String> controls = new ArrayList<>();
         final List<Long> seeks = new ArrayList<>();
