@@ -42,6 +42,7 @@
     "InventoryHiderMixins$Model",
     "InventoryHiderMixins$Hotbar",
     "InventoryHiderMixins$HeldItem",
+    "VehiclesMixins$Seat",
     "NametagsMixins$HideLabel",
     "NametagsMixins$Pops",
     "HandShaderMixin",
