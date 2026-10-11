@@ -115,5 +115,6 @@ public abstract class GameRendererMixin {
         dev.maro.render.esp.BlockEspRenderer.composite();
         Bloom.applyTo(MinecraftClient.getInstance().getFramebuffer(), pool);
         ColorCorrect.applyTo(MinecraftClient.getInstance().getFramebuffer(), pool, point);
+        dev.maro.render.GeekedRenderer.apply();
     }
 }

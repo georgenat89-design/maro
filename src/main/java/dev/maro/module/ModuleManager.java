@@ -64,6 +64,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.Nametags());
         register(new dev.maro.module.impl.visuals.Trajectories());
         register(new dev.maro.module.impl.visuals.HandShader());
+        register(new dev.maro.module.impl.visuals.Geeked());
         register(new dev.maro.module.impl.misc.OrderDropper());
         register(new dev.maro.module.impl.movement.CoordsFly());
         register(new dev.maro.module.impl.movement.AirStuck());

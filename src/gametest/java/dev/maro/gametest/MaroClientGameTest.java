@@ -51,6 +51,10 @@ public class MaroClientGameTest implements FabricClientGameTest {
             // make sure nothing (pause menu, toasts...) is in the way before testing the keybind
             context.setScreen(() -> null);
             context.waitTicks(5);
+            if (Boolean.getBoolean("maro.gametest.geekedOnly")) {
+                GeekedChecks.run(context, singleplayer);
+                return;
+            }
             if (Boolean.getBoolean("maro.gametest.acOffOnly")) {
                 AutoTridentChecks.run(context, singleplayer);
                 AntiCheatOffChecks.run(context, singleplayer);
@@ -155,6 +159,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             ChestTransferChecks.run(context, singleplayer);
             TrajectoriesChecks.run(context, singleplayer);
             HandShaderChecks.run(context);
+            GeekedChecks.run(context, singleplayer);
             OrderDropperChecks.run(context, singleplayer);
             CoordsFlyChecks.run(context, singleplayer);
             AirFallChecks.run(context, singleplayer);
