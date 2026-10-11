@@ -15,6 +15,12 @@ The phone reuses its immutable album-art geometry across frames.
 
 ## Included modules
 
+**Keyboard Strokes** (Visuals) shows the keys you press on screen, lit while held. Right-click it (or
+**Choose Keys**) to open a menu of every keybind in the game and tick the ones you want shown;
+a live preview updates as you click. It reads your bindings, so it follows anything you rebind.
+Movement keys keep the W / A S D shape, mouse buttons pair up, jump runs along the bottom and the
+rest flow underneath. Drag it anywhere, resize it, and set the key opacity.
+
 **Spotify Phone** (Misc) opens a handheld music player with **F10**. Click previous,
 play/pause or next, or use **Left / Ctrl+Space / Right**. Drag the progress bar to seek;
 **F10**, **Esc**, the close button or the bottom home bar puts the phone away.
