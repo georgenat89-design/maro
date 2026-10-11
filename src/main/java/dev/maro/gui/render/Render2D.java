@@ -68,7 +68,7 @@ public final class Render2D {
      */
     public static void clip(DrawContext ctx, int x1, int y1, int x2, int y2) {
         ctx.enableScissor(x1, y1, x2, y2);
-        setScissor(new ScreenRect(x1, y1, Math.max(0, x2 - x1), Math.max(0, y2 - y1)));
+        setScissor(new ScreenRect(x1, y1, Math.max(0, x2 - x1), Math.max(0, y2 - y1)).transformEachVertex(ctx.getMatrices()));
     }
 
     public static void unclip(DrawContext ctx) {

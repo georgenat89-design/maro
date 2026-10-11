@@ -58,6 +58,10 @@ public final class Fonts {
     private static final float CAPS_SCALE = 0.82f;
     private static final float CAPS_TRACKING = 0.5f;
     private static int rawDepth;
+    private static float measureScale = 1;
+
+    /** Plain width helpers use the same glyph atlas as the enclosing menu transform. */
+    public static void setMeasureScale(float scale) { measureScale = scale; }
 
     /** Draw/measure text exactly as given (no caps transform) until {@link #endRaw()}. */
     public static void beginRaw() {
@@ -104,7 +108,7 @@ public final class Fonts {
     }
 
     private static float rawWidth(String s, boolean bold, float scale) {
-        return tr().getTextHandler().getWidth(styled(s, bold, scale)) * scale;
+        return tr().getTextHandler().getWidth(styled(s, bold, scale * measureScale)) * scale;
     }
 
     public static float width(String s, boolean bold, float scale) {

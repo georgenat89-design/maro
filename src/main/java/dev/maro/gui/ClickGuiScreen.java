@@ -37,8 +37,6 @@ import net.minecraft.entity.player.SkinTextures;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 
-import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -87,7 +85,6 @@ public class ClickGuiScreen extends Screen {
 
     private static final Object WINDOW = new Object();
     private static final Object INDICATOR = new Object();
-    private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm");
     private static final float BAR_H = 26f;
     private static final float HEADER_H = 24f;
 
@@ -139,6 +136,14 @@ public class ClickGuiScreen extends Screen {
     private Object dragOwner;
     private DragHandler drag;
     private double mouseXd, mouseYd;
+    private double rawMouseX, rawMouseY;
+    private boolean pointerKnown;
+    private int menuWidth = 640, menuHeight = 400;
+    private float lastLayoutScale;
+    public int menuWidth() { return menuWidth; }
+    public int menuHeight() { return menuHeight; }
+    private final dev.maro.gui.render.ScreenGuiPose screenPose = new dev.maro.gui.render.ScreenGuiPose();
+    public dev.maro.gui.render.ScreenGuiPose screenPose() { return screenPose; }
     private boolean mouseDown;
     private boolean interactive = true;
 
@@ -241,7 +246,7 @@ public class ClickGuiScreen extends Screen {
         int x1 = (int) Math.floor(r.x), y1 = (int) Math.floor(r.y);
         int x2 = (int) Math.ceil(r.x + r.w), y2 = (int) Math.ceil(r.y + r.h);
         ctx.enableScissor(x1, y1, x2, y2);
-        Render2D.setScissor(new ScreenRect(x1, y1, Math.max(0, x2 - x1), Math.max(0, y2 - y1)));
+        Render2D.setScissor(new ScreenRect(x1, y1, Math.max(0, x2 - x1), Math.max(0, y2 - y1)).transformEachVertex(ctx.getMatrices()));
         scissorActive = true;
     }
 
@@ -375,7 +380,21 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
-        currentCtx = ctx;
+        DrawContext mainContext = ctx;
+        if (!pointerKnown) { rawMouseX = mouseX; rawMouseY = mouseY; pointerKnown = true; }
+        menuWidth = panelsStyle() ? 640 : Math.max(420, Math.min(640, client.getWindow().getFramebufferWidth() / 2));
+        menuHeight = panelsStyle() ? 400 : Math.max(250, Math.min(400, client.getWindow().getFramebufferHeight() / 2));
+        float fit = Math.min(width / (float) menuWidth, height / (float) menuHeight);
+        float scale = Math.min(fit * ClientSettings.guiSize.getFloat() / 100f, fit * .98f);
+        // Keep the size slider under the cursor until it is released.
+        if (isDragging(ClientSettings.guiSize) && lastLayoutScale > 0) scale = lastLayoutScale;
+        else lastLayoutScale = scale;
+        float offsetX = (width - menuWidth * scale) / 2, offsetY = (height - menuHeight * scale) / 2;
+        screenPose.layout(scale, offsetX, offsetY);
+        screenPose.update(width, height, rawMouseX, rawMouseY, ClientSettings.screenGui.get(), mouseDown, ClientSettings.screenTilt.getFloat());
+        double[] pointer = screenPose.unproject(rawMouseX, rawMouseY);
+        mouseXd = pointer[0];
+        mouseYd = pointer[1];
         hits.clear();
         scrollHits.clear();
         clips.clear();
@@ -407,6 +426,15 @@ public class ClickGuiScreen extends Screen {
         // The contour lines of the logo, faint, behind everything.
         Logo.contours(ctx, width, height, 0.16f);
 
+        if (screenPose.active()) ctx = dev.maro.gui.render.ScreenGuiSurface.begin(client, (int) mouseXd, (int) mouseYd, screenPose);
+        else dev.maro.gui.render.ScreenGuiSurface.release();
+        currentCtx = ctx;
+        ctx.getMatrices().pushMatrix();
+        ctx.getMatrices().translate(offsetX, offsetY);
+        ctx.getMatrices().scale(scale, scale);
+        int width = menuWidth, height = menuHeight;
+        Fonts.setMeasureScale(scale);
+
         // The panels, fading back while the window is over them; a click outside the window returns to them.
         float win = 1f;
         if (panelsStyle()) {
@@ -425,7 +453,7 @@ public class ClickGuiScreen extends Screen {
         if (win > 0.01f) {
             if (panelsStyle()) ctx.createNewRootLayer(); // the window wholly over the panels
             ghost = panelsStyle() && !windowOpen;
-            renderWindow(ctx, p * win);
+            renderWindow(ctx, p * win, width, height);
             ghost = false;
         }
         interactive = true;
@@ -434,18 +462,19 @@ public class ClickGuiScreen extends Screen {
         // A mode setting's open list, over every panel, box and the window.
         dev.maro.gui.widget.Dropdown.render(this, ctx, width, height);
         ctx.createNewRootLayer();
-        renderTooltip(ctx, p);
+        renderTooltip(ctx, p, width, height);
         Render2D.setAlpha(1f);
-        Notifications.render(ctx);
+        ctx.getMatrices().popMatrix();
+        Fonts.setMeasureScale(1);
+        Notifications.render(mainContext);
     }
 
     /** The window: tabs, header and the open page. */
-    private void renderWindow(DrawContext ctx, float p) {
+    private void renderWindow(DrawContext ctx, float p, int width, int height) {
         Render2D.setAlpha(p);
 
         // window layout
-        float ww = Math.min(width - 10f, Math.max(420f, Math.min(660f, width - 40f)));
-        float wh = Math.min(height - 10f, Math.max(250f, Math.min(380f, height - 40f)));
+        float ww = width - 20, wh = height - 40;
         float baseX = (width - ww) / 2f, baseY = (height - wh) / 2f;
         dragX = Math.max(-baseX + 2, Math.min(baseX - 2, dragX));
         dragY = Math.max(-baseY + 2, Math.min(baseY - 2, dragY));
@@ -460,18 +489,12 @@ public class ClickGuiScreen extends Screen {
         hit(wx, wy, ww, wh, (button, mx, my) -> {
         }); // the window takes clicks that land on it but on nothing in it
         Render2D.roundRect(ctx, wx, wy, ww, wh, r, Theme.windowBg());
-        // soft accent light falling from the top edge
-        Render2D.roundRect(ctx, wx, wy, ww, Math.min(110f, wh), r, Theme.accent(0x18), Theme.accent2(0x18), 0x00000000, 0x00000000);
-        Render2D.roundOutline(ctx, wx, wy, ww, wh, r, 1f, 0xFF24242E, 0xFF24242E, 0xFF15151B, 0xFF15151B);
-        float hl = ww * 0.5f, hlx = wx + (ww - hl) / 2f;
-        Render2D.rectGradient(ctx, hlx, wy + 0.5f, hl / 2, 1f, Theme.accent(0), Theme.accent(0xE0), Theme.accent(0xE0), Theme.accent(0));
-        Render2D.rectGradient(ctx, hlx + hl / 2, wy + 0.5f, hl / 2, 1f, Theme.accent2(0xE0), Theme.accent2(0), Theme.accent2(0), Theme.accent2(0xE0));
-
-        float pad = 10f;
-        float hx = wx + pad, hw = ww - pad * 2;
-        float barY = wy + 9;
-        renderTopBar(ctx, hx, barY, hw, BAR_H);
-        float hy = barY + BAR_H + 10;
+        Render2D.roundOutline(ctx, wx, wy, ww, wh, r, Render2D.px(), Theme.BORDER);
+        float sidebarW = Math.min(112f, ww * .23f);
+        renderSidebar(ctx, wx + 7, wy + 8, sidebarW - 14, wh - 16);
+        Render2D.rect(ctx, wx + sidebarW, wy + 8, Render2D.px(), wh - 16, Theme.BORDER);
+        float hx = wx + sidebarW + 12, hw = ww - sidebarW - 24;
+        float hy = wy + 12;
         renderHeader(ctx, hx, hy, hw, HEADER_H);
 
         // page
@@ -491,123 +514,43 @@ public class ClickGuiScreen extends Screen {
         interactive = true;
     }
 
-    private void renderTopBar(DrawContext ctx, float x, float y, float w, float h) {
-        // drag the window by the bar (registered first so every control on it wins)
-        hit(x, y, w, h, (button, mx, my) -> {
+    private void renderSidebar(DrawContext ctx, float x, float y, float w, float h) {
+        hit(x, y, w, 29, (button, mx, my) -> {
             if (button != 0) return;
             final float sx = dragX, sy = dragY;
-            final double ox = mx, oy = my;
-            startDrag(WINDOW, (nx, ny) -> {
-                dragX = sx + (float) (nx - ox);
-                dragY = sy + (float) (ny - oy);
-            });
+            startDrag(WINDOW, (nx, ny) -> { dragX = sx + (float) (nx - mx); dragY = sy + (float) (ny - my); });
         });
-
-        Render2D.roundRect(ctx, x, y, w, h, h / 2f, Theme.panelBg());
-        Render2D.roundOutline(ctx, x, y, w, h, h / 2f, 1f, Theme.BORDER);
-        float cy = y + h / 2f;
-
-        // logo
-        boolean logoHover = hovered(x, y, 70, h);
-        float lh = Anims.of(WINDOW, "logo", logoHover);
-        float lcx = x + h / 2f + 1;
-        Logo.mark(ctx, lcx, cy, 17f + lh * 1.5f, lh);
-        float tx = lcx + 12;
-        Fonts.beginRaw(); // the wordmark keeps its lowercase look
-        float tw = Fonts.width("maro", true, 1.05f);
-        Fonts.drawV(ctx, "maro", tx, cy, Theme.TEXT, true, 1.05f);
-        Fonts.drawV(ctx, ".gg", tx + tw, cy, Theme.accent(), true, 1.05f);
-        float logoEnd = tx + tw + Fonts.width(".gg", true, 1.05f) + 12;
+        Logo.mark(ctx, x + 12, y + 13, 16, 0);
+        Fonts.beginRaw();
+        Fonts.drawV(ctx, "maro", x + 25, y + 12, Theme.TEXT, true, 1.15f);
         Fonts.endRaw();
-
-        // right side: profile + general pages
-        float bs = h - 6;
-        float ax = x + w - 3 - bs, ay = y + 3;
-        renderAvatar(ctx, ax, ay, bs);
-        boolean searching = !search.getText().isEmpty();
-        float gx = ax - 6;
-        for (int i = entries.size() - 1; i >= moduleEntries; i--) {
-            gx -= bs;
-            Entry e = entries.get(i);
-            boolean hov = hovered(gx, ay, bs, bs);
-            float hv = Anims.of(e, "hover", hov);
-            float sel = Anims.of(e, "sel", i == selected && !searching);
-            if (sel > 0.01f && Theme.glow()) Render2D.shadow(ctx, gx, ay, bs, bs, bs / 2f, 5, Theme.accent(Math.round(0x40 * sel)));
-            Render2D.roundRect(ctx, gx, ay, bs, bs, bs / 2f, ColorUtil.lerp(ColorUtil.withAlpha(0xFF1E1E28, Math.round(0xFF * hv)), Theme.accent(0x40), sel));
-            if (sel > 0.01f) Render2D.roundOutline(ctx, gx, ay, bs, bs, bs / 2f, 1f, Theme.accent(Math.round(0x90 * sel)));
-            e.icon().draw(ctx, gx + bs / 2f, ay + bs / 2f, 8.5f,
-                    ColorUtil.lerp(ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT, hv), ColorUtil.shade(Theme.accent(), 0.45f), sel), Math.max(hv, sel));
+        float rowH = Math.min(23, (h - 65) / entries.size());
+        float ry = y + 36;
+        for (int i = 0; i < entries.size(); i++) {
+            Entry entry = entries.get(i);
+            if (i == moduleEntries) {
+                Render2D.rect(ctx, x + 5, ry + 3, w - 10, Render2D.px(), Theme.BORDER);
+                ry += 10;
+            }
+            boolean hov = hovered(x, ry, w, rowH);
+            float hv = Anims.of(entry, "sideHover", hov);
+            float sel = Anims.of(entry, "sideSelected", selected == i && search.getText().isEmpty());
+            Render2D.roundRect(ctx, x, ry, w, rowH - 2, 3, ColorUtil.lerp(ColorUtil.withAlpha(0xFFFFFF, Math.round(18 * hv)), Theme.accent(0x28), sel));
+            if (sel > .01f) Render2D.roundRect(ctx, x, ry + 4, 2, rowH - 10, 1, Theme.accent(Math.round(255 * sel)));
+            int fg = ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT, Math.max(hv, sel));
+            entry.icon().draw(ctx, x + 12, ry + (rowH - 2) / 2, 8, fg, 0);
+            Fonts.drawV(ctx, Fonts.trim(entry.label(), w - 27, false, .78f), x + 24, ry + (rowH - 2) / 2, fg, false, .78f);
             final int index = i;
-            hit(gx, ay, bs, bs, (button, mx, my) -> {
-                if (index != selected || searching) Sounds.click();
-                openPage(index);
-            });
-            if (hov) tooltip(e.label());
-            gx -= 3;
+            hit(x, ry, w, rowH - 2, (button, mx, my) -> { if (button == 0) { openPage(index); Sounds.click(); } });
+            if (hov) tooltip(entry.subtitle());
+            ry += rowH;
         }
-        float tabsEnd = gx - 6;
-        Render2D.rect(ctx, tabsEnd + 2, y + 7, Render2D.px(), h - 14, Theme.BORDER);
-
-        // category tabs (labels collapse to icons when space is tight)
-        float labelScale = 0.82f, tabH = h - 6, tabPad = 8;
-        float[] widths = new float[moduleEntries];
-        float total = 0;
-        for (int i = 0; i < moduleEntries; i++) {
-            widths[i] = tabPad * 2 + 9 + 5 + Fonts.width(entries.get(i).label(), false, labelScale);
-            total += widths[i] + 2;
-        }
-        boolean labels = total <= tabsEnd - logoEnd;
-        if (!labels) for (int i = 0; i < moduleEntries; i++) widths[i] = tabH + 4;
-        float sx = logoEnd;
-        float selX = sx, selW = widths[0];
-        float[] xs = new float[moduleEntries];
-        for (int i = 0; i < moduleEntries; i++) {
-            xs[i] = sx;
-            if (i == selected) {
-                selX = sx;
-                selW = widths[i];
-            }
-            sx += widths[i] + 2;
-        }
-        boolean tabSelected = selected < moduleEntries && !searching;
-        float ix = Anims.of(INDICATOR, "x", selX, 16f), iw = Anims.of(INDICATOR, "w", selW, 16f);
-        float ia = Anims.of(INDICATOR, "a", tabSelected ? 1f : 0f);
-        if (ia > 0.01f) {
-            if (Theme.glow()) Render2D.shadow(ctx, ix, ay, iw, tabH, tabH / 2f, 6, Theme.accent(Math.round(0x38 * ia)));
-            Render2D.roundGradientH(ctx, ix, ay, iw, tabH, tabH / 2f, Theme.accent(Math.round(0x50 * ia)), Theme.accent2(Math.round(0x30 * ia)));
-            Render2D.roundOutline(ctx, ix, ay, iw, tabH, tabH / 2f, 1f, Theme.accent(Math.round(0x80 * ia)), Theme.accent2(Math.round(0x40 * ia)),
-                    Theme.accent2(Math.round(0x40 * ia)), Theme.accent(Math.round(0x80 * ia)));
-        }
-        for (int i = 0; i < moduleEntries; i++) {
-            Entry e = entries.get(i);
-            float ex = xs[i], ew = widths[i];
-            boolean hov = hovered(ex, ay, ew, tabH);
-            float hv = Anims.of(e, "hover", hov);
-            float sel = Anims.of(e, "sel", i == selected && !searching);
-            if (hv > 0.01f && sel < 0.99f) Render2D.roundRect(ctx, ex, ay, ew, tabH, tabH / 2f, ColorUtil.withAlpha(0xFF1A1A23, Math.round(0xFF * hv * (1 - sel))));
-            int fg = ColorUtil.lerp(ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT, hv), 0xFFFFFFFF, sel);
-            if (labels) {
-                e.icon().draw(ctx, ex + tabPad + 4.5f, cy, 8.5f, ColorUtil.lerp(fg, ColorUtil.shade(Theme.accent(), 0.5f), sel), Math.max(hv, sel));
-                Fonts.drawV(ctx, e.label(), ex + tabPad + 14, cy, fg, sel > 0.5f, labelScale);
-            } else {
-                e.icon().draw(ctx, ex + ew / 2f, cy, 8.5f, fg, Math.max(hv, sel));
-                if (hov) tooltip(e.label());
-            }
-            long on = ModuleManager.enabledCount(e.category());
-            float ba = Anims.of(e, "badge", on > 0);
-            if (ba > 0.01f) {
-                float prev = Render2D.getAlpha();
-                Render2D.setAlpha(prev * ba);
-                Render2D.circle(ctx, ex + ew - 5, ay + 4, 2.4f, Theme.panelBg());
-                Render2D.circle(ctx, ex + ew - 5, ay + 4, 1.7f, Theme.GREEN);
-                Render2D.setAlpha(prev);
-            }
-            final int index = i;
-            hit(ex, ay, ew, tabH, (button, mx, my) -> {
-                if (index != selected || searching) Sounds.click();
-                openPage(index);
-            });
-        }
+        float fy = y + h - 17;
+        Render2D.roundRect(ctx, x, fy, w, 17, 3, Theme.INPUT);
+        Fonts.drawV(ctx, "Screen GUI", x + 6, fy + 8.5f, Theme.TEXT_DIM, false, .7f);
+        dev.maro.gui.widget.Widgets.toggle(ctx, x + w - 22, fy + 4.5f, 16, 8,
+                Anims.of(WINDOW, "screenGui", ClientSettings.screenGui.get()), 0);
+        hit(x, fy, w, 17, (button, mx, my) -> { if (button == 0) { ClientSettings.screenGui.set(!ClientSettings.screenGui.get()); Sounds.click(); } });
     }
 
     private void renderAvatar(DrawContext ctx, float x, float y, float s) {
@@ -651,27 +594,14 @@ public class ClickGuiScreen extends Screen {
         }
         float sw = Math.min(160f, w * 0.34f), sh = 18f;
         float sx = x + w - sw;
-        String time = LocalTime.now().format(CLOCK);
-        float cw = Fonts.width(time, false, 0.8f) + 16;
-        float cx = sx - cw - 5;
-        float titleMax = cx - x - 8;
-
-        // accent tick + title
-        Render2D.roundGradientV(ctx, x + 1, y + 3, 2.4f, h - 6, 1.2f, Theme.accent(), Theme.accent2());
-        Fonts.draw(ctx, Fonts.trim(title, titleMax, true, 1.25f), x + 9, y + 2.5f, Theme.TEXT, true, 1.25f);
-        Fonts.draw(ctx, Fonts.trim(subtitle, titleMax, false, 0.7f), x + 9.5f, y + 15.5f, Theme.TEXT_MUTED, false, 0.7f);
-
+        float titleMax = sx - x - 12;
+        Fonts.draw(ctx, Fonts.trim(title, titleMax, true, 1.15f), x, y + 1, Theme.TEXT, true, 1.15f);
+        Fonts.draw(ctx, Fonts.trim(subtitle, titleMax, false, .7f), x, y + 15, Theme.TEXT_MUTED, false, .7f);
         float cyy = y + (h - sh) / 2f;
-        Render2D.roundRect(ctx, cx, cyy, cw, sh, sh / 2f, Theme.INPUT);
-        Render2D.roundOutline(ctx, cx, cyy, cw, sh, sh / 2f, 1f, Theme.BORDER);
-        float pulse = 0.5f + 0.5f * (float) Math.sin(System.currentTimeMillis() / 500.0);
-        Render2D.circle(ctx, cx + 6.5f, cyy + sh / 2f, 1.6f, Theme.accent(0x80 + Math.round(0x7F * pulse)));
-        Fonts.drawV(ctx, time, cx + 10.5f, cyy + sh / 2f, Theme.TEXT_DIM, false, 0.8f);
-
         search.render(this, ctx, sx, cyy, sw, sh, Icons.SEARCH, focused == search ? null : "Ctrl K");
     }
 
-    private void renderTooltip(DrawContext ctx, float p) {
+    private void renderTooltip(DrawContext ctx, float p, int width, int height) {
         long now = System.currentTimeMillis();
         if (tooltip == null || !tooltip.equals(shownTooltip)) {
             shownTooltip = tooltip;
@@ -698,16 +628,24 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public void mouseMoved(double mouseX, double mouseY) {
-        mouseXd = mouseX;
-        mouseYd = mouseY;
+        pointerKnown = true;
+        rawMouseX = mouseX;
+        rawMouseY = mouseY;
+        double[] point = screenPose.unproject(mouseX, mouseY);
+        mouseXd = point[0];
+        mouseYd = point[1];
     }
 
     @Override
     public boolean mouseClicked(Click click, boolean doubled) {
         double mouseX = click.x(), mouseY = click.y();
         int button = click.button();
-        mouseXd = mouseX;
-        mouseYd = mouseY;
+        pointerKnown = true;
+        rawMouseX = mouseX;
+        rawMouseY = mouseY;
+        double[] point = screenPose.unproject(mouseX, mouseY);
+        mouseXd = point[0];
+        mouseYd = point[1];
         if (closingAt >= 0) return true;
         mouseDown = true;
         if (listening != null) {
@@ -720,7 +658,7 @@ public class ClickGuiScreen extends Screen {
             listening = null;
         }
         focused = null;
-        return clickAt(mouseX, mouseY, button);
+        return clickAt(mouseXd, mouseYd, button);
     }
 
     /** Clicks whatever was drawn at {@code x, y} in the last frame, front-most first. */
@@ -745,14 +683,16 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public boolean mouseDragged(Click click, double deltaX, double deltaY) {
-        mouseXd = click.x();
-        mouseYd = click.y();
+        mouseMoved(click.x(), click.y());
         if (drag != null) drag.drag(mouseXd, mouseYd);
         return true;
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        double[] point = screenPose.unproject(mouseX, mouseY);
+        mouseX = point[0];
+        mouseY = point[1];
         for (int i = scrollHits.size() - 1; i >= 0; i--) {
             ScrollHit h = scrollHits.get(i);
             if (mouseX >= h.x && mouseX < h.x + h.w && mouseY >= h.y && mouseY < h.y + h.h) {
@@ -859,6 +799,8 @@ public class ClickGuiScreen extends Screen {
     public void removed() {
         Render2D.setAlpha(1f);
         Render2D.setScissor(null);
+        dev.maro.gui.render.ScreenGuiSurface.release();
+        Fonts.setMeasureScale(1);
         ConfigManager.saveClient();
         if (ClientSettings.autoSave.get()) ConfigManager.save(ConfigManager.getCurrent());
     }

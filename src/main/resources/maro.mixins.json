@@ -21,6 +21,8 @@
     "ChestTransferMixins$Packets",
     "ClientPlayerLookAccessor",
     "DrawContextAccessor",
+    "ScreenGuiRendererMixin",
+    "ScreenGuiCameraMixin",
     "GameRendererMixin",
     "LightmapMixin",
     "InspectMixin",

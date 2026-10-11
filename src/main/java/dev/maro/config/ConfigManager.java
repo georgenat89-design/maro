@@ -35,9 +35,8 @@ public final class ConfigManager {
     public static final Path CONFIG_DIR = DIR.resolve("configs");
     private static final Path CLIENT_FILE = DIR.resolve("client.json");
 
-    /** Bumped when defaults change in a way old files should not override (v3: black redesign). */
-    /** Bumped when the menu gets a new look, so saved themes take it once: 4 is Maro's blue logo theme. */
-    private static final int CLIENT_VERSION = 4;
+    /** v4: blue theme; v5: translucent menus, normal-case text and the new canvas layout. */
+    private static final int CLIENT_VERSION = 5;
     private static String current = "default";
 
     public record ConfigInfo(String name, long lastModified) {
@@ -90,8 +89,19 @@ public final class ConfigManager {
             int version = root.has("version") ? root.get("version").getAsInt() : 1;
             for (SettingSection section : ClientSettings.ALL) {
                 // files from before the redesign keep their behaviour settings but get the new look
-                if (version < CLIENT_VERSION && ClientSettings.THEME_PAGE.contains(section)) continue;
+                if (version < 4 && ClientSettings.THEME_PAGE.contains(section)) continue;
                 readSettings(settings, section.getSettings());
+            }
+            if (version < 5) {
+                // Apply the new menu presentation once, keeping binds, behaviour and accent colours.
+                ClientSettings.capsText.reset();
+                ClientSettings.backgroundBlur.reset();
+                ClientSettings.backgroundDim.reset();
+                ClientSettings.opacity.reset();
+                ClientSettings.radius.reset();
+                ClientSettings.glow.reset();
+                ClientSettings.shadow.reset();
+                ClientSettings.contourLines.reset();
             }
         }
         if (root.has("friends") && root.get("friends").isJsonArray()) {
@@ -102,7 +112,8 @@ public final class ConfigManager {
             String name = sanitize(root.get("config").getAsString());
             if (!name.isEmpty()) current = name;
         }
-        dev.maro.gui.PanelsView.load(root.get("panels"));
+        if (root.has("version") && root.get("version").getAsInt() >= 5)
+            dev.maro.gui.PanelsView.load(root.get("panels"));
     }
 
     // ---- module configs -----------------------------------------------------------------

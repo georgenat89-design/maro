@@ -51,6 +51,10 @@ public class MaroClientGameTest implements FabricClientGameTest {
             // make sure nothing (pause menu, toasts...) is in the way before testing the keybind
             context.setScreen(() -> null);
             context.waitTicks(5);
+            if (Boolean.getBoolean("maro.gametest.screenGuiOnly")) {
+                ScreenGuiChecks.run(context);
+                return;
+            }
             if (Boolean.getBoolean("maro.gametest.geekedOnly")) {
                 GeekedChecks.run(context, singleplayer);
                 return;
@@ -179,6 +183,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             StaffNotifierChecks.run(context);
             HudReadabilityChecks.run(context);
             MaroRelogChecks.run(context, singleplayer);
+            ScreenGuiChecks.run(context);
             String before = context.computeOnClient(client -> describe(client));
             context.takeScreenshot("maro-00-world");
 
