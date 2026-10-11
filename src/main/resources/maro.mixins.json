@@ -43,6 +43,7 @@
     "InventoryHiderMixins$Hotbar",
     "InventoryHiderMixins$HeldItem",
     "AcrobaticsMixin",
+    "AcrobaticsPoseMixin",
     "VehiclesMixins$Seat",
     "NametagsMixins$HideLabel",
     "NametagsMixins$Pops",
