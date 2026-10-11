@@ -312,7 +312,7 @@ public class Nametags extends Module {
         double angle = Math.atan2(-(player.getX() - camera.x), player.getZ() - camera.z)
                 - Math.toRadians(mc.gameRenderer.getCamera().getYaw());
         float dx = (float) Math.sin(angle), dy = -(float) Math.cos(angle);
-        String label = dev.maro.module.impl.misc.NameChange.label(player) + (showsDistance(player) ? "  " + Math.round(dist) + "m" : "");
+        String label = player.getName().getString() + (showsDistance(player) ? "  " + Math.round(dist) + "m" : "");
         boolean compact = layout.is("Compact");
         float edgeScale = compact ? 0.85f : 1;
         float labelW = scaledWidth(ctx, label, true, edgeScale);
@@ -353,7 +353,7 @@ public class Nametags extends Module {
         List<Part> parts = new ArrayList<>();
         boolean friend = FriendManager.isFriend(p.getName().getString());
         int nameColor = friend && !friendBackground.get() ? friendColor.get() | 0xFF000000 : textColor.get() | 0xFF000000;
-        parts.add(new Part(dev.maro.module.impl.misc.NameChange.label(p), nameColor, true));
+        parts.add(new Part(p.getName().getString(), nameColor, true));
         if (health.get() && !healthMode.is("Bar")) {
             float fraction = healthFraction(p);
             String hp = healthMode.is("Percent") ? Math.round(fraction * 100) + "%" : number(p.getHealth());

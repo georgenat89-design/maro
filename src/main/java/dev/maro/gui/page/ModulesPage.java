@@ -208,7 +208,7 @@ public class ModulesPage extends Page {
 
         // name + description
         float textMax = chipX - nx - 8;
-        String name = Fonts.trim(m.getName(), textMax - (m.isExperimental() ? 12 : 0), false, 0.95f);
+        String name = Fonts.trim(m.getDisplayName(), textMax - (m.isExperimental() ? 12 : 0), false, 0.95f);
         Fonts.draw(ctx, name, nx, y + 9f, ColorUtil.lerp(ColorUtil.lerp(Theme.TEXT_DIM, Theme.TEXT, hv), 0xFFFFFFFF, on), false, 0.95f);
         if (m.isExperimental()) {
             float wx = nx + Fonts.width(name, false, 0.95f) + 7;
@@ -376,8 +376,8 @@ public class ModulesPage extends Page {
 
         // name, with the open category after it, and the description below
         float nx = x + 36, maxW = chipX - 26 - nx;
-        float nameW = Fonts.width(m.getName(), true, 1.05f);
-        Fonts.draw(ctx, Fonts.trim(m.getName(), maxW, true, 1.05f), nx, y + 8.5f, Theme.TEXT, true, 1.05f);
+        float nameW = Fonts.width(m.getDisplayName(), true, 1.05f);
+        Fonts.draw(ctx, Fonts.trim(m.getDisplayName(), maxW, true, 1.05f), nx, y + 8.5f, Theme.TEXT, true, 1.05f);
         float sv = sectionView.get();
         if (shownSection != null && sv > 0.01f && nameW + 30 < maxW) {
             float prev = Render2D.getAlpha();

@@ -1,6 +1,11 @@
 package dev.maro.gametest;
 
 import com.google.gson.JsonPrimitive;
+import com.google.gson.JsonParser;
+import dev.maro.config.ClientSettings;
+import dev.maro.config.ConfigManager;
+import dev.maro.gui.ClickGuiScreen;
+import dev.maro.module.Module;
 import dev.maro.module.ModuleManager;
 import dev.maro.module.impl.visuals.JumpCircle;
 import dev.maro.nathan.audio.SpotifyMedia;
@@ -10,6 +15,7 @@ import net.minecraft.client.option.Perspective;
 
 import javax.imageio.ImageIO;
 import java.nio.file.Path;
+import java.nio.file.Files;
 
 final class JumpCircleChecks {
     private static void require(boolean ok, String message) { if (!ok) throw new AssertionError(message); }
@@ -46,9 +52,70 @@ final class JumpCircleChecks {
         field(media, "audioLevels", new float[] {level, level, level, 0, 0, 0, 0});
         field(media, "audioSampleAt", System.currentTimeMillis());
     }
+    private static void renameChecks(ClientGameTestContext context, JumpCircle module) {
+        context.runOnClient(c -> {
+            String current = ConfigManager.getCurrent();
+            String snapshot = ConfigManager.sanitize("jump-circle-baseline-" + java.util.UUID.randomUUID());
+            String renamed = ConfigManager.sanitize("jump-circle-renamed-" + java.util.UUID.randomUUID());
+            try {
+                require(ConfigManager.save(snapshot), "Could not snapshot test config");
+                setting(module, "Display Name", "  Lunar Pulse  ");
+                require(module.getDisplayName().equals("Lunar Pulse"), "Custom name was not trimmed");
+                require(module.getName().equals("Jump Circle") && ModuleManager.getByName("Jump Circle") == module,
+                        "Renaming broke the stable module identity");
+                for (String query : new String[] {"lunar", "lunarpulse", "PULSE", "jumpcircle"})
+                    require(ModuleManager.search(query).stream().filter(m -> m == module).count() == 1,
+                            "Renamed module missing or duplicated in search: " + query);
+                require(ConfigManager.save(renamed), "Could not save custom name");
+                var modules = JsonParser.parseString(Files.readString(ConfigManager.CONFIG_DIR.resolve(renamed + ".json")))
+                        .getAsJsonObject().getAsJsonObject("modules");
+                require(modules.has("Jump Circle") && !modules.has("Lunar Pulse"), "Custom label changed the config key");
+                setting(module, "Display Name", "");
+                require(module.getDisplayName().equals("Jump Circle"), "Blank name did not restore the default");
+                require(ConfigManager.load(renamed) && module.getDisplayName().equals("Lunar Pulse"),
+                        "Config reload lost the custom name");
+                setting(module, "Display Name", "   ");
+                require(module.getDisplayName().equals("Jump Circle"), "Whitespace name left an empty menu entry");
+            } catch (Exception e) { throw new AssertionError(e); }
+            finally {
+                if (ConfigManager.exists(snapshot)) ConfigManager.load(snapshot);
+                ConfigManager.delete(snapshot); ConfigManager.delete(renamed);
+                try { var f = ConfigManager.class.getDeclaredField("current"); f.setAccessible(true); f.set(null, current); }
+                catch (ReflectiveOperationException e) { throw new AssertionError(e); }
+            }
+        });
+        String menuStyle = ClientSettings.menuStyle.get();
+        try {
+            for (String layout : new String[] {"Window", "Panels"}) {
+                context.runOnClient(c -> {
+                    ClientSettings.menuStyle.set(layout);
+                    setting(module, "Display Name", "Lunar Pulse");
+                    var gui = new ClickGuiScreen(); c.setScreen(gui);
+                    if (layout.equals("Window")) gui.openModuleSettings(module, "Circles");
+                    else {
+                        gui.getSearch().setText("lunar");
+                        Object panels = field(gui, "panels");
+                        try { var m = panels.getClass().getDeclaredMethod("openSettings", Module.class); m.setAccessible(true); m.invoke(panels, module); }
+                        catch (ReflectiveOperationException e) { throw new AssertionError(e); }
+                    }
+                });
+                context.waitTicks(10);
+                // Rename while the settings are open: the title must update without reopening.
+                context.runOnClient(c -> setting(module, "Display Name", "Lunar Pulse Live"));
+                context.waitTicks(5);
+                context.takeScreenshot("maro-jump-circle-renamed-" + layout.toLowerCase());
+                context.setScreen(() -> null);
+            }
+        } finally {
+            context.setScreen(() -> null);
+            context.runOnClient(c -> { ClientSettings.menuStyle.set(menuStyle); setting(module, "Display Name", ""); });
+        }
+        System.out.println("[jump-circle] PASS: custom name, canonical/alias search, stable config key, save/reload and both menu layouts");
+    }
     static void run(ClientGameTestContext context, TestSingleplayerContext world) {
         JumpCircle module = ModuleManager.get(JumpCircle.class);
         require(module != null, "Jump Circle was not registered");
+        renameChecks(context, module);
         var perspective = context.computeOnClient(c -> c.options.getPerspective());
         var original = context.computeOnClient(c -> c.player.getEntityPos());
         boolean hidden = context.computeOnClient(c -> c.options.hudHidden);

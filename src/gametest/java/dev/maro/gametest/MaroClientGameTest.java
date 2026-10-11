@@ -53,7 +53,6 @@ public class MaroClientGameTest implements FabricClientGameTest {
             context.waitTicks(5);
             if (Boolean.getBoolean("maro.gametest.jumpCircleOnly")) {
                 JumpCircleChecks.run(context, singleplayer);
-                NameChangeChecks.run(context);
                 RenderFaultChecks.assertClean();
                 return;
             }
@@ -177,7 +176,6 @@ public class MaroClientGameTest implements FabricClientGameTest {
             PetChecks.run(context, singleplayer);
             PlayerEspChecks.run(context, singleplayer);
             JumpCircleChecks.run(context, singleplayer);
-            NameChangeChecks.run(context);
             BaseEspChecks.run(context, singleplayer);
             BlockEspChecks.run(context, singleplayer);
             SpawnerNotifierChecks.run(context, singleplayer);

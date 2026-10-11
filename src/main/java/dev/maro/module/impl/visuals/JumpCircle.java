@@ -27,6 +27,7 @@ public final class JumpCircle extends Module {
             SIN[i] = Math.sin(i * TAU / SEGMENTS); COS[i] = Math.cos(i * TAU / SEGMENTS);
         }
     }
+    private final TextSetting displayName = add(new TextSetting("Display Name", "Rename this module in the menu; leave blank to use Jump Circle", "", 32, "Jump Circle"));
     private final ModeSetting style = add(new ModeSetting("Style", "Neon halos, orbiting accents, or layered ripples", "Orbit", "Neon", "Orbit", "Ripple"));
     private final ModeSetting trigger = add(new ModeSetting("Trigger", "When to leave a circle at your feet", "Jump", "Jump", "Land", "Both"));
     private final ModeSetting who = add(new ModeSetting("Players", "Whose jumps create circles on your screen", "Self", "Self", "Everyone"));
@@ -41,7 +42,7 @@ public final class JumpCircle extends Module {
     private final BooleanSetting beatRipples = add(new BooleanSetting("Beat Ripples", "Create a smaller circle at your feet on bass hits, even while standing", true).visible(spotifySync::get));
     private final NumberSetting sensitivity = add(new NumberSetting("Beat Strength", "How strongly the rings respond to live audio", 1.5, .5, 3, .1).suffix("x").visible(spotifySync::get));
     private final List<SettingSection> sections = List.of(
-            SettingSection.of("Circles", style, trigger, who, radius, lifetime, width),
+            SettingSection.of("Circles", displayName, style, trigger, who, radius, lifetime, width),
             SettingSection.of("Appearance", primary, secondary, rainbow, glow),
             SettingSection.of("Spotify", spotifySync, beatRipples, sensitivity));
 
@@ -58,6 +59,10 @@ public final class JumpCircle extends Module {
 
     public JumpCircle() {
         super("Jump Circle", "Neon circles bloom under your jumps, with orbiting accents and optional Spotify beat sync", Category.VISUALS);
+    }
+    @Override public String getDisplayName() {
+        String name = displayName.get().trim();
+        return name.isEmpty() ? super.getDisplayName() : name;
     }
     @Override public List<SettingSection> getSettingSections() { return sections; }
     @Override protected void onEnable() { reset(); syncMedia(); }
