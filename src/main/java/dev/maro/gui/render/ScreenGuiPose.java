@@ -2,8 +2,10 @@ package dev.maro.gui.render;
 
 import org.joml.Matrix3f;
 import org.joml.Vector3f;
+import org.joml.Quaternionf;
+import org.joml.Quaternionfc;
 
-/** The same projective plane drives drawing and pointer picking. Coordinates are GUI units. */
+/** A plane fixed in front of the opening view; looking around projects it like the world. */
 public final class ScreenGuiPose {
     private final Matrix3f forward = new Matrix3f();
     private final Matrix3f inverse = new Matrix3f();
@@ -12,6 +14,8 @@ public final class ScreenGuiPose {
     private long last;
     private boolean active;
     private float layoutScale = 1, offsetX, offsetY;
+    private final Quaternionf anchor = new Quaternionf();
+    private boolean anchored;
 
     public void layout(float scale, float x, float y) { layoutScale = scale; offsetX = x; offsetY = y; }
 
@@ -19,7 +23,7 @@ public final class ScreenGuiPose {
         this.width = Math.max(1, width);
         this.height = Math.max(1, height);
         active = enabled;
-        if (!enabled) { yaw = pitch = 0; forward.identity(); inverse.identity(); last = 0; return; }
+        if (!enabled) { yaw = pitch = 0; forward.identity(); inverse.identity(); last = 0; anchored = false; return; }
         long now = System.nanoTime();
         float dt = last == 0 ? 0 : Math.min(.1f, (now - last) / 1e9f);
         last = now;
@@ -28,15 +32,25 @@ public final class ScreenGuiPose {
             float ty = (float) Math.max(-1, Math.min(1, mouseY / this.height * 2 - 1));
             float k = 1 - (float) Math.exp(-12 * dt);
             yaw += (tx * tilt - yaw) * k;
-            pitch += (-ty * tilt * .7f - pitch) * k;
+            pitch += (ty * tilt * .7f - pitch) * k;
         }
-        float sy = (float) Math.sin(Math.toRadians(yaw)), cy = (float) Math.cos(Math.toRadians(yaw));
-        float sp = (float) Math.sin(Math.toRadians(pitch)), cp = (float) Math.cos(Math.toRadians(pitch));
-        float aspect = this.width / this.height, scale = .88f, distance = 4;
-        float a = -2 * aspect * sy / distance, b = 2 * cy * sp / distance, c = 1 - a / 2 - b / 2;
-        forward.set(.5f * a + scale * cy, .5f * a, a,
-                .5f * b + scale * sy * sp / aspect, .5f * b + scale * cp, b,
-                .5f * c - scale * cy / 2 - scale * sy * sp / (2 * aspect), .5f * c - scale * cp / 2, c);
+    }
+
+    /** Called from the camera update, so the menu and world use this frame's exact rotation. */
+    public void view(Quaternionfc openingView, Quaternionfc currentView, float fov) {
+        if (!active) return;
+        if (!anchored) { anchor.set(openingView); anchored = true; }
+        Quaternionf relative = new Quaternionf(currentView).conjugate().mul(anchor);
+        float aspect = width / height;
+        float halfFov = (float) Math.tan(Math.toRadians(fov * .5f));
+        float planeX = 2 * aspect * halfFov * .88f, planeY = 2 * halfFov * .88f;
+        Vector3f x = relative.transform(new Vector3f(planeX, 0, 0));
+        Vector3f y = relative.transform(new Vector3f(0, -planeY, 0));
+        Vector3f c = relative.transform(new Vector3f(-planeX / 2, planeY / 2, -1));
+        float fx = 1 / (2 * aspect * halfFov), fy = 1 / (2 * halfFov);
+        forward.set(-.5f * x.z + fx * x.x, -.5f * x.z - fy * x.y, -x.z,
+                -.5f * y.z + fx * y.x, -.5f * y.z - fy * y.y, -y.z,
+                -.5f * c.z + fx * c.x, -.5f * c.z - fy * c.y, -c.z);
         inverse.set(forward).invert();
     }
 

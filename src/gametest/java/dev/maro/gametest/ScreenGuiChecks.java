@@ -134,6 +134,45 @@ final class ScreenGuiChecks {
                     System.out.println("[screen-gui-proof] " + layout + " floating=" + floating + " render/picking/fonts/close passed");
                 }
             }
+            for (String layout : new String[] {"Panels", "Window"}) {
+                context.runOnClient(c -> {
+                    ClientSettings.menuStyle.set(layout); ClientSettings.screenGui.set(true); ClientSettings.screenTilt.set(35d);
+                    c.setScreen(new ClickGuiScreen());
+                    var gui = (ClickGuiScreen) c.currentScreen;
+                    gui.mouseMoved(gui.width / 2d, gui.height / 2d);
+                });
+                context.waitTicks(15);
+                var centre = context.computeOnClient(c -> {
+                    var gui = (ClickGuiScreen) c.currentScreen;
+                    return gui.screenPose().project(gui.menuWidth() / 2d, gui.menuHeight() / 2d);
+                });
+                context.takeScreenshot("maro-screen-gui-" + layout.toLowerCase() + "-world-centre");
+                context.runOnClient(c -> {
+                    var gui = (ClickGuiScreen) c.currentScreen;
+                    gui.mouseMoved(gui.width * .85, gui.height * .15);
+                });
+                context.waitTicks(20);
+                context.runOnClient(c -> {
+                    var gui = (ClickGuiScreen) c.currentScreen;
+                    var projected = gui.screenPose().project(gui.menuWidth() / 2d, gui.menuHeight() / 2d);
+                    require(projected[0] < centre[0] - gui.width * .1, "Looking right must move the fixed menu left");
+                    require(projected[1] > centre[1] + gui.height * .1, "Looking up must move the fixed menu down");
+                    for (int x = 0; x <= gui.menuWidth(); x += 37) for (int y = 0; y <= gui.menuHeight(); y += 37) {
+                        var point = gui.screenPose().project(x, y); var back = gui.screenPose().unproject(point[0], point[1]);
+                        require(Math.abs(back[0] - x) < .01 && Math.abs(back[1] - y) < .01, "Off-centre inverse picking drifted");
+                    }
+                    var camera = c.gameRenderer.getCamera();
+                    require(Math.abs(camera.getYaw() - c.player.getYaw() - gui.screenPose().yaw()) < .05,
+                            "World and menu yaw must use the same frame");
+                    require(Math.abs(camera.getPitch() - c.player.getPitch() - gui.screenPose().pitch()) < .05,
+                            "World and menu pitch must use the same frame");
+                });
+                context.takeScreenshot("maro-screen-gui-" + layout.toLowerCase() + "-world-look-up-right");
+                context.runOnClient(c -> c.setScreen(null));
+                context.waitTicks(3);
+                require(!context.computeOnClient(c -> ScreenGuiSurface.hasResources()), "World menu surface leaked");
+                System.out.println("[screen-gui-world-proof] " + layout + " fixed plane, matching camera, off-centre picking passed");
+            }
             context.getInput().resizeWindow(854, 480);
             context.runOnClient(c -> {
                 ClientSettings.menuStyle.set("Window"); ClientSettings.screenGui.set(true); ClientSettings.customFont.set(true);

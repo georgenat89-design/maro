@@ -22,8 +22,8 @@ public final class ClientSettings {
     public static final ModeSetting menuStyle = INTERFACE.add(new ModeSetting("Menu Style",
             "Panels shows every category side by side, Window is one window with a tab per category", "Panels", "Panels", "Window"));
     public static final NumberSetting guiSize = INTERFACE.add(new NumberSetting("GUI Size", "Size of both menu layouts", 85, 50, 100, 5).suffix("%"));
-    public static final BooleanSetting screenGui = INTERFACE.add(new BooleanSetting("Screen GUI", "Float the menu in perspective, following your cursor. Works with Panels and Window", false));
-    public static final NumberSetting screenTilt = INTERFACE.add(new NumberSetting("Screen Tilt", "Maximum perspective tilt of the floating menu", 18, 0, 30, 1).suffix("\u00B0").visible(screenGui::get));
+    public static final BooleanSetting screenGui = INTERFACE.add(new BooleanSetting("Screen GUI", "Keep the menu in front of the world and look around it with your cursor. Works with Panels and Window", false));
+    public static final NumberSetting screenTilt = INTERFACE.add(new NumberSetting("Screen Tilt", "How far the view turns around the menu", 35, 0, 55, 1).suffix("\u00B0").visible(screenGui::get));
     public static final BooleanSetting customFont = INTERFACE.add(new BooleanSetting("Custom Font", "Use the Inter font instead of the Minecraft font", true));
     public static final BooleanSetting capsText = INTERFACE.add(new BooleanSetting("Caps Text", "Small bold all-caps labels (off = normal sentence case)", false));
     public static final NumberSetting animSpeed = INTERFACE.add(new NumberSetting("Animation Speed", "How fast menu animations play", 1.0, 0.3, 3.0, 0.1).suffix("x"));

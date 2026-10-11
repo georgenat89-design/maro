@@ -144,6 +144,14 @@ public class ClickGuiScreen extends Screen {
     public int menuHeight() { return menuHeight; }
     private final dev.maro.gui.render.ScreenGuiPose screenPose = new dev.maro.gui.render.ScreenGuiPose();
     public dev.maro.gui.render.ScreenGuiPose screenPose() { return screenPose; }
+    /** Advance look before the world renders; the camera mixin supplies the exact projection. */
+    public void prepareScreenView() {
+        if (!pointerKnown) {
+            rawMouseX = width / 2d; rawMouseY = height / 2d;
+        }
+        screenPose.update(width, height, rawMouseX, rawMouseY, ClientSettings.screenGui.get(), mouseDown, ClientSettings.screenTilt.getFloat());
+    }
+
     private boolean mouseDown;
     private boolean interactive = true;
 
@@ -391,7 +399,12 @@ public class ClickGuiScreen extends Screen {
         else lastLayoutScale = scale;
         float offsetX = (width - menuWidth * scale) / 2, offsetY = (height - menuHeight * scale) / 2;
         screenPose.layout(scale, offsetX, offsetY);
-        screenPose.update(width, height, rawMouseX, rawMouseY, ClientSettings.screenGui.get(), mouseDown, ClientSettings.screenTilt.getFloat());
+        if (client.world == null) {
+            prepareScreenView();
+            var base = new org.joml.Quaternionf();
+            var view = new org.joml.Quaternionf().rotationYXZ((float) Math.toRadians(-screenPose.yaw()), (float) Math.toRadians(-screenPose.pitch()), 0);
+            screenPose.view(base, view, client.options.getFov().getValue());
+        }
         double[] pointer = screenPose.unproject(rawMouseX, rawMouseY);
         mouseXd = pointer[0];
         mouseYd = pointer[1];
