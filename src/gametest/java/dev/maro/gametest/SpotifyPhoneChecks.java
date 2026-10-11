@@ -1,6 +1,7 @@
 package dev.maro.gametest;
 
 import dev.maro.gui.spotify.SpotifyPhoneScreen;
+import dev.maro.gametest.mixin.PhoneMouseProbe;
 import dev.maro.module.ModuleManager;
 import dev.maro.module.impl.misc.SpotifyPhone;
 import dev.maro.nathan.audio.SpotifyMedia;
@@ -63,6 +64,8 @@ final class SpotifyPhoneChecks {
             context.runOnClient(client -> {
                 require(!phone.isEnabled() && client.currentScreen == null, "Escape left phone enabled");
                 require(field(SpotifySession.media(), "worker") == null, "Last player left media process running");
+                require(phone.mouseLook.get(), "Phone mouse look is not enabled by default");
+                phone.mouseLook.set(false);
                 client.setScreen(new SpotifyPhoneScreen(phone, playback));
             });
             context.waitTicks(8);
@@ -83,6 +86,8 @@ final class SpotifyPhoneChecks {
             context.waitTicks(7);
             context.runOnClient(client -> require(playback.controls.getLast().equals("next"), "Arrow did not skip"));
             movement(context, phone, playback);
+            mouseLook(context, phone, playback);
+            tablet(context, phone, playback);
             for (String hand : new String[]{"Right", "Left"}) for (double size : new double[]{.55, 1, 1.45}) {
                 context.runOnClient(client -> {
                     phone.hand.set(hand); phone.size.set(size);
@@ -184,7 +189,7 @@ final class SpotifyPhoneChecks {
             });
             context.waitTicks(7);
             context.runOnClient(client -> require(client.currentScreen == null, "Offline phone did not finish pocket animation"));
-            System.out.println("[spotify-phone] PASS: F10/Escape pocket animation, shared bridge, isolated transport, volume/mute/scroll/clamps, inline size 55–145%, real held movement/release/remap/focus/close, look drag, seek guards, both hands, small window and texture cleanup");
+            System.out.println("[spotify-phone] PASS: F10/Escape pocket animation, shared bridge, isolated transport, volume/mute/scroll/clamps, inline size 55–145%, real held movement/release/remap/focus/close, native mouse look matching ordinary sensitivity, Alt controls and recapture, focus/menu cleanup, legacy look drag, seek guards, both hands, small window and texture cleanup");
         } finally {
             context.runOnClient(client -> {
                 client.setScreen(null); phone.setEnabled(false); hud.setEnabled(false);
@@ -274,6 +279,147 @@ final class SpotifyPhoneChecks {
             require(c.player.getYaw() == yaw, "Look drag persisted after release");
             require(!c.options.attackKey.isPressed() && !c.options.useKey.isPressed(), "Phone clicks leaked game actions");
         });
+    }
+
+    private static float[] mouseDelta(net.minecraft.client.MinecraftClient c, double dx, double dy) {
+        var probe = (PhoneMouseProbe) c.mouse;
+        long window = c.getWindow().getHandle();
+        c.mouse.setResolutionChanged();
+        probe.maro$cursor(window, 100, 100);
+        c.mouse.tick();
+        float yaw = c.player.getYaw(), pitch = c.player.getPitch();
+        probe.maro$cursor(window, 100 + dx, 100 + dy);
+        c.mouse.tick();
+        return new float[]{c.player.getYaw() - yaw, c.player.getPitch() - pitch};
+    }
+
+    private static void mouseLook(ClientGameTestContext context, SpotifyPhone phone, IsolatedPlayback playback) {
+        float[] normal = context.computeOnClient(c -> {
+            c.setScreen(null);
+            c.mouse.lockCursor();
+            return mouseDelta(c, 24, -12);
+        });
+        context.runOnClient(c -> {
+            phone.mouseLook.set(true);
+            c.setScreen(new SpotifyPhoneScreen(phone, playback));
+            var screen = (SpotifyPhoneScreen) c.currentScreen;
+            screen.tick();
+            require(c.mouse.isCursorLocked() && c.currentScreen == screen, "Native mouse capture closed the phone");
+            for (String device : new String[]{"Phone", "iPad"}) {
+                phone.device.set(device);
+                float[] actual = mouseDelta(c, 24, -12);
+                require(Math.abs(normal[0]) > .01 && Math.abs(actual[0] - normal[0]) < .001
+                    && Math.abs(actual[1] - normal[1]) < .001, device + " mouse sensitivity differs from ordinary gameplay");
+            }
+            phone.device.set("Phone");
+            int count = playback.controls.size();
+            screen.mouseClicked(click(screen, 155, 350), false);
+            screen.mouseReleased(click(screen, 155, 350));
+            require(playback.controls.size() == count, "Captured mouse clicked a phone button");
+            phone.moveWhileOpen.set(false);
+            require(screen.allowsMouseLook(), "Mouse look depends on movement keys being enabled");
+            phone.moveWhileOpen.set(true);
+        });
+        context.waitTicks(8);
+        context.getInput().pressMouse(GLFW.GLFW_MOUSE_BUTTON_LEFT);
+        context.getInput().pressMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
+        context.runOnClient(c -> require(!c.options.attackKey.isPressed() && !c.options.useKey.isPressed(),
+            "Captured phone clicks leaked attack or item use"));
+        context.getInput().holdKey(GLFW.GLFW_KEY_LEFT_ALT);
+        context.waitTicks(1);
+        context.runOnClient(c -> {
+            var screen = (SpotifyPhoneScreen) c.currentScreen;
+            require(!c.mouse.isCursorLocked(), "Alt did not release the phone cursor");
+            float[] still = mouseDelta(c, 24, -12);
+            require(still[0] == 0 && still[1] == 0, "Alt controls rotated the camera");
+            var point = click(screen, 155, 350);
+            ((PhoneMouseProbe) c.mouse).maro$cursor(c.getWindow().getHandle(),
+                point.x() * c.getWindow().getWidth() / c.getWindow().getScaledWidth(),
+                point.y() * c.getWindow().getHeight() / c.getWindow().getScaledHeight());
+            c.mouse.tick();
+        });
+        int controlsBefore = context.computeOnClient(c -> playback.controls.size());
+        context.getInput().pressMouse(GLFW.GLFW_MOUSE_BUTTON_LEFT);
+        context.waitTicks(7);
+        context.runOnClient(c -> require(playback.controls.size() == controlsBefore + 1
+            && playback.controls.getLast().equals("next"), "Alt cursor did not dispatch native phone click"));
+        context.getInput().holdKey(GLFW.GLFW_KEY_RIGHT_ALT);
+        context.getInput().releaseKey(GLFW.GLFW_KEY_LEFT_ALT);
+        context.runOnClient(c -> require(!c.mouse.isCursorLocked(), "Releasing one Alt ignored the other held Alt"));
+        context.getInput().releaseKey(GLFW.GLFW_KEY_RIGHT_ALT);
+        context.runOnClient(c -> {
+            var screen = (SpotifyPhoneScreen) c.currentScreen;
+            require(c.mouse.isCursorLocked(), "Alt release did not resume native mouse look");
+            c.onWindowFocusChanged(false); screen.tick();
+            require(!c.mouse.isCursorLocked(), "Focus loss retained captured mouse");
+            float[] still = mouseDelta(c, 24, -12);
+            require(still[0] == 0 && still[1] == 0, "Unfocused phone moved camera");
+            c.onWindowFocusChanged(true); screen.tick();
+            require(c.mouse.isCursorLocked(), "Focus return did not restore phone mouse look");
+            c.setScreen(new net.minecraft.client.gui.screen.ingame.InventoryScreen(c.player));
+            require(!c.mouse.isCursorLocked(), "Phone mouse capture leaked into inventory");
+            phone.mouseLook.set(false);
+            c.setScreen(new SpotifyPhoneScreen(phone, playback));
+            ((SpotifyPhoneScreen) c.currentScreen).tick();
+            require(!c.mouse.isCursorLocked(), "Disabled Mouse Look still captured cursor");
+        });
+    }
+
+    private static Click tabletClick(SpotifyPhoneScreen screen, float x, float y) {
+        return click(screen, x + 192, y - 158);
+    }
+
+    private static void tablet(ClientGameTestContext context, SpotifyPhone phone, IsolatedPlayback playback) {
+        context.runOnClient(c -> phone.device.set("iPad"));
+        context.waitTicks(8);
+        for (String hand : new String[]{"Left", "Right"}) for (double size : new double[]{.55, 1, 1.45}) {
+            context.runOnClient(c -> {
+                phone.hand.set(hand); phone.size.set(size);
+                var screen = (SpotifyPhoneScreen) c.currentScreen;
+                var l = screen.layout();
+                require(l.width() > l.height() && l.width() == 416, "iPad is not a landscape tablet");
+                require(l.x() >= 0 && l.y() >= 0 && l.x() + l.width() * l.scale() <= screen.width,
+                    "iPad left the window at supported size");
+                screen.mouseClicked(tabletClick(screen, 118, 412), false);
+                screen.mouseReleased(tabletClick(screen, 118, 412));
+                require(Math.abs(playback.volume.level() - .5) < .001, "iPad volume hit target does not match rendering");
+                playback.seeks.clear();
+                screen.mouseClicked(tabletClick(screen, 64, 307), false);
+                screen.mouseDragged(tabletClick(screen, 144, 307), 80 * l.scale(), 0);
+                screen.mouseReleased(tabletClick(screen, 144, 307));
+                require(playback.seeks.size() == 1 && Math.abs(playback.seeks.getLast() - 135000) < 3,
+                    "iPad timeline hit target does not match rendering");
+                int controls = playback.controls.size();
+                screen.mouseClicked(click(screen, 104, 192), false);
+                require(playback.controls.size() == controls, "iPad artwork clicked a hidden transport control");
+            });
+        }
+        context.runOnClient(c -> { phone.hand.set("Right"); phone.size.set(1.0); });
+        context.waitTicks(2);
+        context.takeScreenshot("maro-spotify-ipad");
+        context.getInput().resizeWindow(854, 480);
+        context.runOnClient(c -> { phone.hand.set("Left"); phone.size.set(1.45); });
+        context.waitTicks(3);
+        context.runOnClient(c -> {
+            var l = ((SpotifyPhoneScreen) c.currentScreen).layout();
+            require(l.x() >= 0 && l.y() >= 0 && l.x() + l.width() * l.scale() <= c.getWindow().getScaledWidth(),
+                "Large iPad does not fit the small window");
+        });
+        context.takeScreenshot("maro-spotify-ipad-small-left");
+        context.runOnClient(c -> {
+            var screen = (SpotifyPhoneScreen) c.currentScreen;
+            var l = screen.layout();
+            screen.mouseClicked(click(screen, l.width() - 26, 56), false);
+        });
+        context.waitTicks(7);
+        context.runOnClient(c -> {
+            require(c.currentScreen == null, "iPad close button did not finish pocket animation");
+            phone.device.set("Phone"); phone.hand.set("Right"); phone.size.set(1.0);
+            playback.seeks.clear();
+            c.setScreen(new SpotifyPhoneScreen(phone, playback));
+        });
+        context.getInput().resizeWindow(1280, 720);
+        context.waitTicks(8);
     }
 
     private static SpotifyMedia.State track(String title, boolean available, boolean seek) {

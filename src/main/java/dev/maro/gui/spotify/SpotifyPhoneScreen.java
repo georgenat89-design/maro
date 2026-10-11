@@ -17,6 +17,7 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.ScreenRect;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.input.KeyInput;
+import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.texture.TextureSetup;
 import net.minecraft.text.Text;
 import net.minecraft.util.PlayerInput;
@@ -39,25 +40,29 @@ public final class SpotifyPhoneScreen extends Screen {
     private Texture cover;
     private SpotifyMedia.Artwork shownArtwork;
     private boolean dragging, draggingVolume, looking, removed, sizeChanged;
+    private boolean leftAlt, rightAlt;
     private double lastAudibleVolume = .5;
     private long scrubPosition;
     private String scrubTrack = "";
 
-    public record Layout(float x, float y, float scale, float rotation) {
-        private static final float PX = PHONE_WIDTH / 2, PY = PHONE_HEIGHT - 40;
+    public record Layout(float x, float y, float scale, float rotation, float width, float height) {
         public float localX(double mx, double my) {
-            double dx = (mx - x) / scale - PX, dy = (my - y) / scale - PY;
-            return PX + (float) (dx * Math.cos(rotation) + dy * Math.sin(rotation));
+            float px = width / 2, py = height - 40;
+            double dx = (mx - x) / scale - px, dy = (my - y) / scale - py;
+            return px + (float) (dx * Math.cos(rotation) + dy * Math.sin(rotation));
         }
         public float localY(double mx, double my) {
-            double dx = (mx - x) / scale - PX, dy = (my - y) / scale - PY;
-            return PY + (float) (dy * Math.cos(rotation) - dx * Math.sin(rotation));
+            float px = width / 2, py = height - 40;
+            double dx = (mx - x) / scale - px, dy = (my - y) / scale - py;
+            return py + (float) (dy * Math.cos(rotation) - dx * Math.sin(rotation));
         }
         public float screenX(float lx, float ly) {
-            return x + scale * (PX + (float) ((lx - PX) * Math.cos(rotation) - (ly - PY) * Math.sin(rotation)));
+            float px = width / 2, py = height - 40;
+            return x + scale * (px + (float) ((lx - px) * Math.cos(rotation) - (ly - py) * Math.sin(rotation)));
         }
         public float screenY(float lx, float ly) {
-            return y + scale * (PY + (float) ((lx - PX) * Math.sin(rotation) + (ly - PY) * Math.cos(rotation)));
+            float px = width / 2, py = height - 40;
+            return y + scale * (py + (float) ((lx - px) * Math.sin(rotation) + (ly - py) * Math.cos(rotation)));
         }
     }
 
@@ -65,18 +70,28 @@ public final class SpotifyPhoneScreen extends Screen {
         super(Text.literal("Spotify Phone"));
         this.owner = owner;
         this.player = player;
+        var window = net.minecraft.client.MinecraftClient.getInstance().getWindow();
+        leftAlt = InputUtil.isKeyPressed(window, GLFW.GLFW_KEY_LEFT_ALT);
+        rightAlt = InputUtil.isKeyPressed(window, GLFW.GLFW_KEY_RIGHT_ALT);
     }
 
     public Layout layout() {
-        float scale = Math.min(height * .77f / PHONE_HEIGHT, width * .43f / PHONE_WIDTH) * owner.size.getFloat();
-        scale = Math.max(.1f, Math.min(scale, (height - 16f) / PHONE_HEIGHT));
-        float x = owner.hand.is("Left") ? 25 * scale : width - (PHONE_WIDTH + 25) * scale;
+        float deviceWidth = deviceWidth(), deviceHeight = deviceHeight();
+        float scale = Math.min(height * (tablet() ? .64f : .77f) / deviceHeight,
+            width * (tablet() ? .70f : .43f) / deviceWidth) * owner.size.getFloat();
+        scale = Math.max(.1f, Math.min(scale, Math.min((height - 16f) / deviceHeight, (width - 16f) / (deviceWidth + 25))));
+        float x = owner.hand.is("Left") ? 25 * scale : width - (deviceWidth + 25) * scale;
         float pocket = pocketProgress();
         float direction = owner.hand.is("Left") ? -1 : 1;
         return new Layout(x + direction * pocket * 38 * scale,
-            height - (PHONE_HEIGHT + 10) * scale + pocket * (PHONE_HEIGHT + 50) * scale,
-            scale, direction * pocket * .27f);
+            height - (deviceHeight + 10) * scale + pocket * (deviceHeight + 50) * scale,
+            scale, direction * pocket * .27f, deviceWidth, deviceHeight);
     }
+    private boolean tablet() { return owner.device.is("iPad"); }
+    private float deviceWidth() { return tablet() ? 416 : PHONE_WIDTH; }
+    private float deviceHeight() { return tablet() ? 336 : PHONE_HEIGHT; }
+    private float controlsX(float x) { return x - (tablet() ? 192 : 0); }
+    private float controlsY(float y) { return y + (tablet() ? 158 : 0); }
 
     private float pocketProgress() {
         long now = System.nanoTime();
@@ -93,31 +108,33 @@ public final class SpotifyPhoneScreen extends Screen {
         var state = player.state();
         var layout = layout();
         float mx = layout.localX(mouseX, mouseY), my = layout.localY(mouseX, mouseY);
+        if (allowsMouseLook()) { mx = -10000; my = -10000; }
         var matrices = ctx.getMatrices();
         matrices.pushMatrix();
         matrices.translate(layout.x, layout.y);
         matrices.scale(layout.scale, layout.scale);
-        matrices.translate(Layout.PX, Layout.PY);
+        matrices.translate(layout.width / 2, layout.height - 40);
         matrices.rotate(layout.rotation);
-        matrices.translate(-Layout.PX, -Layout.PY);
+        matrices.translate(-layout.width / 2, -(layout.height - 40));
         Fonts.beginRaw();
         try {
             if (owner.showHand.get()) hand(ctx, false);
             int tint = 0xFF25352B;
             updateArtwork(state);
             if (shownArtwork != null) tint = 0xFF000000 | shownArtwork.tintRgb();
-            Render2D.shadow(ctx, 0, 0, PHONE_WIDTH, PHONE_HEIGHT, 27, 14, 0xA0000000);
-            Render2D.roundRect(ctx, -1, -1, PHONE_WIDTH + 2, PHONE_HEIGHT + 2, 27, 0xFF49504E);
-            Render2D.roundRect(ctx, 0, 0, PHONE_WIDTH, PHONE_HEIGHT, 27, 0xFF090B0C);
-            Render2D.roundGradientV(ctx, 6, 6, PHONE_WIDTH - 12, PHONE_HEIGHT - 12, 22,
+            Render2D.shadow(ctx, 0, 0, layout.width, layout.height, 27, 14, 0xA0000000);
+            Render2D.roundRect(ctx, -1, -1, layout.width + 2, layout.height + 2, 27, 0xFF49504E);
+            Render2D.roundRect(ctx, 0, 0, layout.width, layout.height, 27, 0xFF090B0C);
+            Render2D.roundGradientV(ctx, 6, 6, layout.width - 12, layout.height - 12, 22,
                 ColorUtil.lerp(0xFF171B1D, tint, .18f), 0xFF111516);
-            Render2D.roundRect(ctx, 84, 17, 40, 4, 2, 0xFF080A0B);
+            Render2D.roundRect(ctx, layout.width / 2 - 20, 17, 40, 4, 2, 0xFF080A0B);
             PhoneIcons.spotify(ctx, 30, 56);
             text(ctx, "Spotify", 45, 51, WHITE, true, 1.2f);
-            boolean closeHover = hit(mx, my, 170, 44, 24, 24);
-            if (closeHover) Render2D.roundRect(ctx, 170, 44, 24, 24, 12, 0xFF303736);
-            Render2D.line(ctx, 178, 52, 186, 60, 1.5f, MUTED);
-            Render2D.line(ctx, 186, 52, 178, 60, 1.5f, MUTED);
+            float closeX = layout.width - 38;
+            boolean closeHover = hit(mx, my, closeX, 44, 24, 24);
+            if (closeHover) Render2D.roundRect(ctx, closeX, 44, 24, 24, 12, 0xFF303736);
+            Render2D.line(ctx, closeX + 8, 52, closeX + 16, 60, 1.5f, MUTED);
+            Render2D.line(ctx, closeX + 16, 52, closeX + 8, 60, 1.5f, MUTED);
             Render2D.shadow(ctx, 24, 86, 160, 160, 8, 8, 0x65000000);
             if (cover != null) drawCover(ctx);
             else {
@@ -126,6 +143,9 @@ public final class SpotifyPhoneScreen extends Screen {
                 PhoneIcons.spotify(ctx, 104, 160);
                 centered(ctx, state.available() ? "NOW PLAYING" : "YOUR MUSIC, IN GAME", 104, 195, MUTED, false, .85f);
             }
+            matrices.pushMatrix();
+            if (tablet()) matrices.translate(192, -158);
+            mx = controlsX(mx); my = controlsY(my);
             text(ctx, Fonts.trim(state.available() ? state.title() : "Ready when you are", 160, true, 1.35f),
                 24, 263, WHITE, true, 1.35f);
             text(ctx, Fonts.trim(state.available() ? state.artist() : "Open Spotify and start a song", 160, false, .95f),
@@ -163,13 +183,16 @@ public final class SpotifyPhoneScreen extends Screen {
             sizeButton(ctx, 85, mx, my, false);
             centered(ctx, Math.round(owner.size.get() * 100) + "%", 134, 433, WHITE, false, .85f);
             sizeButton(ctx, 162, mx, my, true);
-            Render2D.roundRect(ctx, 77, 452, 54, 3, 1.5f, 0xFF8B9591);
+            matrices.popMatrix();
+            Render2D.roundRect(ctx, layout.width / 2 - 27, layout.height - 12, 54, 3, 1.5f, 0xFF8B9591);
             if (owner.showHand.get()) hand(ctx, true);
         } finally { Fonts.endRaw(); matrices.popMatrix(); }
-        if (allowsMovement() && closingAt == 0) {
-            float hintX = owner.hand.is("Left") ? layout.x + (PHONE_WIDTH + 30) * layout.scale : 8;
+        if ((allowsMovement() || owner.mouseLook.get()) && closingAt == 0) {
+            float hintX = owner.hand.is("Left") ? layout.x + (layout.width + 30) * layout.scale : 8;
             Fonts.beginRaw();
-            try { Fonts.draw(ctx, Fonts.trim("Move keys · Right-drag outside phone to look", width - hintX - 8, false, .7f),
+            String hint = owner.mouseLook.get() ? "Mouse: look · Hold Alt: phone controls"
+                : "Move keys · Right-drag outside phone to look";
+            try { Fonts.draw(ctx, Fonts.trim(hint, width - hintX - 8, false, .7f),
                 hintX, height - 11, 0xBDE6ECE8, false, .7f); }
             finally { Fonts.endRaw(); }
         }
@@ -251,11 +274,11 @@ public final class SpotifyPhoneScreen extends Screen {
         boolean left = owner.hand.is("Left");
         var m = ctx.getMatrices(); m.pushMatrix();
         if (thumb) {
-            m.translate(left ? -2 : 194, 292); m.rotate(left ? -.22f : .22f);
+            m.translate(left ? -2 : deviceWidth() - 14, deviceHeight() - 172); m.rotate(left ? -.22f : .22f);
             Render2D.rect(ctx, -2, -2, 20, 44, 0x70000000);
             ctx.drawTexture(RenderPipelines.GUI_TEXTURED, skin, 0, 0, left ? 36 : 44, left ? 60 : 28, 16, 40, 4, 4, 64, 64);
         } else {
-            m.translate(left ? -31 : 201, 299); m.rotate(left ? .25f : -.25f);
+            m.translate(left ? -31 : deviceWidth() - 7, deviceHeight() - 165); m.rotate(left ? .25f : -.25f);
             ctx.drawTexture(RenderPipelines.GUI_TEXTURED, skin, 0, 0, left ? 36 : 44, left ? 52 : 20, 38, 170, 4, 12, 64, 64);
             ctx.drawTexture(RenderPipelines.GUI_TEXTURED, skin, 0, 0, left ? 52 : 44, left ? 52 : 36, 38, 170, 4, 12, 64, 64);
         }
@@ -304,13 +327,17 @@ public final class SpotifyPhoneScreen extends Screen {
     @Override public boolean mouseClicked(Click event, boolean doubleClick) {
         if (owner.getBind().matches(dev.maro.util.KeyUtil.mouse(event.button()))) { close(); return true; }
         if (closingAt != 0) return true;
+        if (allowsMouseLook()) { movement.mouse(event, true); return true; }
         var l = layout(); float x = l.localX(event.x(), event.y()), y = l.localY(event.x(), event.y());
-        if (allowsMovement() && !hit(x, y, -5, -5, PHONE_WIDTH + 10, PHONE_HEIGHT + 10)) {
+        if (allowsMovement() && !hit(x, y, -5, -5, l.width + 10, l.height + 10)) {
             movement.mouse(event, true);
             if (event.button() == 1) { looking = true; return true; }
         }
         if (event.button() != 0) return true;
-        if (hit(x, y, 170, 44, 24, 24) || hit(x, y, 67, 448, 74, 12)) { close(); return true; }
+        if (hit(x, y, l.width - 38, 44, 24, 24)
+            || hit(x, y, l.width / 2 - 37, l.height - 16, 74, 12)) { close(); return true; }
+        if (tablet() && x < 200) return true;
+        x = controlsX(x); y = controlsY(y);
         if (hit(x, y, 85, 426, 22, 22) || hit(x, y, 162, 426, 22, 22)) {
             owner.size.set(owner.size.get() + (x < 120 ? -.05 : .05)); sizeChanged = true; return true;
         }
@@ -338,9 +365,10 @@ public final class SpotifyPhoneScreen extends Screen {
     }
     @Override public boolean mouseDragged(Click event, double dx, double dy) {
         if (closingAt != 0 || !client.isWindowFocused()) { cancelDrags(); return true; }
-        if (draggingVolume && event.button() == 0) { volumeAt(layout().localX(event.x(), event.y())); return true; }
-        if (dragging && event.button() == 0) { scrub(layout().localX(event.x(), event.y())); return true; }
-        if (looking && event.button() == 1 && allowsMovement() && client.player != null
+        if (allowsMouseLook()) return true;
+        if (draggingVolume && event.button() == 0) { volumeAt(controlsX(layout().localX(event.x(), event.y()))); return true; }
+        if (dragging && event.button() == 0) { scrub(controlsX(layout().localX(event.x(), event.y()))); return true; }
+        if (looking && !owner.mouseLook.get() && event.button() == 1 && allowsMovement() && client.player != null
             && !dev.maro.nathan.modules.FreeCam.active()) {
             double sensitivity = client.options.getMouseSensitivity().getValue() * .6 + .2;
             double factor = sensitivity * sensitivity * sensitivity * 8 * client.getWindow().getScaleFactor();
@@ -354,11 +382,11 @@ public final class SpotifyPhoneScreen extends Screen {
         movement.mouse(event, false);
         if (event.button() == 1) { looking = false; return true; }
         if (draggingVolume && event.button() == 0) {
-            if (client.isWindowFocused()) volumeAt(layout().localX(event.x(), event.y()));
+            if (client.isWindowFocused()) volumeAt(controlsX(layout().localX(event.x(), event.y())));
             draggingVolume = false; return true;
         }
         if (dragging && event.button() == 0) {
-            scrub(layout().localX(event.x(), event.y())); dragging = false;
+            scrub(controlsX(layout().localX(event.x(), event.y()))); dragging = false;
             var state = player.state();
             if (client.isWindowFocused() && state.available() && state.canSeek() && scrubTrack.equals(SpotifyMedia.artworkKey(state))) player.seekTo(scrubPosition);
             return true;
@@ -366,8 +394,9 @@ public final class SpotifyPhoneScreen extends Screen {
         return true;
     }
     @Override public boolean mouseScrolled(double mx, double my, double horizontal, double vertical) {
+        if (allowsMouseLook()) return true;
         var l = layout();
-        if (closingAt == 0 && hit(l.localX(mx, my), l.localY(mx, my), 20, 390, 168, 34)
+        if (closingAt == 0 && hit(controlsX(l.localX(mx, my)), controlsY(l.localY(mx, my)), 20, 390, 168, 34)
             && player.volume().available() && Double.isFinite(vertical)) {
             setVolume(player.volume().level() + vertical * .02, false);
         }
@@ -388,6 +417,7 @@ public final class SpotifyPhoneScreen extends Screen {
     }
     @Override public boolean keyPressed(KeyInput input) {
         if (owner.getBind().matches(input.key()) || input.key() == GLFW.GLFW_KEY_ESCAPE) { close(); return true; }
+        if (altKey(input.key(), true)) return true;
         if (closingAt != 0) { if (allowsMovement()) movement.key(input, true); return true; }
         if (input.key() == GLFW.GLFW_KEY_SPACE && (input.modifiers() & GLFW.GLFW_MOD_CONTROL) != 0) {
             control("toggle"); return true;
@@ -401,7 +431,30 @@ public final class SpotifyPhoneScreen extends Screen {
         }
         return true;
     }
-    @Override public boolean keyReleased(KeyInput input) { movement.key(input, false); return true; }
+    @Override public boolean keyReleased(KeyInput input) {
+        movement.key(input, false);
+        altKey(input.key(), false);
+        return true;
+    }
+    private boolean altKey(int key, boolean down) {
+        if (key == GLFW.GLFW_KEY_LEFT_ALT) leftAlt = down;
+        else if (key == GLFW.GLFW_KEY_RIGHT_ALT) rightAlt = down;
+        else return false;
+        cancelDrags();
+        syncMouseCapture();
+        return true;
+    }
+    public boolean allowsMouseLook() {
+        return owner.mouseLook.get() && !leftAlt && !rightAlt && !removed && client != null
+            && client.isWindowFocused() && client.player != null && client.world != null
+            && client.getOverlay() == null && !dev.maro.nathan.modules.FreeCam.active();
+    }
+    private void syncMouseCapture() {
+        if (client == null || client.currentScreen != this) return;
+        if (allowsMouseLook()) {
+            if (!client.mouse.isCursorLocked()) client.mouse.lockCursor();
+        } else if (client.mouse.isCursorLocked()) client.mouse.unlockCursor();
+    }
     public boolean allowsMovement() { return owner.moveWhileOpen.get() && !removed; }
     public PlayerInput movementInput() { return allowsMovement() ? movement.read() : PlayerInput.DEFAULT; }
     private void cancelDrags() { dragging = false; draggingVolume = false; looking = false; }
@@ -410,7 +463,8 @@ public final class SpotifyPhoneScreen extends Screen {
         closingFrom = pocketProgress(); closingAt = System.nanoTime(); cancelDrags();
     }
     @Override public void tick() {
-        if (!client.isWindowFocused()) { movement.clear(); cancelDrags(); }
+        if (!client.isWindowFocused()) { movement.clear(); cancelDrags(); leftAlt = rightAlt = false; }
+        syncMouseCapture();
         if (client.player == null || client.world == null
             || closingAt != 0 && System.nanoTime() - closingAt >= 240_000_000L) {
             if (client.currentScreen == this) client.setScreen(null);
@@ -420,6 +474,7 @@ public final class SpotifyPhoneScreen extends Screen {
     @Override public void removed() {
         if (removed) return;
         removed = true; cancelDrags(); movement.clear();
+        if (client.mouse.isCursorLocked()) client.mouse.unlockCursor();
         if (cover != null) { cover.close(); cover = null; }
         shownArtwork = null;
         owner.screenClosed(this);
