@@ -166,6 +166,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             InventoryHiderChecks.run(context, singleplayer);
             ArmorHudChecks.run(context, singleplayer);
             VehiclesChecks.run(context, singleplayer);
+            AcrobaticsChecks.run(context, singleplayer);
             FakeBlockChecks.run(context, singleplayer);
             BetterLooksChecks.run(context);
             SkyChecks.run(context, singleplayer);
