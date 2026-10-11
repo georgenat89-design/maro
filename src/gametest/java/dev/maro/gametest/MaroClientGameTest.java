@@ -59,6 +59,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             }
             if (Boolean.getBoolean("maro.gametest.screenGuiOnly")) {
                 ScreenGuiChecks.run(context);
+                SkinChangerChecks.run(context);
                 return;
             }
             if (Boolean.getBoolean("maro.gametest.geekedOnly")) {
@@ -191,6 +192,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             HudReadabilityChecks.run(context);
             MaroRelogChecks.run(context, singleplayer);
             ScreenGuiChecks.run(context);
+            SkinChangerChecks.run(context);
             String before = context.computeOnClient(client -> describe(client));
             context.takeScreenshot("maro-00-world");
 

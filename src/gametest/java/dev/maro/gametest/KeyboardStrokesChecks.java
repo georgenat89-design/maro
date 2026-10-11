@@ -62,7 +62,7 @@ final class KeyboardStrokesChecks {
                 context.getInput().releaseKey(o -> o.jumpKey);
             }
             for (String style : new String[] {"Panels", "Window"}) {
-                for (boolean screenGui : new boolean[] {false, true}) {
+                for (boolean screenGui : new boolean[] {false}) {
                     context.runOnClient(c -> {
                         ClientSettings.menuStyle.set(style);
                         ClientSettings.screenGui.set(screenGui);

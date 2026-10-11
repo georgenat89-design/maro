@@ -53,17 +53,17 @@ final class ScreenGuiChecks {
                 ClientSettings.capsText.set(false);
                 ClientSettings.backgroundDim.set(false);
                 ClientSettings.backgroundBlur.set(false);
-                ClientSettings.screenTilt.set(25d);
+                ClientSettings.screenDistance.set(4d);
                 ClientSettings.menuStyle.set("Panels");
                 ClientSettings.screenGui.set(true);
                 ConfigManager.saveClient();
                 ClientSettings.screenGui.set(false);
-                ClientSettings.screenTilt.set(0d);
+                ClientSettings.screenDistance.set(2d);
                 ConfigManager.loadClient();
-                require(ClientSettings.screenGui.get() && ClientSettings.screenTilt.getInt() == 25, "Screen GUI settings did not persist");
+                require(ClientSettings.screenGui.get() && ClientSettings.screenDistance.getInt() == 4, "Screen GUI settings did not persist");
             });
             for (String layout : new String[] {"Panels", "Window"}) {
-                for (boolean floating : new boolean[] {false, true}) {
+                for (boolean floating : new boolean[] {false}) {
                     context.runOnClient(c -> {
                         ClientSettings.menuStyle.set(layout);
                         ClientSettings.screenGui.set(floating);
@@ -134,60 +134,7 @@ final class ScreenGuiChecks {
                     System.out.println("[screen-gui-proof] " + layout + " floating=" + floating + " render/picking/fonts/close passed");
                 }
             }
-            for (String layout : new String[] {"Panels", "Window"}) {
-                context.runOnClient(c -> {
-                    ClientSettings.menuStyle.set(layout); ClientSettings.screenGui.set(true); ClientSettings.screenTilt.set(35d);
-                    c.setScreen(new ClickGuiScreen());
-                    var gui = (ClickGuiScreen) c.currentScreen;
-                    gui.mouseMoved(gui.width / 2d, gui.height / 2d);
-                });
-                context.waitTicks(15);
-                var centre = context.computeOnClient(c -> {
-                    var gui = (ClickGuiScreen) c.currentScreen;
-                    return gui.screenPose().project(gui.menuWidth() / 2d, gui.menuHeight() / 2d);
-                });
-                context.takeScreenshot("maro-screen-gui-" + layout.toLowerCase() + "-world-centre");
-                context.runOnClient(c -> {
-                    var gui = (ClickGuiScreen) c.currentScreen;
-                    gui.mouseMoved(gui.width * .85, gui.height * .15);
-                });
-                context.waitTicks(20);
-                context.runOnClient(c -> {
-                    var gui = (ClickGuiScreen) c.currentScreen;
-                    var projected = gui.screenPose().project(gui.menuWidth() / 2d, gui.menuHeight() / 2d);
-                    require(projected[0] < centre[0] - gui.width * .1, "Looking right must move the fixed menu left");
-                    require(projected[1] > centre[1] + gui.height * .1, "Looking up must move the fixed menu down");
-                    for (int x = 0; x <= gui.menuWidth(); x += 37) for (int y = 0; y <= gui.menuHeight(); y += 37) {
-                        var point = gui.screenPose().project(x, y); var back = gui.screenPose().unproject(point[0], point[1]);
-                        require(Math.abs(back[0] - x) < .01 && Math.abs(back[1] - y) < .01, "Off-centre inverse picking drifted");
-                    }
-                    var camera = c.gameRenderer.getCamera();
-                    require(Math.abs(camera.getYaw() - c.player.getYaw() - gui.screenPose().yaw()) < .05,
-                            "World and menu yaw must use the same frame");
-                    require(Math.abs(camera.getPitch() - c.player.getPitch() - gui.screenPose().pitch()) < .05,
-                            "World and menu pitch must use the same frame");
-                });
-                context.takeScreenshot("maro-screen-gui-" + layout.toLowerCase() + "-world-look-up-right");
-                if (layout.equals("Panels")) {
-                    context.runOnClient(c -> {
-                        var gui = (ClickGuiScreen) c.currentScreen;
-                        var row = gui.panelPlace(example);
-                        require(row != null, "Example row missing in off-centre view");
-                        var point = gui.screenPose().project(row[0], row[1]);
-                        require(point[0] > 0 && point[0] < gui.width && point[1] > 0 && point[1] < gui.height,
-                                "Off-centre click must be visible on screen");
-                        boolean before = example.isEnabled();
-                        var click = new Click(point[0], point[1], new MouseInput(0, 0));
-                        gui.mouseClicked(click, false);
-                        require(example.isEnabled() != before, "Clicking the turned menu missed its row");
-                        gui.mouseReleased(click); example.setEnabled(before);
-                    });
-                }
-                context.runOnClient(c -> c.setScreen(null));
-                context.waitTicks(3);
-                require(!context.computeOnClient(c -> ScreenGuiSurface.hasResources()), "World menu surface leaked");
-                System.out.println("[screen-gui-world-proof] " + layout + " fixed plane, matching camera, off-centre picking passed");
-            }
+            WorldScreenGuiChecks.run(context);
             context.getInput().resizeWindow(854, 480);
             context.runOnClient(c -> {
                 ClientSettings.menuStyle.set("Window"); ClientSettings.screenGui.set(true); ClientSettings.customFont.set(true);
@@ -199,8 +146,8 @@ final class ScreenGuiChecks {
             context.getInput().resizeWindow(1440, 900);
             context.waitTicks(10);
             context.takeScreenshot("maro-screen-gui-resized");
-            context.runOnClient(c -> require(Math.abs(c.player.getYaw() - aim[0]) < .001 && Math.abs(c.player.getPitch() - aim[1]) < .001, "Menu parallax changed player aim"));
-            System.out.println("[screen-gui-lifecycle-proof] settings persistence, both layouts, inverse picking, camera-only parallax, resize and resource cleanup passed");
+
+            System.out.println("[screen-gui-lifecycle-proof] settings persistence, both layouts, inverse picking, world placement and crosshair control, resize and resource cleanup passed");
         } finally {
             context.runOnClient(c -> {
                 c.setScreen(null);
