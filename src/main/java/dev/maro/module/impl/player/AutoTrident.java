@@ -20,7 +20,7 @@ public final class AutoTrident extends Module {
     private final NumberSetting speed = add(new NumberSetting("Speed",
         "Higher is faster: 10 charges for 10 ticks; 1 charges for 28 ticks", 10, 1, 10, 1));
     private final NumberSetting repeatDelay = add(new NumberSetting("Repeat Delay",
-        "Ticks between accepted releases and the next charge; Riptide spins and server backoff still take priority", 1, 1, 10, 1));
+        "Extra ticks before the next charge. Zero starts it immediately; native charge time and correction backoff still apply", 0, 0, 10, 1));
     private Object player,world;
     private int nextUseAge,lastUseAge=-100,lastCorrectionAge=-1000,chargePenalty;
     private long chargeStartedAt;
@@ -61,10 +61,18 @@ public final class AutoTrident extends Module {
                 && mc.player.getItemUseTime() >= charge
                 && (!serverTiming.get()||chargeStartedAt!=0&&System.nanoTime()-chargeStartedAt>=charge*50_000_000L)) {
                 mc.interactionManager.stopUsingItem(mc.player);
+                // The release has completed before starting another ordinary use. Keep the
+                // full charge time, but remove the idle client tick between native charges.
+                if (serverTiming.get() && precharge.get() && repeatDelay.getInt() == 0
+                    && !mc.player.isUsingItem()) startCharge();
             }
             return;
         }
 
+        startCharge();
+    }
+
+    private void startCharge() {
         Hand hand = mc.player.getMainHandStack().isOf(Items.TRIDENT) ? Hand.MAIN_HAND
             : mc.player.getOffHandStack().isOf(Items.TRIDENT) ? Hand.OFF_HAND : null;
         if (hand == null || !readyToCharge() || !TridentUtil.ready() || !TridentUtil.eligible(mc.player.getStackInHand(hand))) return;

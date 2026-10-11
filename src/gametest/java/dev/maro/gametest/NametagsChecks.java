@@ -38,7 +38,7 @@ final class NametagsChecks {
         try {
             context.runOnClient(c -> {
                 fakes.getSettings().forEach(Setting::reset);
-                ((ModeSetting) setting(fakes, "Armor")).set("Netherite");
+                ((ModeSetting) setting(fakes, "Armor")).set("Diamond");
                 ((NumberSetting) setting(fakes, "Health")).set(1.0);
                 fakes.setEnabled(true);
                 tags.getSettings().forEach(Setting::reset);
@@ -65,6 +65,7 @@ final class NametagsChecks {
                 fake.getEquippedStack(EquipmentSlot.HEAD).addEnchantment(enchantments.getOrThrow(Enchantments.BINDING_CURSE), 1);
                 var boots = fake.getEquippedStack(EquipmentSlot.FEET);
                 boots.setDamage((int) (boots.getMaxDamage() * 0.82));
+                fake.equipStack(EquipmentSlot.MAINHAND, new net.minecraft.item.ItemStack(net.minecraft.item.Items.FIREWORK_ROCKET, 48));
             });
             context.waitTicks(5);
             context.runOnClient(c -> {
@@ -86,6 +87,13 @@ final class NametagsChecks {
             context.waitTicks(3);
             context.takeScreenshot("maro-nametags-enchanted-glow-off");
             context.runOnClient(c -> ((BooleanSetting) setting(tags, "Enchanted Glow")).set(true));
+            context.runOnClient(c -> ((ModeSetting) setting(tags, "Font")).set("Minecraft"));
+            context.waitTicks(3);
+            context.takeScreenshot("maro-nametags-cards-minecraft");
+            context.runOnClient(c -> {((ModeSetting) setting(tags, "Font")).set("Client");((ModeSetting) setting(tags, "Layout")).set("Detailed");});
+            context.waitTicks(3);
+            context.takeScreenshot("maro-nametags-cards-detailed");
+            context.runOnClient(c -> ((ModeSetting) setting(tags, "Layout")).set("Compact"));
             context.runOnClient(c -> {((ModeSetting) setting(tags, "Font")).set("Minecraft");((ModeSetting) setting(tags, "Gear Style")).set("Minimal");});
             context.waitTicks(3);
             context.takeScreenshot("maro-nametags-bold-percent-minecraft");

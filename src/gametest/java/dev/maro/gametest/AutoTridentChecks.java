@@ -62,7 +62,7 @@ public final class AutoTridentChecks {
         float pitch = context.computeOnClient(client -> client.player.getPitch());
         try {
             world.getServer().runCommand("gamemode creative @a");
-            context.runOnClient(client -> { client.player.setPitch(-70); speed.set(10.0); module.setEnabled(true); });
+            context.runOnClient(client -> { module.getSettings().forEach(dev.maro.setting.Setting::reset); client.player.setPitch(-70); speed.set(10.0); module.setEnabled(true); });
             equip(context, world, false);
             int before = throwsAccepted(world);
             context.getInput().holdMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
@@ -151,7 +151,7 @@ public final class AutoTridentChecks {
             int launches = throwsAccepted(world)-before;
             require(precharged, "Held Riptide did not start the next charge during its spin");
             require(launches>=3,"Precharged Riptide did not repeat at the faster cadence: " + launches);
-            int fastInterval = context.computeOnClient(c -> releaseAges.get(1) - releaseAges.get(0));
+            int fastInterval = context.computeOnClient(c -> medianInterval());
             require(context.computeOnClient(c -> startedWhileSpinning), "Precharge did not send a native use during the spin");
             context.getInput().releaseMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
             context.runOnClient(c -> {
@@ -159,6 +159,27 @@ public final class AutoTridentChecks {
                 if (c.player.isUsingItem()) c.interactionManager.stopUsingItem(c.player);
             });
             context.waitTicks(25);
+            var repeatDelay = (NumberSetting) module.getSettings().stream()
+                .filter(s -> s.getName().equals("Repeat Delay")).findFirst().orElseThrow();
+            world.getServer().runCommand("tp @a 200.5 82 200.5 0 -90");
+            context.waitTicks(8);
+            context.runOnClient(c -> { repeatDelay.set(1.0); module.setEnabled(true); });
+            before = throwsAccepted(world);
+            record(context);
+            context.getInput().holdMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
+            context.waitTicks(65);
+            require(throwsAccepted(world) - before >= 3, "Previous one-tick cadence did not reach the server: "
+                + (throwsAccepted(world) - before) + " accepted; wet=" + context.computeOnClient(c -> c.player.isTouchingWaterOrRain()));
+            int previousInterval = context.computeOnClient(c -> medianInterval());
+            require(fastInterval < previousInterval, "Zero-delay charging did not improve cadence: "
+                + fastInterval + " vs " + previousInterval);
+            System.out.println("[auto-trident-zero-delay-proof] native launch interval=" + fastInterval
+                + " ticks vs previous=" + previousInterval + "; full native charge retained");
+            context.getInput().releaseMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
+            context.runOnClient(c -> { module.setEnabled(false); if (c.player.isUsingItem()) c.interactionManager.stopUsingItem(c.player); repeatDelay.set(0.0); });
+            context.waitTicks(25);
+            world.getServer().runCommand("tp @a 200.5 82 200.5 0 -90");
+            context.waitTicks(8);
             var precharge = (dev.maro.setting.BooleanSetting) module.getSettings().stream()
                 .filter(s -> s.getName().equals("Precharge")).findFirst().orElseThrow();
             context.runOnClient(c -> { module.setEnabled(false); precharge.set(false); module.setEnabled(true); });
@@ -199,4 +220,11 @@ public final class AutoTridentChecks {
         }
     }
     private static Object field(Object owner,String name){try{var f=owner.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(owner);}catch(ReflectiveOperationException e){throw new AssertionError(e);}}
+    private static int medianInterval() {
+        require(releaseAges.size() >= 3, "Not enough native releases to measure cadence");
+        var gaps = new java.util.ArrayList<Integer>();
+        for (int i = 1; i < releaseAges.size(); i++) gaps.add(releaseAges.get(i) - releaseAges.get(i - 1));
+        gaps.sort(Integer::compareTo);
+        return gaps.get(gaps.size() / 2);
+    }
 }
