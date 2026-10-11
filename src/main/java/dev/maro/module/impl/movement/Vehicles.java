@@ -286,10 +286,10 @@ public class Vehicles extends Module {
     /** Where you sit, from the car's middle on the ground: right, up (your feet, legs out in front), forward. */
     private double[] seat() {
         return switch (model()) {
-            case TRUCK -> new double[] {-0.45, 0.5, 0.95};
+            case TRUCK -> new double[] {-0.45, 0.3, 0.95};
             case KART -> new double[] {0, -0.4, -0.45};
             case SPORTS -> new double[] {-0.36, -0.28, -0.3};
-            default -> new double[] {-0.38, -0.18, -0.2};
+            default -> new double[] {-0.38, -0.34, -0.2};
         };
     }
 
