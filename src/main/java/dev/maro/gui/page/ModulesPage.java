@@ -179,14 +179,8 @@ public class ModulesPage extends Page {
         float on = Anims.of(m, "on", m.isEnabled());
         float r = Theme.radius();
 
-        if (on > 0.01f && Theme.glow()) Render2D.shadow(ctx, x, y, w, h, r, 7f, Theme.accent(Math.round(0x26 * on)));
         Render2D.roundRect(ctx, x, y, w, h, r, ColorUtil.lerp(Theme.CARD, Theme.CARD_HOVER, hv));
-        if (on > 0.01f) {
-            Render2D.roundRect(ctx, x, y, w, h, r, Theme.accent(Math.round(0x34 * on)), Theme.accent2(Math.round(0x0A * on)), 0x00000000, Theme.accent(Math.round(0x10 * on)));
-        }
-        int border = ColorUtil.lerp(ColorUtil.lerp(Theme.BORDER, 0xFF3A374A, hv), Theme.accent(0x70), on);
-        Render2D.roundOutline(ctx, x, y, w, h, r, 1f, border, ColorUtil.lerp(border, Theme.BORDER, on * 0.7f),
-                ColorUtil.lerp(border, Theme.BORDER, on * 0.7f), border);
+        Render2D.roundOutline(ctx, x, y, w, h, r, Render2D.px(), ColorUtil.lerp(Theme.BORDER, Theme.accent(0x45), on));
 
         float nx = x + 11;
         float toggleX = x + w - 32;

@@ -132,7 +132,7 @@ public final class PanelsView {
     void openDockPage(String label) {
         for (PageLink page : pages) {
             if (!page.label().equals(label)) continue;
-            float[] at = dockAnchors.getOrDefault(page, new float[] {gui.width / 2f, MARGIN + DOCK_H + 6f});
+            float[] at = dockAnchors.getOrDefault(page, new float[] {gui.menuWidth() / 2f, MARGIN + DOCK_H + 6f});
             if (page.sections() != null) openPopover(new Popover(page, page.label(), null, page.sections(), at[0], at[1]));
             else openPageBox(page);
         }
@@ -301,8 +301,7 @@ public final class PanelsView {
             if (Theme.glow() && lit > 0.01f) Render2D.shadow(ctx, x, y, w, h, r, 16f, Theme.accent(Math.round(0x14 * lit)));
         }
         Render2D.roundRect(ctx, x, y, w, h, r, Theme.windowBg());
-        Render2D.roundRect(ctx, x, y, w, Math.min(46f, h), r, Theme.accent(0x16), Theme.accent2(0x16), 0x00000000, 0x00000000);
-        Render2D.roundOutline(ctx, x, y, w, h, r, 1f, 0xFF26262F, 0xFF26262F, 0xFF15151B, 0xFF15151B);
+        Render2D.roundOutline(ctx, x, y, w, h, r, Render2D.px(), Theme.BORDER);
 
         renderHeader(ctx, panel, x, y, w, searching ? rows.size() : -1, on, open, lit);
 
@@ -349,31 +348,12 @@ public final class PanelsView {
         });
         if (hov) gui.tooltip("Drag to move  •  right click to fold");
 
-        // The category's icon on a small tile, lit in the accent while any of its modules are on.
-        float ix = x + 12f;
-        if (Theme.glow() && lit > 0.01f) Render2D.shadow(ctx, ix - 6, cy - 6, 12, 12, 4, 4, Theme.accent(Math.round(0x40 * lit)));
-        Render2D.roundRect(ctx, ix - 6.5f, cy - 6.5f, 13f, 13f, 3.5f, Theme.accent(Math.round(0x1C + 0x24 * Math.max(hv, lit))),
-                Theme.accent2(Math.round(0x10 + 0x18 * Math.max(hv, lit))), Theme.accent2(Math.round(0x08 + 0x10 * lit)), Theme.accent(Math.round(0x10 + 0x18 * lit)));
-        panel.category.getIcon().draw(ctx, ix, cy, 8.5f, ColorUtil.lerp(ColorUtil.lerp(Theme.TEXT_DIM, Theme.TEXT, hv), 0xFFFFFFFF, lit), hv);
-        float caretX = x + w - 9f;
-        // A badge: how many match the search, or how many are on; nothing when none are.
-        float titleRight = caretX - 6f;
-        String badge = found >= 0 ? String.valueOf(found) : on > 0 ? String.valueOf(on) : null;
-        if (badge != null) {
-            Fonts.beginRaw();
-            float bw = Math.max(9f, Fonts.width(badge, true, 0.6f) + 6f), bh = 9f, bx = caretX - 6f - bw;
-            boolean accent = found < 0 || found > 0;
-            Render2D.roundRect(ctx, bx, cy - bh / 2f, bw, bh, bh / 2f, accent ? Theme.accent(0x48) : 0xFF22222C);
-            Fonts.drawCentered(ctx, badge, bx + bw / 2f, cy, accent ? 0xFFFFFFFF : Theme.TEXT_MUTED, true, 0.6f);
-            Fonts.endRaw();
-            titleRight = bx - 4f;
-        }
-        // The name, a little smaller rather than cut short when the panel is narrow.
+        float ix = x + 11;
+        panel.category.getIcon().draw(ctx, ix, cy, 8, Theme.TEXT_MUTED, 0);
+        float caretX = x + w - 9;
         String title = panel.category.getDisplayName();
-        float tx = ix + 10.5f, room = titleRight - tx, scale = 0.86f;
-        float full = Fonts.width(title, true, scale);
-        if (full > room) scale = Math.max(0.68f, scale * room / full);
-        Fonts.drawV(ctx, Fonts.trim(title, room, true, scale), tx, cy, Theme.TEXT, true, scale);
+        float tx = x + 21, room = w - 35;
+        Fonts.drawV(ctx, Fonts.trim(title, room, true, .83f), tx, cy, Theme.TEXT, true, .83f);
 
         // A caret that turns as the panel folds.
         double turn = Math.toRadians(-90f * (1f - open));
@@ -386,13 +366,7 @@ public final class PanelsView {
             Render2D.line(ctx, ax, ay, bx, by, 1.2f, caretColor);
         }
 
-        // An accent line under the header, fading out at both ends.
-        if (open > 0.01f) {
-            float lw = w - 16f, lx = x + 8f, half = lw / 2f;
-            int a = Math.round(0xB0 * open);
-            Render2D.rectGradient(ctx, lx, y + HEADER - 1f, half, 1f, Theme.accent(0), Theme.accent(a), Theme.accent(a), Theme.accent(0));
-            Render2D.rectGradient(ctx, lx + half, y + HEADER - 1f, half, 1f, Theme.accent2(a), Theme.accent2(0), Theme.accent2(0), Theme.accent2(a));
-        }
+        Render2D.rect(ctx, x + 6, y + HEADER - 1, w - 12, Render2D.px(), Theme.BORDER);
     }
 
     private void renderRow(DrawContext ctx, Panel panel, Module m, float x, float y, float w, float h) {
@@ -417,19 +391,9 @@ public final class PanelsView {
         });
         if (hov) gui.tooltip(m.getDescription());
 
-        // Its settings box is open: an accent outline.
         float sel = Anims.of(m, "panelSelected", popover != null && popover.module() == m);
-        if (sel > 0.01f) Render2D.roundOutline(ctx, x, y, w, h, r, 1f, Theme.accent(Math.round(0xC0 * sel)));
-        // On: an accent gradient pill with a soft glow and a light bar at its left edge.
-        if (hv > 0.01f) Render2D.roundRect(ctx, x, y, w, h, r, ColorUtil.withAlpha(0xFF1C1C26, Math.round(0xFF * hv * (1f - en * 0.6f))));
-        if (en > 0.01f) {
-            if (Theme.glow()) Render2D.shadow(ctx, x, y, w, h, r, 5f, Theme.accent(Math.round(0x22 * en)));
-            Render2D.roundGradientH(ctx, x, y, w, h, r, Theme.accent(Math.round((0x58 + 0x18 * hv) * en)), Theme.accent2(Math.round((0x20 + 0x10 * hv) * en)));
-            Render2D.roundOutline(ctx, x, y, w, h, r, 0.8f, Theme.accent(Math.round(0x70 * en)), Theme.accent2(Math.round(0x28 * en)),
-                    Theme.accent2(Math.round(0x28 * en)), Theme.accent(Math.round(0x70 * en)));
-            float bh = (h - 5f) * en;
-            Render2D.roundRect(ctx, x + 2f, cy - bh / 2f, 1.6f, bh, 0.8f, Theme.accent());
-        }
+        if (hv > .01f || sel > .01f) Render2D.roundRect(ctx, x, y, w, h, 2, ColorUtil.withAlpha(0xFFFFFF, Math.round(22 * Math.max(hv, sel))));
+        if (en > .01f) Render2D.roundRect(ctx, x, y + 3, 1.5f, h - 6, .7f, Theme.accent(Math.round(255 * en)));
 
         // Its key, or a hint that it has settings, on the right.
         String key = listening ? "Press a key" : m.getBind().isBound() ? m.getBind().getKeyName() : null;
@@ -638,15 +602,15 @@ public final class PanelsView {
     /** Logo, search and the general pages, in a pill at the top of the screen. */
     private void renderDock(DrawContext ctx, float width, float shown) {
         float bs = DOCK_H - 6f, searchW = Math.min(150f, width * 0.3f);
-        float logoW = 62f, buttonsW = (pages.size() + 1) * (bs + 3f) + 4f;
+        float logoW = 62f, buttonsW = (pages.size() + 2) * (bs + 3f) + 4f;
         float w = 6f + logoW + searchW + 8f + buttonsW, x = (width - w) / 2f, y = MARGIN;
         float prev = Render2D.getAlpha();
         Render2D.setAlpha(prev * shown);
         gui.hit(x, y, w, DOCK_H, (button, mx, my) -> {
         });
         if (ClientSettings.shadow.get()) Render2D.shadow(ctx, x, y + 2, w, DOCK_H, DOCK_H / 2f, 12f, 0x70000000);
-        Render2D.roundRect(ctx, x, y, w, DOCK_H, DOCK_H / 2f, Theme.panelBg());
-        Render2D.roundOutline(ctx, x, y, w, DOCK_H, DOCK_H / 2f, 1f, Theme.BORDER);
+        Render2D.roundRect(ctx, x, y, w, DOCK_H, 4, Theme.panelBg());
+        Render2D.roundOutline(ctx, x, y, w, DOCK_H, 4, Render2D.px(), Theme.BORDER);
         float cy = y + DOCK_H / 2f;
 
         // The M and maro.gg, as on the window's bar.
@@ -674,16 +638,20 @@ public final class PanelsView {
             });
             bx += bs + 3f;
         }
-        dockButton(ctx, DOCK, "Put the panels back in a row", Icons.LAYOUT, bx, by, bs, () -> {
+        dockButton(ctx, DOCK, "Put the panels back in a row", Icons.REFRESH, bx, by, bs, () -> {
             resetLayout();
             popover = null;
         });
+        bx += bs + 3f;
+        dockButton(ctx, ClientSettings.screenGui, "Screen GUI", Icons.LAYOUT, bx, by, bs,
+                () -> ClientSettings.screenGui.set(!ClientSettings.screenGui.get()));
         Render2D.setAlpha(prev);
     }
 
     private void dockButton(DrawContext ctx, Object key, String label, Icons.Icon icon, float x, float y, float s, Runnable action) {
         boolean hov = gui.hovered(x, y, s, s);
-        float hv = Math.max(Anims.of(key, "dockHover", hov), Anims.of(key, "dockOpen", popover != null && popover.key() == key || pageBox == key));
+        boolean selected = key == ClientSettings.screenGui && ClientSettings.screenGui.get();
+        float hv = Math.max(Anims.of(key, "dockHover", hov), Anims.of(key, "dockOpen", selected || popover != null && popover.key() == key || pageBox == key));
         if (Theme.glow() && hv > 0.01f) Render2D.shadow(ctx, x, y, s, s, s / 2f, 5, Theme.accent(Math.round(0x30 * hv)));
         Render2D.roundRect(ctx, x, y, s, s, s / 2f, ColorUtil.lerp(0x00000000, Theme.accent(0x38), hv));
         icon.draw(ctx, x + s / 2f, y + s / 2f, 8f, ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT, hv), hv);
