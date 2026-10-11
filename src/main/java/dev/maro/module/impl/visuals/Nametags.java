@@ -229,16 +229,19 @@ public class Nametags extends Module {
         drawn.add(said.toString().trim());
 
         boolean compact = layout.is("Compact"), styled = !style.is("Classic");
-        float gap = compact ? 3 : styled ? 4.5f : 3.5f, pad = compact ? 4 : styled ? 7 : 5, tagH = compact ? 12 : styled ? 17 : 13;
+        float gap = compact ? 3 : styled ? 4.5f : 3.5f, pad = compact ? 5 : styled ? 7 : 5, tagH = compact ? 13 : styled ? 17 : 14;
+        var matrices = ctx.getMatrices();
+        matrices.pushMatrix();
+        matrices.scale(s, s);
         float textW = -gap;
-        for (Part part : parts) textW += width(part.text(), part.bold()) + gap;
+        for (Part part : parts) textW += renderedWidth(ctx, part.text(), part.bold()) + gap;
+        matrices.popMatrix();
         float tagW = textW + pad * 2;
         boolean friend = FriendManager.isFriend(p.getName().getString());
         boolean bar = health.get() && (healthMode.is("Bar") || !compact && styled && healthStrip.get());
         int[] colors = accents(friend);
         x = Math.max(tagW * s / 2 + 4, Math.min(ctx.getScaledWindowWidth() - tagW * s / 2 - 4, x));
 
-        var matrices = ctx.getMatrices();
         matrices.pushMatrix();
         matrices.translate(x, y);
         matrices.scale(s, s);
@@ -263,7 +266,7 @@ public class Nametags extends Module {
         float tx = left + pad, cy = top + tagH / 2f;
         for (Part part : parts) {
             text(ctx, part.text(), tx, cy, part.color(), part.bold());
-            tx += width(part.text(), part.bold()) + gap;
+            tx += renderedWidth(ctx, part.text(), part.bold()) + gap;
         }
         if (bar) {
             float fraction = healthFraction(p);
@@ -274,11 +277,12 @@ public class Nametags extends Module {
         if (showsItems()) itemsTop = items(ctx, p, top - 2);
         if (itemName.get() && !p.getMainHandStack().isEmpty()) {
             String name = p.getMainHandStack().getName().getString();
-            float nw = width(name, false) * 0.85f;
             matrices.pushMatrix();
-            matrices.translate(-nw / 2f, itemsTop - 6);
-            matrices.scale(0.85f, 0.85f);
-            text(ctx, name, 0, 0, GREY, false);
+            matrices.translate(0, itemsTop - 7);
+            matrices.scale(0.9f, 0.9f);
+            float nw = renderedWidth(ctx, name, true);
+            if (background.get()) Render2D.roundRect(ctx, -nw / 2 - 3, -5, nw + 6, 10, 2, 0xD910131B);
+            text(ctx, name, -nw / 2, 0, 0xFFF5F7FB, true);
             matrices.popMatrix();
         }
         matrices.popMatrix();
@@ -309,7 +313,8 @@ public class Nametags extends Module {
         String label = player.getName().getString() + "  " + Math.round(dist) + "m";
         boolean compact = layout.is("Compact");
         float edgeScale = compact ? 0.85f : 1;
-        float tagW = (width(label, true) + 14) * edgeScale, halfW = w / 2f - tagW / 2 - 14, halfH = h / 2f - (dy > 0 ? 68 : 24);
+        float labelW = scaledWidth(ctx, label, true, edgeScale);
+        float tagW = labelW + 14 * edgeScale, halfW = w / 2f - tagW / 2 - 14, halfH = h / 2f - (dy > 0 ? 68 : 24);
         if (halfW <= 0 || halfH <= 0) return;
         float length = Math.min(halfW / Math.max(0.001f, Math.abs(dx)), halfH / Math.max(0.001f, Math.abs(dy)));
         float x = w / 2f + dx * length, y = h / 2f + dy * length;
@@ -331,9 +336,9 @@ public class Nametags extends Module {
                 colors[0], colors[1], colors[1], colors[0]);
         var matrices = ctx.getMatrices();
         matrices.pushMatrix();
-        matrices.translate(x - width(label, true) * edgeScale / 2, y);
+        matrices.translate(x, y);
         matrices.scale(edgeScale, edgeScale);
-        text(ctx, label, 0, 0, 0xFFF5F1FF, true);
+        text(ctx, label, -renderedWidth(ctx, label, true) / 2, 0, 0xFFF5F7FB, true);
         matrices.popMatrix();
         // The chevron points towards the player's bearing, including players behind the camera.
         float tipX = x + dx * (Math.abs(dx) > 0.7f ? tagW / 2 + 6 : 12), tipY = y + dy * 13;
@@ -353,7 +358,7 @@ public class Nametags extends Module {
             parts.add(new Part(hp, healthColors.get() ? healthColor(fraction) : 0xFFFFFFFF, true));
         }
         if (health.get() && absorption.get() && p.getAbsorptionAmount() > 0) parts.add(new Part("+" + number(p.getAbsorptionAmount()), GOLD, true));
-        if (distance.get()) parts.add(new Part(Math.round(dist) + "m", GREY, false));
+        if (distance.get()) parts.add(new Part(Math.round(dist) + "m", 0xFFCDD5E2, true));
         if (pops.get()) {
             int n = popsOf(p);
             if (n > 0) parts.add(new Part("-" + n, RED, true));
@@ -375,13 +380,15 @@ public class Nametags extends Module {
         if (stacks.isEmpty()) return bottom;
         if (gearStyle.is("Cards")) return itemCards(ctx, p, stacks, bottom);
         float cell = 18;
-        if (durability.is("Percent") || durability.is("Full")) cell = Math.max(cell, width("100%", true) * 0.65f + 5);
+        if (durability.is("Percent") || durability.is("Full")) cell = Math.max(cell, scaledWidth(ctx, "100%", true, SMALL_TEXT_SCALE) + 5);
         if (enchants.get()) for (ItemStack stack : stacks) for (String line : enchantLines(stack)) {
             String label = line.startsWith("!") ? line.substring(1) : line;
-            cell = Math.max(cell, width(label, false) * 0.65f + 5);
+            cell = Math.max(cell, scaledWidth(ctx, label, true, SMALL_TEXT_SCALE) + 5);
         }
         boolean counts = stacks.stream().anyMatch(stack -> stack.getCount() > 1);
-        float rowW = stacks.size() * cell, left = -rowW / 2f, top = bottom - (counts ? 25 : 17);
+        if (counts) for (ItemStack stack : stacks) if (stack.getCount() > 1)
+            cell = Math.max(cell, scaledWidth(ctx, String.valueOf(stack.getCount()), true, SMALL_TEXT_SCALE) + 5);
+        float rowW = stacks.size() * cell, left = -rowW / 2f, top = bottom - (counts ? 27 : 17);
         boolean bar = durability.is("Bar") || durability.is("Full"), percent = durability.is("Percent") || durability.is("Full");
         float highest = top;
         var matrices = ctx.getMatrices();
@@ -394,7 +401,7 @@ public class Nametags extends Module {
             matrices.translate(ix, top);
             ctx.drawItem(stack, 0, 0);
             matrices.popMatrix();
-            if (stack.getCount() > 1) small(ctx, Integer.toString(stack.getCount()), ix + 8, top + 21.5f, 0xFFF4F6FA);
+            if (stack.getCount() > 1) small(ctx, Integer.toString(stack.getCount()), ix + 8, top + 23, 0xFFF5F7FB);
             float wear = ArmorHud.left(stack);
             if (bar && wear >= 0) {
                 // A thin bar under the piece, green to red, in place of the game's chunky one.
@@ -404,13 +411,13 @@ public class Nametags extends Module {
             float above = top - 1;
             if (percent && stack.isDamageable() && stack.getMaxDamage() > 0) {
                 float left01 = 1 - stack.getDamage() / (float) stack.getMaxDamage();
-                small(ctx, Math.round(left01 * 100) + "%", ix + 8, above - 3, left01 < 0.25f ? RED : 0xFFCDD3DF, true);
+                small(ctx, Math.round(left01 * 100) + "%", ix + 8, above - 3, left01 < 0.25f ? RED : 0xFFF5F7FB, true);
                 above -= 8;
             }
             if (enchants.get()) {
                 for (String line : enchantLines(stack)) {
                     boolean curse = line.startsWith("!");
-                    small(ctx, curse ? line.substring(1) : line, ix + 8, above - 3, curse ? 0xFFFF8B96 : 0xFFCDD3DF);
+                    small(ctx, curse ? line.substring(1) : line, ix + 8, above - 3, curse ? 0xFFFF8B96 : 0xFFE1E7F0);
                     above -= 8;
                 }
             }
@@ -426,21 +433,21 @@ public class Nametags extends Module {
         boolean counts = stacks.stream().anyMatch(stack -> stack.getCount() > 1);
         List<List<String>> labels = new ArrayList<>();
         float cardW = compact ? 21 : 26;
-        if (percent) cardW = Math.max(cardW, width("100%", true) * GEAR_TEXT_SCALE + (compact ? 6 : 10));
+        if (percent) cardW = Math.max(cardW, scaledWidth(ctx, "100%", true, GEAR_TEXT_SCALE) + (compact ? 6 : 10));
         int lines = 0;
         for (ItemStack stack : stacks) {
             if (stack.getCount() > 1) cardW = Math.max(cardW,
-                    width(String.valueOf(stack.getCount()), false) * GEAR_TEXT_SCALE + (compact ? 6 : 10));
+                    scaledWidth(ctx, String.valueOf(stack.getCount()), true, GEAR_TEXT_SCALE) + (compact ? 6 : 10));
             List<String> itemLabels = enchants.get() ? enchantLines(stack) : List.of();
             labels.add(itemLabels);
             lines = Math.max(lines, itemLabels.size());
             for (String label : itemLabels) {
                 String shown = label.startsWith("!") ? label.substring(1) : label;
-                cardW = Math.max(cardW, width(shown, false) * GEAR_TEXT_SCALE + (compact ? 6 : 10));
+                cardW = Math.max(cardW, scaledWidth(ctx, shown, true, GEAR_TEXT_SCALE) + (compact ? 6 : 10));
             }
         }
-        float headerH = compact ? 16 + (percent || counts ? 6 : 0) + (bar ? 2 : 0) : 23 + (percent || counts ? 8 : 0) + (bar ? 3 : 0);
-        float lineH = compact ? 7.5f : 8.5f, gap = compact ? 2 : 3;
+        float headerH = compact ? 16 + (percent || counts ? 8 : 0) + (bar ? 2 : 0) : 23 + (percent || counts ? 9 : 0) + (bar ? 3 : 0);
+        float lineH = compact ? 8 : 9, gap = compact ? 2 : 3;
         float cardH = headerH + (lines > 0 ? 4 + lines * lineH : 0);
         float rowW = stacks.size() * (cardW + gap) - gap, left = -rowW / 2, top = bottom - cardH - 1;
         int[] colors = accents(FriendManager.isFriend(player.getName().getString()));
@@ -448,7 +455,7 @@ public class Nametags extends Module {
         for (int i = 0; i < stacks.size(); i++) {
             ItemStack stack = stacks.get(i);
             float x = left + i * (cardW + gap), cx = x + cardW / 2;
-            Render2D.roundRect(ctx, x, top, cardW, cardH, compact ? 3 : 4, 0xCD10131B);
+            Render2D.roundRect(ctx, x, top, cardW, cardH, compact ? 3 : 4, 0xE310131B);
             if (compact) Render2D.roundOutline(ctx, x, top, cardW, cardH, 3, 0.4f, 0x285C6576);
             else Render2D.roundOutline(ctx, x, top, cardW, cardH, 4, 0.6f,
                     ColorUtil.withAlpha(colors[0], 65), ColorUtil.withAlpha(colors[1], 65),
@@ -463,8 +470,8 @@ public class Nametags extends Module {
             matrices.popMatrix();
             float fraction = stack.isDamageable() && stack.getMaxDamage() > 0
                     ? Math.max(0, Math.min(1, 1 - stack.getDamage() / (float) stack.getMaxDamage())) : -1;
-            if (percent && fraction >= 0) gearText(ctx, Math.round(fraction * 100) + "%", cx, top + (compact ? 18.5f : 24),
-                    fraction < 0.25f ? RED : 0xFFCDD3DF, true);
+            if (percent && fraction >= 0) gearText(ctx, Math.round(fraction * 100) + "%", cx, top + (compact ? 20 : 25.5f),
+                    fraction < 0.25f ? RED : 0xFFF5F7FB, true);
             if (bar && fraction >= 0) {
                 float by = top + headerH - (compact ? 2 : 4);
                 Render2D.roundRect(ctx, x + 4, by, cardW - 8, 1.5f, 0.75f, 0xFF303746);
@@ -478,23 +485,23 @@ public class Nametags extends Module {
                     String label = itemLabels.get(j);
                     boolean curse = label.startsWith("!");
                     gearText(ctx, curse ? label.substring(1) : label, cx, top + headerH + 5 + j * lineH,
-                            curse ? 0xFFFF8B96 : 0xFFCDD3DF);
+                            curse ? 0xFFFF8B96 : 0xFFE1E7F0);
                 }
             }
             if (stack.getCount() > 1) gearText(ctx, String.valueOf(stack.getCount()), cx,
-                    top + (compact ? 18.5f : 24), 0xFFF3F5FA);
+                    top + (compact ? 20 : 25.5f), 0xFFF5F7FB);
         }
         return top;
     }
 
-    private static final float GEAR_TEXT_SCALE = 0.75f;
+    private static final float GEAR_TEXT_SCALE = 0.85f, SMALL_TEXT_SCALE = 0.75f;
     private void enchantedGlow(DrawContext ctx, ItemStack stack, float x, float y, float size) {
         if(!enchantedGlow.get()||!stack.hasEnchantments())return;
         Render2D.shadow(ctx,x+2,y+2,size-4,size-4,size/3,2,0x60966EFF);
     }
 
     private void gearText(DrawContext ctx, String label, float cx, float cy, int color) {
-        gearText(ctx, label, cx, cy, color, false);
+        gearText(ctx, label, cx, cy, color, true);
     }
     private void gearText(DrawContext ctx, String label, float cx, float cy, int color, boolean bold) {
         var matrices = ctx.getMatrices();
@@ -507,11 +514,11 @@ public class Nametags extends Module {
 
     /** Text drawn small and centred on (cx, cy), for durability and enchantments. */
     private void small(DrawContext ctx, String s, float cx, float cy, int color) {
-        small(ctx, s, cx, cy, color, false);
+        small(ctx, s, cx, cy, color, true);
     }
     private void small(DrawContext ctx, String s, float cx, float cy, int color, boolean bold) {
         var matrices = ctx.getMatrices();
-        float k = 0.65f;
+        float k = SMALL_TEXT_SCALE;
         matrices.pushMatrix();
         matrices.translate(cx, cy);
         matrices.scale(k, k);
@@ -521,6 +528,15 @@ public class Nametags extends Module {
 
     private float renderedWidth(DrawContext ctx, String label, boolean bold) {
         return vanillaFont() ? width(label, bold) : Fonts.width(ctx, label, bold, CLIENT_SIZE);
+    }
+
+    private float scaledWidth(DrawContext ctx, String label, boolean bold, float scale) {
+        var matrices = ctx.getMatrices();
+        matrices.pushMatrix();
+        matrices.scale(scale, scale);
+        float result = renderedWidth(ctx, label, bold) * scale;
+        matrices.popMatrix();
+        return result;
     }
 
     /** Readable, consistently ordered labels; curses retain their colour marker. */
@@ -588,7 +604,7 @@ public class Nametags extends Module {
 
     // ---- text in the chosen font ---------------------------------------------------------------------
 
-    private static final float CLIENT_SIZE = 0.8f;
+    private static final float CLIENT_SIZE = 0.9f;
 
     private boolean vanillaFont() {
         return font.is("Minecraft");

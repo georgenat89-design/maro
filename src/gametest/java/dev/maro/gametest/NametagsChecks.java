@@ -35,6 +35,7 @@ final class NametagsChecks {
         FakePlayer fakes = ModuleManager.get(FakePlayer.class);
         require(tags != null, "Nametags was not registered");
         Perspective perspective = context.computeOnClient(c -> c.options.getPerspective());
+        int guiScale = context.computeOnClient(c -> c.options.getGuiScale().getValue());
         try {
             context.runOnClient(c -> {
                 fakes.getSettings().forEach(Setting::reset);
@@ -44,6 +45,7 @@ final class NametagsChecks {
                 tags.getSettings().forEach(Setting::reset);
                 ((ModeSetting) setting(tags, "Armor")).set("Above");
                 ((BooleanSetting) setting(tags, "Held Item")).set(true);
+                ((BooleanSetting) setting(tags, "Item Name")).set(true);
                 ((BooleanSetting) setting(tags, "Enchants")).set(true);
                 ((BooleanSetting) setting(tags, "Outline")).set(true);
                 tags.setEnabled(true);
@@ -65,7 +67,7 @@ final class NametagsChecks {
                 fake.getEquippedStack(EquipmentSlot.HEAD).addEnchantment(enchantments.getOrThrow(Enchantments.BINDING_CURSE), 1);
                 var boots = fake.getEquippedStack(EquipmentSlot.FEET);
                 boots.setDamage((int) (boots.getMaxDamage() * 0.82));
-                fake.equipStack(EquipmentSlot.MAINHAND, new net.minecraft.item.ItemStack(net.minecraft.item.Items.FIREWORK_ROCKET, 48));
+                fake.equipStack(EquipmentSlot.MAINHAND, new net.minecraft.item.ItemStack(net.minecraft.item.Items.FIREWORK_ROCKET, 64));
             });
             context.waitTicks(5);
             context.runOnClient(c -> {
@@ -83,6 +85,13 @@ final class NametagsChecks {
             context.runOnClient(c -> ((BooleanSetting) setting(tags, "Enchants")).set(false));
             context.waitTicks(3);
             context.takeScreenshot("maro-nametags-armor-cards");
+            context.getInput().resizeWindow(1920, 1080);
+            context.runOnClient(c -> {c.options.getGuiScale().setValue(2);c.onResolutionChanged();});
+            context.waitTicks(3);
+            context.takeScreenshot("maro-nametags-clear-small-gui");
+            context.runOnClient(c -> {c.options.getGuiScale().setValue(guiScale);c.onResolutionChanged();});
+            context.getInput().resizeWindow(1280, 720);
+            context.waitTicks(3);
             context.runOnClient(c -> ((BooleanSetting) setting(tags, "Enchanted Glow")).set(false));
             context.waitTicks(3);
             context.takeScreenshot("maro-nametags-enchanted-glow-off");
@@ -159,6 +168,8 @@ final class NametagsChecks {
                 fakes.setEnabled(false);
                 fakes.getSettings().forEach(Setting::reset);
                 c.options.setPerspective(perspective);
+                c.options.getGuiScale().setValue(guiScale);
+                c.onResolutionChanged();
             });
         }
     }
