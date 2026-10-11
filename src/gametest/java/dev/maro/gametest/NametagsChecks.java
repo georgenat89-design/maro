@@ -108,6 +108,7 @@ final class NametagsChecks {
             context.takeScreenshot("maro-nametags-bold-percent-minecraft");
             context.runOnClient(c -> {((ModeSetting) setting(tags, "Font")).set("Client");((ModeSetting) setting(tags, "Gear Style")).set("Cards");});
             context.runOnClient(c -> ((BooleanSetting) setting(tags, "Enchants")).set(true));
+            selfDistance(context, tags, fake);
 
             // Lying flat (as when flying with an elytra or swimming), the tag stays over their head, not on their body.
             context.runOnClient(c -> {
@@ -171,6 +172,45 @@ final class NametagsChecks {
                 c.options.getGuiScale().setValue(guiScale);
                 c.onResolutionChanged();
             });
+        }
+    }
+
+    private static void selfDistance(ClientGameTestContext context, Nametags tags, net.minecraft.entity.player.PlayerEntity other) {
+        var freeLook = ModuleManager.get(dev.maro.nathan.modules.FreeLook.class);
+        Perspective perspective = context.computeOnClient(c -> c.options.getPerspective());
+        try {
+            context.runOnClient(c -> {
+                ((BooleanSetting) setting(tags, "Self")).set(true);
+                freeLook.getSettings().forEach(Setting::reset);
+                freeLook.setEnabled(true);
+            });
+            context.waitTicks(6);
+            context.runOnClient(c -> {
+                require(dev.maro.nathan.modules.FreeLook.active() && !c.options.getPerspective().isFirstPerson(), "Free Look did not enter third person");
+                require(c.player.squaredDistanceTo(c.gameRenderer.getCamera().getCameraPos()) > 4, "Free Look camera did not move away from self");
+                String own = tags.describe(c.player);
+                require(!own.matches(".*\\s\\d+m(?:\\s.*)?"), "Self tag counted the Free Look camera offset: " + own);
+                require(tags.drawnTags().contains(own), "The self tag was not rendered during Free Look: " + tags.drawnTags());
+                require(tags.describe(other).matches(".*\\s\\d+m(?:\\s.*)?"), "Other player's distance disappeared during Free Look");
+            });
+            context.takeScreenshot("maro-nametags-self-freelook");
+            context.runOnClient(c -> {freeLook.setEnabled(false);c.options.setPerspective(Perspective.THIRD_PERSON_FRONT);});
+            context.waitTicks(6);
+            context.runOnClient(c -> {
+                String own = tags.describe(c.player);
+                require(!own.matches(".*\\s\\d+m(?:\\s.*)?"), "Ordinary third-person self tag contains distance: " + own);
+                require(tags.drawnTags().stream().filter(label -> label.startsWith(c.player.getName().getString()))
+                    .noneMatch(label -> label.matches(".*\\s\\d+m(?:\\s.*)?")), "Self edge tag contains camera distance");
+            });
+            System.out.println("[nametags-self-distance-proof] native Free Look and third-person self tags omit camera distance; other-player distance retained");
+        } finally {
+            context.runOnClient(c -> {
+                freeLook.setEnabled(false);
+                freeLook.getSettings().forEach(Setting::reset);
+                ((BooleanSetting) setting(tags, "Self")).set(false);
+                c.options.setPerspective(perspective);
+            });
+            context.waitTicks(3);
         }
     }
 }
