@@ -52,7 +52,7 @@ final class PanelChecks {
         require(heard.stream().anyMatch(id -> id.endsWith("ui.button.click")), "Clicking a module made no UI click sound: " + heard);
         List<Module> lit = new ArrayList<>();
         context.runOnClient(c -> {
-            for (String name : List.of("Fullbright", "Keystrokes", "Custom Sky")) {
+            for (String name : List.of("Fullbright", "Keyboard Strokes", "Custom Sky")) {
                 Module m = ModuleManager.getByName(name);
                 if (m != null && !m.isEnabled()) {
                     m.setEnabled(true);

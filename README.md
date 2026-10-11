@@ -112,7 +112,7 @@ attacked, collide with players, or interact with the server.
 | --- | --- |
 | Movement | Auto Walk, Free Cam, Freelook |
 | Player | Auto Tool, Auto Trident, Fast XP, Smart Eat, Spawner Protect, existing Fast Place |
-| Visuals | Bloom, Color Correct, Custom Crosshair, Custom FOV, Fake XP, Hats, Key Zoom, Keystrokes, Motion Blur, Region Map, Spotify HUD, Spin Bot, Swing Speed, existing Stretch Res |
+| Visuals | Bloom, Color Correct, Custom Crosshair, Custom FOV, Fake XP, Hats, Key Zoom, Motion Blur, Region Map, Spotify HUD, Spin Bot, Swing Speed, existing Stretch Res |
 | Misc | Chat Macros, Key Sounds, existing Screen Hider |
 
 The Nathan modules use Maro's settings, keybinds, friend list, and saved configs. Right-click a module to edit its settings. Chat Macros includes a manager and editor under its Actions section. Strings and item lists have an Edit button; lists accept JSON arrays or semicolon-separated entries.
@@ -129,7 +129,7 @@ reveal the controls. Unsupported/disconnected audio shows an unavailable state.
 The existing persistent WASAPI helper handles reads and coalesced writes away from the render
 thread using [Windows endpoint volume controls](https://learn.microsoft.com/en-us/windows/win32/api/endpointvolume/nn-endpointvolume-iaudioendpointvolume).
 
-Region Map retains Nathan's updated region divisions and sharp labels. Keystrokes retains its Poppins labels. Their initial positions leave room for each other and Spotify, and can be changed in settings.
+Region Map retains Nathan's updated region divisions and sharp labels. Its initial position leaves room for Spotify and can be changed in settings.
 
 Region Map defaults to **0.8×**. **Auto fit screen** limits its height to **42%** of
 the screen and width to 25%, including with a large Minecraft GUI scale or an old
