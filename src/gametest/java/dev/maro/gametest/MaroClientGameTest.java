@@ -51,6 +51,11 @@ public class MaroClientGameTest implements FabricClientGameTest {
             // make sure nothing (pause menu, toasts...) is in the way before testing the keybind
             context.setScreen(() -> null);
             context.waitTicks(5);
+            if (Boolean.getBoolean("maro.gametest.keyboardStrokesOnly")) {
+                KeyboardStrokesChecks.run(context);
+                ScreenGuiChecks.run(context);
+                return;
+            }
             if (Boolean.getBoolean("maro.gametest.screenGuiOnly")) {
                 ScreenGuiChecks.run(context);
                 return;
@@ -171,6 +176,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             ArmorHudChecks.run(context, singleplayer);
             VehiclesChecks.run(context, singleplayer);
             AcrobaticsChecks.run(context, singleplayer);
+            KeyboardStrokesChecks.run(context);
             FakeBlockChecks.run(context, singleplayer);
             BetterLooksChecks.run(context);
             SkyChecks.run(context, singleplayer);
@@ -225,14 +231,6 @@ public class MaroClientGameTest implements FabricClientGameTest {
                     .openModuleSettings(ModuleManager.get(dev.maro.module.impl.visuals.Compass.class), "Look"));
             settle(context);
             context.takeScreenshot("maro-settings-category");
-            context.runOnClient(client -> ((ClickGuiScreen) client.currentScreen)
-                    .openModuleSettings(ModuleManager.getByName("Keystrokes")));
-            settle(context);
-            context.takeScreenshot("maro-settings-categories-keystrokes");
-            context.runOnClient(client -> ((ClickGuiScreen) client.currentScreen)
-                    .openModuleSettings(ModuleManager.getByName("Keystrokes"), "Colors"));
-            settle(context);
-            context.takeScreenshot("maro-settings-category-keystrokes");
             context.getInput().pressKey(GLFW.GLFW_KEY_ESCAPE); // back to the categories
             settle(context);
             context.takeScreenshot("maro-settings-back");
@@ -417,7 +415,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             dev.maro.config.ConfigManager.delete("port_smoke");
             ModuleManager.get(dev.maro.nathan.modules.SpotifyHud.class).getSettings().stream()
                 .filter(s -> s.getName().equals("lyrics")).findFirst().orElseThrow().fromJson(new com.google.gson.JsonPrimitive(false));
-            for (String name : java.util.List.of("Region Map", "Keystrokes", "Spotify Hud", "Hats", "Spin Bot", "Custom Fov", "Key Zoom", "Free Cam", "Freelook")) {
+            for (String name : java.util.List.of("Region Map", "Keyboard Strokes", "Spotify Hud", "Hats", "Spin Bot", "Custom Fov", "Key Zoom", "Free Cam", "Freelook")) {
                 var module = ModuleManager.getByName(name);
                 if (module == null) throw new AssertionError("Missing " + name);
                 module.setEnabled(true);
