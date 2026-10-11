@@ -36,6 +36,7 @@
     "InGameHudMixin",
     "KeyboardMixin",
     "SpotifyPhoneInputMixin",
+    "SpotifyPhoneMouseMixin",
     "MinecraftClientAccessor",
     "MouseMixin",
     "ModuleEventsMixin",
