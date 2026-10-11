@@ -38,6 +38,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.misc.DiscordPresence());
         register(new dev.maro.module.impl.misc.SpotifyPhone());
         register(new dev.maro.module.impl.misc.SkinChanger());
+        register(new dev.maro.module.impl.misc.NameChange());
         register(new dev.maro.module.impl.misc.AutoGoliath());
         register(new dev.maro.module.impl.player.FastPlace());
         register(new dev.maro.module.impl.player.FakePlayer());
@@ -81,6 +82,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.CustomTotem());
         register(new dev.maro.module.impl.visuals.Emotes());
         register(new dev.maro.module.impl.visuals.Acrobatics());
+        register(new dev.maro.module.impl.visuals.JumpCircle());
         register(new dev.maro.module.impl.visuals.StaffNotifier());
         dev.maro.nathan.NameeProtectAddon.init();
 
