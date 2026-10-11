@@ -7,6 +7,7 @@ import dev.maro.nathan.audio.SpotifySession;
 import dev.maro.setting.BooleanSetting;
 import dev.maro.setting.ModeSetting;
 import dev.maro.setting.NumberSetting;
+import dev.maro.setting.KeybindSetting;
 import org.lwjgl.glfw.GLFW;
 
 /** A momentary handheld player; closing it never stops the music. */
@@ -17,6 +18,7 @@ public final class SpotifyPhone extends Module {
     public final BooleanSetting showHand = add(new BooleanSetting("Show Hand", "Draw your skin's hand holding the phone", true));
     public final BooleanSetting moveWhileOpen = add(new BooleanSetting("Move While Open", "Keep movement keys active while using the phone.", true));
     public final BooleanSetting mouseLook = add(new BooleanSetting("Mouse Look", "Look around normally. Hold Alt to use the phone controls.", true));
+    public final KeybindSetting interactBind = add(new KeybindSetting("Interact Key", "Switch phone apps and use its controls", GLFW.GLFW_KEY_I));
     private SpotifyPhoneScreen screen;
     private boolean acquired;
 

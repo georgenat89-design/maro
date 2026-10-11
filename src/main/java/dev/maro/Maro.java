@@ -32,17 +32,18 @@ public class Maro implements ClientModInitializer {
         ModuleManager.init();
         dev.maro.render.esp.Renderer3D.init();
         ConfigManager.init();
+        dev.maro.phone.PhoneNetwork.get();
         dev.maro.runtime.commands.Commands.add(new dev.maro.nathan.commands.BloomCommand());
 
         ClientTickEvents.START_CLIENT_TICK.register(client -> dev.maro.runtime.RuntimeEvents.tickPre());
-        ClientTickEvents.END_CLIENT_TICK.register(client -> { ModuleManager.onTick(); dev.maro.runtime.RuntimeEvents.tickPost(); });
+        ClientTickEvents.END_CLIENT_TICK.register(client -> { ModuleManager.onTick(); dev.maro.runtime.RuntimeEvents.tickPost(); dev.maro.phone.PhoneNetwork.tickNotifications(); });
         HudElementRegistry.addLast(Identifier.of(MOD_ID, "hud"), (context, tickCounter) -> {
             Theme.update();
             ModuleManager.onRender2D(context, tickCounter.getTickProgress(false));
             dev.maro.runtime.RuntimeEvents.hud(context);
             if (!(MinecraftClient.getInstance().currentScreen instanceof ClickGuiScreen)) Notifications.render(context);
         });
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> { ConfigManager.saveAll(); dev.maro.gui.render.ScreenGuiSurface.release(); dev.maro.runtime.RuntimeEvents.shutdown(); });
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> { ConfigManager.saveAll(); dev.maro.gui.render.ScreenGuiSurface.release(); dev.maro.phone.PhoneNetwork.shutdown(); dev.maro.runtime.RuntimeEvents.shutdown(); });
         ScreenEvents.AFTER_INIT.register((client, screen, width, height) ->
                 ScreenEvents.afterRender(screen).register((s, context, mouseX, mouseY, delta) -> ScreenHider.renderOver(s, context)));
 
