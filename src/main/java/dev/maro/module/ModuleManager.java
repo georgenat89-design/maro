@@ -59,6 +59,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.CustomSky());
         register(new dev.maro.module.impl.visuals.CustomTotem());
         register(new dev.maro.module.impl.visuals.Emotes());
+        register(new dev.maro.module.impl.visuals.Acrobatics());
         register(new dev.maro.module.impl.visuals.StaffNotifier());
         dev.maro.nathan.NameeProtectAddon.init();
 

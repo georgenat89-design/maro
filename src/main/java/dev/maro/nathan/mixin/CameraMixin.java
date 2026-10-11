@@ -92,6 +92,13 @@ public abstract class CameraMixin {
             return;
         }
 
+        // Acrobatics: in first person the view flips and spins with your trick.
+        float[] flip = dev.maro.module.impl.visuals.Acrobatics.cameraTurn(partialTick);
+        if (flip != null) {
+            Camera camera = (Camera) (Object) this;
+            setRotation(camera.getYaw() + flip[0], camera.getPitch() + flip[1]);
+        }
+
         float[] look = FreeLook.frame();
 
         if (look == null) return;
