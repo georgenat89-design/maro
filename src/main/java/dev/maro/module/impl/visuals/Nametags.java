@@ -15,6 +15,8 @@ import dev.maro.setting.ModeSetting;
 import dev.maro.setting.NumberSetting;
 import dev.maro.setting.SettingSection;
 import dev.maro.util.ColorUtil;
+import net.minecraft.client.font.TextDrawable;
+import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.component.type.ItemEnchantmentsComponent;
@@ -500,20 +502,15 @@ public class Nametags extends Module {
 
     private static final float GEAR_TEXT_SCALE = 0.85f, SMALL_TEXT_SCALE = 0.75f;
     private void enchantedGlow(DrawContext ctx, ItemStack stack, float x, float y, float size) {
-        if(!enchantedGlow.get()||!stack.hasEnchantments())return;
-        Render2D.shadow(ctx,x+2,y+2,size-4,size-4,size/3,2,0x60966EFF);
+        if (!enchantedGlow.get() || !stack.hasEnchantments()) return;
+        Render2D.radialGlow(ctx, x + size / 2, y + size / 2, size / 2 + 1, 0x78966EFF);
     }
 
     private void gearText(DrawContext ctx, String label, float cx, float cy, int color) {
         gearText(ctx, label, cx, cy, color, true);
     }
     private void gearText(DrawContext ctx, String label, float cx, float cy, int color, boolean bold) {
-        var matrices = ctx.getMatrices();
-        matrices.pushMatrix();
-        matrices.translate(cx, cy);
-        matrices.scale(GEAR_TEXT_SCALE, GEAR_TEXT_SCALE);
-        text(ctx, label, -renderedWidth(ctx, label, bold) / 2, 0, color, bold);
-        matrices.popMatrix();
+        centeredGearText(ctx, label, cx, cy, color, bold, GEAR_TEXT_SCALE);
     }
 
     /** Text drawn small and centred on (cx, cy), for durability and enchantments. */
@@ -521,13 +518,49 @@ public class Nametags extends Module {
         small(ctx, s, cx, cy, color, true);
     }
     private void small(DrawContext ctx, String s, float cx, float cy, int color, boolean bold) {
+        centeredGearText(ctx, s, cx, cy, color, bold, SMALL_TEXT_SCALE);
+    }
+
+    private final GearGlyphBounds gearBounds = new GearGlyphBounds();
+
+    /** Centre the drawn glyphs, excluding font bearings, trailing advance and the shadow. */
+    private void centeredGearText(DrawContext ctx, String label, float cx, float cy, int color, boolean bold, float scale) {
+        int c = ColorUtil.mulAlpha(color, Render2D.getAlpha());
+        if (label.isEmpty() || ColorUtil.alpha(c) < 8) return;
         var matrices = ctx.getMatrices();
-        float k = SMALL_TEXT_SCALE;
         matrices.pushMatrix();
         matrices.translate(cx, cy);
-        matrices.scale(k, k);
-        text(ctx, s, -renderedWidth(ctx, s, bold) / 2, 0, color, bold);
+        matrices.scale(scale, scale);
+        boolean vanilla = vanillaFont();
+        Text styled = vanilla ? Text.literal(label).styled(style -> style.withBold(bold))
+                : Fonts.text(ctx, label, bold, CLIENT_SIZE);
+        gearBounds.reset();
+        mc.textRenderer.prepare(styled.asOrderedText(), 0, 0, c, false, false, 0).draw(gearBounds);
+        if (gearBounds.minX < gearBounds.maxX) {
+            float fontScale = vanilla ? 1 : CLIENT_SIZE;
+            matrices.scale(fontScale, fontScale);
+            matrices.translate(-(gearBounds.minX + gearBounds.maxX) / 2,
+                    -(gearBounds.minY + gearBounds.maxY) / 2);
+            ctx.drawText(mc.textRenderer, styled, 0, 0, c, vanilla && shadow.get());
+        }
         matrices.popMatrix();
+    }
+
+    private static final class GearGlyphBounds implements TextRenderer.GlyphDrawer {
+        private float minX, minY, maxX, maxY;
+
+        private void reset() {
+            minX = minY = Float.POSITIVE_INFINITY;
+            maxX = maxY = Float.NEGATIVE_INFINITY;
+        }
+
+        @Override
+        public void drawGlyph(TextDrawable.DrawnGlyphRect glyph) {
+            minX = Math.min(minX, glyph.getLeft());
+            minY = Math.min(minY, glyph.getTop());
+            maxX = Math.max(maxX, glyph.getRight());
+            maxY = Math.max(maxY, glyph.getBottom());
+        }
     }
 
     private float renderedWidth(DrawContext ctx, String label, boolean bold) {

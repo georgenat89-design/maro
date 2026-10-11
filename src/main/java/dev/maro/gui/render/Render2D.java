@@ -22,7 +22,13 @@ public final class Render2D {
     private static final float[] OUTER = new float[4 * 4 * (MAX_SEG + 1)];
     private static final float[] INNER = new float[4 * 4 * (MAX_SEG + 1)];
     private static final float[][] ROUND_NORMALS = new float[MAX_SEG + 1][];
+    private static final float[] CIRCLE_X = new float[MAX_SEG + 1], CIRCLE_Y = new float[MAX_SEG + 1];
     static {
+        for (int i = 0; i <= MAX_SEG; i++) {
+            double angle = Math.PI * 2 * i / MAX_SEG;
+            CIRCLE_X[i] = (float) Math.cos(angle);
+            CIRCLE_Y[i] = (float) Math.sin(angle);
+        }
         for (int seg = 1; seg <= MAX_SEG; seg++) {
             float[] normals = ROUND_NORMALS[seg] = new float[4 * (seg + 1) * 2];
             int index = 0;
@@ -237,6 +243,22 @@ public final class Render2D {
     }
 
     // ---- circles, arcs, lines -----------------------------------------------------------
+
+    /** Filled circular glow: brightest at its centre, fading continuously to transparent. */
+    public static void radialGlow(DrawContext ctx, float cx, float cy, float radius, int color) {
+        if (radius <= 0 || ColorUtil.alpha(color) == 0) return;
+        int center = col(color), middle = ColorUtil.mulAlpha(center, 0.45f), edge = clear(center);
+        float inner = radius * 0.5f;
+        ShapeRenderState.Builder b = begin(ctx, MAX_SEG * 8);
+        for (int i = 0; i < MAX_SEG; i++) {
+            float ax = CIRCLE_X[i], ay = CIRCLE_Y[i], bx = CIRCLE_X[i + 1], by = CIRCLE_Y[i + 1];
+            quad(b, cx, cy, center, cx + ax * inner, cy + ay * inner, middle,
+                    cx + bx * inner, cy + by * inner, middle, cx, cy, center);
+            quad(b, cx + ax * inner, cy + ay * inner, middle, cx + ax * radius, cy + ay * radius, edge,
+                    cx + bx * radius, cy + by * radius, edge, cx + bx * inner, cy + by * inner, middle);
+        }
+        end(b);
+    }
 
     public static void circle(DrawContext ctx, float cx, float cy, float radius, int color) {
         roundRect(ctx, cx - radius, cy - radius, radius * 2, radius * 2, radius, color);

@@ -67,6 +67,10 @@ final class NametagsChecks {
                 fake.getEquippedStack(EquipmentSlot.HEAD).addEnchantment(enchantments.getOrThrow(Enchantments.BINDING_CURSE), 1);
                 var boots = fake.getEquippedStack(EquipmentSlot.FEET);
                 boots.setDamage((int) (boots.getMaxDamage() * 0.82));
+                var chest = fake.getEquippedStack(EquipmentSlot.CHEST);
+                chest.setDamage((int) (chest.getMaxDamage() * 0.10));
+                var legs = fake.getEquippedStack(EquipmentSlot.LEGS);
+                legs.setDamage((int) (legs.getMaxDamage() * 0.07));
                 fake.equipStack(EquipmentSlot.MAINHAND, new net.minecraft.item.ItemStack(net.minecraft.item.Items.FIREWORK_ROCKET, 64));
             });
             context.waitTicks(5);
@@ -106,6 +110,9 @@ final class NametagsChecks {
             context.runOnClient(c -> {((ModeSetting) setting(tags, "Font")).set("Minecraft");((ModeSetting) setting(tags, "Gear Style")).set("Minimal");});
             context.waitTicks(3);
             context.takeScreenshot("maro-nametags-bold-percent-minecraft");
+            context.runOnClient(c -> ((ModeSetting) setting(tags, "Font")).set("Client"));
+            context.waitTicks(3);
+            context.takeScreenshot("maro-nametags-centered-minimal-client");
             context.runOnClient(c -> {((ModeSetting) setting(tags, "Font")).set("Client");((ModeSetting) setting(tags, "Gear Style")).set("Cards");});
             context.runOnClient(c -> ((BooleanSetting) setting(tags, "Enchants")).set(true));
             selfDistance(context, tags, fake);

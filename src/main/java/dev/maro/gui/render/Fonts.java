@@ -88,6 +88,13 @@ public final class Fonts {
         return styled(transform(s), weight(bold), eff(1f));
     }
 
+    /** The same glyph atlas as draw(), including the current HUD resize. */
+    public static Text text(DrawContext ctx, String s, boolean bold, float scale) {
+        var matrix = ctx.getMatrices();
+        float atlasScale = eff(scale) * (float) Math.hypot(matrix.m00(), matrix.m01());
+        return styled(transform(s), weight(bold), atlasScale);
+    }
+
     private static Text styled(String s, boolean bold, float scale) {
         if (ClientSettings.customFont.get()) {
             int o = oversample(scale);
