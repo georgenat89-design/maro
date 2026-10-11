@@ -89,11 +89,14 @@ public final class Renderer3D {
             boolean pathsOn=paths!=null&&paths.isEnabled();
             dev.maro.module.impl.movement.CoordsFly coords=ModuleManager.get(dev.maro.module.impl.movement.CoordsFly.class);
             boolean coordsOn=coords!=null&&coords.isEnabled();
-            if ((module == null || !module.isEnabled())&&(builder==null||!builder.isEnabled())&&esps.isEmpty()&&!pathsOn&&!coordsOn) return;
+            dev.maro.module.impl.movement.Vehicles cars=ModuleManager.get(dev.maro.module.impl.movement.Vehicles.class);
+            boolean carsOn=cars!=null&&cars.isEnabled();
+            if ((module == null || !module.isEnabled())&&(builder==null||!builder.isEnabled())&&esps.isEmpty()&&!pathsOn&&!coordsOn&&!carsOn) return;
             try {
                 if(module!=null&&module.isEnabled())module.render(new Renderer3D(context));
                 if(pathsOn)paths.render(new Renderer3D(context),MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(true));
                 if(coordsOn)coords.render(new Renderer3D(context),MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(true));
+                if(carsOn)cars.render(new Renderer3D(context),MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(true));
                 for(BlockESP esp:esps)esp.render(new Renderer3D(context));
                 if(builder!=null&&builder.isEnabled())SchematicRenderer.render(builder,new Renderer3D(context),context);
             }

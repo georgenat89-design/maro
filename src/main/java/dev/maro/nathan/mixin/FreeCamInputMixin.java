@@ -22,7 +22,14 @@ import net.minecraft.util.math.Vec2f;
 public abstract class FreeCamInputMixin extends Input {
     @Inject(method = "tick", at = @At("TAIL"))
     private void nameeprotect$freeCamInput(CallbackInfo ci) {
-        if (!FreeCam.active()) return;
+        // Vehicles Drive: W and S drive and reverse along the car, A and D only turn the wheel.
+        if (dev.maro.module.impl.movement.Vehicles.drivesPlayer()) {
+            boolean forward = playerInput.forward(), backward = playerInput.backward() && !forward;
+            playerInput = new PlayerInput(forward, backward, false, false, dev.maro.module.impl.movement.Vehicles.hop(), false, forward);
+            movementVector = new Vec2f(0, forward ? 1 : backward ? -1 : 0);
+            return;
+        }
+        if (!FreeCam.active() && !dev.maro.module.impl.movement.Vehicles.freeDriving()) return;
 
         playerInput = PlayerInput.DEFAULT;
         movementVector = Vec2f.ZERO;

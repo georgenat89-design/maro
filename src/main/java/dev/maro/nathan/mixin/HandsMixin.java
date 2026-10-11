@@ -36,6 +36,6 @@ public abstract class HandsMixin {
     )
     private boolean nameeprotect$hideHandsWhenZooming(HeldItemRenderer renderer, float partialTick, MatrixStack poseStack,
                                                      OrderedRenderCommandQueue collector, ClientPlayerEntity player, int packedLight) {
-        return !KeyZoom.hidingHands() && !FreeCam.active();
+        return !KeyZoom.hidingHands() && !FreeCam.active() && !dev.maro.module.impl.movement.Vehicles.hidesHands();
     }
 }

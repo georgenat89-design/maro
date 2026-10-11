@@ -74,6 +74,15 @@ public abstract class CameraMixin {
 
     @Inject(method = "update", at = @At("TAIL"))
     private void nameeprotect$freeCam(World level, Entity cameraEntity, boolean thirdPerson, boolean mirrored, float partialTick, CallbackInfo ci) {
+        // Vehicles: the camera follows the car (behind it, or from the driver's seat).
+        double[] car = dev.maro.module.impl.movement.Vehicles.cameraFrame(partialTick);
+        if (car != null) {
+            setRotation((float) car[3], (float) car[4]);
+            setPos(car[0], car[1], car[2]);
+            this.thirdPerson = !dev.maro.module.impl.movement.Vehicles.driverView();
+            return;
+        }
+
         double[] at = FreeCam.frame((Camera) (Object) this);
 
         if (at != null) {
