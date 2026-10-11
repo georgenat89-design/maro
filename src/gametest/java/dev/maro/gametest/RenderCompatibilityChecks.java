@@ -39,7 +39,7 @@ final class RenderCompatibilityChecks {
         }
         System.out.println("[render-compat] Enabling combined visuals");
         var names = Set.of("Nametags", "Trajectories", "Player ESP", "Custom Sky", "Custom Crosshair", "Compass",
-            "Region Map", "Keystrokes", "Spotify Hud", "Motion Blur", "Color Correct", "View Model", "Inventory", "Better Looks", "Hand Shader");
+            "Region Map", "Keyboard Strokes", "Spotify Hud", "Motion Blur", "Color Correct", "View Model", "Inventory", "Better Looks", "Hand Shader");
         String profile = System.getProperty("maro.gametest.renderProfile", "");
         try {
             context.runOnClient(c -> {

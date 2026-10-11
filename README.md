@@ -15,6 +15,12 @@ The phone reuses its immutable album-art geometry across frames.
 
 ## Included modules
 
+**Keyboard Strokes** (Visuals) shows the keys you press on screen, lit while held. Right-click it (or
+**Choose Keys**) to open a menu of every keybind in the game and tick the ones you want shown;
+a live preview updates as you click. It reads your bindings, so it follows anything you rebind.
+Movement keys keep the W / A S D shape, mouse buttons pair up, jump runs along the bottom and the
+rest flow underneath. Drag it anywhere, resize it, and set the key opacity.
+
 **Spotify Phone** (Misc) opens a handheld music player with **F10**. Click previous,
 play/pause or next, or use **Left / Ctrl+Space / Right**. Drag the progress bar to seek;
 **F10**, **Esc**, the close button or the bottom home bar puts the phone away.
@@ -106,7 +112,7 @@ attacked, collide with players, or interact with the server.
 | --- | --- |
 | Movement | Auto Walk, Free Cam, Freelook |
 | Player | Auto Tool, Auto Trident, Fast XP, Smart Eat, Spawner Protect, existing Fast Place |
-| Visuals | Bloom, Color Correct, Custom Crosshair, Custom FOV, Fake XP, Hats, Key Zoom, Keystrokes, Motion Blur, Region Map, Spotify HUD, Spin Bot, Swing Speed, existing Stretch Res |
+| Visuals | Bloom, Color Correct, Custom Crosshair, Custom FOV, Fake XP, Hats, Key Zoom, Motion Blur, Region Map, Spotify HUD, Spin Bot, Swing Speed, existing Stretch Res |
 | Misc | Chat Macros, Key Sounds, existing Screen Hider |
 
 The Nathan modules use Maro's settings, keybinds, friend list, and saved configs. Right-click a module to edit its settings. Chat Macros includes a manager and editor under its Actions section. Strings and item lists have an Edit button; lists accept JSON arrays or semicolon-separated entries.
@@ -123,7 +129,7 @@ reveal the controls. Unsupported/disconnected audio shows an unavailable state.
 The existing persistent WASAPI helper handles reads and coalesced writes away from the render
 thread using [Windows endpoint volume controls](https://learn.microsoft.com/en-us/windows/win32/api/endpointvolume/nn-endpointvolume-iaudioendpointvolume).
 
-Region Map retains Nathan's updated region divisions and sharp labels. Keystrokes retains its Poppins labels. Their initial positions leave room for each other and Spotify, and can be changed in settings.
+Region Map retains Nathan's updated region divisions and sharp labels. Its initial position leaves room for Spotify and can be changed in settings.
 
 Region Map defaults to **0.8×**. **Auto fit screen** limits its height to **42%** of
 the screen and width to 25%, including with a large Minecraft GUI scale or an old

@@ -41,8 +41,7 @@ import dev.maro.nathan.audio.MechvibesPack;
 /**
  * The sound of a mechanical keyboard under your keys.
  *
- * <p>It has nothing to do with Keystrokes: it listens to the keyboard itself,
- * not to that module, and is on or off on its own.
+ * <p>It listens to the keyboard itself and is on or off on its own.
  *
  * <p><b>Once a press.</b> A key held down makes the keyboard send the press
  * again and again; those are told apart from the first and are silent. On top
@@ -166,7 +165,7 @@ public class KeySounds extends Module {
     private WLabel packLabel;
 
     public KeySounds() {
-        super(NameeProtectAddon.CATEGORY, "key-sounds", "Mechanical keyboard sounds for your key presses. Separate from Keystrokes.");
+        super(NameeProtectAddon.CATEGORY, "key-sounds", "Mechanical keyboard sounds for your key presses.");
 
         // Keys are keys at the menu too.
         runInMainMenu = true;
