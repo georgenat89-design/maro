@@ -58,12 +58,18 @@ public class ModulesPage extends Page {
     }
 
     private List<Module> modules() {
-        return category == null ? ModuleManager.search(gui.getSearch().getText()) : ModuleManager.byCategory(category);
+        List<Module> list = category == null ? ModuleManager.search(gui.getSearch().getText()) : ModuleManager.byCategory(category);
+        return gui.antiCheatSectionUnlocked() ? list : list.stream().filter(m -> m.getCategory() != Category.ANTI_CHEAT_OFF).toList();
     }
 
     public void openSettings(Module m) {
         if(m instanceof dev.maro.module.impl.player.AutoBuilder builder){
             net.minecraft.client.MinecraftClient.getInstance().setScreen(new dev.maro.builder.BuilderControlScreen(gui,builder));return;
+        }
+        net.minecraft.client.gui.screen.Screen own = m.panel(gui);
+        if (own != null) {
+            net.minecraft.client.MinecraftClient.getInstance().setScreen(own);
+            return;
         }
         openOptions(m);
     }
@@ -106,6 +112,10 @@ public class ModulesPage extends Page {
 
     @Override
     public void render(DrawContext ctx, float x, float y, float w, float h) {
+        if (category == Category.ANTI_CHEAT_OFF && !gui.antiCheatSectionUnlocked()) {
+            gui.renderAntiCheatPrompt(ctx, x, y, w, h);
+            return;
+        }
         float v = view.update(open != null ? 1f : 0f);
         if (open != null) shown = open;
         float prev = Render2D.getAlpha();

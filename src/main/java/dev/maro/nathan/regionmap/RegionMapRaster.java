@@ -16,8 +16,8 @@ import java.io.InputStream;
 /** The static map artwork, rebuilt only when its scale, colours or label settings change. */
 public final class RegionMapRaster {
     public static final double GRID_UNITS = 108;
-    public static final double GUTTER_UNITS = 0.5;
-    public static final double CORNER_UNITS = 0.9;
+    public static final double GUTTER_UNITS = 0.85;
+    public static final double CORNER_UNITS = 1.35;
     private static final double NUMBER_CAPS = 3.2;
     public enum NumberFont {
         Rounded("Poppins-Medium.ttf"),
@@ -66,6 +66,16 @@ public final class RegionMapRaster {
     public static Rendered create(int size, int[] fills, int[] inks, boolean numbers,
                                   NumberFont numberFont, double numberSize, boolean fitNumbers,
                                   boolean gloss, int spotlight, double dim, boolean compactNumberFit) {
+        return create(size, fills, inks, numbers, numberFont, numberSize, fitNumbers, gloss, spotlight, dim, compactNumberFit, false);
+    }
+
+    /**
+     * @param seamless the shards drawn edge to edge as one map, divided by fine lines, instead of
+     *                 as separate rounded tiles; the whole map gets rounded corners
+     */
+    public static Rendered create(int size, int[] fills, int[] inks, boolean numbers,
+                                  NumberFont numberFont, double numberSize, boolean fitNumbers,
+                                  boolean gloss, int spotlight, double dim, boolean compactNumberFit, boolean seamless) {
         if (size <= 0 || fills.length != RegionGrid.Locale.values().length || inks.length != fills.length
             || numberFont == null || !Double.isFinite(numberSize) || numberSize < 0.5 || numberSize > 2.5)
             throw new IllegalArgumentException("Invalid region-map raster size or colours");
@@ -82,7 +92,7 @@ public final class RegionMapRaster {
             graphics.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
             double unit = size / GRID_UNITS;
             double pitch = (double) size / RegionGrid.SIDE;
-            double gutter = GUTTER_UNITS * unit;
+            double gutter = seamless ? 0 : GUTTER_UNITS * unit;
             Font font = numbers ? font(numberFont) : null;
             double capRatio = numbers
                 ? font.deriveFont(100f).createGlyphVector(graphics.getFontRenderContext(), "0").getVisualBounds().getHeight() / 100
@@ -97,10 +107,25 @@ public final class RegionMapRaster {
                 double radius = Math.min(CORNER_UNITS * unit, Math.min(width, height) / 4);
                 int locale = shard.locale().ordinal();
                 int fill = sunk(fills[locale], spotlight >= 0 && locale != spotlight ? dim : 0);
+                if (seamless) {
+                    // Edge to edge on whole pixels, so neighbours meet without a seam; a fine
+                    // darker line along the right and bottom divides each from the next.
+                    int x0 = (int) Math.round(shard.col() * pitch), y0 = (int) Math.round(shard.row() * pitch);
+                    int x1 = (int) Math.round((shard.col() + shard.width()) * pitch), y1 = (int) Math.round((shard.row() + shard.height()) * pitch);
+                    graphics.setPaint(new GradientPaint(x0, y0, new java.awt.Color(mix(fill, 0xFFFFFFFF, 0.05), true),
+                        x0, y1, new java.awt.Color(mix(fill, 0xFF000000, 0.05), true)));
+                    graphics.fillRect(x0, y0, x1 - x0, y1 - y0);
+                    graphics.setColor(new java.awt.Color(mix(fill, 0xFF0B0D12, 0.5), true));
+                    graphics.fillRect(x1 - 1, y0, 1, y1 - y0);
+                    graphics.fillRect(x0, y1 - 1, x1 - x0, 1);
+                    continue;
+                }
                 RoundRectangle2D tile = new RoundRectangle2D.Double(left, top, width, height, radius * 2, radius * 2);
 
                 if (!gloss) {
-                    graphics.setColor(new java.awt.Color(fill, true));
+                    // A soft light from above: a touch lighter at the top, a touch deeper at the bottom.
+                    graphics.setPaint(new GradientPaint((float) left, (float) top, new java.awt.Color(mix(fill, 0xFFFFFFFF, 0.07), true),
+                        (float) left, (float) (top + height), new java.awt.Color(mix(fill, 0xFF000000, 0.08), true)));
                     graphics.fill(tile);
                     continue;
                 }
@@ -168,29 +193,47 @@ public final class RegionMapRaster {
                     }
                     float glyphX = (float) (Math.round(left + (width - bounds.width) / 2) - bounds.x);
                     float glyphY = (float) (Math.round(top + (height - bounds.height) / 2) - bounds.y);
+                    // Numbers outside your group step back with their tiles, so yours read first.
                     boolean faded = spotlight >= 0 && locale != spotlight;
-                    int ink = faded ? (inks[locale] & 0xFFFFFF) | (int) ((inks[locale] >>> 24) * (1 - dim * 0.55)) << 24 : inks[locale];
+                    int ink = faded ? (inks[locale] & 0xFFFFFF) | (int) ((inks[locale] >>> 24) * Math.max(0.3, 1 - dim * 1.1)) << 24 : inks[locale];
 
-                    if (gloss) {
-                        graphics.setColor(new java.awt.Color(0, 0, 0, (int) (90 * alpha(ink))));
-                        graphics.drawGlyphVector(glyphs, glyphX, glyphY + Math.max(1, Math.round(0.3f * (float) unit)));
+                    // A soft shadow under each number keeps it clear on light fills without the
+                    // heavy look of an outline.
+                    graphics.setColor(new java.awt.Color(0, 0, 0, (int) ((gloss ? 90 : 105) * alpha(ink))));
+                    graphics.drawGlyphVector(glyphs, glyphX, glyphY + Math.max(1, Math.round(0.3f * (float) unit)));
+                    if (!faded && !gloss && !seamless) {
+                        graphics.setStroke(new BasicStroke(0.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                        graphics.setColor(new java.awt.Color(0, 0, 0, (int) (60 * alpha(ink))));
+                        graphics.draw(glyphs.getOutline(glyphX, glyphY));
                     }
-
-                    // A thin dark rim preserves contrast on bright region fills.
-                    graphics.setStroke(new BasicStroke(1f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                    graphics.setColor(new java.awt.Color(0, 0, 0, (int)(155 * alpha(ink))));
-                    graphics.draw(glyphs.getOutline(glyphX, glyphY));
 
                     graphics.setColor(new java.awt.Color(ink, true));
                     graphics.drawGlyphVector(glyphs, glyphX, glyphY);
                     labels++;
                 }
             }
+            if (seamless) roundCorners(image, Math.max(2, CORNER_UNITS * 2.2 * unit));
         } finally {
             graphics.dispose();
         }
 
         return new Rendered(image, labels);
+    }
+
+    /** Fades the image's corners out round a quarter circle of {@code radius} pixels, antialiased. */
+    private static void roundCorners(BufferedImage image, double radius) {
+        int w = image.getWidth(), h = image.getHeight(), r = (int) Math.ceil(radius);
+        for (int y = 0; y < Math.min(r, h); y++) {
+            for (int x = 0; x < Math.min(r, w); x++) {
+                double dx = radius - (x + 0.5), dy = radius - (y + 0.5);
+                double cover = Math.max(0, Math.min(1, radius - Math.sqrt(dx * dx + dy * dy) + 0.5));
+                if (cover >= 1) continue;
+                for (int[] at : new int[][] {{x, y}, {w - 1 - x, y}, {x, h - 1 - y}, {w - 1 - x, h - 1 - y}}) {
+                    int argb = image.getRGB(at[0], at[1]);
+                    image.setRGB(at[0], at[1], argb & 0xFFFFFF | (int) Math.round((argb >>> 24) * cover) << 24);
+                }
+            }
+        }
     }
 
     /** A colour sunk {@code amount} of the way into the dark panel behind the map. */

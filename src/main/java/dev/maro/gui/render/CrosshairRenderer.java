@@ -8,7 +8,7 @@ public final class CrosshairRenderer {
         "Dot", "Square Dot", "Plus", "Cross", "Cross + Dot", "T Cross", "X", "X + Dot",
         "Circle", "Circle + Dot", "Ring Cross", "Double Ring", "Square", "Square + Dot",
         "Diamond", "Diamond + Dot", "Chevron", "Double Chevron", "Triangle", "Brackets",
-        "Corner Brackets", "Star", "Reticle", "Four Dots");
+        "Corner Brackets", "Star", "Star of David", "Reticle", "Four Dots");
 
     private CrosshairRenderer() { }
 
@@ -78,6 +78,15 @@ public final class CrosshairRenderer {
                 line(ctx, 0, -s, s * 0.866f, s * 0.5f, t, edge, color);
                 line(ctx, s * 0.866f, s * 0.5f, -s * 0.866f, s * 0.5f, t, edge, color);
                 line(ctx, -s * 0.866f, s * 0.5f, 0, -s, t, edge, color);
+            }
+            case "Star of David" -> {
+                // Two equilateral triangles, one pointing up and one down, each the size of Triangle.
+                for (int flip : new int[]{1, -1}) {
+                    float tip = -s * flip, base = s * 0.5f * flip;
+                    line(ctx, 0, tip, s * 0.866f, base, t, edge, color);
+                    line(ctx, s * 0.866f, base, -s * 0.866f, base, t, edge, color);
+                    line(ctx, -s * 0.866f, base, 0, tip, t, edge, color);
+                }
             }
             case "Brackets" -> {
                 for (int side : new int[]{-1, 1}) {

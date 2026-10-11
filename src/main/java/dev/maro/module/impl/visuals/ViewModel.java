@@ -110,11 +110,11 @@ public class ViewModel extends Module {
     }
 
     public static boolean hideOffHand() {
-        return on() && instance.hideOff.get();
+        return on() && instance.hideOff.get() || BetterLooks.hideOffHand();
     }
 
     public static float equipProgress(float progress) {
-        return on() && instance.noEquip.get() ? 0 : progress;
+        return on() && instance.noEquip.get() || BetterLooks.noEquipDip() ? 0 : progress;
     }
 
     /**

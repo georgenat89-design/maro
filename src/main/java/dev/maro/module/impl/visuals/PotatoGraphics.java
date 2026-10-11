@@ -10,78 +10,36 @@ import dev.maro.module.Category;
 import dev.maro.module.Module;
 import dev.maro.setting.BooleanSetting;
 import dev.maro.setting.ModeSetting;
-import dev.maro.setting.NumberSetting;
-import dev.maro.setting.Setting;
 import dev.maro.setting.SettingSection;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.minecraft.client.option.CloudRenderMode;
 import net.minecraft.client.option.GameOptions;
 import net.minecraft.client.option.SimpleOption;
 import net.minecraft.client.texture.NativeImage;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.particle.ParticlesMode;
 
-import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
-import java.util.function.UnaryOperator;
 
 /**
- * Potato Graphics: turns the game's own video settings down for frames while it is on, and puts
- * every one of them back exactly as it was when it is turned off. Each setting it touches has its
- * own toggle. Your original values are kept in the Maro config too, so they come back even after
- * a restart with it still on.
+ * Potato Graphics: paints every block texture as one solid colour (Flat) or nearly so (Soft) while
+ * it is on, and brings the real textures back when it is off.
  *
- * <p>It only acts when it is turned on or when one of its own settings changes. Changing a video
- * setting yourself while it is on is left alone.
+ * <p>It used to turn the game's video settings down as well. Anyone who updated with it on still
+ * has their own values saved in the Maro config; those are put back once, as soon as the game's
+ * options are available, and then forgotten.
  */
 public class PotatoGraphics extends Module {
-    // distance
-    private final BooleanSetting limitRender = add(new BooleanSetting("Limit Render Distance", "Draw fewer chunks around you", true));
-    private final NumberSetting renderCap = add(new NumberSetting("Render Distance", "Most chunks to draw; lower is faster", 6, 2, 16, 1)
-            .suffix(" chunks").visible(limitRender::get));
-    private final BooleanSetting limitSim = add(new BooleanSetting("Limit Simulation", "Tick fewer chunks in singleplayer", true));
-    private final NumberSetting simCap = add(new NumberSetting("Simulation Distance", "Most chunks to tick", 5, 5, 16, 1)
-            .suffix(" chunks").visible(limitSim::get));
-    private final BooleanSetting entityRange = add(new BooleanSetting("Short Entity Range", "Stop drawing mobs and items sooner", true));
-    private final BooleanSetting clouds = add(new BooleanSetting("No Clouds", "Turn clouds off", true));
-
-    // world
-    private final BooleanSetting particles = add(new BooleanSetting("Minimal Particles", "Only the particles that matter", true));
-    private final BooleanSetting smoothLighting = add(new BooleanSetting("No Smooth Lighting", "Flat block lighting", true));
-    private final BooleanSetting fastLeaves = add(new BooleanSetting("Fast Leaves", "Solid leaves instead of see-through ones", true));
-    private final BooleanSetting biomeBlend = add(new BooleanSetting("No Biome Blend", "Hard edges between biome colours", true));
-    private final BooleanSetting shadows = add(new BooleanSetting("No Entity Shadows", "No round shadows under mobs and players", true));
-    private final BooleanSetting transparency = add(new BooleanSetting("Simple Transparency", "Cheaper glass, water and particle layering", true));
-    private final BooleanSetting weather = add(new BooleanSetting("Less Weather", "Rain and snow only close to you", true));
-    private final BooleanSetting chunkFade = add(new BooleanSetting("No Chunk Fade", "New chunks pop in instead of fading", true));
-
-    // textures and screen
-    private final BooleanSetting mipmaps = add(new BooleanSetting("No Mipmaps", "Skip texture mipmaps", true));
-    private final BooleanSetting vsync = add(new BooleanSetting("No VSync", "Do not wait for the monitor", true));
-    private final BooleanSetting unlockFps = add(new BooleanSetting("Unlimited FPS", "Lift the frame rate cap", true));
-    private final BooleanSetting menuBlur = add(new BooleanSetting("No Menu Blur", "Do not blur the world behind menus", true));
-    private final BooleanSetting vignette = add(new BooleanSetting("No Vignette", "No dark screen edges", true));
-
-    // the potato look
     public static final String TEXTURES_NORMAL = "Normal", TEXTURES_FLAT = "Flat", TEXTURES_SOFT = "Soft";
     private final ModeSetting textures = add(new ModeSetting("Textures",
             "Flat paints every block one solid colour, Soft keeps a hint of the texture (reloads textures for a few seconds)",
             TEXTURES_FLAT, TEXTURES_FLAT, TEXTURES_SOFT, TEXTURES_NORMAL));
+    private final BooleanSetting notify = add(new BooleanSetting("Notify", "A notification when it turns on and off", true));
 
-    // beyond the video settings
-    private final BooleanSetting hideFarEntities = add(new BooleanSetting("Hide Far Entities", "Do not draw mobs, items and other entities past a distance (players are always drawn)", true));
-    private final NumberSetting entityCap = add(new NumberSetting("Entity Distance", "Entities further than this are not drawn", 32, 8, 128, 4)
-            .suffix(" blocks").visible(hideFarEntities::get));
-    private final BooleanSetting noParticles = add(new BooleanSetting("No Particles", "No particles at all, not just fewer", false));
-    private final BooleanSetting notify = add(new BooleanSetting("Notify", "A notification when it turns things down and back up", true));
+    /** The video options older versions lowered, by the key their saved originals were stored under. */
+    private static final Map<String, Function<GameOptions, SimpleOption<?>>> LEGACY_OPTIONS = legacyOptions();
 
     private static PotatoGraphics instance;
 
@@ -91,59 +49,36 @@ public class PotatoGraphics extends Module {
     private static String requestedTextures;
     private static final AtomicInteger flattenedSprites = new AtomicInteger();
 
-    /** One video option it can lower. */
-    private record Knob(String key, BooleanSetting toggle, Function<GameOptions, SimpleOption<?>> option, UnaryOperator<Object> potato) {
-    }
-
-    private final List<Knob> knobs = new ArrayList<>();
-    /** The values you had before, by knob key. */
-    private final Map<String, Object> backup = new LinkedHashMap<>();
-    /** Saved originals read from the config, decoded once the options exist. */
-    private JsonObject pendingBackup;
-    /** Options that refused the lowered value, so they are not tried every time. */
-    private final Set<String> refused = new HashSet<>();
-    private int appliedSignature;
-    private boolean dirty;
+    /** Your own video settings saved by an older version, waiting to be put back. */
+    private JsonObject legacyOriginals;
 
     public PotatoGraphics() {
-        super("Potato Graphics", "Turns video settings right down for more FPS, and back when off", Category.VISUALS);
+        super("Potato Graphics", "Flat, solid-colour block textures, and back when off", Category.VISUALS);
         instance = this;
         // Runs whether or not the module is on, so switching it off also brings the textures back.
-        ClientTickEvents.END_CLIENT_TICK.register(client -> syncTextures());
-        knob("render-distance", limitRender, GameOptions::getViewDistance, v -> v instanceof Integer i ? Math.min(i, renderCap.getInt()) : null);
-        knob("simulation-distance", limitSim, GameOptions::getSimulationDistance, v -> v instanceof Integer i ? Math.min(i, simCap.getInt()) : null);
-        knob("entity-distance", entityRange, GameOptions::getEntityDistanceScaling, v -> v instanceof Double d ? Math.min(d, 0.5) : null);
-        knob("clouds", clouds, GameOptions::getCloudRenderMode, v -> v instanceof CloudRenderMode ? CloudRenderMode.OFF : null);
-        knob("particles", particles, GameOptions::getParticles, v -> v instanceof ParticlesMode ? ParticlesMode.MINIMAL : null);
-        knob("smooth-lighting", smoothLighting, GameOptions::getAo, PotatoGraphics::off);
-        knob("cutout-leaves", fastLeaves, GameOptions::getCutoutLeaves, PotatoGraphics::off);
-        knob("biome-blend", biomeBlend, GameOptions::getBiomeBlendRadius, v -> v instanceof Integer ? 0 : null);
-        knob("entity-shadows", shadows, GameOptions::getEntityShadows, PotatoGraphics::off);
-        knob("improved-transparency", transparency, GameOptions::getImprovedTransparency, PotatoGraphics::off);
-        knob("weather-radius", weather, GameOptions::getWeatherRadius, v -> v instanceof Integer i ? Math.min(i, 3) : null);
-        knob("chunk-fade", chunkFade, GameOptions::getChunkFade, v -> v instanceof Double ? 0.0 : null);
-        knob("mipmaps", mipmaps, GameOptions::getMipmapLevels, v -> v instanceof Integer ? 0 : null);
-        knob("vsync", vsync, GameOptions::getEnableVsync, PotatoGraphics::off);
-        knob("max-fps", unlockFps, GameOptions::getMaxFps, v -> v instanceof Integer ? 260 : null);
-        knob("menu-blur", menuBlur, GameOptions::getMenuBackgroundBlurriness, v -> v instanceof Integer ? 0 : null);
-        knob("vignette", vignette, GameOptions::getVignette, PotatoGraphics::off);
-    }
-
-    private void knob(String key, BooleanSetting toggle, Function<GameOptions, SimpleOption<?>> option, UnaryOperator<Object> potato) {
-        knobs.add(new Knob(key, toggle, option, potato));
-    }
-
-    private static Object off(Object value) {
-        return value instanceof Boolean ? Boolean.FALSE : null;
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            syncTextures();
+            restoreLegacyOriginals();
+        });
     }
 
     @Override
     public List<SettingSection> getSettingSections() {
-        return List.of(SettingSection.of("Look", textures, notify),
-                SettingSection.of("Distance", limitRender, renderCap, limitSim, simCap, entityRange, clouds),
-                SettingSection.of("World", particles, smoothLighting, fastLeaves, biomeBlend, shadows, transparency, weather, chunkFade),
-                SettingSection.of("Screen", mipmaps, vsync, unlockFps, menuBlur, vignette),
-                SettingSection.of("Extra", hideFarEntities, entityCap, noParticles));
+        return List.of(SettingSection.of("Look", textures, notify));
+    }
+
+    @Override
+    protected void onEnable() {
+        if (!notify.get()) return;
+        String message = textures.is(TEXTURES_NORMAL) ? "On - pick Flat or Soft textures" : textures.get() + " textures on";
+        Notifications.push("Potato Graphics", message, Notifications.Type.ENABLED);
+    }
+
+    @Override
+    protected void onDisable() {
+        if (notify.get() && !textures.is(TEXTURES_NORMAL)) {
+            Notifications.push("Potato Graphics", "Textures back to normal", Notifications.Type.DISABLED);
+        }
     }
 
     // ---- flat textures ------------------------------------------------------------------------
@@ -214,170 +149,65 @@ public class PotatoGraphics extends Module {
         flattenedSprites.incrementAndGet();
     }
 
-    // ---- boosts applied while drawing (read from render code every frame) ----------------------
+    // ---- video settings lowered by older versions --------------------------------------------
 
-    /** Whether this entity is past the distance at which Potato Graphics stops drawing entities. */
-    public static boolean hidesEntity(Entity entity) {
-        PotatoGraphics m = instance;
-        if (m == null || !m.isEnabled() || !m.hideFarEntities.get() || entity instanceof PlayerEntity || mc.player == null) return false;
-        double cap = m.entityCap.get();
-        return entity.squaredDistanceTo(mc.player) > cap * cap;
+    private static Map<String, Function<GameOptions, SimpleOption<?>>> legacyOptions() {
+        Map<String, Function<GameOptions, SimpleOption<?>>> options = new LinkedHashMap<>();
+        options.put("render-distance", GameOptions::getViewDistance);
+        options.put("simulation-distance", GameOptions::getSimulationDistance);
+        options.put("entity-distance", GameOptions::getEntityDistanceScaling);
+        options.put("clouds", GameOptions::getCloudRenderMode);
+        options.put("particles", GameOptions::getParticles);
+        options.put("smooth-lighting", GameOptions::getAo);
+        options.put("cutout-leaves", GameOptions::getCutoutLeaves);
+        options.put("biome-blend", GameOptions::getBiomeBlendRadius);
+        options.put("entity-shadows", GameOptions::getEntityShadows);
+        options.put("improved-transparency", GameOptions::getImprovedTransparency);
+        options.put("weather-radius", GameOptions::getWeatherRadius);
+        options.put("chunk-fade", GameOptions::getChunkFade);
+        options.put("mipmaps", GameOptions::getMipmapLevels);
+        options.put("vsync", GameOptions::getEnableVsync);
+        options.put("max-fps", GameOptions::getMaxFps);
+        options.put("menu-blur", GameOptions::getMenuBackgroundBlurriness);
+        options.put("vignette", GameOptions::getVignette);
+        return options;
     }
 
-    public static boolean hidesParticles() {
-        PotatoGraphics m = instance;
-        return m != null && m.isEnabled() && m.noParticles.get();
-    }
-
-    // ---- turning things down and back --------------------------------------------------------
-
-    @Override
-    protected void onEnable() {
-        dirty = true;
-        refused.clear();
-    }
-
-    @Override
-    protected void onDisable() {
-        int restored = restoreAll();
-        if (restored > 0 && notify.get()) {
-            Notifications.push("Potato Graphics", "Your video settings are back", Notifications.Type.DISABLED);
-        }
-    }
-
-    @Override
-    public void onTick() {
-        int signature = signature();
-        if (!dirty && signature == appliedSignature) return;
-        boolean first = dirty;
-        dirty = false;
-        appliedSignature = signature;
-        int lowered = apply();
-        if (first && notify.get()) {
-            String extra = hideFarEntities.get() ? ", entities past " + entityCap.getInt() + " blocks hidden" : "";
-            if (noParticles.get()) extra += ", particles off";
-            if (!textures.is(TEXTURES_NORMAL)) extra += ", " + textures.get().toLowerCase() + " textures";
-            String settings = lowered > 0 ? lowered + " video settings turned down" : "Video settings already low";
-            Notifications.push("Potato Graphics", settings + extra, Notifications.Type.ENABLED);
-        }
-    }
-
-    private int signature() {
-        List<Object> values = new ArrayList<>();
-        for (Setting<?> s : getSettings()) if (s != notify) values.add(s.get());
-        return values.hashCode();
-    }
-
-    /** Lowers every switched-on knob and puts back every switched-off one. Returns how many are lowered. */
-    private int apply() {
+    /** Puts back, once, the video settings an older version saved before turning them down. */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private void restoreLegacyOriginals() {
         GameOptions options = mc.options;
-        if (options == null) return 0;
-        decodePendingBackup(options);
-        int lowered = 0;
-        for (Knob k : knobs) {
-            SimpleOption<?> option = option(k, options);
-            if (option == null) continue;
-            if (k.toggle().get()) {
-                if (refused.contains(k.key())) continue;
-                Object base = backup.containsKey(k.key()) ? backup.get(k.key()) : option.getValue();
-                Object target = k.potato().apply(base);
-                if (target == null) continue;
-                if (!backup.containsKey(k.key())) backup.put(k.key(), option.getValue());
-                if (!Objects.equals(option.getValue(), target)) {
-                    force(option, target);
-                    if (!Objects.equals(option.getValue(), target)) {
-                        // The game would not take it; leave this one alone from now on.
-                        refused.add(k.key());
-                        restore(k, options);
-                        continue;
-                    }
-                }
-                if (!Objects.equals(base, target)) lowered++;
-            } else {
-                restore(k, options);
-            }
-        }
-        return lowered;
-    }
-
-    private int restoreAll() {
-        GameOptions options = mc.options;
-        if (options == null) return 0;
-        decodePendingBackup(options);
+        if (legacyOriginals == null || options == null) return;
+        JsonObject saved = legacyOriginals;
+        legacyOriginals = null;
         int restored = 0;
-        for (Knob k : knobs) if (restore(k, options)) restored++;
-        backup.clear();
-        return restored;
-    }
-
-    private boolean restore(Knob k, GameOptions options) {
-        if (!backup.containsKey(k.key())) return false;
-        Object original = backup.remove(k.key());
-        SimpleOption<?> option = option(k, options);
-        if (option == null || Objects.equals(option.getValue(), original)) return false;
-        force(option, original);
-        return true;
-    }
-
-    private static SimpleOption<?> option(Knob k, GameOptions options) {
-        try {
-            return k.option().apply(options);
-        } catch (RuntimeException e) {
-            return null;
-        }
-    }
-
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private static void force(SimpleOption option, Object value) {
-        try {
-            option.setValue(value);
-        } catch (RuntimeException e) {
-            Maro.LOGGER.warn("Potato Graphics could not set {}", value, e);
-        }
-    }
-
-    // ---- keeping your originals across restarts -------------------------------------------------
-
-    @Override
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    public JsonObject saveExtra() {
-        JsonObject out = new JsonObject();
-        if (pendingBackup != null) return pendingBackup.deepCopy();
-        GameOptions options = mc.options;
-        if (options == null) return out;
-        for (Knob k : knobs) {
-            if (!backup.containsKey(k.key())) continue;
-            SimpleOption option = option(k, options);
-            if (option == null) continue;
+        for (Map.Entry<String, JsonElement> entry : saved.entrySet()) {
+            Function<GameOptions, SimpleOption<?>> getter = LEGACY_OPTIONS.get(entry.getKey());
+            if (getter == null) continue;
             try {
-                ((Codec) option.getCodec()).encodeStart(JsonOps.INSTANCE, backup.get(k.key())).result()
-                        .ifPresent(json -> out.add(k.key(), (JsonElement) json));
-            } catch (RuntimeException ignored) {
+                SimpleOption option = getter.apply(options);
+                Object original = ((Codec) option.getCodec()).parse(JsonOps.INSTANCE, entry.getValue()).result().orElse(null);
+                if (original == null || Objects.equals(option.getValue(), original)) continue;
+                option.setValue(original);
+                restored++;
+            } catch (RuntimeException e) {
+                Maro.LOGGER.warn("Potato Graphics could not put back {}", entry.getKey(), e);
             }
         }
-        return out;
+        if (restored == 0) return;
+        options.write();
+        Notifications.push("Potato Graphics", "It no longer changes video settings - your " + restored + " are back",
+                Notifications.Type.INFO);
+    }
+
+    @Override
+    public JsonObject saveExtra() {
+        // Keep anything not yet put back, so it is not lost if the game closes first.
+        return legacyOriginals != null ? legacyOriginals.deepCopy() : new JsonObject();
     }
 
     @Override
     public void loadExtra(JsonObject data) {
-        // Only take saved originals when none are held, so switching configs never loses the real ones.
-        if (backup.isEmpty() && data != null && !data.entrySet().isEmpty()) pendingBackup = data.deepCopy();
-    }
-
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private void decodePendingBackup(GameOptions options) {
-        if (pendingBackup == null) return;
-        JsonObject data = pendingBackup;
-        pendingBackup = null;
-        for (Knob k : knobs) {
-            if (!data.has(k.key()) || backup.containsKey(k.key())) continue;
-            SimpleOption option = option(k, options);
-            if (option == null) continue;
-            try {
-                ((Codec) option.getCodec()).parse(JsonOps.INSTANCE, data.get(k.key())).result()
-                        .ifPresent(value -> backup.put(k.key(), value));
-            } catch (RuntimeException ignored) {
-            }
-        }
+        if (data != null && !data.entrySet().isEmpty()) legacyOriginals = data.deepCopy();
     }
 }

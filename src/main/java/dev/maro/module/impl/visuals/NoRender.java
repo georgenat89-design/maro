@@ -72,10 +72,29 @@ public class NoRender extends Module {
         return sections;
     }
 
-    /** Whether this part is hidden right now. Cheap: called from render code every frame. */
+    /**
+     * Whether this part is hidden right now. Cheap: called from render code every frame. The switches
+     * are Better Looks' now; this module stays only as the name its hooks know.
+     */
     public static boolean hides(Part part) {
-        NoRender m = instance;
-        return m != null && m.isEnabled() && m.parts[part.ordinal()].get();
+        return BetterLooks.hides(part);
+    }
+
+    /**
+     * A No Render left on from before it joined Better Looks: what it hid, Better Looks now hides,
+     * and Better Looks is switched on. Happens once, since this is then switched off for good.
+     */
+    public void carryOver() {
+        BetterLooks looks = BetterLooks.get();
+        if (!isEnabled() || looks == null) return;
+        for (Part part : Part.values()) if (parts[part.ordinal()].get()) looks.hide(part);
+        looks.setEnabled(true);
+        setEnabled(false);
+    }
+
+    @Override
+    public boolean hiddenInGui() {
+        return true;
     }
 
     public static NoRender get() {

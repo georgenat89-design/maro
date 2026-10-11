@@ -24,7 +24,7 @@ public final class Theme {
     public static final int[] PRESETS = {
             0xFF8B5CF6, // violet
             0xFF6366F1, // indigo
-            0xFF3B82F6, // blue
+            0xFF3391FC, // Maro: the logo's blue
             0xFF06B6D4, // cyan
             0xFF14B8A6, // teal
             0xFF22C55E, // green
@@ -33,7 +33,7 @@ public final class Theme {
             0xFFF43F5E, // rose
             0xFFEC4899, // pink
     };
-    public static final String[] PRESET_NAMES = {"Violet", "Indigo", "Blue", "Cyan", "Teal", "Green", "Amber", "Orange", "Rose", "Pink"};
+    public static final String[] PRESET_NAMES = {"Violet", "Indigo", "Maro", "Cyan", "Teal", "Green", "Amber", "Orange", "Rose", "Pink"};
 
     private static float r = -1, g, b;
     private static long last = System.nanoTime();

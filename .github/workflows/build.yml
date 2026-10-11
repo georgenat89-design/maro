@@ -21,6 +21,18 @@ jobs:
       - name: Build
         run: ./gradlew build --no-daemon
 
+      # The in-game test runs on Mesa's software renderer, which accepts shaders that NVIDIA, AMD
+      # and Intel drivers refuse to compile. Hold every shader to the GLSL spec as well.
+      - name: Check shaders against the GLSL spec
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq glslang-tools > /dev/null
+          status=0
+          for f in $(find src/main/resources -name '*.fsh' -o -name '*.vsh'); do
+            case "$f" in *.vsh) stage=vert ;; *) stage=frag ;; esac
+            glslangValidator -S "$stage" "$f" || status=1
+          done
+          exit $status
+
       # Launch the real 1.21.11 client with the production jar and drive the GUI.
       # Any mixin failure, crash or render exception fails the build.
       - name: In-game test
@@ -30,6 +42,29 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq xvfb imagemagick > /dev/null
           ./gradlew runProductionClientGameTest --no-daemon --stacktrace
+
+      - name: Upload mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: maro-gg-mc1.21.11-build-${{ github.run_number }}
+          path: |
+            build/libs/*.jar
+            !build/libs/*-sources.jar
+            !build/libs/*-gametest.jar
+
+      # Only builds that passed the in-game test become releases. They are published before the
+      # slower builder tests below, which still run and report but do not hold the download up.
+      - name: Publish release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          JAR=$(ls build/libs/*.jar | grep -v -e '-sources' -e '-gametest' | head -1)
+          gh release create "build-${{ github.run_number }}" "$JAR" \
+            --target "${{ github.sha }}" \
+            --title "maro.gg build ${{ github.run_number }}" \
+            --notes "Minecraft 1.21.11 · commit ${{ github.sha }} · passed the in-game test" \
+            --latest
 
       - name: Schematic builder and auction tests
         env:
@@ -53,25 +88,3 @@ jobs:
         with:
           name: test-screenshots-build-${{ github.run_number }}
           path: "**/screenshots/*.png"
-
-      - name: Upload mod jar
-        uses: actions/upload-artifact@v4
-        with:
-          name: maro-gg-mc1.21.11-build-${{ github.run_number }}
-          path: |
-            build/libs/*.jar
-            !build/libs/*-sources.jar
-            !build/libs/*-gametest.jar
-
-      # Only builds that passed the in-game test become releases.
-      - name: Publish release
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          JAR=$(ls build/libs/*.jar | grep -v -e '-sources' -e '-gametest' | head -1)
-          gh release create "build-${{ github.run_number }}" "$JAR" \
-            --target "${{ github.sha }}" \
-            --title "maro.gg build ${{ github.run_number }}" \
-            --notes "Minecraft 1.21.11 · commit ${{ github.sha }} · passed the in-game test" \
-            --latest

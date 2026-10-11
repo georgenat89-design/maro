@@ -11,5 +11,5 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ClientConnection.class)
 public abstract class BuilderPacketProbe {
     @Inject(method="send(Lnet/minecraft/network/packet/Packet;)V",at=@At("HEAD"))
-    private void maroTest$outbound(Packet<?> packet,CallbackInfo info){BuilderPacketChecks.outbound(packet);}
+    private void maroTest$outbound(Packet<?> packet,CallbackInfo info){BuilderPacketChecks.outbound(packet);dev.maro.gametest.BuilderPlacementProbe.outbound(packet);dev.maro.gametest.ChestTransferChecks.outbound(packet);}
 }

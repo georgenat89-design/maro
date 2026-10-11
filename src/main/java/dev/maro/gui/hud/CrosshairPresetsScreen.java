@@ -46,7 +46,7 @@ public final class CrosshairPresetsScreen extends Screen {
         Render2D.roundRect(ctx, x, y, w, h, 10, 0xF20B0D14);
         Render2D.roundOutline(ctx, x, y, w, h, 10, 1, Theme.BORDER);
         Fonts.drawV(ctx, "Crosshair presets", x + 14, y + 17, Theme.TEXT, true, 1);
-        Fonts.drawV(ctx, "24 styles  /  " + module.preset(), x + 14, y + 33, Theme.TEXT_MUTED, false, 0.7f);
+        Fonts.drawV(ctx, CrosshairRenderer.PRESETS.size() + " styles  /  " + module.preset(), x + 14, y + 33, Theme.TEXT_MUTED, false, 0.7f);
         Fonts.drawRight(ctx, "Done", x + w - 14, y + 17, Theme.accent(), true, 0.8f);
         int clipLeft = (int) (x + 10), clipTop = (int) gridTop();
         int clipRight = (int) (x + w - 10), clipBottom = (int) gridBottom();

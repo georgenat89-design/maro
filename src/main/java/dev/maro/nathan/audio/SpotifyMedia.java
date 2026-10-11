@@ -31,7 +31,7 @@ import dev.maro.nathan.NameeProtectAddon;
 import dev.maro.nathan.render.SpotifyCardRaster;
 
 /** Reads and controls the Windows media session without blocking Minecraft's render thread. */
-public final class SpotifyMedia implements AutoCloseable {
+public final class SpotifyMedia implements SpotifyPlayback, AutoCloseable {
     /** Artwork is decoded off the render thread and uploaded only when the song changes. */
     public record Artwork(String key, int width, int height, byte[] rgba, int tintRgb,
                           SpotifyCardRaster.Raster cardRaster, SpotifyCardRaster.Raster lyricsRaster) {

@@ -85,6 +85,16 @@ public class PlayerESP extends Module {
             .suffix("px").visible(glow::get));
     private final NumberSetting glowStrength = add(new NumberSetting("Glow Strength", "How bright the glow is", 60, 0, 150, 1)
             .suffix("%").visible(glow::get));
+    private final ModeSetting glowColorMode = add(new ModeSetting("Glow Color",
+            "Outline keeps the outline's color; Custom fades from the outline color into its own", "Outline", "Outline", "Custom")
+            .visible(glow::get));
+    private final ColorSetting glowCustom = add(new ColorSetting("Glow Custom", "Color the glow fades into in Custom mode", 0xFF7B2CFF)
+            .visible(() -> glow.get() && glowColorMode.is("Custom")));
+    private final NumberSetting innerGlow = add(new NumberSetting("Inner Glow", "A soft glow just inside the edges, in the outline color", 0, 0, 100, 1)
+            .suffix("%"));
+
+    private final ButtonSetting neonPreset = add(new ButtonSetting("Neon Glow", "No fill: a thin pink edge with a soft purple glow round it", "Apply",
+            this::applyNeonGlow));
 
     // ---- tracers
     private final BooleanSetting tracers = add(new BooleanSetting("Tracers", "Smooth lines from your crosshair to each player", true));
@@ -100,11 +110,11 @@ public class PlayerESP extends Module {
             .suffix("%").visible(tracers::get));
 
     private final List<SettingSection> sections = List.of(
-            SettingSection.of("Preview", preview),
+            SettingSection.of("Preview", preview, neonPreset),
             SettingSection.of("Targets", range, self, friends, friendColor, friendTint, healthColors, spectators),
             SettingSection.of("Fill", fill, fillStyle, colorA, colorB, fillOpacity, edgeFade, stars, scale, speed),
             SettingSection.of("Outline", outline, outlineColorMode, outlineColor, outlineWidth, outlineOpacity),
-            SettingSection.of("Glow", glow, glowRadius, glowStrength),
+            SettingSection.of("Glow", glow, glowRadius, glowStrength, glowColorMode, glowCustom, innerGlow),
             SettingSection.of("Tracers", tracers, tracerStart, tracerColor, tracerCustom, tracerWidth, tracerOpacity));
 
     private final long start = System.nanoTime();
@@ -217,19 +227,39 @@ public class PlayerESP extends Module {
         return alpha << 24 | (rgb & 0xFFFFFF);
     }
 
-    /** The EspData block of player_esp.fsh, as 28 floats in order; the renderer fills in the last (mask scale). */
+    /** Index of GlowParams.w, the mask scale, which the renderer fills in. */
+    public static final int MASK_SCALE_INDEX = 27;
+
+    /** The first eight vec4s of EspData in player_esp.fsh, as 32 floats in order. */
     public float[] uniformValues() {
-        int a = colorA.get(), b = colorB.get(), line = outlineColor.get();
+        int a = colorA.get(), b = colorB.get(), line = outlineColor.get(), glowTint = glowCustom.get();
         float seconds = (float) (((System.nanoTime() - start) / 1e9) % 3600.0);
         return new float[] {
                 red(a), green(a), blue(a), 1,
                 red(b), green(b), blue(b), 1,
-                red(line), green(line), blue(line), 1,
+                red(line), green(line), blue(line), innerGlow.getFloat() / 100f,
                 seconds, speed.getFloat(), scale.getFloat(), stars.getFloat() / 100f * 0.55f,
                 fillStyle.index(), fillOpacity.getFloat() / 100f, edgeFade.getFloat() / 100f, fill.get() ? 1 : 0,
                 outlineColorMode.index(), widthPx(), outlineOpacity.getFloat() / 100f, outline.get() ? 1 : 0,
-                glow.get() ? 1 : 0, glowPx(), glowStrength.getFloat() / 100f, 0
+                glow.get() ? 1 : 0, glowPx(), glowStrength.getFloat() / 100f, 0,
+                red(glowTint), green(glowTint), blue(glowTint), glowColorMode.is("Custom") ? 1 : 0
         };
+    }
+
+    /** The neon look: no fill, so the player's skin shows, a thin pink edge and a soft purple glow. */
+    public void applyNeonGlow() {
+        fill.set(false);
+        outline.set(true);
+        outlineColorMode.set("Custom");
+        outlineColor.set(0xFFFF7AE0);
+        outlineWidth.set(1.25);
+        outlineOpacity.set(100.0);
+        glow.set(true);
+        glowRadius.set(7.0);
+        glowStrength.set(90.0);
+        glowColorMode.set("Custom");
+        glowCustom.set(0xFF7B2CFF);
+        innerGlow.set(35.0);
     }
 
     private static float red(int c) {

@@ -2,6 +2,6 @@
   "required": true,
   "package": "dev.maro.gametest.mixin",
   "compatibilityLevel": "JAVA_21",
-  "client": ["ProjectionUploadProbe", "WorldProjectionProbe", "PetRenderProbe", "BuilderPacketProbe", "BuilderMovementProbe", "BuilderChestProbe"],
+  "client": ["ProjectionUploadProbe", "WorldProjectionProbe", "PetRenderProbe", "BuilderPacketProbe", "BuilderMovementProbe", "BuilderTeleportProbe", "BuilderChestProbe", "BuilderBlockProbe", "RelogTransferProbe", "ChestTransferProbe", "AirFallProbe", "RenderBufferProbe", "CompanionMeshProbe", "NativeRenderAllocationProbe", "PortedRenderAllocationProbe"],
   "injectors": {"defaultRequire": 1}
 }

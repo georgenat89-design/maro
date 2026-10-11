@@ -19,6 +19,8 @@ public final class ClientSettings {
 
     public static final SettingSection INTERFACE = new SettingSection("Interface");
     public static final KeybindSetting guiBind = INTERFACE.add(new KeybindSetting("Menu Keybind", "Key that opens this menu", GLFW.GLFW_KEY_RIGHT_SHIFT));
+    public static final ModeSetting menuStyle = INTERFACE.add(new ModeSetting("Menu Style",
+            "Panels shows every category side by side, Window is one window with a tab per category", "Panels", "Panels", "Window"));
     public static final BooleanSetting customFont = INTERFACE.add(new BooleanSetting("Custom Font", "Use the Inter font instead of the Minecraft font", true));
     public static final BooleanSetting capsText = INTERFACE.add(new BooleanSetting("Caps Text", "Small bold all-caps labels (off = normal sentence case)", true));
     public static final NumberSetting animSpeed = INTERFACE.add(new NumberSetting("Animation Speed", "How fast menu animations play", 1.0, 0.3, 3.0, 0.1).suffix("x"));
@@ -31,6 +33,10 @@ public final class ClientSettings {
 
     public static final SettingSection BEHAVIOUR = new SettingSection("Behaviour");
     public static final BooleanSetting uiSounds = BEHAVIOUR.add(new BooleanSetting("UI Sounds", "Play a click when toggling things", true));
+    public static final ModeSetting uiSound = BEHAVIOUR.add(new ModeSetting("Click Sound", "The sound a click makes", "Click", "Click", "Soft", "Tick", "Pop")
+            .visible(uiSounds::get));
+    public static final NumberSetting uiVolume = BEHAVIOUR.add(new NumberSetting("Sound Volume", "How loud menu clicks are (the game's Master volume applies too)", 70, 5, 100, 5)
+            .suffix("%").visible(uiSounds::get));
     public static final BooleanSetting notifications = BEHAVIOUR.add(new BooleanSetting("Notifications", "Show toast notifications", true));
     public static final BooleanSetting toggleNotifications = BEHAVIOUR.add(new BooleanSetting("Toggle Alerts", "Notify when a module is toggled with its keybind", true)
             .visible(notifications::get));
@@ -42,20 +48,23 @@ public final class ClientSettings {
     // ---- Theme page --------------------------------------------------------------------
 
     public static final SettingSection ACCENT = new SettingSection("Accent");
-    public static final ColorSetting accent = ACCENT.add(new ColorSetting("Accent Color", "Main highlight colour", 0xFF8B5CF6));
+    public static final ColorSetting accent = ACCENT.add(new ColorSetting("Accent Color", "Main highlight colour", 0xFF3391FC));
     public static final BooleanSetting gradient = ACCENT.add(new BooleanSetting("Gradient", "Blend the accent into a second hue", true));
-    public static final NumberSetting gradientShift = ACCENT.add(new NumberSetting("Gradient Shift", "Hue distance of the second colour", 0.1, 0.02, 0.4, 0.01)
+    public static final NumberSetting gradientShift = ACCENT.add(new NumberSetting("Gradient Shift",
+            "Hue distance of the second colour: below 0 it turns one way round the wheel (Maro's blue towards cyan), above 0 the other",
+            -0.07, -0.4, 0.4, 0.01)
             .visible(gradient::get));
     public static final BooleanSetting rainbow = ACCENT.add(new BooleanSetting("Rainbow", "Cycle the accent through every hue", false));
     public static final NumberSetting rainbowSpeed = ACCENT.add(new NumberSetting("Rainbow Speed", "Seconds per full cycle", 8, 2, 30, 1).suffix("s")
             .visible(rainbow::get));
 
     public static final SettingSection WINDOW = new SettingSection("Window");
-    public static final ColorSetting background = WINDOW.add(new ColorSetting("Background Color", "Colour of the menu window", 0xFF000000));
+    public static final ColorSetting background = WINDOW.add(new ColorSetting("Background Color", "Colour of the menu window", 0xFF04070D));
     public static final NumberSetting opacity = WINDOW.add(new NumberSetting("Background Opacity", "How see-through the menu window is", 94, 0, 100, 1).suffix("%"));
     public static final NumberSetting radius = WINDOW.add(new NumberSetting("Corner Radius", "Roundness of panels and cards", 6, 0, 10, 0.5));
     public static final BooleanSetting glow = WINDOW.add(new BooleanSetting("Accent Glow", "Soft glow around active elements", true));
     public static final BooleanSetting shadow = WINDOW.add(new BooleanSetting("Window Shadow", "Drop shadow behind the window", true));
+    public static final BooleanSetting contourLines = WINDOW.add(new BooleanSetting("Contour Lines", "Faint map lines behind the menu, like the logo's", true));
 
     public static final List<SettingSection> GENERAL_PAGE = List.of(INTERFACE, BEHAVIOUR);
     public static final List<SettingSection> THEME_PAGE = List.of(ACCENT, WINDOW);

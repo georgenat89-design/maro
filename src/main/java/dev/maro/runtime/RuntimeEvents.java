@@ -30,7 +30,12 @@ public final class RuntimeEvents {
         MeteorClient.EVENT_BUS.post(new TickEvent.Pre());
     }
     public static void tickPost(){MeteorClient.EVENT_BUS.post(new TickEvent.Post());}
-    private static void syncBinds(){for(var module:Modules.get().getAll())module.keybind=Keybind.fromCode(module.getBind().get());}
+    private static void syncBinds(){
+        for(var module:Modules.get().getAll()){
+            int code=module.getBind().get();
+            if(module.keybind==null||module.keybind.code()!=code)module.keybind=Keybind.fromCode(code);
+        }
+    }
     public static void hud(DrawContext context){
         long now=System.nanoTime();double delta=lastHudFrame==0?1.0/60:Math.min(.1,(now-lastHudFrame)/1e9);lastHudFrame=now;
         Renderer2D.context(context);

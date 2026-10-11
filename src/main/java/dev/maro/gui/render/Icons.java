@@ -6,6 +6,13 @@ import org.joml.Matrix3x2fStack;
 
 /** Vector icons drawn with {@link Render2D}; crisp at every GUI scale, no textures needed. */
 public final class Icons {
+    public static final Icon LOCK = (ctx, cx, cy, s, c, h) -> {
+        float t = Math.max(1f, s * 0.09f);
+        Render2D.arc(ctx, cx, cy - s * 0.12f, s * 0.25f, t, 180, 180, c, c);
+        Render2D.roundOutline(ctx, cx - s * 0.36f, cy - s * 0.1f, s * 0.72f, s * 0.55f, s * 0.1f, t, c);
+        Render2D.circle(ctx, cx, cy + s * 0.12f, t, c);
+        Render2D.line(ctx, cx, cy + s * 0.13f, cx, cy + s * 0.26f, t, c);
+    };
     private Icons() {
     }
 
@@ -32,47 +39,60 @@ public final class Icons {
         ms.popMatrix();
     }
 
-    public static final Icon COMBAT = (ctx, cx, cy, s, c, h) -> rotated(ctx, cx, cy, h * 45f, () -> {
+    /** A sword, point up and to the right; it swings a little on hover. */
+    public static final Icon COMBAT = (ctx, cx, cy, s, c, h) -> rotated(ctx, cx, cy, -h * 14f, () -> {
         float t = stroke(s);
-        Render2D.ring(ctx, cx, cy, s * 0.36f, t, c);
-        float in = s * 0.16f, out = s * 0.52f;
-        Render2D.line(ctx, cx, cy - in, cx, cy - out, t, c);
-        Render2D.line(ctx, cx, cy + in, cx, cy + out, t, c);
-        Render2D.line(ctx, cx - in, cy, cx - out, cy, t, c);
-        Render2D.line(ctx, cx + in, cy, cx + out, cy, t, c);
-        Render2D.circle(ctx, cx, cy, t * 0.7f, c);
+        // Blade from the guard to the point, a touch heavier than the other strokes.
+        Render2D.line(ctx, cx - s * 0.13f, cy + s * 0.13f, cx + s * 0.40f, cy - s * 0.40f, t * 1.45f, c);
+        Render2D.line(ctx, cx + s * 0.31f, cy - s * 0.43f, cx + s * 0.46f, cy - s * 0.46f, t, c);
+        Render2D.line(ctx, cx + s * 0.43f, cy - s * 0.31f, cx + s * 0.46f, cy - s * 0.46f, t, c);
+        // Cross guard, grip and pommel.
+        Render2D.line(ctx, cx - s * 0.33f, cy - s * 0.03f, cx + s * 0.03f, cy + s * 0.33f, t * 1.2f, c);
+        Render2D.line(ctx, cx - s * 0.15f, cy + s * 0.15f, cx - s * 0.36f, cy + s * 0.36f, t, c);
+        Render2D.circle(ctx, cx - s * 0.41f, cy + s * 0.41f, t * 0.95f, c);
     });
 
+    /** Speed lines streaming off an arrow; the lines run on hover. */
     public static final Icon MOVEMENT = (ctx, cx, cy, s, c, h) -> {
-        float t = stroke(s), o = h * s * 0.08f;
-        float w = s * 0.22f, hh = s * 0.32f;
-        for (int i = 0; i < 2; i++) {
-            float x = cx - s * 0.22f + i * s * 0.34f + o;
-            int col = i == 0 ? ColorUtil.mulAlpha(c, 0.55f) : c;
-            Render2D.line(ctx, x - w / 2, cy - hh, x + w / 2, cy, t, col);
-            Render2D.line(ctx, x + w / 2, cy, x - w / 2, cy + hh, t, col);
-        }
+        float t = stroke(s), o = h * s * 0.07f;
+        // The arrow head.
+        Render2D.line(ctx, cx + s * 0.08f + o, cy - s * 0.34f, cx + s * 0.46f + o, cy, t * 1.3f, c);
+        Render2D.line(ctx, cx + s * 0.46f + o, cy, cx + s * 0.08f + o, cy + s * 0.34f, t * 1.3f, c);
+        // Three streaks behind it, the middle one longest.
+        Render2D.line(ctx, cx - s * 0.46f - o, cy, cx + s * 0.30f + o, cy, t, c);
+        Render2D.line(ctx, cx - s * 0.30f - o, cy - s * 0.24f, cx - s * 0.02f, cy - s * 0.24f, t, ColorUtil.mulAlpha(c, 0.6f));
+        Render2D.line(ctx, cx - s * 0.30f - o, cy + s * 0.24f, cx - s * 0.02f, cy + s * 0.24f, t, ColorUtil.mulAlpha(c, 0.6f));
     };
 
+    /** A head and shoulders, filled. */
     public static final Icon PLAYER = (ctx, cx, cy, s, c, h) -> {
-        float t = stroke(s);
-        Render2D.ring(ctx, cx, cy - s * 0.2f, s * 0.21f, t, c);
-        Render2D.arc(ctx, cx, cy + s * 0.48f, s * 0.38f, t, 180, 180, c, c);
+        float lift = h * s * 0.04f;
+        Render2D.circle(ctx, cx, cy - s * 0.2f - lift, s * 0.2f, c);
+        Render2D.roundRect(ctx, cx - s * 0.38f, cy + s * 0.08f, s * 0.76f, s * 0.38f, s * 0.19f, c);
     };
 
+    /** An eye: an almond with a pupil that widens on hover. */
     public static final Icon VISUALS = (ctx, cx, cy, s, c, h) -> {
         float t = stroke(s);
-        Render2D.roundOutline(ctx, cx - s * 0.5f, cy - s * 0.3f, s, s * 0.6f, s * 0.3f, t, c);
-        Render2D.circle(ctx, cx, cy, s * (0.12f + 0.05f * h), c);
+        float k = s * 0.604f, r = s * 0.784f;
+        Render2D.arc(ctx, cx, cy + k, r, t, 230.4f, 79.2f, c, c);
+        Render2D.arc(ctx, cx, cy - k, r, t, 50.4f, 79.2f, c, c);
+        Render2D.ring(ctx, cx, cy, s * 0.16f, t, c);
+        Render2D.circle(ctx, cx, cy, s * (0.06f + 0.04f * h), c);
     };
 
+    /** A cube, seen from above a corner; it opens up a little on hover. */
     public static final Icon MISC = (ctx, cx, cy, s, c, h) -> {
-        float t = stroke(s), b = s * 0.4f, g = s * (0.08f + 0.04f * h);
-        for (int i = 0; i < 4; i++) {
-            float x = i % 2 == 0 ? cx - g / 2 - b : cx + g / 2;
-            float y = i < 2 ? cy - g / 2 - b : cy + g / 2;
-            Render2D.roundOutline(ctx, x, y, b, b, b * 0.3f, t, c);
+        float t = stroke(s), e = h * s * 0.03f;
+        float[][] hex = {{0f, -0.46f}, {0.41f, -0.23f}, {0.41f, 0.23f}, {0f, 0.46f}, {-0.41f, 0.23f}, {-0.41f, -0.23f}};
+        for (int i = 0; i < 6; i++) {
+            float[] a = hex[i], b = hex[(i + 1) % 6];
+            Render2D.line(ctx, cx + a[0] * s, cy + a[1] * s, cx + b[0] * s, cy + b[1] * s, t, c);
         }
+        float mx = cx, my = cy + s * 0.01f + e;
+        Render2D.line(ctx, mx, my, cx - s * 0.41f, cy - s * 0.23f, t, c);
+        Render2D.line(ctx, mx, my, cx + s * 0.41f, cy - s * 0.23f, t, c);
+        Render2D.line(ctx, mx, my, cx, cy + s * 0.46f, t, c);
     };
 
     public static final Icon SETTINGS = (ctx, cx, cy, s, c, h) -> rotated(ctx, cx, cy, h * 60f, () -> {

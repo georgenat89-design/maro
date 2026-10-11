@@ -26,6 +26,7 @@ public class TextField {
     };
     private Runnable onEnter = () -> {
     };
+    private boolean counter;
 
     public TextField(String placeholder, int maxLength) {
         this.placeholder = placeholder;
@@ -44,6 +45,12 @@ public class TextField {
 
     public TextField onEnter(Runnable onEnter) {
         this.onEnter = onEnter;
+        return this;
+    }
+
+    /** Show how many of the allowed characters are used, like "5/12", at the right. */
+    public TextField counter() {
+        this.counter = true;
         return this;
     }
 
@@ -79,6 +86,12 @@ public class TextField {
             tx = x + 19;
         }
         float right = x + w - 6;
+        if (counter) {
+            String used = text.length() + "/" + maxLength;
+            int tone = text.length() >= maxLength ? Theme.accent() : Theme.TEXT_MUTED;
+            Fonts.drawRight(ctx, used, right, y + h / 2f, tone, false, 0.65f);
+            right -= Fonts.width(used, false, 0.65f) + 5;
+        }
         if (hint != null && text.isEmpty()) {
             float hw = Fonts.width(hint, false, 0.7f) + 8;
             float hx = x + w - hw - 4;

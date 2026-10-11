@@ -66,7 +66,8 @@ public final class SkinAccessoriesLayer extends FeatureRenderer<PlayerEntityRend
     }
     public static void applyWingPose(MatrixStack pose, AccessoryModels.Motion wing, float spread, float size, float phase, float amount) {
         float opening = Math.max(0, Math.min(90, spread));
-        float reach = 13 * Math.max(0, amount);
+        // Wider beats the harder the player moves; the bounds below keep them behind the shoulders.
+        float reach = 22 * Math.max(0, amount);
         float close = Math.min(reach, opening), open = Math.min(reach, 90 - opening);
         // A smooth bounded wave keeps even maximum-strength flaps behind the shoulders.
         float wave = ((float)Math.sin(phase * 2.2) + 1) * .5f;

@@ -79,6 +79,7 @@ public abstract class PlayerEspWorldRendererMixin {
                                      Matrix4f positionMatrix, Matrix4f projectionMatrix, Matrix4f cullingProjection, GpuBufferSlice fog,
                                      Vector4f fogColor, boolean renderSky, CallbackInfo ci) {
         PlayerEspRenderer.beginFrame(positionMatrix, projectionMatrix);
+        dev.maro.render.esp.BlockEspRenderer.beginFrame(positionMatrix, projectionMatrix);
     }
 
     @Inject(method = "pushEntityRenders", at = @At("TAIL"))

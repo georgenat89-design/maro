@@ -2,7 +2,6 @@ package dev.maro.mixin;
 
 import dev.maro.module.impl.visuals.NoRender;
 import dev.maro.module.impl.visuals.NoRender.Part;
-import dev.maro.module.impl.visuals.PotatoGraphics;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.hud.BossBarHud;
 import net.minecraft.client.gui.hud.InGameHud;
@@ -11,7 +10,10 @@ import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.ParticleManager;
 import net.minecraft.client.render.Frustum;
 import net.minecraft.client.render.GameRenderer;
+import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.WeatherRendering;
+import net.minecraft.client.texture.Sprite;
+import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.client.render.entity.EntityRenderManager;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
@@ -41,8 +43,20 @@ public final class NoRenderMixins {
     @Mixin(InGameOverlayRenderer.class)
     public abstract static class Overlays {
         @Inject(method = "renderFireOverlay", at = @At("HEAD"), cancellable = true)
-        private static void maro$fire(CallbackInfo ci) {
-            if (NoRender.hides(Part.FIRE)) ci.cancel();
+        private static void maro$fire(MatrixStack matrices, VertexConsumerProvider consumers, Sprite sprite, CallbackInfo ci) {
+            if (NoRender.hides(Part.FIRE)) {
+                ci.cancel();
+                return;
+            }
+            // Better Looks' Low Fire: moved down while drawn, and back after.
+            float drop = dev.maro.module.impl.visuals.BetterLooks.fireDrop();
+            if (drop > 0) matrices.translate(0, -drop, 0);
+        }
+
+        @Inject(method = "renderFireOverlay", at = @At("RETURN"))
+        private static void maro$fireAfter(MatrixStack matrices, VertexConsumerProvider consumers, Sprite sprite, CallbackInfo ci) {
+            float drop = dev.maro.module.impl.visuals.BetterLooks.fireDrop();
+            if (drop > 0) matrices.translate(0, drop, 0);
         }
 
         @Inject(method = "renderUnderwaterOverlay", at = @At("HEAD"), cancellable = true)
@@ -136,10 +150,10 @@ public final class NoRenderMixins {
                 at = @At("HEAD"), cancellable = true)
         private void maro$explosions(ParticleEffect effect, double x, double y, double z, double vx, double vy, double vz,
                                      CallbackInfoReturnable<Particle> cir) {
-            if (PotatoGraphics.hidesParticles()) {
-                cir.setReturnValue(null);
-            } else if (NoRender.hides(Part.EXPLOSIONS)
+            if (NoRender.hides(Part.EXPLOSIONS)
                     && (effect.getType() == ParticleTypes.EXPLOSION || effect.getType() == ParticleTypes.EXPLOSION_EMITTER)) {
+                cir.setReturnValue(null);
+            } else if (dev.maro.module.impl.visuals.BetterLooks.dropParticle(effect.getType())) {
                 cir.setReturnValue(null);
             }
         }
@@ -149,13 +163,13 @@ public final class NoRenderMixins {
     public abstract static class MiningParticles {
         @Inject(method = "spawnBlockBreakingParticle", at = @At("HEAD"), cancellable = true)
         private void maro$miningParticles(CallbackInfo ci) {
-            if (NoRender.hides(Part.MINING_PARTICLES) || PotatoGraphics.hidesParticles()) ci.cancel();
+            if (NoRender.hides(Part.MINING_PARTICLES)) ci.cancel();
         }
 
         /** The clouds of debris an explosion throws out, sent by the server with the explosion. */
         @Inject(method = "addBlockParticleEffects", at = @At("HEAD"), cancellable = true)
         private void maro$explosionDebris(CallbackInfo ci) {
-            if (NoRender.hides(Part.EXPLOSIONS) || PotatoGraphics.hidesParticles()) ci.cancel();
+            if (NoRender.hides(Part.EXPLOSIONS)) ci.cancel();
         }
     }
 
@@ -164,7 +178,7 @@ public final class NoRenderMixins {
     public abstract static class Entities {
         @Inject(method = "shouldRender", at = @At("HEAD"), cancellable = true)
         private void maro$entities(Entity entity, Frustum frustum, double x, double y, double z, CallbackInfoReturnable<Boolean> cir) {
-            if (hidden(entity) || PotatoGraphics.hidesEntity(entity)) cir.setReturnValue(false);
+            if (hidden(entity)) cir.setReturnValue(false);
         }
 
         private static boolean hidden(Entity entity) {

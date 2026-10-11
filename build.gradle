@@ -32,6 +32,14 @@ configurations {
 dependencies {
     implementation 'org.yaml:snakeyaml:2.7'
     include 'org.yaml:snakeyaml:2.7'
+    // WebP icons for Better Textures (Modrinth stores many pack icons as WebP). Pure Java.
+    def twelveMonkeys = ['com.twelvemonkeys.common:common-lang', 'com.twelvemonkeys.common:common-io',
+                         'com.twelvemonkeys.common:common-image', 'com.twelvemonkeys.imageio:imageio-core',
+                         'com.twelvemonkeys.imageio:imageio-metadata', 'com.twelvemonkeys.imageio:imageio-webp']
+    twelveMonkeys.each {
+        implementation "${it}:3.12.0"
+        include "${it}:3.12.0"
+    }
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
@@ -63,15 +71,56 @@ tasks.register('runProductionClientGameTest', net.fabricmc.loom.task.prod.Client
     if (providers.gradleProperty("meteorTestJar").isPresent()) {
         mods.from(file(providers.gradleProperty("meteorTestJar").get()))
     }
+    if (providers.gradleProperty("compatibilityTestJars").isPresent()) {
+        providers.gradleProperty("compatibilityTestJars").get().split('\\|').each { mods.from(file(it)) }
+    }
+    jvmArgs.add("-Dmaro.gametest.renderCompatOnly=" + providers.gradleProperty("renderCompatTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.renderCompatProfileOnly=" + providers.gradleProperty("renderCompatProfileOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.renderProfile=" + providers.gradleProperty("renderTestProfile").getOrElse(""))
     jvmArgs.add("-Dmaro.gametest.projectionOnly=" + providers.gradleProperty("projectionTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.petOnly=" + providers.gradleProperty("petTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.skyOnly=" + providers.gradleProperty("skyTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.totemOnly=" + providers.gradleProperty("totemTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.baseEspOnly=" + providers.gradleProperty("baseEspTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.staffOnly=" + providers.gradleProperty("staffTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.relogOnly=" + providers.gradleProperty("relogTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.chestTagsOnly=" + providers.gradleProperty("chestTagsTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.airFallOnly=" + providers.gradleProperty("airFallTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.acOffOnly=" + providers.gradleProperty("acOffTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.autoTridentOnly=" + providers.gradleProperty("autoTridentTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.spotifyOnly=" + providers.gradleProperty("spotifyTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.spotifyPhoneOnly=" + providers.gradleProperty("spotifyPhoneTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.hudOnly=" + providers.gradleProperty("hudTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.builderOnly=" + providers.gradleProperty("builderTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.builderAuctionOnly=" + providers.gradleProperty("builderAuctionTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderShoppingOnly=" + providers.gradleProperty("builderShoppingTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderRecoveryOnly=" + providers.gradleProperty("builderRecoveryTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderGhostOnly=" + providers.gradleProperty("builderGhostTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderNetworkOnly=" + providers.gradleProperty("builderNetworkTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderGrimOnly=" + providers.gradleProperty("builderGrimTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.grimFixture=" + providers.gradleProperty("builderGrimFixture").getOrElse(""))
     jvmArgs.add("-Dmaro.gametest.builderNavigationOnly=" + providers.gradleProperty("builderNavigationTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderChestReturnOnly=" + providers.gradleProperty("builderChestReturnTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderStashOnly=" + providers.gradleProperty("builderStashTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderStashHomesOnly=" + providers.gradleProperty("builderStashHomesTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderStashCheckpointOnly=" + providers.gradleProperty("builderStashCheckpointTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderStashCheckpointStage=" + providers.gradleProperty("builderStashCheckpointStage").getOrElse("423"))
+    jvmArgs.add("-Dmaro.gametest.builderStashUpperOnly=" + providers.gradleProperty("builderStashUpperTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderStashFinalOnly=" + providers.gradleProperty("builderStashFinalTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderTurnOnly=" + providers.gradleProperty("builderTurnTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderEntryOnly=" + providers.gradleProperty("builderEntryTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderSurfaceOnly=" + providers.gradleProperty("builderSurfaceTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderWaterOnly=" + providers.gradleProperty("builderWaterTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderStagingOnly=" + providers.gradleProperty("builderStagingTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderCleanupOnly=" + providers.gradleProperty("builderCleanupTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderSealedEscapeOnly=" + providers.gradleProperty("builderSealedEscapeTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderHomeOnly=" + providers.gradleProperty("builderHomeTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderCleanupCeilingOnly=" + providers.gradleProperty("builderCleanupCeilingTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderRepairCycleOnly=" + providers.gradleProperty("builderRepairCycleTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.builderDoorOnly=" + providers.gradleProperty("builderDoorTestOnly").getOrElse("false"))
+      jvmArgs.add("-Dmaro.gametest.builderReceiverOnly=" + providers.gradleProperty("builderReceiverTestOnly").getOrElse("false"))
+      jvmArgs.add("-Dmaro.gametest.builderHopperOnly=" + providers.gradleProperty("builderHopperTestOnly").getOrElse("false"))
+      jvmArgs.add("-Dmaro.gametest.builderEntryOnly=" + providers.gradleProperty("builderEntryTestOnly").getOrElse("false"))
     jvmArgs.addAll([
             "-Dfabric.client.gametest",
             "-Dfabric.client.gametest.disableNetworkSynchronizer=true",

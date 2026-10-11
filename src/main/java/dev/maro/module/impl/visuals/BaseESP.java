@@ -118,7 +118,7 @@ public final class BaseESP extends Module implements HudElement {
   private final Setting<Integer> scanRange = sgScan.add(new IntSetting.Builder().name("scan-radius")
       .description("Radius in chunks; scans only chunks the client has loaded").defaultValue(12).range(1,32).build());
   private final Setting<Integer> customChunks = sgScan.add(new IntSetting.Builder().name("chunks-per-tick")
-      .defaultValue(6).range(1,8).visible(() -> scanSpeed.get() == ScanSpeed.Custom).build());
+      .defaultValue(16).range(1,32).visible(() -> scanSpeed.get() == ScanSpeed.Custom).build());
   private final Setting<Integer> customInterval = sgScan.add(new IntSetting.Builder().name("rescan-interval")
       .description("Ticks between routine scans; block changes get priority immediately").defaultValue(40).range(20,400)
       .visible(() -> scanSpeed.get() == ScanSpeed.Custom).build());
@@ -234,10 +234,12 @@ public final class BaseESP extends Module implements HudElement {
   }
   public int pendingScans() { return queuedChunks.size(); }
   public int checkedChunks() { return lastScanTickByChunk.size(); }
-  private int chunksPerTick() { return switch(scanSpeed.get()) { case Fast -> 6; case Balanced -> 3; case Eco -> 1; case Custom -> customChunks.get(); }; }
+  private int chunksPerTick() { return switch(scanSpeed.get()) { case Fast -> 16; case Balanced -> 6; case Eco -> 2; case Custom -> customChunks.get(); }; }
+  /** How many chunks may wait for the scanner at once. */
+  public int queueLimit() { return Math.max(12, chunksPerTick() * 2); }
   private int rescanTicks() { return switch(scanSpeed.get()) { case Fast -> 40; case Balanced -> 80; case Eco -> 160; case Custom -> customInterval.get(); }; }
-  private int rebuildTicks() { return switch(scanSpeed.get()) { case Fast, Custom -> 2; case Balanced -> 6; case Eco -> 10; }; }
-  private double snapshotBudget() { return switch(scanSpeed.get()) { case Fast -> 2; case Balanced -> 1.25; case Eco -> .6; case Custom -> customBudget.get(); }; }
+  private int rebuildTicks() { return switch(scanSpeed.get()) { case Fast, Custom -> 1; case Balanced -> 4; case Eco -> 10; }; }
+  private double snapshotBudget() { return switch(scanSpeed.get()) { case Fast -> 3; case Balanced -> 1.5; case Eco -> .6; case Custom -> customBudget.get(); }; }
 
   @EventHandler private void onBlockUpdate(BlockUpdateEvent event) {
     if (mc.world != lastWorld || event.pos.getY() < SCAN_MIN_Y || event.pos.getY() > SCAN_MAX_Y) return;
@@ -256,7 +258,7 @@ public final class BaseESP extends Module implements HudElement {
   }
 
   private ChunkPos nextCandidate(ChunkPos origin, int radius) {
-    // Never let updates bypass the twelve-job limit. A running stale snapshot is rejected on publication.
+    // Never let updates bypass the queue limit. A running stale snapshot is rejected on publication.
     for (int n = urgentChunks.size(); n > 0; n--) {
       ChunkPos pos = urgentChunks.removeFirst(); urgentSet.remove(pos);
       if (chunkDistanceSq(origin,pos) > radius*radius || getLoadedChunk(pos.x,pos.z) == null) continue;
@@ -329,7 +331,7 @@ public final class BaseESP extends Module implements HudElement {
       }
 
       long deadline = System.nanoTime() + (long)(snapshotBudget()*1_000_000);
-      for (int submitted=0; submitted<chunksPerTick() && queuedChunks.size()<12 && System.nanoTime()<deadline; submitted++) {
+      for (int submitted=0; submitted<chunksPerTick() && queuedChunks.size()<queueLimit() && System.nanoTime()<deadline; submitted++) {
         ChunkPos chunkPos = nextCandidate(playerChunk,radius);
         if (chunkPos == null) break;
         WorldChunk chunk = getLoadedChunk(chunkPos.x,chunkPos.z);
@@ -427,6 +429,8 @@ public final class BaseESP extends Module implements HudElement {
       int startX = chunkPos.getStartX();
       int startZ = chunkPos.getStartZ();
       int worldTop = -1;
+      Block lastBlock = null;
+      BlockKind lastKind = UNTRACKED;
 
       for (int sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
         ChunkSection section = sections[sectionIndex];
@@ -443,11 +447,12 @@ public final class BaseESP extends Module implements HudElement {
                 int worldX = startX + x;
 
                 for (int z = 0; z < 16; z++) {
-                  BlockState state = section.getBlockState(x, y, z);
-                  Block block = state.getBlock();
-                  BaseESP.BaseBlockType type = blockType(block);
-                  BaseESP.StructureTrait trait = structureTrait(block);
-                  if (type != null || trait != null) {
+                  Block block = section.getBlockState(x, y, z).getBlock();
+                  // Runs of the same block (stone, deepslate) skip even the cache.
+                  if (block != lastBlock) { lastBlock = block; lastKind = kindOf(block); }
+                  BaseESP.BaseBlockType type = lastKind.type();
+                  BaseESP.StructureTrait trait = lastKind.trait();
+                  if (lastKind != UNTRACKED) {
                     int worldZ = startZ + z;
                     BaseESP.ChunkColumnBuilder column2 =
                         columns.computeIfAbsent(
@@ -2914,8 +2919,28 @@ public final class BaseESP extends Module implements HudElement {
   }
 
   private static boolean isTrackedState(BlockState state) {
-    Block block = state.getBlock();
-    return blockType(block) != null || structureTrait(block) != null;
+    return kindOf(state.getBlock()) != UNTRACKED;
+  }
+
+  /** What a block counts as: its storage type or structure trait, or neither. */
+  private record BlockKind(BaseESP.BaseBlockType type, BaseESP.StructureTrait trait) {}
+  private static final BlockKind UNTRACKED = new BlockKind(null, null);
+  /**
+   * Each block's kind, worked out once. Working it out takes the block's registry name and a score
+   * of string tests; a chunk is sixteen thousand blocks, so doing that per block made one chunk
+   * take milliseconds and a full sweep of the scan radius take seconds.
+   */
+  private static final Map<Block, BlockKind> KINDS = new ConcurrentHashMap<>();
+
+  private static BlockKind kindOf(Block block) {
+    BlockKind kind = KINDS.get(block);
+    if (kind == null) {
+      BaseESP.BaseBlockType type = blockType(block);
+      BaseESP.StructureTrait trait = structureTrait(block);
+      kind = type == null && trait == null ? UNTRACKED : new BlockKind(type, trait);
+      KINDS.put(block, kind);
+    }
+    return kind;
   }
 
   private static boolean isBaseState(BlockState state) {

@@ -73,7 +73,7 @@ public class RegionMap extends Module {
     private static final double DOT = 2.6;
     private static final double CHIP_PAD = 2.4;
 
-    private static final double PANEL_RADIUS = 5;
+    private static final double PANEL_RADIUS = 6.5;
     private static final double CELL_RADIUS = RegionMapRaster.CORNER_UNITS;
     private static final double RULE = 0.6;
 
@@ -107,6 +107,9 @@ public class RegionMap extends Module {
     private static final double PULSE = 1.6;
     private static final double PING = 2.2;
 
+    /** Calm, slightly deep colours that sit well on the dark panel and keep white numbers readable; the default. */
+    private static final int[] SOFT = { 0x4C7DF0, 0xE5566F, 0x22B07D, 0xE09A2B, 0x8E6BEF, 0x1FA7C2, 0xD95AA5 };
+
     /** Clean, bright colours that keep white numbers readable, in {@link RegionGrid.Locale} order. */
     private static final int[] BRIGHT = { 0x3B82F6, 0xF43F5E, 0x10B981, 0xF59E0B, 0x8B5CF6, 0x06B6D4, 0xEC4899 };
 
@@ -126,6 +129,7 @@ public class RegionMap extends Module {
     private static final String[] HEADINGS = { "S", "SW", "W", "NW", "N", "NE", "E", "SE" };
 
     public enum Palette {
+        Soft,
         Bright,
         Rich,
         Vivid,
@@ -135,6 +139,7 @@ public class RegionMap extends Module {
     }
 
     public enum TileStyle {
+        Clean,
         Flat,
         Midnight,
         Glossy
@@ -208,7 +213,7 @@ public class RegionMap extends Module {
     private final Setting<Double> numberSize = sgContent.add(new DoubleSetting.Builder()
         .name("number-size")
         .description("Size of the numbers, without resizing the map. Disable Fit Numbers to enlarge digits past a small cell's bounds.")
-        .defaultValue(1.25)
+        .defaultValue(1.1)
         .range(0.5, 2.5)
         .sliderRange(0.5, 2.5)
         .visible(numbers::get)
@@ -268,7 +273,7 @@ public class RegionMap extends Module {
     private final Setting<TileStyle> tileStyle = sgLook.add(new EnumSetting.Builder<TileStyle>()
         .name("map-style")
         .description("Flat: solid colour tiles. Midnight: deep tiles with coloured numbers. Glossy: solid tiles lit from above.")
-        .defaultValue(TileStyle.Flat)
+        .defaultValue(TileStyle.Clean)
         .build()
     );
 
@@ -336,7 +341,7 @@ public class RegionMap extends Module {
     private final Setting<Integer> spotlightStrength = sgLook.add(new IntSetting.Builder()
         .name("spotlight-dim")
         .description("Flat and Glossy only: how far the other groups are dimmed, as a percentage.")
-        .defaultValue(28)
+        .defaultValue(38)
         .range(0, 85)
         .sliderRange(0, 85)
         .visible(() -> spotlight.get() && tileStyle.get() != TileStyle.Midnight)
@@ -353,7 +358,7 @@ public class RegionMap extends Module {
     private final Setting<Integer> backgroundOpacity = sgPanel.add(new IntSetting.Builder()
         .name("panel-opacity")
         .description("How solid the panel is, as a percentage. The panel only: the cells, the rim and the lettering keep their own.")
-        .defaultValue(88)
+        .defaultValue(92)
         .range(0, 100)
         .sliderRange(0, 100)
         .build()
@@ -405,7 +410,7 @@ public class RegionMap extends Module {
     private final Setting<Palette> palette = sgColors.add(new EnumSetting.Builder<Palette>()
         .name("map-colors")
         .description("Bright pops, Rich is calmer, Vivid is louder. Muted and Signal are the original colours. Custom lets you change all seven.")
-        .defaultValue(Palette.Bright)
+        .defaultValue(Palette.Soft)
         .build()
     );
 
@@ -435,7 +440,7 @@ public class RegionMap extends Module {
     private double rasterNumberSize;
     private boolean rasterFitNumbers;
     private boolean rasterCompactNumberFit;
-    private boolean rasterGloss;
+    private boolean rasterGloss, rasterSeamless;
     private int rasterSpotlight;
     private double rasterDim;
     private int[] rasterFills;
@@ -446,11 +451,22 @@ public class RegionMap extends Module {
     }
 
     @Override public com.google.gson.JsonObject saveExtra() {
-        var data = super.saveExtra(); data.addProperty("region-layout-revision", 1); return data;
+        var data = super.saveExtra(); data.addProperty("region-layout-revision", 3); return data;
     }
     @Override public void loadExtra(com.google.gson.JsonObject data) {
         var copy = data.deepCopy(); copy.remove("region-layout-revision"); super.loadExtra(copy);
-        if (!data.has("region-layout-revision") && Math.abs(scale.get() - 1) < .00001) scale.reset();
+        int revision = data.has("region-layout-revision") ? data.get("region-layout-revision").getAsInt() : 0;
+        if (revision < 1 && Math.abs(scale.get() - 1) < .00001) scale.reset();
+        if (revision < 2) {
+            // The calmer look: anything still at the old default moves to the new one; anything
+            // chosen by hand stays as it was.
+            if (palette.get() == Palette.Bright) palette.reset();
+            if (Math.abs(numberSize.get() - 1.25) < .00001) numberSize.reset();
+            if (spotlightStrength.get() == 28) spotlightStrength.reset();
+            if (backgroundOpacity.get() == 88) backgroundOpacity.reset();
+        }
+        // One map instead of a field of boxes, for anyone still on the old default style.
+        if (revision < 3 && tileStyle.get() == TileStyle.Flat) tileStyle.reset();
     }
 
     private ColorSetting.Builder group(String name, RegionGrid.Locale of) {
@@ -487,6 +503,7 @@ public class RegionMap extends Module {
                 naWestColor.get(), asiaColor.get(), oceaniaColor.get(), europeColor.get()};
         } else {
             int[] rgb = switch (palette.get()) {
+                case Soft -> SOFT;
                 case Rich -> RICH;
                 case Vivid -> VIVID;
                 case Muted -> MUTED;
@@ -717,24 +734,18 @@ public class RegionMap extends Module {
         RoundedBox.draw(left + panelWidth / 2, top + panelHeight / 2, panelWidth, panelHeight,
             PANEL_RADIUS * unit, Math.max(1, RULE * unit), FEATHER, 0, panel, rim);
 
-        crown(left, top, unit, colors, clock);
+        // The light along the top edge is your group's colour; off the map, every group's in turn.
+        crown(left, top, unit, locale == null ? colors : new Color[] {own}, clock);
 
-        // A darker well the mosaic sits in, so its edge reads as a frame.
-        double well = 1.4;
-        RoundedBox.draw(left + WIDTH * unit / 2, top + (gridTop + GRID / 2) * unit, (GRID + well * 2) * unit, (GRID + well * 2) * unit,
-            (CELL_RADIUS + well + 0.6) * unit, Math.max(1, RULE * unit), FEATHER, 0,
-            new Color(0, 0, 0, (int) Math.round(120 * Math.max(0.35, opacity))), tinted(rim, 0.7));
-
-        if (header.get()) {
-            chip(compassLeft, bandMiddle - compassHeight / 2, compassWidth, compassHeight, unit, WHITE, rim, 0.06);
-            kite(compassLeft + (CHIP_PAD + 1.6) * unit, bandMiddle, 1.7 * unit, shownYaw, ownLight, false);
-        }
+        // Nothing is boxed in: the compass, the coordinates and the key are lettering and dots
+        // straight on the panel.
+        if (header.get()) kite(compassLeft + (CHIP_PAD + 1.6) * unit, bandMiddle, 1.7 * unit, shownYaw, ownLight, false);
 
         if (footer.get()) {
-            for (int i = 0; i < 2; i++) {
-                chip(left + (PAD + i * (footChip + CHIP_GAP)) * unit, top + footTop * unit, footChip * unit, FOOTER * unit,
-                    unit, WHITE, rim, 0.05);
-            }
+            // A hairline between the map and the coordinates under it.
+            double ruleY = top + (footTop - BAND_GAP / 2) * unit;
+            RoundedBox.draw(left + WIDTH * unit / 2, ruleY, GRID * unit, Math.max(1, RULE * unit), 0, 0, FEATHER, 0,
+                tinted(WHITE, 0.08), tinted(WHITE, 0.08));
         }
 
         if (chips != null) {
@@ -744,16 +755,13 @@ public class RegionMap extends Module {
                 double chipLeft = left + chips.x()[i] * unit;
                 double chipTop = top + (legendTop + chips.row()[i] * (CHIP + CHIP_GAP)) * unit;
                 boolean mine = all[i] == locale;
-
-                if (mine) chip(chipLeft, chipTop, chips.width()[i] * unit, CHIP * unit, unit, colors[i], tinted(colors[i], 0.9), 0.24);
-                else chip(chipLeft, chipTop, chips.width()[i] * unit, CHIP * unit, unit, WHITE, rim, 0.04);
-
                 double dotX = chipLeft + (CHIP_PAD + DOT / 2) * unit;
                 double dotY = chipTop + CHIP * unit / 2;
 
-                if (mine) RoundedBox.draw(dotX, dotY, DOT * 1.8 * unit, DOT * 1.8 * unit, DOT * 0.9 * unit, 0, DOT * unit, 0,
-                    tinted(colors[i], 0.55), tinted(colors[i], 0.55));
-                RoundedBox.draw(dotX, dotY, DOT * unit, DOT * unit, DOT / 2 * unit, 0, FEATHER, 0, colors[i], colors[i]);
+                if (mine) RoundedBox.draw(dotX, dotY, DOT * 2.2 * unit, DOT * 2.2 * unit, DOT * 1.1 * unit, 0, DOT * 1.2 * unit, 0,
+                    tinted(colors[i], 0.45), tinted(colors[i], 0.45));
+                RoundedBox.draw(dotX, dotY, DOT * unit, DOT * unit, DOT / 2 * unit, 0, FEATHER, 0,
+                    mine ? colors[i] : tinted(colors[i], 0.7), mine ? colors[i] : tinted(colors[i], 0.7));
             }
         }
 
@@ -839,9 +847,7 @@ public class RegionMap extends Module {
             big.draw(number, numberLeft, numberCapsTop - big.capsTop(), here < 0 ? tinted(ink, 0.5) : ink, 0, shadow.get());
 
             double stackLeft = numberLeft + big.width(number, 0) + 3.2 * unit;
-            label.draw("REGION MAP", stackLeft, numberCapsTop - label.capsTop(), tinted(ink, 0.42), TRACKING * 1.6 * unit, shadow.get());
-
-            double groupCapsTop = numberCapsTop + big.caps() - groupFont.caps();
+            double groupCapsTop = Math.round(bandMiddle - groupFont.caps() / 2);
             groupFont.draw(group, stackLeft, groupCapsTop - groupFont.capsTop(), locale == null ? tinted(ink, 0.5) : ownLight,
                 TRACKING * unit, shadow.get());
 
@@ -857,8 +863,10 @@ public class RegionMap extends Module {
                 double chipLeft = left + (PAD + i * (footChip + CHIP_GAP)) * unit;
                 double capsTop = Math.round(top + footTop * unit + (FOOTER * unit - footFont.caps()) / 2) - footFont.capsTop();
 
-                footFont.draw(names[i], chipLeft + CHIP_PAD * unit, capsTop, ownLight, 0, shadow.get());
-                footFont.draw(values[i], chipLeft + (footChip - CHIP_PAD) * unit - footFont.width(values[i], 0), capsTop, ink, 0, shadow.get());
+                // "X -50" read as one: the letter in your group's colour, the number just after it.
+                double nameLeft = chipLeft + CHIP_PAD * unit;
+                footFont.draw(names[i], nameLeft, capsTop, ownLight, 0, shadow.get());
+                footFont.draw(values[i], nameLeft + footFont.width(names[i], 0) + 2.2 * unit, capsTop, ink, 0, shadow.get());
             }
         }
 
@@ -1054,6 +1062,7 @@ public class RegionMap extends Module {
         boolean compactFit = compactNumberFit.get();
         TileStyle style = tileStyle.get();
         boolean gloss = style == TileStyle.Glossy;
+        boolean seamless = style == TileStyle.Clean;
         double dim = spot < 0 ? 0 : spotlightStrength.get() / 100.0;
         int[] fills = new int[colors.length];
         int[] inks = new int[colors.length];
@@ -1074,10 +1083,10 @@ public class RegionMap extends Module {
         int rasterSpot = style == TileStyle.Midnight ? -1 : spot;
         if (gridTexture != null && size == rasterSize && showNumbers == rasterNumbers
             && (!showNumbers || chosenFont == rasterFont && chosenSize == rasterNumberSize && fit == rasterFitNumbers && compactFit == rasterCompactNumberFit)
-            && gloss == rasterGloss && rasterSpot == rasterSpotlight && dim == rasterDim
+            && gloss == rasterGloss && seamless == rasterSeamless && rasterSpot == rasterSpotlight && dim == rasterDim
             && Arrays.equals(fills, rasterFills) && Arrays.equals(inks, rasterInks)) return;
 
-        var image = RegionMapRaster.create(size, fills, inks, showNumbers, chosenFont, chosenSize, fit, gloss, rasterSpot, dim, compactFit).image();
+        var image = RegionMapRaster.create(size, fills, inks, showNumbers, chosenFont, chosenSize, fit, gloss, rasterSpot, dim, compactFit, seamless).image();
         int[] pixels = image.getRGB(0, 0, size, size, null, 0, size);
         byte[] rgba = new byte[size * size * 4];
         for (int i = 0; i < pixels.length; i++) {
@@ -1097,6 +1106,7 @@ public class RegionMap extends Module {
         rasterFitNumbers = fit;
         rasterCompactNumberFit = compactFit;
         rasterGloss = gloss;
+        rasterSeamless = seamless;
         rasterSpotlight = rasterSpot;
         rasterDim = dim;
         rasterFills = fills;

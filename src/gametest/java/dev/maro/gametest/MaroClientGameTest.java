@@ -22,6 +22,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
     @Override
     public void runTest(ClientGameTestContext context) {
         MiningCadenceChecks.run();
+        ClientPerformanceChecks.run();
         context.getInput().resizeWindow(1280, 720);
         context.runOnClient(client -> {
             if (ModuleManager.getByName("Example") == null) ModuleManager.register(new ExampleModule());
@@ -29,12 +30,49 @@ public class MaroClientGameTest implements FabricClientGameTest {
             ModuleManager.all().forEach(module -> module.setEnabled(false));
         });
 
+        if(Boolean.getBoolean("maro.gametest.builderGrimOnly")){BuilderGrimChecks.run(context);return;}
+        if (Boolean.getBoolean("maro.gametest.renderCompatOnly")) {
+            int passes = Boolean.getBoolean("maro.gametest.renderCompatProfileOnly") ? 3 : 1;
+            for (int pass = 0; pass < passes; pass++) {
+                try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
+                    // Companion chunk scanners keep scheduling rebuilds after the world is ready.
+                    context.waitTicks(40);
+                    context.setScreen(() -> null);
+                    context.waitTicks(5);
+                    RenderCompatibilityChecks.run(context, singleplayer);
+                }
+                System.out.println("[render-compat] World join/leave pass " + (pass + 1) + "/" + passes);
+            }
+            return;
+        }
         try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
             singleplayer.getClientWorld().waitForChunksRender();
 
             // make sure nothing (pause menu, toasts...) is in the way before testing the keybind
             context.setScreen(() -> null);
             context.waitTicks(5);
+            if (Boolean.getBoolean("maro.gametest.acOffOnly")) {
+                AutoTridentChecks.run(context, singleplayer);
+                AntiCheatOffChecks.run(context, singleplayer);
+                return;
+            }
+            if (Boolean.getBoolean("maro.gametest.autoTridentOnly")) {
+                AutoTridentChecks.run(context, singleplayer);
+                return;
+            }
+            if (Boolean.getBoolean("maro.gametest.airFallOnly")) {
+                AirFallChecks.run(context, singleplayer);
+                return;
+            }
+            if (Boolean.getBoolean("maro.gametest.chestTagsOnly")) {
+                ChestTransferChecks.run(context, singleplayer);
+                NametagsChecks.run(context);
+                return;
+            }
+            if (Boolean.getBoolean("maro.gametest.relogOnly")) {
+                MaroRelogChecks.run(context, singleplayer);
+                return;
+            }
             // Optional startup probe for an externally supplied companion addon.
             if (Boolean.getBoolean("maro.gametest.launchOnly")) {
                 context.waitTicks(100);
@@ -48,12 +86,16 @@ public class MaroClientGameTest implements FabricClientGameTest {
             AutoBuilderChecks.imports();
             if (Boolean.getBoolean("maro.gametest.staffOnly")) {
                 StaffNotifierChecks.run(context);
-                AntiVanishChecks.run(context);
                 return;
             }
             if (Boolean.getBoolean("maro.gametest.spotifyOnly")) {
                 SpotifyLyricsChecks.run(context);
                 SpotifyVolumeChecks.run(context);
+                SpotifyPhoneChecks.run(context);
+                return;
+            }
+            if (Boolean.getBoolean("maro.gametest.spotifyPhoneOnly")) {
+                SpotifyPhoneChecks.run(context);
                 return;
             }
             if (Boolean.getBoolean("maro.gametest.hudOnly")) {
@@ -63,6 +105,14 @@ public class MaroClientGameTest implements FabricClientGameTest {
             }
             if (Boolean.getBoolean("maro.gametest.baseEspOnly")) {
                 BaseEspChecks.run(context, singleplayer);
+                return;
+            }
+            if (Boolean.getBoolean("maro.gametest.skyOnly")) {
+                SkyChecks.run(context, singleplayer);
+                return;
+            }
+            if (Boolean.getBoolean("maro.gametest.totemOnly")) {
+                TotemChecks.run(context, singleplayer);
                 return;
             }
             if (Boolean.getBoolean("maro.gametest.petOnly")) {
@@ -76,10 +126,12 @@ public class MaroClientGameTest implements FabricClientGameTest {
             checkNathanPort(context);
             SpotifyLyricsChecks.run(context);
             SpotifyVolumeChecks.run(context);
+            SpotifyPhoneChecks.run(context);
             checkSlowSwing(context);
             checkKeySounds(context);
             checkRegionMap(context);
             AutoTridentChecks.run(context, singleplayer);
+            AntiCheatOffChecks.run(context, singleplayer);
             AutoToolChecks.run(context, singleplayer);
             CrosshairChecks.run(context);
             CrosshairPngChecks.run(context);
@@ -87,9 +139,31 @@ public class MaroClientGameTest implements FabricClientGameTest {
             PetChecks.run(context, singleplayer);
             PlayerEspChecks.run(context, singleplayer);
             BaseEspChecks.run(context, singleplayer);
+            BlockEspChecks.run(context, singleplayer);
+            SpawnerNotifierChecks.run(context, singleplayer);
+            AutoGoliathChecks.run(context, singleplayer);
+            FakePlayerChecks.run(context);
+            NametagsChecks.run(context);
+            ChestTransferChecks.run(context, singleplayer);
+            TrajectoriesChecks.run(context, singleplayer);
+            HandShaderChecks.run(context);
+            OrderDropperChecks.run(context, singleplayer);
+            CoordsFlyChecks.run(context, singleplayer);
+            AirFallChecks.run(context, singleplayer);
+            InventoryHiderChecks.run(context, singleplayer);
+            ArmorHudChecks.run(context, singleplayer);
+            FakeBlockChecks.run(context, singleplayer);
+            BetterLooksChecks.run(context);
+            SkyChecks.run(context, singleplayer);
+            TotemChecks.run(context, singleplayer);
+            ScreenChecks.run(context, singleplayer);
+            EmoteChecks.run(context, singleplayer);
+            CoordSnapperChecks.run(context);
+            BetterTexturesChecks.run(context);
+            DiscordPresenceChecks.run(context);
             StaffNotifierChecks.run(context);
             HudReadabilityChecks.run(context);
-            AntiVanishChecks.run(context);
+            MaroRelogChecks.run(context, singleplayer);
             String before = context.computeOnClient(client -> describe(client));
             context.takeScreenshot("maro-00-world");
 
@@ -104,8 +178,9 @@ public class MaroClientGameTest implements FabricClientGameTest {
             }
             settle(context);
             context.takeScreenshot("maro-01-open");
+            PanelChecks.run(context);
 
-            String[] pages = {"combat", "movement", "player", "visuals", "misc", "settings", "configs", "theme", "socials"};
+            String[] pages = {"combat", "movement", "player", "visuals", "misc", "anti-cheat-off", "settings", "configs", "theme", "socials"};
             for (int i = 0; i < pages.length; i++) {
                 final int index = i;
                 context.runOnClient(client -> ((ClickGuiScreen) client.currentScreen).openPage(index));
@@ -148,8 +223,8 @@ public class MaroClientGameTest implements FabricClientGameTest {
             settle(context);
             context.takeScreenshot("maro-search");
 
-            // Escape clears the search, then unfocuses it, then closes the menu
-            for (int i = 0; i < 4 && context.computeOnClient(client -> client.currentScreen instanceof ClickGuiScreen); i++) {
+            // Escape clears the search, unfocuses it, goes back to the panels, then closes the menu
+            for (int i = 0; i < 6 && context.computeOnClient(client -> client.currentScreen instanceof ClickGuiScreen); i++) {
                 context.getInput().pressKey(GLFW.GLFW_KEY_ESCAPE);
                 settle(context);
             }
@@ -341,6 +416,23 @@ public class MaroClientGameTest implements FabricClientGameTest {
         context.setScreen(() -> new dev.maro.nathan.gui.ChatMacroScreens.Editor(new dev.maro.runtime.gui.GuiTheme(), ModuleManager.get(dev.maro.nathan.modules.ChatMacros.class), ModuleManager.get(dev.maro.nathan.modules.ChatMacros.class).macros.getFirst(), () -> {}));
         context.waitTicks(3);
         context.takeScreenshot("maro-macro-editor");
+        // The macro menu: a row added, typed and bound by pressing its key, as in the menu.
+        context.runOnClient(client -> {
+            var chatMacros = ModuleManager.get(dev.maro.nathan.modules.ChatMacros.class);
+            var menu = new dev.maro.gui.hud.ChatMacroScreen(null, chatMacros);
+            client.setScreen(menu);
+            var rtp = menu.addMacro();
+            menu.setText(rtp, "/rtp");
+            menu.listenFor(rtp);
+            menu.keyPressed(new net.minecraft.client.input.KeyInput(GLFW.GLFW_KEY_K, 0, 0));
+            if (rtp.keybind.get().getValue() != GLFW.GLFW_KEY_K || !rtp.steps.get().getFirst().equals("/rtp")
+                || !rtp.name.get().equals("/rtp"))
+                throw new AssertionError("The macro menu did not type and bind a row: " + rtp.steps.get() + " " + rtp.keybind.get().getValue());
+            var home = menu.addMacro();
+            menu.setText(home, "/home base");
+        });
+        context.waitTicks(4);
+        context.takeScreenshot("maro-chat-macros");
         context.setScreen(() -> null);
         context.runOnClient(client -> ModuleManager.get(dev.maro.nathan.modules.ChatMacros.class).macros.clear());
         for (String name : java.util.List.of("Bloom", "Color Correct", "Motion Blur")) {
@@ -410,24 +502,6 @@ public class MaroClientGameTest implements FabricClientGameTest {
         String lowered = context.computeOnClient(snapshot::apply);
         context.takeScreenshot("maro-potato-graphics-on");
         if (flattened < 200) throw new AssertionError("Potato Graphics did not flatten the block textures: " + flattened);
-        String hiding = context.computeOnClient(client -> {
-            var p = client.player;
-            var near = new net.minecraft.entity.decoration.ArmorStandEntity(client.world, p.getX() + 4, p.getY(), p.getZ());
-            var far = new net.minecraft.entity.decoration.ArmorStandEntity(client.world, p.getX() + 60, p.getY(), p.getZ());
-            var farPlayer = new net.minecraft.client.network.OtherClientPlayerEntity(client.world,
-                    new com.mojang.authlib.GameProfile(java.util.UUID.randomUUID(), "MaroPotatoFar"));
-            farPlayer.setPosition(p.getX() + 60, p.getY(), p.getZ());
-            return "near=" + dev.maro.module.impl.visuals.PotatoGraphics.hidesEntity(near)
-                    + " far=" + dev.maro.module.impl.visuals.PotatoGraphics.hidesEntity(far)
-                    + " farPlayer=" + dev.maro.module.impl.visuals.PotatoGraphics.hidesEntity(farPlayer);
-        });
-        if (!hiding.endsWith("near=false far=true farPlayer=false"))
-            throw new AssertionError("Potato Graphics did not hide far entities (and only those): " + hiding);
-        boolean ok = context.computeOnClient(client -> client.options.getViewDistance().getValue() <= 6
-                && !client.options.getAo().getValue()
-                && client.options.getCloudRenderMode().getValue() == net.minecraft.client.option.CloudRenderMode.OFF
-                && client.options.getParticles().getValue() == net.minecraft.particle.ParticlesMode.MINIMAL
-                && !client.options.getEntityShadows().getValue());
         context.runOnClient(client -> potato.setEnabled(false));
         context.waitTicks(3);
         context.waitFor(client -> dev.maro.module.impl.visuals.PotatoGraphics.texturesSettled(), 2400);
@@ -436,8 +510,24 @@ public class MaroClientGameTest implements FabricClientGameTest {
         singleplayer.getServer().runCommand("tp @a " + home[0] + " " + home[1] + " " + home[2]);
         context.waitTicks(3);
         System.out.println("POTATO before=" + before + " on=" + lowered + " after=" + after + " flattened=" + flattened);
-        if (!ok) throw new AssertionError("Potato Graphics did not lower the settings: " + before + " -> " + lowered);
-        if (!before.equals(after)) throw new AssertionError("Potato Graphics did not restore the settings: " + before + " -> " + after);
+        // Textures only now: your video settings are left exactly as they are.
+        if (!before.equals(lowered) || !before.equals(after))
+            throw new AssertionError("Potato Graphics changed video settings: " + before + " -> " + lowered + " -> " + after);
+
+        // Someone who updated with an older version on gets the settings it lowered put back.
+        context.runOnClient(client -> {
+            client.options.getViewDistance().setValue(5);
+            client.options.getAo().setValue(false);
+            var saved = new com.google.gson.JsonObject();
+            saved.addProperty("render-distance", 12);
+            saved.addProperty("smooth-lighting", true);
+            potato.loadExtra(saved);
+        });
+        context.waitTicks(3);
+        String restored = context.computeOnClient(client -> client.options.getViewDistance().getValue() + "|" + client.options.getAo().getValue());
+        System.out.println("POTATO legacy originals restored=" + restored);
+        if (!restored.equals("12|true")) throw new AssertionError("Potato Graphics did not put back the settings an older version saved: " + restored);
+        if (!potato.saveExtra().entrySet().isEmpty()) throw new AssertionError("Potato Graphics kept old saved settings after putting them back");
     }
 
     private static void checkFullbright(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
@@ -754,6 +844,29 @@ public class MaroClientGameTest implements FabricClientGameTest {
         });
         context.waitTicks(5);
         context.takeScreenshot("maro-compass-dial");
+        // Centered: a compass saved just off the middle is put in it, once; dragged near the middle,
+        // it snaps there.
+        context.runOnClient(client -> {
+            var x = (dev.maro.setting.NumberSetting) compass.getSettings().stream().filter(s -> s.getName().equals("X")).findFirst().orElseThrow();
+            x.set(46.5);
+            compass.loadExtra(new com.google.gson.JsonObject());
+            if (x.get() != 50) throw new AssertionError("An old compass near the middle was not centered: " + x.get());
+            x.set(46.5);
+            compass.loadExtra(compass.saveExtra());
+            if (x.get() != 46.5) throw new AssertionError("A compass saved since was moved: " + x.get());
+            x.set(20.0);
+            compass.loadExtra(new com.google.gson.JsonObject());
+            if (x.get() != 20) throw new AssertionError("A compass placed well off the middle was moved: " + x.get());
+            var placing = new dev.maro.gui.hud.HudPlacementScreen(null, compass);
+            client.setScreen(placing);
+            int screenWidth = client.getWindow().getScaledWidth();
+            placing.dragTo(screenWidth / 2f - compass.hudWidth() / 2 + 4, 30);
+            float middle = compass.hudLeft() + compass.hudWidth() / 2;
+            if (Math.abs(middle - screenWidth / 2f) > 1) throw new AssertionError("Dragging near the middle did not snap: " + middle + " of " + screenWidth);
+            placing.dragTo(10, 30);
+            if (compass.hudLeft() > 12) throw new AssertionError("Dragging away from the middle still snapped: " + compass.hudLeft());
+            client.setScreen(null);
+        });
         context.runOnClient(client -> {
             compass.setEnabled(false);
             for (var s : compass.getSettings()) s.reset();

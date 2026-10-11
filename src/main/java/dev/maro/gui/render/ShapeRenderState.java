@@ -59,13 +59,15 @@ public final class ShapeRenderState implements SimpleGuiElementRenderState {
     /** Collects quads for one shape. Triangles are emitted as quads with a repeated vertex. */
     public static final class Builder {
         private final DrawContext context;
-        private float[] xy = new float[512];
-        private int[] colors = new int[256];
+        private float[] xy;
+        private int[] colors;
         private int count;
         private float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
 
-        Builder(DrawContext context) {
+        Builder(DrawContext context, int capacity) {
             this.context = context;
+            colors = new int[Math.max(4, capacity)];
+            xy = new float[colors.length * 2];
         }
 
         DrawContext context() {

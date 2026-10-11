@@ -456,13 +456,29 @@ public class ChatMacros extends Module {
         if (feedback.get() && mc.inGameHud != null) mc.inGameHud.setOverlayMessage(Text.literal(line), false);
     }
 
-    /** Under the settings: the manager. */
+    public boolean feedbackOn() {
+        return feedback.get();
+    }
+
+    public void setFeedback(boolean on) {
+        feedback.set(on);
+    }
+
+    public Keybind cancelKey() {
+        return cancelKey.get();
+    }
+
+    public void setCancelKey(Keybind key) {
+        cancelKey.set(key);
+    }
+
+    /** Under the settings: the macro menu. */
     @Override
     public WWidget getWidget(GuiTheme theme) {
         WHorizontalList list = theme.horizontalList();
 
-        WButton open = list.add(theme.button("Open Macro Manager (" + macros.size() + ")")).expandX().widget();
-        open.action = () -> mc.setScreen(new ChatMacroScreens.Manager(theme, this));
+        WButton open = list.add(theme.button("Edit Macros (" + macros.size() + ")")).expandX().widget();
+        open.action = () -> mc.setScreen(new dev.maro.gui.hud.ChatMacroScreen(mc.currentScreen, this));
 
         return list;
     }
