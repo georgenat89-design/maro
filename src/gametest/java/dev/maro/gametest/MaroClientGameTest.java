@@ -51,6 +51,13 @@ public class MaroClientGameTest implements FabricClientGameTest {
             // make sure nothing (pause menu, toasts...) is in the way before testing the keybind
             context.setScreen(() -> null);
             context.waitTicks(5);
+            if (Boolean.getBoolean("maro.gametest.tracersOnly")) {
+                TracerChecks.run(context, singleplayer);
+                PlayerEspChecks.run(context, singleplayer);
+                BlockEspChecks.run(context, singleplayer);
+                RenderFaultChecks.assertClean();
+                return;
+            }
             if (Boolean.getBoolean("maro.gametest.keyboardStrokesOnly")) {
                 KeyboardStrokesChecks.run(context);
                 ScreenGuiChecks.run(context);

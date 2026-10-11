@@ -47,7 +47,7 @@ void main() {
 
     float width = Info.y * mix(0.7, 1.0, weight);
     float halfWidth = width * 0.5;
-    float core = falloff(halfWidth - 0.6, halfWidth + 0.6, d);
+    float core = clamp(halfWidth + 0.5 - d, 0.0, 1.0);
     float sigma = width * 1.4 + 1.5;
     float glow = exp(-0.5 * d * d / (sigma * sigma));
 

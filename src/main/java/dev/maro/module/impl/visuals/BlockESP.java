@@ -7,6 +7,7 @@ import dev.maro.module.Module;
 import dev.maro.render.esp.BlockEspRenderer;
 import dev.maro.render.esp.Renderer3D;
 import dev.maro.render.esp.ShapeMode;
+import dev.maro.render.esp.TracerGeometry;
 import dev.maro.runtime.MeteorClient;
 import dev.maro.runtime.event.EventHandler;
 import dev.maro.runtime.events.world.BlockUpdateEvent;
@@ -165,7 +166,7 @@ public class BlockESP extends Module implements dev.maro.render.esp.EspStyle {
     // ---- tracers
     protected final BooleanSetting tracers = add(new BooleanSetting("Tracers", "Clean glowing lines from your crosshair to the blocks", true));
     protected final ModeSetting tracerTo = add(new ModeSetting("Tracer To",
-            "Each Block: a line to every block. Each Group: one line to each cluster of the same block (a row of chests gets one), to its nearest",
+            "Each Block: a line to every block. Each Group: one stable line to each cluster (a row of chests gets one)",
             "Each Block", "Each Block", "Each Group").visible(tracers::get));
     protected final ModeSetting tracerStart = add(new ModeSetting("Tracer Start", "Where the lines start", "Crosshair", "Crosshair", "Bottom")
             .visible(tracers::get));
@@ -221,6 +222,7 @@ public class BlockESP extends Module implements dev.maro.render.esp.EspStyle {
     /** Which of the shown blocks get a tracer: indices into {@link #shown}, nearest first. */
     private int[] tracerTargets = new int[0];
     private int tracerTargetCount;
+    private final LongOpenHashSet groupAnchors = new LongOpenHashSet();
 
     private final Map<Block, Box> shapes = new IdentityHashMap<>();
     private final long start = System.nanoTime();
@@ -290,6 +292,8 @@ public class BlockESP extends Module implements dev.maro.render.esp.EspStyle {
         queued.clear();
         versions.clear();
         shownCount = 0;
+        tracerTargetCount = 0;
+        groupAnchors.clear();
         dirty = false;
     }
 
@@ -741,14 +745,15 @@ public class BlockESP extends Module implements dev.maro.render.esp.EspStyle {
 
     /**
      * The blocks the tracers go to. Each Block: the nearest ones. Each Group: blocks of one kind
-     * within three blocks of each other are a group, and each group gets one line, to its nearest
-     * block, so a row of chests is one line and not twenty.
+     * within three blocks of each other are a group, and each group gets one line to a block
+     * kept stable as you move, so a row of chests is one line and not twenty.
      */
     private void pickTracerTargets() {
         int limit = Math.min(maxTracers.getInt(), BlockEspRenderer.MAX_TRACERS);
         if (tracerTargets.length < limit) tracerTargets = new int[limit];
         int count = 0;
         if (tracerTo.is("Each Block")) {
+            groupAnchors.clear();
             for (int i = 0; i < shownCount && count < limit; i++) tracerTargets[count++] = i;
             tracerTargetCount = count;
             return;
@@ -780,14 +785,26 @@ public class BlockESP extends Module implements dev.maro.render.esp.EspStyle {
             }
             cells.computeIfAbsent(BlockPos.asLong(cx, cy, cz), k -> new it.unimi.dsi.fastutil.ints.IntArrayList()).add(i);
         }
-        // The shown blocks are nearest first, so a group's first member is its nearest.
+        // Keep a group's existing anchor while it is present. Distance sorting must not make
+        // the line jump between adjacent blocks as the camera moves.
+        int[] anchors = new int[shownCount];
+        Arrays.fill(anchors, -1);
+        for (int i = 0; i < shownCount; i++) {
+            int root = find(parent, i), old = anchors[root];
+            if (old < 0 || (groupAnchors.contains(shown[i]) && !groupAnchors.contains(shown[old]))
+                    || (groupAnchors.contains(shown[i]) == groupAnchors.contains(shown[old]) && shown[i] < shown[old])) {
+                anchors[root] = i;
+            }
+        }
         boolean[] taken = new boolean[shownCount];
         for (int i = 0; i < shownCount && count < limit; i++) {
             int root = find(parent, i);
             if (taken[root]) continue;
             taken[root] = true;
-            tracerTargets[count++] = i;
+            tracerTargets[count++] = anchors[root];
         }
+        groupAnchors.clear();
+        for (int i = 0; i < count; i++) groupAnchors.add(shown[tracerTargets[i]]);
         tracerTargetCount = count;
     }
 
@@ -823,6 +840,7 @@ public class BlockESP extends Module implements dev.maro.render.esp.EspStyle {
         Vec3d camera = renderer.camera();
         double reach = range.get() * 16;
         float seconds = seconds();
+        Vec3d playerPosition = mc.player.getLerpedPos(mc.getRenderTickCounter().getTickProgress(false));
         float width = lineWidth.getFloat();
         boolean soft = smoothEdges.get() && mode.lines();
 
@@ -862,20 +880,21 @@ public class BlockESP extends Module implements dev.maro.render.esp.EspStyle {
                 double cx = BlockPos.unpackLongX(pos) + (shape.minX + shape.maxX) / 2;
                 double cy = BlockPos.unpackLongY(pos) + (shape.minY + shape.maxY) / 2;
                 double cz = BlockPos.unpackLongZ(pos) + (shape.minZ + shape.maxZ) / 2;
-                double distance = Math.sqrt(mc.player.squaredDistanceTo(cx, cy, cz));
+                double dx = cx - playerPosition.x, dy = cy - playerPosition.y, dz = cz - playerPosition.z;
+                double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
                 float weight = (float) Math.max(0.4, 1 - distance / Math.max(1, reach) * 0.6);
                 int color = drawColorOf(shownBlocks[i]);
-                BlockEspRenderer.addTracer(this, cx, cy, cz, camera, tracerColorOf(color, distance / Math.max(1, reach), t, seconds), weight);
+                BlockEspRenderer.addTracer(this, cx, cy, cz, camera, tracerColorOf(color, distance / Math.max(1, reach), pos, seconds), weight);
             }
         }
         renderer.throughWalls(true);
         renderer.lineWidth(1.5f);
     }
 
-    private int tracerColorOf(int blockColor, double nearness, int index, float seconds) {
+    private int tracerColorOf(int blockColor, double nearness, long position, float seconds) {
         return switch (tracerColor.get()) {
             case "Distance" -> ColorUtil.lerp(0xFFFF3B3B, 0xFF3BFF7A, (float) Math.min(1, nearness));
-            case "Rainbow" -> ColorUtil.hsv((seconds * 0.15f + index * 0.07f) % 1f, 0.75f, 1f);
+            case "Rainbow" -> ColorUtil.hsv((seconds * 0.15f + TracerGeometry.phase(position)) % 1f, 0.75f, 1f);
             case "Custom" -> tracerCustom.get() | 0xFF000000;
             default -> blockColor;
         };
