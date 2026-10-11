@@ -37,6 +37,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.misc.CoordSnapper());
         register(new dev.maro.module.impl.misc.DiscordPresence());
         register(new dev.maro.module.impl.misc.SpotifyPhone());
+        register(new dev.maro.module.impl.misc.SkinChanger());
         register(new dev.maro.module.impl.misc.AutoGoliath());
         register(new dev.maro.module.impl.player.FastPlace());
         register(new dev.maro.module.impl.player.FakePlayer());

@@ -88,6 +88,7 @@ tasks.register('runProductionClientGameTest', net.fabricmc.loom.task.prod.Client
     jvmArgs.add("-Dmaro.gametest.nametagsOnly=" + providers.gradleProperty("nametagsTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.keyboardStrokesOnly=" + providers.gradleProperty("keyboardStrokesTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.screenGuiOnly=" + providers.gradleProperty("screenGuiTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.liveSkinDownload=" + providers.gradleProperty("liveSkinDownloadTest").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.geekedOnly=" + providers.gradleProperty("geekedTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.vehiclesOnly=" + providers.gradleProperty("vehiclesTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.grimTridentOnly=" + providers.gradleProperty("grimTridentTestOnly").getOrElse("false"))

@@ -4,6 +4,12 @@ A **Fabric 1.21.11 / Java 21** client with a smooth, modern ClickGUI and the 20 
 
 Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 
+Enable **Settings → Screen GUI** for either the Panels or Window layout to place the menu
+in front of you in the world. Walk and look around normally, aim your crosshair at a control,
+and click or scroll to configure it. **Screen Distance** sets its opening distance. Click
+a text field (or press **Ctrl+F**) to type; movement pauses while a field is focused.
+Press **Enter** to finish typing and **Esc** to go back or close the menu.
+
 When the optional Zen companion is installed, Maro reserves the missing native vertex/index
 capacity for its Block Outlines star before it draws. This prevents the address-zero crash
 when first aiming at a block, and protects later draws as the mesh fills. The integration
@@ -14,6 +20,13 @@ shared read-only registry views, and unchanged keybinds are retained between tic
 The phone reuses its immutable album-art geometry across frames.
 
 ## Included modules
+
+**Skin Changer** (Misc) adapts Anubis's skin changer. Set **Self Player** to the Minecraft
+username whose skin you want, and optionally **Others Player** to give other players a
+separate skin. Leave either field empty to keep the original skins. Classic and slim
+models work in first and third person, while capes and elytra remain intact. Skins load
+asynchronously and are cached; use **Reload Skins** to retry or fetch an updated skin.
+Changes are visible locally, and disabling the module restores the original skins.
 
 **Keyboard Strokes** (Visuals) shows the keys you press on screen, lit while held. Right-click it (or
 **Choose Keys**) to open a menu of every keybind in the game and tick the ones you want shown;

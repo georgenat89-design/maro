@@ -89,7 +89,7 @@ public final class ScreenGuiSurface {
             var m = pose.inverse();
             DATA.putFloat(0, m.m00()).putFloat(4, m.m10()).putFloat(8, m.m20()).putFloat(12, w);
             DATA.putFloat(16, m.m01()).putFloat(20, m.m11()).putFloat(24, m.m21()).putFloat(28, h);
-            DATA.putFloat(32, m.m02()).putFloat(36, m.m12()).putFloat(40, m.m22()).putFloat(44, 0);
+            DATA.putFloat(32, m.m02()).putFloat(36, m.m12()).putFloat(40, m.m22()).putFloat(44, pose.active() ? 1 : 0);
             encoder.writeToBuffer(uniforms.slice(0, 48), DATA);
             var sampler = RenderSystem.getSamplerCache().get(AddressMode.CLAMP_TO_EDGE, AddressMode.CLAMP_TO_EDGE, FilterMode.LINEAR, FilterMode.LINEAR, false);
             try (var pass = encoder.createRenderPass(() -> "Maro Screen GUI", main.getColorAttachmentView(), OptionalInt.empty())) {

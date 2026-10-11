@@ -144,14 +144,18 @@ public class ClickGuiScreen extends Screen {
     public int menuHeight() { return menuHeight; }
     private final dev.maro.gui.render.ScreenGuiPose screenPose = new dev.maro.gui.render.ScreenGuiPose();
     public dev.maro.gui.render.ScreenGuiPose screenPose() { return screenPose; }
-    /** Advance look before the world renders; the camera mixin supplies the exact projection. */
-    public void prepareScreenView() {
-        if (!pointerKnown) {
-            rawMouseX = width / 2d; rawMouseY = height / 2d;
-        }
-        screenPose.update(width, height, rawMouseX, rawMouseY, ClientSettings.screenGui.get(), mouseDown, ClientSettings.screenTilt.getFloat());
+    private final dev.maro.gui.hud.ScreenGuiMovement worldMovement = new dev.maro.gui.hud.ScreenGuiMovement();
+    public boolean worldControls() { return ClientSettings.screenGui.get() && client != null && client.world != null && client.player != null; }
+    public boolean capturesMouse() { return worldControls() && client.isWindowFocused() && client.getOverlay() == null; }
+    public net.minecraft.util.PlayerInput movementInput() { return worldControls() && focused == null && listening == null ? worldMovement.read() : net.minecraft.util.PlayerInput.DEFAULT; }
+    public void prepareScreenView(net.minecraft.client.render.Camera camera) {
+        screenPose.update(width, height, worldControls());
+        if (worldControls()) screenPose.view(camera, client.options.getFov().getValue(), ClientSettings.screenDistance.getFloat());
     }
-
+    private void syncMouseCapture() {
+        if (capturesMouse()) { if (!client.mouse.isCursorLocked()) client.mouse.lockCursor(); }
+        else if (client.mouse.isCursorLocked()) client.mouse.unlockCursor();
+    }
     private boolean mouseDown;
     private boolean interactive = true;
 
@@ -399,13 +403,8 @@ public class ClickGuiScreen extends Screen {
         else lastLayoutScale = scale;
         float offsetX = (width - menuWidth * scale) / 2, offsetY = (height - menuHeight * scale) / 2;
         screenPose.layout(scale, offsetX, offsetY);
-        if (client.world == null) {
-            prepareScreenView();
-            var base = new org.joml.Quaternionf();
-            var view = new org.joml.Quaternionf().rotationYXZ((float) Math.toRadians(-screenPose.yaw()), (float) Math.toRadians(-screenPose.pitch()), 0);
-            screenPose.view(base, view, client.options.getFov().getValue());
-        }
-        double[] pointer = screenPose.unproject(rawMouseX, rawMouseY);
+        if (client.world == null) screenPose.update(width, height, false);
+        double[] pointer = screenPose.unproject(worldControls() ? width / 2d : rawMouseX, worldControls() ? height / 2d : rawMouseY);
         mouseXd = pointer[0];
         mouseYd = pointer[1];
         hits.clear();
@@ -416,7 +415,7 @@ public class ClickGuiScreen extends Screen {
         tooltip = null;
         interactive = true;
         Theme.update();
-        if (drag != null) drag.drag(mouseXd, mouseYd);
+        if (drag != null && Double.isFinite(mouseXd) && Double.isFinite(mouseYd)) drag.drag(mouseXd, mouseYd);
 
         float p = progress();
         if (closingAt >= 0 && p <= 0.001f) return; // tick() removes the screen
@@ -641,6 +640,7 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public void mouseMoved(double mouseX, double mouseY) {
+        if (worldControls()) return;
         pointerKnown = true;
         rawMouseX = mouseX;
         rawMouseY = mouseY;
@@ -651,7 +651,8 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public boolean mouseClicked(Click click, boolean doubled) {
-        double mouseX = click.x(), mouseY = click.y();
+        if (worldControls() && focused == null && listening == null) worldMovement.mouse(click, true);
+        double mouseX = worldControls() ? width / 2d : click.x(), mouseY = worldControls() ? height / 2d : click.y();
         int button = click.button();
         pointerKnown = true;
         rawMouseX = mouseX;
@@ -688,6 +689,7 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public boolean mouseReleased(Click click) {
+        worldMovement.mouse(click, false);
         mouseDown = false;
         drag = null;
         dragOwner = null;
@@ -697,12 +699,13 @@ public class ClickGuiScreen extends Screen {
     @Override
     public boolean mouseDragged(Click click, double deltaX, double deltaY) {
         mouseMoved(click.x(), click.y());
-        if (drag != null) drag.drag(mouseXd, mouseYd);
+        if (drag != null && Double.isFinite(mouseXd) && Double.isFinite(mouseYd)) drag.drag(mouseXd, mouseYd);
         return true;
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (worldControls()) { mouseX = width / 2d; mouseY = height / 2d; }
         double[] point = screenPose.unproject(mouseX, mouseY);
         mouseX = point[0];
         mouseY = point[1];
@@ -720,6 +723,7 @@ public class ClickGuiScreen extends Screen {
     @Override
     public boolean keyPressed(KeyInput input) {
         int keyCode = input.key(), modifiers = input.modifiers();
+        if (worldControls() && focused == null && listening == null && worldMovement.key(input, true)) return true;
         if (closingAt >= 0 || justOpened()) return true;
         if (listening != null) {
             if (keyCode == GLFW.GLFW_KEY_DELETE || keyCode == GLFW.GLFW_KEY_BACKSPACE) listening.set(KeyUtil.NONE);
@@ -730,6 +734,7 @@ public class ClickGuiScreen extends Screen {
         }
         boolean ctrl = (modifiers & (GLFW.GLFW_MOD_CONTROL | GLFW.GLFW_MOD_SUPER)) != 0;
         if (ctrl && (keyCode == GLFW.GLFW_KEY_K || keyCode == GLFW.GLFW_KEY_F)) {
+            worldMovement.clear();
             focused = search;
             return true;
         }
@@ -775,7 +780,11 @@ public class ClickGuiScreen extends Screen {
     }
 
     @Override
+    public boolean keyReleased(KeyInput input) { worldMovement.key(input, false); return true; }
+
+    @Override
     public boolean charTyped(CharInput input) {
+        if (worldControls() && focused == null) return true;
         if (input.codepoint() > Character.MAX_VALUE) return true;
         char chr = (char) input.codepoint();
         if (closingAt >= 0 || listening != null || justOpened()) return true;
@@ -800,6 +809,9 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public void tick() {
+        if (!client.isWindowFocused()) { worldMovement.clear(); drag = null; mouseDown = false; }
+        syncMouseCapture();
+        if (worldControls() && !client.player.isAlive()) { client.setScreen(null); return; }
         if (closingAt >= 0 && progress() <= 0.001f && client != null) client.setScreen(null);
     }
 
@@ -810,6 +822,8 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public void removed() {
+        worldMovement.clear();
+        if (client.mouse.isCursorLocked()) client.mouse.unlockCursor();
         Render2D.setAlpha(1f);
         Render2D.setScissor(null);
         dev.maro.gui.render.ScreenGuiSurface.release();
@@ -820,7 +834,7 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public boolean shouldPause() {
-        return ClientSettings.pauseGame.get();
+        return !worldControls() && ClientSettings.pauseGame.get();
     }
 
     public static void resetPosition() {
