@@ -13,6 +13,8 @@ import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.particle.ParticleTypes;
+import net.minecraft.util.math.MathHelper;
+import dev.maro.render.emote.Pose;
 import net.minecraft.util.math.RotationAxis;
 import org.lwjgl.glfw.GLFW;
 
@@ -22,8 +24,9 @@ import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * Acrobatics: flips and spins when you jump. Front flips, back flips, side flips, spins and
- * corkscrews, on every jump, on sprint jumps or on a key, with a puff of cloud on landing and a trail
+ * Acrobatics: flips and spins when you jump, moving like a person would: arms thrown up to jump,
+ * knees pulled in with the hands on the shins through a flip, a star for a side flip, arms tucked in
+ * for a spin, opening out to land. Front flips, back flips, side flips, spins and corkscrews, on every jump, on sprint jumps or on a key, with a puff of cloud on landing and a trail
  * through the air if you like; in first person the view can flip with you. Everyone else's jumps can
  * be turned into tricks too.
  *
@@ -180,6 +183,75 @@ public class Acrobatics extends Module {
         matrices.translate(0, -middle, 0);
     }
 
+    // ---- arms and legs, as a person would move them ---------------------------------------------
+
+    /*
+     * Key poses through a trick, the right side's angles in radians (the left mirrors them):
+     * {time 0-1, arm pitch, arm yaw, arm roll, leg pitch, leg roll, head pitch}. An arm's pitch of -PI
+     * is straight up and -PI/2 forward, its roll outwards; a leg's negative pitch lifts it forward.
+     */
+    /** Flips: arms thrown up to jump, knees pulled to the chest with the hands on the shins, then opening out to land. */
+    private static final float[][] TUCK = {
+            {0.00f, -2.9f, 0f, 0.15f, 0f, 0f, 0f},
+            {0.18f, -1.25f, 0f, -0.25f, -1.5f, 0.1f, 0.35f},
+            {0.30f, -1.05f, 0f, -0.3f, -1.75f, 0.12f, 0.4f},
+            {0.70f, -1.05f, 0f, -0.3f, -1.75f, 0.12f, 0.4f},
+            {0.86f, -0.35f, 0f, 1.15f, -0.45f, 0.05f, 0.05f},
+            {1.00f, -0.15f, 0f, 0.35f, 0f, 0f, 0f}};
+    /** A side flip: arms up, then a star, arms and legs spread wide, closing to land. */
+    private static final float[][] STAR = {
+            {0.00f, -2.9f, 0f, 0.1f, 0f, 0f, 0f},
+            {0.20f, -0.1f, 0f, 2.3f, 0f, 0.45f, 0f},
+            {0.78f, -0.1f, 0f, 2.3f, 0f, 0.45f, 0f},
+            {1.00f, -0.1f, 0f, 0.35f, 0f, 0.05f, 0f}};
+    /** A spin: arms pulled in across the chest and legs together to turn fast, opening to land. */
+    private static final float[][] TWIST = {
+            {0.00f, -2.6f, 0f, 0.1f, 0f, 0f, 0f},
+            {0.18f, -1.35f, -0.7f, 0f, 0f, -0.04f, 0.1f},
+            {0.80f, -1.35f, -0.7f, 0f, 0f, -0.04f, 0.1f},
+            {1.00f, -0.2f, 0f, 0.3f, 0f, 0f, 0f}};
+
+    /** The limbs' angles part way through a trick, eased between the key poses. */
+    private static float[] limbs(Kind kind, double t) {
+        float[][] keys = switch (kind) {
+            case SIDE -> STAR;
+            case SPIN -> TWIST;
+            default -> TUCK;
+        };
+        int i = 0;
+        while (i < keys.length - 2 && t > keys[i + 1][0]) i++;
+        float[] a = keys[i], b = keys[i + 1];
+        double w = MathHelper.clamp((t - a[0]) / (b[0] - a[0]), 0, 1);
+        w = w * w * (3 - 2 * w);
+        float[] out = new float[6];
+        for (int k = 0; k < 6; k++) out[k] = (float) (a[k + 1] + (b[k + 1] - a[k + 1]) * w);
+        return out;
+    }
+
+    /** A player's arms, legs and head through their trick, eased in from and back out to the game's own pose; null for none. */
+    public static Pose pose(int entityId, float delta) {
+        Acrobatics a = instance;
+        if (a == null || !a.isEnabled() || !inGame()) return null;
+        Move move = a.moves.get(entityId);
+        if (move == null) return null;
+        double t = (a.now(delta) - move.start()) / move.length();
+        if (t < 0 || t >= 1) return null;
+        float[] l = limbs(move.kind(), t);
+        return new Pose()
+                .rightArm(l[0], l[1], l[2]).leftArm(l[0], -l[1], -l[2])
+                .rightLeg(l[3], 0, l[4]).leftLeg(l[3], 0, -l[4])
+                .head(l[5], Float.NaN, Float.NaN);
+    }
+
+    /** How much of the trick's pose shows: eased in over the first moment and out over the last. */
+    public static float poseBlend(int entityId, float delta) {
+        Acrobatics a = instance;
+        Move move = a == null ? null : a.moves.get(entityId);
+        if (move == null) return 0;
+        double t = (a.now(delta) - move.start()) / move.length();
+        return (float) MathHelper.clamp(Math.min(t / 0.06, (1 - t) / 0.08), 0, 1);
+    }
+
     /** In first person, how far the view is turned this frame by your trick: {yaw, pitch}; null for none. */
     public static float[] cameraTurn(float delta) {
         Acrobatics a = instance;
@@ -204,6 +276,16 @@ public class Acrobatics extends Module {
     public boolean tricking(PlayerEntity player) {
         Move move = moves.get(player.getId());
         return move != null && progress(move, 0) >= 0;
+    }
+
+    /** A player's arm and leg pitch now, {arm, leg}; null when not in a trick. */
+    public float[] limbsNow(PlayerEntity player) {
+        Move move = moves.get(player.getId());
+        if (move == null) return null;
+        double t = (now(0) - move.start()) / move.length();
+        if (t < 0 || t >= 1) return null;
+        float[] l = limbs(move.kind(), t);
+        return new float[] {l[0], l[3]};
     }
 
     /** How many tricks have been landed since the game started. */

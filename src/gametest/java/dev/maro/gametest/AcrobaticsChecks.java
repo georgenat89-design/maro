@@ -54,6 +54,11 @@ final class AcrobaticsChecks {
             context.waitTicks(4);
             float angle = context.computeOnClient(c -> module.angle(c.player, 0));
             require(angle > 30 && angle < 330, "Mid-jump the flip should be part way round: " + angle);
+            // Mid flip the knees are pulled up and the hands are down at them, not hanging at the sides.
+            float[] limbs = context.computeOnClient(c -> module.limbsNow(c.player));
+            System.out.println("ACROBATICS mid flip: angle " + Math.round(angle) + ", arm pitch " + (limbs == null ? "none" : limbs[0])
+                    + ", leg pitch " + (limbs == null ? "none" : limbs[1]));
+            require(limbs != null && limbs[1] < -0.8f && limbs[0] < -0.6f, "Mid flip the knees should be tucked with the hands on them");
             context.takeScreenshot("maro-acrobatics-flip");
             for (int i = 0; i < 40 && context.computeOnClient(c -> module.landed()) == landedBefore; i++) context.waitTick();
             require(context.computeOnClient(c -> module.landed()) > landedBefore, "The flip never landed");
