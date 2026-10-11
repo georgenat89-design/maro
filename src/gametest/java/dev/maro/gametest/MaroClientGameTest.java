@@ -54,6 +54,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             if (Boolean.getBoolean("maro.gametest.keyboardStrokesOnly")) {
                 KeyboardStrokesChecks.run(context);
                 ScreenGuiChecks.run(context);
+                AcrobaticsChecks.run(context, singleplayer);
                 return;
             }
             if (Boolean.getBoolean("maro.gametest.screenGuiOnly")) {

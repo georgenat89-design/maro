@@ -168,6 +168,21 @@ final class ScreenGuiChecks {
                             "World and menu pitch must use the same frame");
                 });
                 context.takeScreenshot("maro-screen-gui-" + layout.toLowerCase() + "-world-look-up-right");
+                if (layout.equals("Panels")) {
+                    context.runOnClient(c -> {
+                        var gui = (ClickGuiScreen) c.currentScreen;
+                        var row = gui.panelPlace(example);
+                        require(row != null, "Example row missing in off-centre view");
+                        var point = gui.screenPose().project(row[0], row[1]);
+                        require(point[0] > 0 && point[0] < gui.width && point[1] > 0 && point[1] < gui.height,
+                                "Off-centre click must be visible on screen");
+                        boolean before = example.isEnabled();
+                        var click = new Click(point[0], point[1], new MouseInput(0, 0));
+                        gui.mouseClicked(click, false);
+                        require(example.isEnabled() != before, "Clicking the turned menu missed its row");
+                        gui.mouseReleased(click); example.setEnabled(before);
+                    });
+                }
                 context.runOnClient(c -> c.setScreen(null));
                 context.waitTicks(3);
                 require(!context.computeOnClient(c -> ScreenGuiSurface.hasResources()), "World menu surface leaked");
