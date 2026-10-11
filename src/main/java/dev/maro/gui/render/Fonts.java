@@ -115,6 +115,21 @@ public final class Fonts {
         return width(s, false, 1f);
     }
 
+    /** Measure the same glyph atlas used when drawing inside the current HUD transform. */
+    public static float width(DrawContext ctx, String s, boolean bold, float scale) {
+        if (s == null || s.isEmpty()) return 0;
+        String t = transform(s);
+        boolean b = weight(bold);
+        float es = eff(scale);
+        var matrix = ctx.getMatrices();
+        float atlasScale = es * (float) Math.hypot(matrix.m00(), matrix.m01());
+        if (!caps()) return tr().getTextHandler().getWidth(styled(t, b, atlasScale)) * es;
+        float w = 0;
+        for (int i = 0; i < t.length(); i++)
+            w += tr().getTextHandler().getWidth(styled(String.valueOf(t.charAt(i)), b, atlasScale)) * es;
+        return w + CAPS_TRACKING * es * (t.length() - 1);
+    }
+
     /** Visual height of capital letters, used for vertical centring. */
     public static float height(float scale) {
         return 7f * eff(scale);

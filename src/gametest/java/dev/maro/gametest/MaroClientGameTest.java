@@ -69,6 +69,10 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 NametagsChecks.run(context);
                 return;
             }
+            if (Boolean.getBoolean("maro.gametest.nametagsOnly")) {
+                NametagsChecks.run(context);
+                return;
+            }
             if (Boolean.getBoolean("maro.gametest.relogOnly")) {
                 MaroRelogChecks.run(context, singleplayer);
                 return;

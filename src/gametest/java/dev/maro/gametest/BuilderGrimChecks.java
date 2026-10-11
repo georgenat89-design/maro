@@ -36,7 +36,8 @@ final class BuilderGrimChecks {
         context.waitTicks(60);context.setScreen(()->null);
         AutoBuilder builder=ModuleManager.get(AutoBuilder.class);
         try{
-            for(String scenario:List.of("plain-mining","stone-mining","rejected-mining","delayed-mining","rejected-placement")){
+            for(String scenario:Boolean.getBoolean("maro.gametest.grimTridentOnly") ? List.<String>of()
+                : List.of("plain-mining","stone-mining","rejected-mining","delayed-mining","rejected-placement")){
                 context.runOnClient(client->{builder.pause("Prepare Grim fixture");builder.setEnabled(false);});
                 command("marofixture prepare "+scenario);context.waitTicks(40);
                 boolean stone=scenario.equals("stone-mining");
