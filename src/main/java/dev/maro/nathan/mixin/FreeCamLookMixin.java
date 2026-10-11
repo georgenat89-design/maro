@@ -23,7 +23,9 @@ public abstract class FreeCamLookMixin {
     private void nameeprotect$freeCamLook(double byX, double byY, CallbackInfo ci) {
         if ((Object) this != MinecraftClient.getInstance().player) return;
 
-        if (FreeCam.active()) {
+        if (dev.maro.module.impl.movement.Vehicles.look(byX, byY)) {
+            ci.cancel();
+        } else if (FreeCam.active()) {
             FreeCam.look(byX, byY);
             ci.cancel();
         } else if (FreeLook.active()) {

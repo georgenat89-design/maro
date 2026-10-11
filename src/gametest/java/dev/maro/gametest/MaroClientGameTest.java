@@ -73,6 +73,10 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 NametagsChecks.run(context);
                 return;
             }
+            if (Boolean.getBoolean("maro.gametest.vehiclesOnly")) {
+                VehiclesChecks.run(context, singleplayer);
+                return;
+            }
             if (Boolean.getBoolean("maro.gametest.relogOnly")) {
                 MaroRelogChecks.run(context, singleplayer);
                 return;
@@ -156,6 +160,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             AirFallChecks.run(context, singleplayer);
             InventoryHiderChecks.run(context, singleplayer);
             ArmorHudChecks.run(context, singleplayer);
+            VehiclesChecks.run(context, singleplayer);
             FakeBlockChecks.run(context, singleplayer);
             BetterLooksChecks.run(context);
             SkyChecks.run(context, singleplayer);

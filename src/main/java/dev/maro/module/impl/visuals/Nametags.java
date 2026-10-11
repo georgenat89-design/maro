@@ -310,7 +310,7 @@ public class Nametags extends Module {
         double angle = Math.atan2(-(player.getX() - camera.x), player.getZ() - camera.z)
                 - Math.toRadians(mc.gameRenderer.getCamera().getYaw());
         float dx = (float) Math.sin(angle), dy = -(float) Math.cos(angle);
-        String label = player.getName().getString() + "  " + Math.round(dist) + "m";
+        String label = player.getName().getString() + (showsDistance(player) ? "  " + Math.round(dist) + "m" : "");
         boolean compact = layout.is("Compact");
         float edgeScale = compact ? 0.85f : 1;
         float labelW = scaledWidth(ctx, label, true, edgeScale);
@@ -358,12 +358,16 @@ public class Nametags extends Module {
             parts.add(new Part(hp, healthColors.get() ? healthColor(fraction) : 0xFFFFFFFF, true));
         }
         if (health.get() && absorption.get() && p.getAbsorptionAmount() > 0) parts.add(new Part("+" + number(p.getAbsorptionAmount()), GOLD, true));
-        if (distance.get()) parts.add(new Part(Math.round(dist) + "m", 0xFFCDD5E2, true));
+        if (showsDistance(p)) parts.add(new Part(Math.round(dist) + "m", 0xFFCDD5E2, true));
         if (pops.get()) {
             int n = popsOf(p);
             if (n > 0) parts.add(new Part("-" + n, RED, true));
         }
         return parts;
+    }
+
+    private boolean showsDistance(PlayerEntity player) {
+        return distance.get() && player != mc.player;
     }
 
     /** The row of what they wear and hold, with durability and enchantments; returns its top. */
