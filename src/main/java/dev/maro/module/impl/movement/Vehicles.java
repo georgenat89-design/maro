@@ -337,7 +337,7 @@ public class Vehicles extends Module {
         double around = Math.toRadians(carYaw + v.orbitYaw);
         double lift = MathHelper.clamp(v.orbitPitch + 14, -10, 75);
         double dist = v.distance.get() * (v.model() == Model.TRUCK ? 1.15 : 1);
-        Vec3d target = pos.add(0, 1.1, 0);
+        Vec3d target = pos.add(0, v.model() == Model.TRUCK ? 2.1 : 1.6, 0);
         Vec3d back = new Vec3d(Math.sin(around), 0, -Math.cos(around)).multiply(Math.cos(Math.toRadians(lift)) * dist);
         Vec3d want = target.add(back).add(0, Math.sin(Math.toRadians(lift)) * dist, 0);
         // Kept out of walls: pulled in to just short of whatever is between the car and the camera.
@@ -652,7 +652,8 @@ public class Vehicles extends Module {
         int w = ctx.getScaledWindowWidth(), h = ctx.getScaledWindowHeight();
         double kmh = Math.abs(speed) * 3.6;
         String value = Long.toString(Math.round(kmh));
-        float cw = 74, ch = 34, x0 = (w - cw) / 2f, y0 = h - 50 - ch;
+        // Bottom right, clear of the car in the middle of the view and of the hotbar.
+        float cw = 74, ch = 34, x0 = w - cw - 8, y0 = h - ch - 8;
         Fonts.beginRaw();
         try {
             Render2D.shadow(ctx, x0, y0 + 1, cw, ch, 8, 8, 0x90000000);

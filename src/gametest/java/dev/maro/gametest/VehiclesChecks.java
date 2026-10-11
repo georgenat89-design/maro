@@ -39,8 +39,11 @@ final class VehiclesChecks {
                 player.getAbilities().flying = false;
                 player.sendAbilitiesUpdate();
             });
+            // Let the teleport reach the client before getting in.
+            context.waitTicks(5);
             context.runOnClient(c -> {
                 c.player.getAbilities().flying = false;
+                c.player.setYaw(0);
                 c.options.setPerspective(Perspective.FIRST_PERSON);
                 module.getSettings().forEach(Setting::reset);
                 set(module, "Mode", "Free Drive");
@@ -48,6 +51,7 @@ final class VehiclesChecks {
             });
             context.waitTicks(10);
             var start = context.computeOnClient(c -> c.player.getEntityPos());
+            var carStart = context.computeOnClient(c -> module.carPosition());
 
             // Foot down for two seconds: the car goes, you stay.
             context.getInput().holdKey(o -> o.forwardKey);
@@ -56,12 +60,12 @@ final class VehiclesChecks {
             context.getInput().releaseKey(o -> o.forwardKey);
             context.runOnClient(c -> {
                 var car = module.carPosition();
-                double moved = Math.hypot(car.x - start.x, car.z - start.z);
+                double moved = Math.hypot(car.x - carStart.x, car.z - carStart.z);
                 double stood = c.player.getEntityPos().distanceTo(start);
                 System.out.println("VEHICLES free drive moved " + Math.round(moved) + " blocks at " + Math.round(module.speed() * 3.6) + " km/h; you moved " + stood);
                 require(moved > 10, "Free Drive's car hardly moved: " + moved);
                 require(stood < 0.3, "Free Drive moved you, not just the car: " + stood);
-                require(car.z > start.z, "Facing south, the car should go south: " + car);
+                require(car.z - carStart.z > 10, "Facing south, the car should go south: from " + carStart + " to " + car);
             });
 
             // The wheel: holding D turns it right.
@@ -86,8 +90,9 @@ final class VehiclesChecks {
 
             // Drive: you move for real, along the car.
             world.getServer().runCommand("tp @a 49 -60 30 0 0");
-            context.waitTicks(3);
+            context.waitTicks(5);
             context.runOnClient(c -> {
+                c.player.setYaw(0);
                 module.getSettings().forEach(Setting::reset);
                 set(module, "Vehicle", "Sports Car");
                 module.setEnabled(true);
