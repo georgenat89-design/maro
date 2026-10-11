@@ -165,7 +165,7 @@ public final class PanelsView {
             net.minecraft.client.MinecraftClient.getInstance().setScreen(own);
             return;
         }
-        openPopover(new Popover(m, m.getName(), m, m.getSettingSections(), 0, 0));
+        openPopover(new Popover(m, m.getDisplayName(), m, m.getSettingSections(), 0, 0));
     }
 
     // ---- layout -----------------------------------------------------------------------------
@@ -414,7 +414,7 @@ public final class PanelsView {
         float nx = x + 6f + en * 2f;
         int color = ColorUtil.lerp(ColorUtil.lerp(Theme.TEXT_DIM, Theme.TEXT, hv), 0xFFFFFFFF, en);
         Fonts.beginRaw();
-        Fonts.drawV(ctx, Fonts.trim(m.getName(), right - nx - 2f, en > 0.5f, NAME_SCALE), nx, cy, color, en > 0.5f, NAME_SCALE);
+        Fonts.drawV(ctx, Fonts.trim(m.getDisplayName(), right - nx - 2f, en > 0.5f, NAME_SCALE), nx, cy, color, en > 0.5f, NAME_SCALE);
         Fonts.endRaw();
     }
 
@@ -488,7 +488,7 @@ public final class PanelsView {
         }
         Render2D.roundGradientV(ctx, x + 6f, hy - 4.5f, 2f, 9f, 1f, Theme.accent(), Theme.accent2());
         Fonts.beginRaw();
-        Fonts.drawV(ctx, Fonts.trim(pop.title(), right - x - 16f, true, 0.84f), x + 12f, hy, Theme.TEXT, true, 0.84f);
+        Fonts.drawV(ctx, Fonts.trim(m != null ? m.getDisplayName() : pop.title(), right - x - 16f, true, 0.84f), x + 12f, hy, Theme.TEXT, true, 0.84f);
         Fonts.endRaw();
         Render2D.rectGradient(ctx, x + 6f, y + POP_HEAD, w - 12f, 1f, Theme.accent(0x60), Theme.accent2(0x10), Theme.accent2(0x10), Theme.accent(0x60));
 

@@ -81,6 +81,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.CustomTotem());
         register(new dev.maro.module.impl.visuals.Emotes());
         register(new dev.maro.module.impl.visuals.Acrobatics());
+        register(new dev.maro.module.impl.visuals.JumpCircle());
         register(new dev.maro.module.impl.visuals.StaffNotifier());
         dev.maro.nathan.NameeProtectAddon.init();
 
@@ -108,7 +109,7 @@ public final class ModuleManager {
     public static List<Module> byCategory(Category category) {
         List<Module> list = new ArrayList<>();
         for (Module m : MODULES) if (m.getCategory() == category && !m.hiddenInGui()) list.add(m);
-        list.sort((a, b) -> String.CASE_INSENSITIVE_ORDER.compare(a.getName(), b.getName()));
+        list.sort((a, b) -> String.CASE_INSENSITIVE_ORDER.compare(a.getDisplayName(), b.getDisplayName()));
         return list;
     }
 
@@ -118,13 +119,18 @@ public final class ModuleManager {
 
     public static List<Module> search(String query) {
         String q = query.toLowerCase(Locale.ROOT).trim();
+        String compactQuery = q.replace(" ", "");
         List<Module> starts = new ArrayList<>(), contains = new ArrayList<>(), desc = new ArrayList<>();
         for (Module m : MODULES) {
             if (m.hiddenInGui()) continue;
             String n = m.getName().toLowerCase(Locale.ROOT);
+            String label = m.getDisplayName().toLowerCase(Locale.ROOT);
             String compact = n.replace(" ", "");
-            if (n.startsWith(q) || compact.startsWith(q.replace(" ", ""))) starts.add(m);
-            else if (n.contains(q) || compact.contains(q.replace(" ", ""))) contains.add(m);
+            String compactLabel = label.replace(" ", "");
+            if (n.startsWith(q) || compact.startsWith(compactQuery)
+                    || label.startsWith(q) || compactLabel.startsWith(compactQuery)) starts.add(m);
+            else if (n.contains(q) || compact.contains(compactQuery)
+                    || label.contains(q) || compactLabel.contains(compactQuery)) contains.add(m);
             else if (m.getDescription().toLowerCase(Locale.ROOT).contains(q)) desc.add(m);
         }
         starts.addAll(contains);
@@ -172,7 +178,7 @@ public final class ModuleManager {
             if (!m.getBind().matches(code)) continue;
             m.toggle();
             if (ClientSettings.toggleNotifications.get()) {
-                Notifications.push(m.getName(), m.isEnabled() ? "Enabled" : "Disabled",
+                Notifications.push(m.getDisplayName(), m.isEnabled() ? "Enabled" : "Disabled",
                         m.isEnabled() ? Notifications.Type.ENABLED : Notifications.Type.DISABLED);
             }
         }

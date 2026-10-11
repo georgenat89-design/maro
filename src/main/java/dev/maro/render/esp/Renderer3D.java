@@ -91,12 +91,15 @@ public final class Renderer3D {
             boolean coordsOn=coords!=null&&coords.isEnabled();
             dev.maro.module.impl.movement.Vehicles cars=ModuleManager.get(dev.maro.module.impl.movement.Vehicles.class);
             boolean carsOn=cars!=null&&cars.isEnabled();
-            if ((module == null || !module.isEnabled())&&(builder==null||!builder.isEnabled())&&esps.isEmpty()&&!pathsOn&&!coordsOn&&!carsOn) return;
+            dev.maro.module.impl.visuals.JumpCircle circles=ModuleManager.get(dev.maro.module.impl.visuals.JumpCircle.class);
+            boolean circlesOn=circles!=null&&circles.isEnabled();
+            if ((module == null || !module.isEnabled())&&(builder==null||!builder.isEnabled())&&esps.isEmpty()&&!pathsOn&&!coordsOn&&!carsOn&&!circlesOn) return;
             try {
                 if(module!=null&&module.isEnabled())module.render(new Renderer3D(context));
                 if(pathsOn)paths.render(new Renderer3D(context),MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(true));
                 if(coordsOn)coords.render(new Renderer3D(context),MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(true));
                 if(carsOn)cars.render(new Renderer3D(context),MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(true));
+                if(circlesOn)circles.render(new Renderer3D(context),MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(false));
                 for(BlockESP esp:esps)esp.render(new Renderer3D(context));
                 if(builder!=null&&builder.isEnabled())SchematicRenderer.render(builder,new Renderer3D(context),context);
             }
@@ -105,6 +108,16 @@ public final class Renderer3D {
     }
     private void vertex(VertexConsumer consumer, double x, double y, double z, Color color) {
         consumer.vertex(transform, (float)(x - camera.x), (float)(y - camera.y), (float)(z - camera.z)).color(color.getPacked());
+    }
+    /** Per-vertex coverage for soft world-space effects, with the normal terrain depth test. */
+    public void gradientQuad(double x1,double y1,double z1,double x2,double y2,double z2,
+                             double x3,double y3,double z3,double x4,double y4,double z4,
+                             int c1,int c2,int c3,int c4) {
+        VertexConsumer buffer = BUFFERS.getBuffer(throughWalls?FILL:VISIBLE_FILL);
+        buffer.vertex(transform,(float)(x1-camera.x),(float)(y1-camera.y),(float)(z1-camera.z)).color(c1);
+        buffer.vertex(transform,(float)(x2-camera.x),(float)(y2-camera.y),(float)(z2-camera.z)).color(c2);
+        buffer.vertex(transform,(float)(x3-camera.x),(float)(y3-camera.y),(float)(z3-camera.z)).color(c3);
+        buffer.vertex(transform,(float)(x4-camera.x),(float)(y4-camera.y),(float)(z4-camera.z)).color(c4);
     }
     public void quad(double x1, double y1, double z1, double x2, double y2, double z2,
                      double x3, double y3, double z3, double x4, double y4, double z4, Color color) {

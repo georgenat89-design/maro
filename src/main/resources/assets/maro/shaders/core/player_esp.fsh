@@ -33,8 +33,9 @@ layout(std140) uniform EspData {
     vec4 PlayerRects[MAX_PLAYERS];
     vec4 PlayerScales[MAX_PLAYERS / 4];
     // Each tracer from its start to its player (x0, y0, x1, y1 in pixels), and its colour.
-    vec4 TracerLines[MAX_PLAYERS];
-    vec4 TracerColors[MAX_PLAYERS];
+    vec4 TracerLines[256];
+    vec4 TracerColors[256];
+    vec4 TracerPhases[64];
 };
 
 out vec4 fragColor;
@@ -245,11 +246,13 @@ vec4 tracer(int index, vec2 px) {
     float along = clamp(dot(px - a, ab) / max(dot(ab, ab), 1e-4), 0.0, 1.0);
     float d = length(px - a - ab * along);
     float alpha = clamp(PlayerInfo.y * 0.5 + 0.5 - d, 0.0, 1.0);
-    alpha *= smoothstep(6.0, 22.0, length(px - a));
+    float pixelScale = max(float(textureSize(u_Mask, 0).y) / max(GlowParams.w, 1.0) / 1080.0, 0.001);
+    alpha *= smoothstep(6.0 * pixelScale, 22.0 * pixelScale, length(px - a));
     vec3 color = TracerColors[index].rgb;
     if (PlayerInfo.z > 0.5) {
         float t = Timing.x * Timing.y;
-        color = hsv2rgb(vec3(fract(along * 0.6 + float(index) * 0.13 - t * 0.2), 0.7, 1.0));
+        float phase = TracerPhases[index / 4][index % 4];
+        color = hsv2rgb(vec3(fract(along * 0.6 + phase - t * 0.2), 0.7, 1.0));
     }
     return vec4(color, alpha * TracerColors[index].a);
 }

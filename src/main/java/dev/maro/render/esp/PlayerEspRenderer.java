@@ -24,7 +24,6 @@ import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
 import org.lwjgl.BufferUtils;
-import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
 import java.util.OptionalInt;
@@ -59,15 +58,17 @@ public final class PlayerEspRenderer {
 
     /** Players whose contour and glow are sized individually; matches MAX_PLAYERS in player_esp.fsh. */
     private static final int MAX_PLAYERS = 16;
+    private static final int MAX_TRACERS = 256;
     /**
      * EspData in player_esp.fsh: eight vec4s of settings, PlayerInfo, a rect per player, a scale per player,
      * then a line (x0, y0, x1, y1 in pixels) and a colour per tracer.
      */
-    private static final int UNIFORM_BYTES = (9 + MAX_PLAYERS + MAX_PLAYERS / 4 + MAX_PLAYERS * 2) * 16;
+    private static final int UNIFORM_BYTES = (9 + MAX_PLAYERS + MAX_PLAYERS / 4 + MAX_TRACERS * 2 + MAX_TRACERS / 4) * 16;
     private static final int INFO_AT = 8 * 16, RECTS_AT = 9 * 16, SCALES_AT = RECTS_AT + MAX_PLAYERS * 16,
-        LINES_AT = SCALES_AT + MAX_PLAYERS / 4 * 16, LINE_COLORS_AT = LINES_AT + MAX_PLAYERS * 16;
+        LINES_AT = SCALES_AT + MAX_PLAYERS / 4 * 16, LINE_COLORS_AT = LINES_AT + MAX_TRACERS * 16,
+        PHASES_AT = LINE_COLORS_AT + MAX_TRACERS * 16;
     /** One quad for the silhouettes' rectangle, then one per tracer. */
-    private static final int MAX_QUADS = 1 + MAX_PLAYERS;
+    private static final int MAX_QUADS = 1 + MAX_TRACERS;
     /** On-screen player height, as a share of the screen, below which contour and glow start to thin. */
     private static final float FULL_SIZE_HEIGHT = 0.2f;
     private static final float MIN_SIZE_SCALE = 0.3f;
@@ -86,8 +87,12 @@ public final class PlayerEspRenderer {
     }
 
     /** This frame's tracers: target in NDC (pointing off screen for players behind you), and ARGB. */
-    private static final float[] tracerTargets = new float[MAX_PLAYERS * 2];
-    private static final int[] tracerColors = new int[MAX_PLAYERS];
+    private static final float[] tracerTargets = new float[MAX_TRACERS * 2];
+    private static final int[] tracerColors = new int[MAX_TRACERS];
+    private static final float[] tracerPhases = new float[MAX_TRACERS];
+    private static final float[][] lines = new float[MAX_TRACERS][4];
+    private static final Vector4f projected = new Vector4f();
+    private static final ByteBuffer uniformData = BufferUtils.createByteBuffer(UNIFORM_BYTES);
     private static int tracerCount;
 
     private static SimpleFramebuffer mask;
@@ -97,6 +102,7 @@ public final class PlayerEspRenderer {
     /** This frame's matrices, from the start of world rendering. */
     private static final Matrix4f viewProjection = new Matrix4f();
     private static boolean haveMatrices;
+    private static Vec3d playerPosition = Vec3d.ZERO;
 
     /** Silhouettes were drawn this frame and are waiting to be composited. */
     private static boolean pending;
@@ -129,7 +135,9 @@ public final class PlayerEspRenderer {
     public static void beginFrame(Matrix4f positionMatrix, Matrix4f projectionMatrix) {
         pending = false;
         tracerCount = 0;
+        haveMatrices = false;
         if (!active()) return;
+        playerPosition = mc.player.getLerpedPos(mc.getRenderTickCounter().getTickProgress(false));
 
         int width = mc.getWindow().getFramebufferWidth();
         int height = mc.getWindow().getFramebufferHeight();
@@ -142,7 +150,7 @@ public final class PlayerEspRenderer {
         if (mask == null) mask = new SimpleFramebuffer("maro player esp", maskWidth, maskHeight, true);
         else if (mask.textureWidth != maskWidth || mask.textureHeight != maskHeight) mask.resize(maskWidth, maskHeight);
 
-        RenderSystem.getDevice().createCommandEncoder().clearColorTexture(mask.getColorAttachment(), 0);
+        if (silhouettesOn()) RenderSystem.getDevice().createCommandEncoder().clearColorTexture(mask.getColorAttachment(), 0);
 
         viewProjection.set(projectionMatrix).mul(positionMatrix);
         haveMatrices = true;
@@ -163,6 +171,10 @@ public final class PlayerEspRenderer {
 
     public static boolean shouldDraw(Entity entity) {
         return module().shouldDraw(entity);
+    }
+
+    public static boolean silhouettesOn() {
+        return module().silhouettesOn();
     }
 
     public static int color(Entity entity) {
@@ -236,30 +248,13 @@ public final class PlayerEspRenderer {
     /** Queues a tracer to {@code entity}, standing at the interpolated {@code (x, y, z)}. */
     public static void addTracer(Entity entity, double x, double y, double z, Vec3d camera) {
         PlayerESP m = module();
-        if (!haveMatrices || tracerCount >= MAX_PLAYERS || entity == mc.player || !m.tracersOn()) return;
-        Vector4f p = new Vector4f((float) (x - camera.x), (float) (y + entity.getHeight() / 2 - camera.y), (float) (z - camera.z), 1f);
+        if (!haveMatrices || tracerCount >= MAX_TRACERS || entity == mc.player || !m.tracersOn()) return;
+        Vector4f p = projected.set((float) (x - camera.x), (float) (y + entity.getHeight() / 2 - camera.y), (float) (z - camera.z), 1f);
         viewProjection.transform(p);
-        float nx, ny;
-        if (p.w > 0.05f) {
-            nx = p.x / p.w;
-            ny = p.y / p.w;
-        } else {
-            // Behind the camera: point off the screen edge on the side they are on.
-            float len = (float) Math.hypot(p.x, p.y);
-            nx = len < 1e-4f ? 0f : p.x / len;
-            ny = len < 1e-4f ? -1f : p.y / len;
-            nx *= 3f;
-            ny *= 3f;
-        }
-        // Far off-screen targets only need their direction; keep the numbers small.
-        float far = Math.max(Math.abs(nx), Math.abs(ny));
-        if (far > 3f) {
-            nx *= 3f / far;
-            ny *= 3f / far;
-        }
-        tracerTargets[tracerCount * 2] = nx;
-        tracerTargets[tracerCount * 2 + 1] = ny;
-        tracerColors[tracerCount++] = m.tracerColor(entity);
+        if (!TracerGeometry.project(p.x, p.y, p.w, m.tracersFromBottom(), tracerTargets, tracerCount * 2)) return;
+        tracerPhases[tracerCount] = TracerGeometry.phase(entity.getUuid().getMostSignificantBits() ^ entity.getUuid().getLeastSignificantBits());
+        double dx = x - playerPosition.x, dy = y - playerPosition.y, dz = z - playerPosition.z;
+        tracerColors[tracerCount++] = m.tracerColor(entity, Math.sqrt(dx * dx + dy * dy + dz * dz));
     }
 
     /** Whether a point in the world is in front of the camera and roughly on screen this frame. */
@@ -353,33 +348,18 @@ public final class PlayerEspRenderer {
     private static float[][] tracerLines(int width, int height) {
         float halfW = width / 2f, halfH = height / 2f;
         float startX = halfW, startY = module().tracersFromBottom() ? 0f : halfH;
-        float[][] lines = new float[tracerCount][];
         for (int i = 0; i < tracerCount; i++) {
-            lines[i] = new float[] {startX, startY, (tracerTargets[i * 2] + 1) * halfW, (tracerTargets[i * 2 + 1] + 1) * halfH};
+            lines[i][0] = startX;
+            lines[i][1] = startY;
+            lines[i][2] = (tracerTargets[i * 2] + 1) * halfW;
+            lines[i][3] = (tracerTargets[i * 2 + 1] + 1) * halfH;
         }
         return lines;
     }
 
     /** A thin quad around tracer {@code i}, padded for its anti-aliased edges; the shader does the rest. */
     private static void writeTracerQuad(int i, float[] line, int width, int height) {
-        float dx = line[2] - line[0], dy = line[3] - line[1];
-        float length = (float) Math.hypot(dx, dy);
-        if (length < 1f) {
-            writeQuad(i + 1, new float[4], i + 1);
-            return;
-        }
-        float ux = dx / length, uy = dy / length, pad = module().tracerWidthPx() / 2f + 1.5f;
-        float nx = -uy * pad, ny = ux * pad, ex = ux * pad, ey = uy * pad;
-        float[] px = {
-            line[0] - ex + nx, line[1] - ey + ny,
-            line[0] - ex - nx, line[1] - ey - ny,
-            line[2] + ex - nx, line[3] + ey - ny,
-            line[2] + ex + nx, line[3] + ey + ny};
-        for (int k = 0; k < 8; k += 2) {
-            px[k] = px[k] / width * 2f - 1f;
-            px[k + 1] = px[k + 1] / height * 2f - 1f;
-        }
-        writeCorners(i + 1, px, i + 1);
+        TracerGeometry.writeQuad(VERTICES, i + 1, line, module().tracerWidthPx() / 2f + 1.5f, width, height, i + 1);
     }
 
     private static GpuBufferSlice writeUniforms(float[][] lines) {
@@ -388,40 +368,37 @@ public final class PlayerEspRenderer {
                 GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST, UNIFORM_BYTES);
         }
 
-        ByteBuffer data = MemoryUtil.memCalloc(UNIFORM_BYTES);
-        try {
-            Framebuffer target = mc.getFramebuffer();
-            float[] values = module().uniformValues();
-            values[PlayerESP.MASK_SCALE_INDEX] = mask.textureHeight / (float) target.textureHeight;
-            for (int i = 0; i < values.length; i++) data.putFloat(i * Float.BYTES, values[i]);
+        ByteBuffer data = uniformData;
+        Framebuffer target = mc.getFramebuffer();
+        float[] values = module().uniformValues();
+        values[PlayerESP.MASK_SCALE_INDEX] = mask.textureHeight / (float) target.textureHeight;
+        for (int i = 0; i < values.length; i++) data.putFloat(i * Float.BYTES, values[i]);
 
-            // PlayerInfo, a pixel rect per player, the scales packed four to a vec4, then tracers.
-            int info = INFO_AT;
-            data.putFloat(info, playerCount);
-            data.putFloat(info + 4, module().tracerWidthPx());
-            data.putFloat(info + 8, module().rainbowTracers() ? 1f : 0f);
-            data.putFloat(info + 12, tracerCount);
-            float halfW = target.textureWidth / 2f, halfH = target.textureHeight / 2f;
-            for (int i = 0; i < playerCount; i++) {
-                int at = RECTS_AT + i * 16;
-                data.putFloat(at, (playerRects[i * 4] + 1) * halfW - 4);
-                data.putFloat(at + 4, (playerRects[i * 4 + 1] + 1) * halfH - 4);
-                data.putFloat(at + 8, (playerRects[i * 4 + 2] + 1) * halfW + 4);
-                data.putFloat(at + 12, (playerRects[i * 4 + 3] + 1) * halfH + 4);
-                data.putFloat(SCALES_AT + i * 4, playerScales[i]);
-            }
-            for (int i = 0; i < tracerCount; i++) {
-                for (int k = 0; k < 4; k++) data.putFloat(LINES_AT + i * 16 + k * 4, lines[i][k]);
-                int c = tracerColors[i];
-                data.putFloat(LINE_COLORS_AT + i * 16, (c >> 16 & 0xFF) / 255f);
-                data.putFloat(LINE_COLORS_AT + i * 16 + 4, (c >> 8 & 0xFF) / 255f);
-                data.putFloat(LINE_COLORS_AT + i * 16 + 8, (c & 0xFF) / 255f);
-                data.putFloat(LINE_COLORS_AT + i * 16 + 12, (c >>> 24) / 255f);
-            }
-            RenderSystem.getDevice().createCommandEncoder().writeToBuffer(uniforms.slice(0, UNIFORM_BYTES), data);
-        } finally {
-            MemoryUtil.memFree(data);
+        // PlayerInfo, a pixel rect per player, the scales packed four to a vec4, then tracers.
+        int info = INFO_AT;
+        data.putFloat(info, playerCount);
+        data.putFloat(info + 4, module().tracerWidthPx());
+        data.putFloat(info + 8, module().rainbowTracers() ? 1f : 0f);
+        data.putFloat(info + 12, tracerCount);
+        float halfW = target.textureWidth / 2f, halfH = target.textureHeight / 2f;
+        for (int i = 0; i < playerCount; i++) {
+            int at = RECTS_AT + i * 16;
+            data.putFloat(at, (playerRects[i * 4] + 1) * halfW - 4);
+            data.putFloat(at + 4, (playerRects[i * 4 + 1] + 1) * halfH - 4);
+            data.putFloat(at + 8, (playerRects[i * 4 + 2] + 1) * halfW + 4);
+            data.putFloat(at + 12, (playerRects[i * 4 + 3] + 1) * halfH + 4);
+            data.putFloat(SCALES_AT + i * 4, playerScales[i]);
         }
+        for (int i = 0; i < tracerCount; i++) {
+            for (int k = 0; k < 4; k++) data.putFloat(LINES_AT + i * 16 + k * 4, lines[i][k]);
+            int c = tracerColors[i];
+            data.putFloat(LINE_COLORS_AT + i * 16, (c >> 16 & 0xFF) / 255f);
+            data.putFloat(LINE_COLORS_AT + i * 16 + 4, (c >> 8 & 0xFF) / 255f);
+            data.putFloat(LINE_COLORS_AT + i * 16 + 8, (c & 0xFF) / 255f);
+            data.putFloat(LINE_COLORS_AT + i * 16 + 12, (c >>> 24) / 255f);
+            data.putFloat(PHASES_AT + i * 4, tracerPhases[i]);
+        }
+        RenderSystem.getDevice().createCommandEncoder().writeToBuffer(uniforms.slice(0, UNIFORM_BYTES), data);
 
         return uniforms.slice(0, UNIFORM_BYTES);
     }

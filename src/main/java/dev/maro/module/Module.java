@@ -61,6 +61,11 @@ public abstract class Module {
         return name;
     }
 
+    /** User-facing label; getName() remains the stable config and lookup key. */
+    public String getDisplayName() {
+        return getName();
+    }
+
     public String getDescription() {
         return description;
     }
