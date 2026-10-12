@@ -68,8 +68,9 @@ final class SpatialGuiChecks {
             context.runOnClient(c -> gui(c).spatialView().recenter());
             context.waitTicks(3);
             int[] size = context.computeOnClient(c -> new int[]{gui(c).width, gui(c).height});
+            double[] opened = context.computeOnClient(c -> gui(c).spatialView().pointer());
             require(pointingAt(context, size[0] / 2f, size[1] / 2f),
-                    "The pane did not open straight ahead: the crosshair is at " + java.util.Arrays.toString(context.computeOnClient(c -> gui(c).spatialView().pointer())));
+                    "The pane did not open straight ahead: the crosshair is at " + opened[0] + ", " + opened[1]);
             require(context.computeOnClient(c -> gui(c).spatialView().onPane()), "The crosshair was not on the pane");
             context.takeScreenshot("maro-spatial-menu");
 
@@ -78,8 +79,9 @@ final class SpatialGuiChecks {
             float[] button = context.computeOnClient(c -> gui(c).entryPlace(theme));
             require(button != null, "The Theme button was not drawn");
             lookAt(context, context.computeOnClient(c -> gui(c).spatialView().worldAt(button[0], button[1])));
+            double[] aimed = context.computeOnClient(c -> gui(c).spatialView().pointer());
             require(pointingAt(context, button[0], button[1]), "Looking at the Theme button did not put the crosshair on it: "
-                    + java.util.Arrays.toString(context.computeOnClient(c -> gui(c).spatialView().pointer())) + " for " + button[0] + ", " + button[1]);
+                    + aimed[0] + ", " + aimed[1] + " for " + button[0] + ", " + button[1]);
             context.getInput().pressMouse(GLFW.GLFW_MOUSE_BUTTON_LEFT);
             require(await(context, () -> gui(MinecraftClient.getInstance()).selectedEntry() == theme, 10),
                     "Clicking the Theme button with the crosshair did not open it");
