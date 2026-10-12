@@ -31,6 +31,8 @@ public final class SpatialView {
     private static final MinecraftClient mc = MinecraftClient.getInstance();
     /** How far in front of you the pane opens, in blocks. */
     private static final double DISTANCE = 2.4;
+    /** How much of the view the pane fills when it opens straight ahead; the rest shows the world round it. */
+    private static final double PANE_SIZE = 0.8;
     private static final int GRID_X = 32, GRID_Y = 18;
     private static final double NEAR = 0.05;
 
@@ -160,7 +162,7 @@ public final class SpatialView {
         aspect = (double) sw / sh;
     }
 
-    /** The pane straight ahead, filling the view as the menu would, so it opens pixel for pixel sharp. */
+    /** The pane straight ahead, a little smaller than the view so the world shows round it. */
     private void place() {
         cx = ex + fx * DISTANCE;
         cy = ey + fy * DISTANCE;
@@ -171,7 +173,7 @@ public final class SpatialView {
         ux = cux;
         uy = cuy;
         uz = cuz;
-        paneH = 2 * DISTANCE * tanV;
+        paneH = 2 * DISTANCE * tanV * PANE_SIZE;
         paneW = paneH * aspect;
     }
 
@@ -338,7 +340,7 @@ public final class SpatialView {
         if (win != null) {
             ctx.createNewRootLayer();
             MeshRenderState.Builder glass = new MeshRenderState.Builder(false);
-            roundFill(glass, win[0], win[1], win[2], win[3], win[4], fade(0x8E363B40, p), fade(0xA61C2024, p));
+            roundFill(glass, win[0], win[1], win[2], win[3], win[4], fade(0xAA2C3035, p), fade(0xBE1A1D21, p));
             glass.submit(ctx, RenderPipelines.GUI, TextureSetup.empty(), sw, sh);
         }
 
