@@ -3,29 +3,34 @@ package dev.maro.gui.spatial;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.FilterMode;
 import com.mojang.blaze3d.textures.GpuTextureView;
+import dev.maro.config.ClientSettings;
 import dev.maro.gui.ClickGuiScreen;
 import dev.maro.gui.render.Render2D;
 import dev.maro.gui.theme.Theme;
 import dev.maro.mixin.GameRendererSpatialAccessor;
 import dev.maro.util.ColorUtil;
 import dev.maro.util.Sounds;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.option.GameOptions;
+import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.texture.TextureSetup;
+import net.minecraft.client.util.InputUtil;
 import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 
 /**
- * The Spatial menu: the menu on a glass pane floating in the world in front of you, like a
- * headset's windows. The mouse turns your head as in game and the crosshair is the pointer; the
- * bar under the pane moves it (it follows your look while held, the wheel pulls it nearer or
- * pushes it away) and the red dot beside the bar closes the menu.
+ * The floating window: the menu on a glass pane in the world, like a headset's windows. The mouse
+ * turns your head as in game, the crosshair is the pointer, and you can walk about while it hangs
+ * where it is. The bar under the pane moves it (it follows your look while held, the wheel pulls
+ * it nearer or pushes it away) and the red dot beside the bar closes the menu. It opens again
+ * where you left it when that is nearby and in front of you.
  *
  * <p>The menu itself is drawn as usual but off screen ({@link SpatialCanvas}); here that picture
- * is laid on the pane in perspective, as a fine grid of quads, so it sits still in the world as
- * you look around it.
+ * is laid on the pane in perspective, as a fine grid of quads, so it sits still in the world.
  */
 public final class SpatialView {
     private static final MinecraftClient mc = MinecraftClient.getInstance();
@@ -33,8 +38,17 @@ public final class SpatialView {
     private static final double DISTANCE = 2.4;
     /** How much of the view the pane fills when it opens straight ahead; the rest shows the world round it. */
     private static final double PANE_SIZE = 0.8;
+    /** A remembered spot is used again within this many blocks, and this far round from where you look. */
+    private static final double REMEMBER_RANGE = 24, REMEMBER_COS = Math.cos(Math.toRadians(70));
     private static final int GRID_X = 32, GRID_Y = 18;
     private static final double NEAR = 0.05;
+
+    /** Where the pane was left, so it can open there again. */
+    private record Spot(Object world, double cx, double cy, double cz, double rx, double ry, double rz,
+                        double ux, double uy, double uz, double paneH) {
+    }
+
+    private static Spot spot;
 
     private final ClickGuiScreen menu;
     private final SpatialCanvas canvas = new SpatialCanvas();
@@ -45,6 +59,10 @@ public final class SpatialView {
     // The camera this frame: eye, forward, right, up, and the projection.
     private double ex, ey, ez, fx, fy, fz, crx, cry, crz, cux, cuy, cuz, tanV, aspect;
     private int sw = 1, sh = 1;
+    /** Roughly how many screen pixels one menu unit covers on the pane, for hairline edges. */
+    private float unitPixels = 2;
+    /** Whether you are in front of the pane (from behind it shows only its glass). */
+    private boolean front = true;
 
     // Where the crosshair meets the pane, in menu coordinates, and how far away that is.
     private double px = -1e4, py = -1e4, hitDistance;
@@ -73,11 +91,13 @@ public final class SpatialView {
         GLFW.glfwSetInputMode(mc.getWindow().getHandle(), GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_DISABLED);
     }
 
-    /** Gives the cursor back (for another screen or the game) and frees the picture. */
+    /** Gives the cursor back (for another screen or the game), lets go of the walking keys and frees the picture. */
     public void close() {
         if (!open) return;
         open = false;
         moving = false;
+        remember();
+        walk(false);
         long handle = mc.getWindow().getHandle();
         GLFW.glfwSetInputMode(handle, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_NORMAL);
         GLFW.glfwSetCursorPos(handle, mc.getWindow().getWidth() / 2.0, mc.getWindow().getHeight() / 2.0);
@@ -91,6 +111,28 @@ public final class SpatialView {
     /** Puts the pane straight in front of you again on the next frame. */
     public void recenter() {
         placed = false;
+        spot = null;
+    }
+
+    private void remember() {
+        if (placed && mc.world != null) spot = new Spot(mc.world, cx, cy, cz, rx, ry, rz, ux, uy, uz, paneH);
+    }
+
+    // ---- walking --------------------------------------------------------------------------------
+
+    /**
+     * Each tick while the window is open: the movement keys follow the keyboard, so you can walk,
+     * jump, sneak and sprint with the menu up ({@code allowed} is false while typing into a box).
+     */
+    public void walk(boolean allowed) {
+        GameOptions o = mc.options;
+        if (o == null) return;
+        boolean on = allowed && open && ClientSettings.spatialWalk.get();
+        for (KeyBinding key : new KeyBinding[]{o.forwardKey, o.backKey, o.leftKey, o.rightKey, o.jumpKey, o.sneakKey, o.sprintKey}) {
+            InputUtil.Key bound = KeyBindingHelper.getBoundKeyOf(key);
+            key.setPressed(on && bound.getCategory() == InputUtil.Type.KEYSYM && bound.getCode() != InputUtil.UNKNOWN_KEY.getCode()
+                    && InputUtil.isKeyPressed(mc.getWindow(), bound.getCode()));
+        }
     }
 
     // ---- each frame -----------------------------------------------------------------------------
@@ -111,6 +153,8 @@ public final class SpatialView {
             placed = true;
         }
         if (moving) follow(dt);
+        paneW = paneH * aspect;
+        unitPixels = (float) (mc.getWindow().getScaleFactor() * PANE_SIZE);
         point();
         menu.spatialPointer(onPane ? px : -1e4, onPane ? py : -1e4);
 
@@ -131,7 +175,7 @@ public final class SpatialView {
         double dx = x[0] - lastCursorX, dy = y[0] - lastCursorY;
         lastCursorX = x[0];
         lastCursorY = y[0];
-        if (mc.player == null || menu.menuProgress() < 0.05f && menu.isClosing()) return;
+        if (mc.player == null || menu.isClosing()) return;
         double s = mc.options.getMouseSensitivity().getValue() * 0.6 + 0.2;
         double g = s * s * s * 8.0;
         double turn = dx * g, tilt = dy * g;
@@ -162,8 +206,26 @@ public final class SpatialView {
         aspect = (double) sw / sh;
     }
 
-    /** The pane straight ahead, a little smaller than the view so the world shows round it. */
+    /** Where it was left if that is near and in front of you, else straight ahead at a little less than the view's size. */
     private void place() {
+        Spot s = spot;
+        if (s != null && ClientSettings.spatialRemember.get() && s.world() == mc.world) {
+            double dx = s.cx() - ex, dy = s.cy() - ey, dz = s.cz() - ez;
+            double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (dist < REMEMBER_RANGE && dist > 0.3 && (dx * fx + dy * fy + dz * fz) / dist > REMEMBER_COS) {
+                cx = s.cx();
+                cy = s.cy();
+                cz = s.cz();
+                rx = s.rx();
+                ry = s.ry();
+                rz = s.rz();
+                ux = s.ux();
+                uy = s.uy();
+                uz = s.uz();
+                paneH = s.paneH();
+                return;
+            }
+        }
         cx = ex + fx * DISTANCE;
         cy = ey + fy * DISTANCE;
         cz = ez + fz * DISTANCE;
@@ -174,7 +236,6 @@ public final class SpatialView {
         uy = cuy;
         uz = cuz;
         paneH = 2 * DISTANCE * tanV * PANE_SIZE;
-        paneW = paneH * aspect;
     }
 
     /** While the bar is held: the pane swings round to keep the bar under the crosshair, facing you. */
@@ -208,8 +269,9 @@ public final class SpatialView {
 
     /** Where the crosshair's line meets the pane, and whether that is on the bar or the dot. */
     private void point() {
-        // The pane's normal.
+        // The pane's normal, towards whoever it was placed for.
         double nx = ry * uz - rz * uy, ny = rz * ux - rx * uz, nz = rx * uy - ry * ux;
+        front = (ex - cx) * nx + (ey - cy) * ny + (ez - cz) * nz > 0;
         double facing = fx * nx + fy * ny + fz * nz;
         onPane = barHover = dotHover = false;
         if (Math.abs(facing) < 1e-5) return;
@@ -220,7 +282,7 @@ public final class SpatialView {
         px = (lx / paneW + 0.5) * sw;
         py = (0.5 - ly / paneH) * sh;
         hitDistance = t;
-        onPane = px >= 0 && py >= 0 && px < sw && py < sh;
+        onPane = front && px >= 0 && py >= 0 && px < sw && py < sh;
         float[] bar = bar(), dot = dot();
         if (bar != null && !menu.isClosing()) {
             barHover = moving || px >= bar[0] - 6 && px <= bar[0] + bar[2] + 6 && py >= bar[1] - 6 && py <= bar[1] + bar[3] + 6;
@@ -266,7 +328,10 @@ public final class SpatialView {
     }
 
     public void release() {
-        moving = false;
+        if (moving) {
+            moving = false;
+            remember();
+        }
     }
 
     /** The wheel while moving the pane pulls it nearer or pushes it away; whether it was used so. */
@@ -328,6 +393,11 @@ public final class SpatialView {
         return true;
     }
 
+    /** {@code pixels} screen pixels in menu units, near enough, for edges that stay hairline. */
+    private float px(float pixels) {
+        return pixels / Math.max(0.5f, unitPixels);
+    }
+
     private void draw(DrawContext ctx, float dt) {
         float p = menu.menuProgress();
         if (p <= 0.002f) return;
@@ -336,17 +406,23 @@ public final class SpatialView {
         dotGrow += ((dotHover ? 1f : 0f) - dotGrow) * Math.min(1f, dt * 14f);
         float[] win = menu.spatialWindow();
 
-        // The glass behind the window.
+        // A soft shadow, then the glass, with a feathered edge so it is smooth at any angle.
         if (win != null) {
             ctx.createNewRootLayer();
             MeshRenderState.Builder glass = new MeshRenderState.Builder(false);
-            roundFill(glass, win[0], win[1], win[2], win[3], win[4], fade(0xAA2C3035, p), fade(0xBE1A1D21, p));
+            float x = win[0], y = win[1], w = win[2], h = win[3], r = win[4];
+            band(glass, x, y + 3, w, h, r, 0, 18, fade(0x40000000, p), fade(0x58000000, p), 0, 0);
+            int top = fade(0xB0262A30, p), bottom = fade(0xC2171A1E, p);
+            roundFill(glass, x, y, w, h, r, top, bottom);
+            band(glass, x, y, w, h, r, 0, px(1.2f), top, bottom, clear(top), clear(bottom));
+            // A faint sheen down from the top edge, as light catching glass.
+            roundFill(glass, x, y, w, Math.min(60, h * 0.4f), r, fade(0x16FFFFFF, p), 0x00FFFFFF);
             glass.submit(ctx, RenderPipelines.GUI, TextureSetup.empty(), sw, sh);
         }
 
-        // The menu itself.
+        // The menu itself (only from in front: from behind the pane is just glass).
         GpuTextureView view = canvas.view();
-        if (view != null) {
+        if (view != null && front) {
             ctx.createNewRootLayer();
             MeshRenderState.Builder mesh = new MeshRenderState.Builder(true);
             float[] at = new float[(GRID_X + 1) * (GRID_Y + 1) * 2];
@@ -374,28 +450,42 @@ public final class SpatialView {
                     TextureSetup.of(view, RenderSystem.getSamplerCache().get(FilterMode.LINEAR)), sw, sh);
         }
 
-        // The rim, the bar and the dot over everything on the pane.
         if (win != null) {
             ctx.createNewRootLayer();
             MeshRenderState.Builder lines = new MeshRenderState.Builder(false);
-            roundRing(lines, win[0], win[1], win[2], win[3], win[4], 1.2f, 1.6f, fade(0xF0E9ECEF, p), fade(0xC8B9BEC4, p));
+            float x = win[0], y = win[1], w = win[2], h = win[3], r = win[4];
+            // The edge: a hairline of light, brightest along the top, fading away on both sides.
+            float line = px(1.4f), soft = px(1.1f);
+            int lt = fade(0xD2FFFFFF, p), lb = fade(0x46FFFFFF, p);
+            band(lines, x, y, w, h, r, -line, 0, lt, lb, lt, lb);
+            band(lines, x, y, w, h, r, 0, soft, lt, lb, clear(lt), clear(lb));
+            band(lines, x, y, w, h, r, -line, -line - soft * 1.6f, lt, lb, clear(lt), clear(lb));
+
+            // The bar: a soft pill with a shadow, brighter while pointed at, the accent while moving.
             float[] bar = bar(), dot = dot();
-            int barColor = moving ? Theme.accent() : ColorUtil.lerp(0xD8D2D5D9, 0xFFFFFFFF, barGlow);
-            float grow = barGlow * 6f;
-            roundFill(lines, bar[0] - grow, bar[1] - barGlow * 0.5f, bar[2] + grow * 2, bar[3] + barGlow, (bar[3] + barGlow) / 2f,
-                    fade(barColor, p), fade(barColor, p));
-            float r = dot[2] + dotGrow * 1.6f;
-            circle(lines, dot[0], dot[1], r, fade(ColorUtil.lerp(0xFFE5484D, 0xFFFF6B6F, dotGrow), p));
+            float grow = barGlow * 6f, bh = bar[3] + barGlow;
+            float bx = bar[0] - grow, by = bar[1] - barGlow * 0.5f, bw = bar[2] + grow * 2;
+            int barColor = fade(moving ? Theme.accent() : ColorUtil.lerp(0xE0E3E6EA, 0xFFFFFFFF, barGlow), p);
+            band(lines, bx, by + 1.2f, bw, bh, bh / 2f, 0, 4, fade(0x44000000, p), fade(0x44000000, p), 0, 0);
+            roundFill(lines, bx, by, bw, bh, bh / 2f, barColor, barColor);
+            band(lines, bx, by, bw, bh, bh / 2f, 0, px(1.1f), barColor, barColor, clear(barColor), clear(barColor));
+
+            // The close dot, red, with a cross while pointed at.
+            float rr = dot[2] + dotGrow * 1.6f;
+            int red = fade(ColorUtil.lerp(0xFFE5484D, 0xFFFF6B6F, dotGrow), p);
+            band(lines, dot[0] - rr, dot[1] - rr + 1, rr * 2, rr * 2, rr, 0, 3, fade(0x40000000, p), fade(0x40000000, p), 0, 0);
+            roundFill(lines, dot[0] - rr, dot[1] - rr, rr * 2, rr * 2, rr, red, red);
+            band(lines, dot[0] - rr, dot[1] - rr, rr * 2, rr * 2, rr, 0, px(1.1f), red, red, clear(red), clear(red));
             if (dotGrow > 0.05f) {
-                float c = r * 0.45f;
+                float c = rr * 0.42f;
                 int cross = fade(ColorUtil.withAlpha(0xFFFFFFFF, Math.round(255 * dotGrow)), p);
-                line(lines, dot[0] - c, dot[1] - c, dot[0] + c, dot[1] + c, 0.7f, cross);
-                line(lines, dot[0] - c, dot[1] + c, dot[0] + c, dot[1] - c, 0.7f, cross);
+                line(lines, dot[0] - c, dot[1] - c, dot[0] + c, dot[1] + c, 0.8f, cross);
+                line(lines, dot[0] - c, dot[1] + c, dot[0] + c, dot[1] - c, 0.8f, cross);
             }
             lines.submit(ctx, RenderPipelines.GUI, TextureSetup.empty(), sw, sh);
         }
 
-        // The pointer: the crosshair, a ring while it is on something of the menu's.
+        // The pointer: the crosshair, a dot while it is on something of the menu's.
         ctx.createNewRootLayer();
         float mx = sw / 2f, my = sh / 2f;
         int white = fade(0xF2FFFFFF, p);
@@ -415,7 +505,7 @@ public final class SpatialView {
     /** The points round a rounded rectangle, clockwise from the top left, in menu coordinates. */
     private static float[] outline(float x, float y, float w, float h, float r) {
         r = Math.max(0.01f, Math.min(r, Math.min(w, h) / 2f));
-        int seg = 8;
+        int seg = 10;
         float[] pts = new float[4 * (seg + 1) * 2];
         float[][] corners = {{x + w - r, y + r, -90}, {x + w - r, y + h - r, 0}, {x + r, y + h - r, 90}, {x + r, y + r, 180}};
         int n = 0;
@@ -440,28 +530,40 @@ public final class SpatialView {
         for (int i = 0; i < n; i++) {
             int j = (i + 1) % n;
             if (!project(pts[i * 2], pts[i * 2 + 1], s0, 0) || !project(pts[j * 2], pts[j * 2 + 1], s1, 0)) continue;
-            int c0 = ColorUtil.lerp(top, bottom, (pts[i * 2 + 1] - y) / h), c1 = ColorUtil.lerp(top, bottom, (pts[j * 2 + 1] - y) / h);
-            b.triangle(c[0], c[1], mid, s0[0], s0[1], c0, s1[0], s1[1], c1);
+            b.triangle(c[0], c[1], mid, s0[0], s0[1], shade(top, bottom, pts[i * 2 + 1], y, h), s1[0], s1[1], shade(top, bottom, pts[j * 2 + 1], y, h));
         }
     }
 
-    /** The edge of a rounded rectangle on the pane, {@code out} outside it and {@code in} inside. */
-    private void roundRing(MeshRenderState.Builder b, float x, float y, float w, float h, float r, float out, float in, int top, int bottom) {
-        float[] outer = outline(x - out, y - out, w + out * 2, h + out * 2, r + out);
-        float[] inner = outline(x + in, y + in, w - in * 2, h - in * 2, Math.max(0.5f, r - in));
+    /**
+     * A band round a rounded rectangle on the pane, from {@code d0} to {@code d1} out from its edge
+     * (negative is inside), coloured top to bottom at each side of the band; a side of 0 colour
+     * fades out, which is how the edges are feathered.
+     */
+    private void band(MeshRenderState.Builder b, float x, float y, float w, float h, float r, float d0, float d1,
+                      int top0, int bottom0, int top1, int bottom1) {
+        float[] p0 = outline(x - d0, y - d0, w + d0 * 2, h + d0 * 2, Math.max(0.01f, r + d0));
+        float[] p1 = outline(x - d1, y - d1, w + d1 * 2, h + d1 * 2, Math.max(0.01f, r + d1));
         float[] a0 = new float[2], a1 = new float[2], b0 = new float[2], b1 = new float[2];
-        int n = outer.length / 2;
+        int n = p0.length / 2;
         for (int i = 0; i < n; i++) {
             int j = (i + 1) % n;
-            if (!project(outer[i * 2], outer[i * 2 + 1], a0, 0) || !project(outer[j * 2], outer[j * 2 + 1], a1, 0)
-                    || !project(inner[i * 2], inner[i * 2 + 1], b0, 0) || !project(inner[j * 2], inner[j * 2 + 1], b1, 0)) continue;
-            int c0 = ColorUtil.lerp(top, bottom, (outer[i * 2 + 1] - y) / h), c1 = ColorUtil.lerp(top, bottom, (outer[j * 2 + 1] - y) / h);
-            b.quad(a0[0], a0[1], 0, 0, c0, a1[0], a1[1], 0, 0, c1, b1[0], b1[1], 0, 0, c1, b0[0], b0[1], 0, 0, c0);
+            if (!project(p0[i * 2], p0[i * 2 + 1], a0, 0) || !project(p0[j * 2], p0[j * 2 + 1], a1, 0)
+                    || !project(p1[i * 2], p1[i * 2 + 1], b0, 0) || !project(p1[j * 2], p1[j * 2 + 1], b1, 0)) continue;
+            int ca0 = shade(top0, bottom0, p0[i * 2 + 1], y, h), ca1 = shade(top0, bottom0, p0[j * 2 + 1], y, h);
+            int cb0 = shade(top1, bottom1, p1[i * 2 + 1], y, h), cb1 = shade(top1, bottom1, p1[j * 2 + 1], y, h);
+            b.quad(a0[0], a0[1], 0, 0, ca0, a1[0], a1[1], 0, 0, ca1, b1[0], b1[1], 0, 0, cb1, b0[0], b0[1], 0, 0, cb0);
         }
     }
 
-    private void circle(MeshRenderState.Builder b, float x, float y, float r, int color) {
-        roundFill(b, x - r, y - r, r * 2, r * 2, r, color, color);
+    /** The colour between {@code top} and {@code bottom} at height {@code py}. */
+    private static int shade(int top, int bottom, float py, float y, float h) {
+        float t = Math.max(0f, Math.min(1f, (py - y) / Math.max(1e-3f, h)));
+        return ColorUtil.lerp(top, bottom, t);
+    }
+
+    /** The same colour, fully clear: feathered edges fade to this so they do not darken on the way. */
+    private static int clear(int color) {
+        return color & 0x00FFFFFF;
     }
 
     private void line(MeshRenderState.Builder b, float x1, float y1, float x2, float y2, float width, int color) {

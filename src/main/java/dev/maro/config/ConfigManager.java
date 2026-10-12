@@ -94,6 +94,12 @@ public final class ConfigManager {
                 if (version < CLIENT_VERSION && ClientSettings.THEME_PAGE.contains(section)) continue;
                 readSettings(settings, section.getSettings());
             }
+            // The floating window was a menu style of its own for a while: it is the Window style, floating.
+            JsonElement style = settings.get("Menu Style");
+            if (style != null && style.isJsonPrimitive() && style.getAsString().equals("Spatial")) {
+                ClientSettings.menuStyle.set("Window");
+                ClientSettings.spatialMenu.set(true);
+            }
         }
         if (root.has("friends") && root.get("friends").isJsonArray()) {
             FriendManager.clear();
@@ -104,8 +110,8 @@ public final class ConfigManager {
             if (!name.isEmpty()) current = name;
         }
         dev.maro.gui.PanelsView.load(root.get("panels"));
-        // Once: the menu becomes the Spatial pane (it can be switched back under Settings, Menu Style).
-        if (!root.has("spatialMenu")) ClientSettings.menuStyle.set("Spatial");
+        // Once: the menu floats (Settings, Floating Window turns it off).
+        if (!root.has("spatialMenu")) ClientSettings.spatialMenu.set(true);
     }
 
     // ---- module configs -----------------------------------------------------------------

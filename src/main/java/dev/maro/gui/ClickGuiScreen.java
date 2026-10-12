@@ -121,8 +121,10 @@ public class ClickGuiScreen extends Screen {
     private final PanelsView panels;
     /** With the Spatial style: the menu on a glass pane in the world. */
     private final dev.maro.gui.spatial.SpatialView spatial = new dev.maro.gui.spatial.SpatialView(this);
-    /** Where the window was drawn last frame, {x, y, w, h, corner radius}, for the Spatial pane's glass. */
+    /** The glass on the floating window last frame, {x, y, w, h, corner radius}: round the window, or round all the panels. */
     private float[] spatialWindow;
+    /** Where the window was drawn last frame, {x, y, w, h, corner radius}. */
+    private float[] windowRect;
     /** Set while the menu is being drawn for the Spatial pane (no dimming, no window background of its own). */
     private boolean paneDraw;
     /** The middle of each tab and page button on the top bar last frame, by entry; for tests. */
@@ -293,9 +295,9 @@ public class ClickGuiScreen extends Screen {
         return ClientSettings.menuStyle.is("Panels");
     }
 
-    /** Whether the menu floats on a pane in the world (the Spatial style). */
+    /** Whether the menu floats on a glass window in the world (Floating Window, with either style). */
     public static boolean spatialStyle() {
-        return ClientSettings.menuStyle.is("Spatial");
+        return ClientSettings.spatialMenu.get();
     }
 
     /** Whether the menu is on the Spatial pane now: the Spatial style, in a world (elsewhere it is a flat window). */
@@ -499,14 +501,17 @@ public class ClickGuiScreen extends Screen {
         renderTooltip(ctx, p);
         Render2D.setAlpha(1f);
         if (!spatialPane) Notifications.render(ctx); // on the pane they would float off in a corner; the HUD shows them
+        // The floating window's glass: round the window, or with the panels round them all.
+        spatialWindow = panelsStyle() ? new float[]{4, 4, width - 8, height - 8, 14} : windowRect;
     }
 
     /** The window: tabs, header and the open page. */
     private void renderWindow(DrawContext ctx, float p) {
         Render2D.setAlpha(p);
 
-        // window layout (a little smaller on the Spatial pane, so the world shows round it)
-        boolean spatialPane = paneDraw;
+        // window layout (a little smaller on the floating window, so the world shows round it; there the
+        // glass is its background, unless it is over the panels, which have the glass round them all)
+        boolean spatialPane = paneDraw && !panelsStyle();
         float ww = spatialPane ? Math.min(width - 10f, Math.max(420f, Math.min(600f, width * 0.62f)))
                 : Math.min(width - 10f, Math.max(420f, Math.min(660f, width - 40f)));
         float wh = spatialPane ? Math.min(height - 40f, Math.max(250f, Math.min(360f, height * 0.64f)))
@@ -517,7 +522,7 @@ public class ClickGuiScreen extends Screen {
         float wx = baseX + (spatialPane ? 0 : dragX);
         float wy = baseY + (spatialPane ? -8 : dragY) + (1f - p) * 18f;
         float r = Theme.radius() + 3f;
-        spatialWindow = new float[]{wx, wy, ww, wh, r};
+        windowRect = new float[]{wx, wy, ww, wh, r};
 
         if (!spatialPane && ClientSettings.shadow.get()) {
             Render2D.shadow(ctx, wx, wy + 3, ww, wh, r, 24f, 0x80000000);
@@ -915,7 +920,8 @@ public class ClickGuiScreen extends Screen {
         char chr = (char) input.codepoint();
         if (closingAt >= 0 || listening != null || justOpened()) return true;
         if (focused != null) return focused.charTyped(chr);
-        if (ClientSettings.typeToSearch.get() && (showingPanels() || currentPage().typeToSearch()) && Character.isLetterOrDigit(chr)) {
+        // Not with the floating window: there the letters walk you about.
+        if (ClientSettings.typeToSearch.get() && !spatial.isOpen() && (showingPanels() || currentPage().typeToSearch()) && Character.isLetterOrDigit(chr)) {
             focused = search;
             return search.charTyped(chr);
         }
@@ -935,6 +941,8 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public void tick() {
+        // You can walk about with the floating window open, except while typing into a box.
+        if (spatial.isOpen()) spatial.walk(focused == null && listening == null);
         if (closingAt >= 0 && progress() <= 0.001f && client != null) client.setScreen(null);
     }
 

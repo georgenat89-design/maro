@@ -20,9 +20,14 @@ public final class ClientSettings {
     public static final SettingSection INTERFACE = new SettingSection("Interface");
     public static final KeybindSetting guiBind = INTERFACE.add(new KeybindSetting("Menu Keybind", "Key that opens this menu", GLFW.GLFW_KEY_RIGHT_SHIFT));
     public static final ModeSetting menuStyle = INTERFACE.add(new ModeSetting("Menu Style",
-            "Panels shows every category side by side, Window is one window with a tab per category, Spatial floats that window"
-                    + " on a glass pane in the world: look around with the mouse, click with the crosshair, hold the bar under it to move it",
-            "Panels", "Panels", "Window", "Spatial"));
+            "Panels shows every category side by side, Window is one window with a tab per category", "Panels", "Panels", "Window"));
+    public static final BooleanSetting spatialMenu = INTERFACE.add(new BooleanSetting("Floating Window",
+            "The menu (Panels or Window) floats on a glass window in the world: look around with the mouse, click with the crosshair,"
+                    + " walk about, hold the bar under it to move it, the red dot closes it", false));
+    public static final BooleanSetting spatialWalk = INTERFACE.add(new BooleanSetting("Walk With Menu Open",
+            "Move, jump, sneak and sprint while the floating window is open (not while typing in a box)", true).visible(spatialMenu::get));
+    public static final BooleanSetting spatialRemember = INTERFACE.add(new BooleanSetting("Remember Spot",
+            "The floating window opens where you left it when that is nearby and in front of you", true).visible(spatialMenu::get));
     public static final BooleanSetting customFont = INTERFACE.add(new BooleanSetting("Custom Font", "Use the Inter font instead of the Minecraft font", true));
     public static final BooleanSetting capsText = INTERFACE.add(new BooleanSetting("Caps Text", "Small bold all-caps labels (off = normal sentence case)", true));
     public static final NumberSetting animSpeed = INTERFACE.add(new NumberSetting("Animation Speed", "How fast menu animations play", 1.0, 0.3, 3.0, 0.1).suffix("x"));

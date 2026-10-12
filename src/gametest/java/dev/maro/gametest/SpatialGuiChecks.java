@@ -53,10 +53,12 @@ final class SpatialGuiChecks {
 
     static void run(ClientGameTestContext context) {
         String style = context.computeOnClient(c -> ClientSettings.menuStyle.get());
+        boolean floating = context.computeOnClient(c -> ClientSettings.spatialMenu.get());
         float[] rotation = context.computeOnClient(c -> new float[]{c.player.getYaw(), c.player.getPitch()});
         try {
             context.runOnClient(c -> {
-                ClientSettings.menuStyle.set("Spatial");
+                ClientSettings.menuStyle.set("Window");
+                ClientSettings.spatialMenu.set(true);
                 c.player.setYaw(30);
                 c.player.setPitch(-4);
             });
@@ -118,10 +120,56 @@ final class SpatialGuiChecks {
             lookAt(context, context.computeOnClient(c -> gui(c).spatialView().worldAt(dot[0], dot[1])));
             context.getInput().pressMouse(GLFW.GLFW_MOUSE_BUTTON_LEFT);
             require(await(context, () -> MinecraftClient.getInstance().currentScreen == null, 60), "The red dot did not close the menu");
+
+            // Opened again, it is back where it was left.
+            context.runOnClient(c -> c.setScreen(new ClickGuiScreen()));
+            context.waitTicks(15);
+            Vec3d again = context.computeOnClient(c -> gui(c).spatialView().centre());
+            require(again.distanceTo(moved) < 1e-3, "The window did not open where it was left: " + again + " not " + moved);
+
+            // Walking with it open: the player moves, the window stays.
+            Vec3d from = context.computeOnClient(c -> c.player.getEntityPos());
+            context.getInput().holdKey(o -> o.backKey);
+            context.waitTicks(12);
+            context.getInput().releaseKey(o -> o.backKey);
+            context.waitTicks(3);
+            Vec3d to = context.computeOnClient(c -> c.player.getEntityPos());
+            require(to.distanceTo(from) > 0.8, "Walking with the floating window open did not move the player: " + from.distanceTo(to));
+            require(context.computeOnClient(c -> gui(c).spatialView().centre()).distanceTo(moved) < 1e-3, "Walking moved the window");
+            context.takeScreenshot("maro-spatial-walked");
+            context.runOnClient(c -> c.setScreen(null));
+            context.waitTicks(3);
+
+            // The Panels style floats too: a click with the crosshair on a module's row switches it.
+            context.runOnClient(c -> {
+                ClientSettings.menuStyle.set("Panels");
+                c.player.setYaw(10);
+                c.player.setPitch(0);
+            });
+            context.waitTicks(3);
+            context.runOnClient(c -> {
+                c.setScreen(new ClickGuiScreen());
+                gui(c).spatialView().recenter();
+            });
+            context.waitTicks(18);
+            require(context.computeOnClient(c -> gui(c).showingPanels() && gui(c).spatialView().isOpen()), "The Panels style did not float");
+            dev.maro.module.Module example = dev.maro.module.ModuleManager.getByName("Example");
+            boolean wasOn = context.computeOnClient(c -> example.isEnabled());
+            float[] row = context.computeOnClient(c -> gui(c).panelPlace(example));
+            require(row != null, "The Example module has no row in the floating panels");
+            context.takeScreenshot("maro-spatial-panels");
+            lookAt(context, context.computeOnClient(c -> gui(c).spatialView().worldAt(row[0], row[1])));
+            require(pointingAt(context, row[0], row[1]), "Looking at a module's row did not put the crosshair on it");
+            context.getInput().pressMouse(GLFW.GLFW_MOUSE_BUTTON_LEFT);
+            require(await(context, () -> example.isEnabled() != wasOn, 10), "Clicking a module's row on the floating panels did not switch it");
+            context.runOnClient(c -> example.setEnabled(wasOn));
+            context.waitTicks(4);
+            context.takeScreenshot("maro-spatial-panels-angle");
         } finally {
             context.runOnClient(c -> {
                 if (c.currentScreen instanceof ClickGuiScreen) c.setScreen(null);
                 ClientSettings.menuStyle.set(style);
+                ClientSettings.spatialMenu.set(floating);
                 c.player.setYaw(rotation[0]);
                 c.player.setPitch(rotation[1]);
             });
