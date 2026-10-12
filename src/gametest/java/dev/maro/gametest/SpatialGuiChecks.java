@@ -137,6 +137,12 @@ final class SpatialGuiChecks {
             require(to.distanceTo(from) > 0.8, "Walking with the floating window open did not move the player: " + from.distanceTo(to));
             require(context.computeOnClient(c -> gui(c).spatialView().centre()).distanceTo(moved) < 1e-3, "Walking moved the window");
             context.takeScreenshot("maro-spatial-walked");
+            // Right up to it and partly through: it is cut cleanly where it meets the eye, not warped.
+            context.getInput().holdKey(o -> o.forwardKey);
+            context.waitTicks(16);
+            context.getInput().releaseKey(o -> o.forwardKey);
+            context.waitTicks(4);
+            context.takeScreenshot("maro-spatial-close");
             context.runOnClient(c -> c.setScreen(null));
             context.waitTicks(3);
 

@@ -1,8 +1,11 @@
 package dev.maro.gui.spatial;
 
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.FilterMode;
+import com.mojang.blaze3d.pipeline.BlendFunction;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.platform.DestFactor;
+import com.mojang.blaze3d.platform.SourceFactor;
 import com.mojang.blaze3d.textures.GpuTextureView;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import dev.maro.config.ClientSettings;
 import dev.maro.gui.ClickGuiScreen;
 import dev.maro.gui.render.Render2D;
@@ -11,14 +14,22 @@ import dev.maro.mixin.GameRendererSpatialAccessor;
 import dev.maro.util.ColorUtil;
 import dev.maro.util.Sounds;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.option.GameOptions;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.render.Camera;
-import net.minecraft.client.texture.TextureSetup;
+import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.RenderSetup;
+import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.render.VertexFormats;
+import net.minecraft.client.util.BufferAllocator;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 
@@ -102,6 +113,7 @@ public final class SpatialView {
         GLFW.glfwSetInputMode(handle, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_NORMAL);
         GLFW.glfwSetCursorPos(handle, mc.getWindow().getWidth() / 2.0, mc.getWindow().getHeight() / 2.0);
         canvas.close();
+        if (active == this) active = null;
     }
 
     public boolean isOpen() {
@@ -154,7 +166,6 @@ public final class SpatialView {
         }
         if (moving) follow(dt);
         paneW = paneH * aspect;
-        unitPixels = (float) (mc.getWindow().getScaleFactor() * PANE_SIZE);
         point();
         menu.spatialPointer(onPane ? px : -1e4, onPane ? py : -1e4);
 
@@ -379,37 +390,88 @@ public final class SpatialView {
 
     // ---- drawing --------------------------------------------------------------------------------
 
-    private float scale = 1f;
+    private static final RenderPipeline GLASS_PIPELINE = RenderPipelines.register(RenderPipeline.builder(RenderPipelines.POSITION_COLOR_SNIPPET)
+            .withLocation(Identifier.of("maro", "pipeline/floating_window_glass"))
+            .withVertexFormat(VertexFormats.POSITION_COLOR, VertexFormat.DrawMode.QUADS)
+            .withBlend(BlendFunction.TRANSLUCENT).withCull(false).withDepthWrite(false).build());
+    private static final RenderPipeline PICTURE_PIPELINE = RenderPipelines.register(RenderPipeline.builder(RenderPipelines.POSITION_TEX_COLOR_SNIPPET)
+            .withLocation(Identifier.of("maro", "pipeline/floating_window_menu"))
+            .withVertexFormat(VertexFormats.POSITION_TEXTURE_COLOR, VertexFormat.DrawMode.QUADS)
+            // The picture holds premultiplied colour, as the GUI renderer leaves it.
+            .withBlend(new BlendFunction(SourceFactor.ONE, DestFactor.ONE_MINUS_SRC_ALPHA))
+            .withCull(false).withDepthWrite(false).build());
+    // Three layers, drawn in turn: the glass under the menu, the menu, and the edge, bar and dot over it.
+    private static final RenderLayer GLASS = RenderLayer.of("maro_floating_window_glass", RenderSetup.builder(GLASS_PIPELINE).translucent().build());
+    private static final RenderLayer PICTURE = RenderLayer.of("maro_floating_window_menu",
+            RenderSetup.builder(PICTURE_PIPELINE).texture("Sampler0", CanvasTexture.ID).translucent().build());
+    private static final RenderLayer EDGE = RenderLayer.of("maro_floating_window_edge", RenderSetup.builder(GLASS_PIPELINE).translucent().build());
+    private static final VertexConsumerProvider.Immediate BUFFERS;
 
-    /** Menu coordinates to the screen through the pane, into {@code out} at {@code i}; false if behind the eye. */
-    private boolean project(double x, double y, float[] out, int i) {
-        double lx = (x / sw - 0.5) * paneW * scale, ly = (0.5 - y / sh) * paneH * scale;
-        double dx = cx + rx * lx + ux * ly - ex, dy = cy + ry * lx + uy * ly - ey, dz = cz + rz * lx + uz * ly - ez;
-        double depth = dx * fx + dy * fy + dz * fz;
-        if (depth < NEAR) return false;
-        double sx = dx * crx + dy * cry + dz * crz, sy = dx * cux + dy * cuy + dz * cuz;
-        out[i] = (float) ((sx / (depth * tanV * aspect) + 1) * 0.5 * sw);
-        out[i + 1] = (float) ((1 - sy / (depth * tanV)) * 0.5 * sh);
-        return true;
+    /** The floating window open now, drawn into the world each frame. */
+    private static SpatialView active;
+
+    static {
+        var buffers = new java.util.LinkedHashMap<RenderLayer, BufferAllocator>();
+        buffers.put(GLASS, new BufferAllocator(65536));
+        buffers.put(PICTURE, new BufferAllocator(4096));
+        buffers.put(EDGE, new BufferAllocator(65536));
+        BUFFERS = VertexConsumerProvider.immediate(buffers, new BufferAllocator(1024));
+        // In the world, after the blocks and entities: blocks in front hide it, and up close it is
+        // cut where it meets your eye, just as anything else in the world would be.
+        WorldRenderEvents.END_MAIN.register(context -> {
+            SpatialView view = active;
+            if (view == null || !view.open || !view.placed) return;
+            try {
+                view.drawWorld(context.matrices().peek(), context.worldState().cameraRenderState.pos);
+            } catch (RuntimeException e) {
+                dev.maro.Maro.LOGGER.error("The floating window could not be drawn", e);
+            }
+        });
+    }
+
+    private float scale = 1f;
+    private MatrixStack.Entry entry;
+    private double camX, camY, camZ;
+
+    /** The pointer, over everything on the screen: the crosshair, a dot while it is on something of the menu's. */
+    private void draw(DrawContext ctx, float dt) {
+        active = this;
+        barGlow += ((barHover ? 1f : 0f) - barGlow) * Math.min(1f, dt * 14f);
+        dotGrow += ((dotHover ? 1f : 0f) - dotGrow) * Math.min(1f, dt * 14f);
+        float p = menu.menuProgress();
+        if (p <= 0.002f) return;
+        float mx = sw / 2f, my = sh / 2f;
+        int white = fade(0xF2FFFFFF, p);
+        if (onPane || barHover || dotHover) {
+            Render2D.circle(ctx, mx, my, 3.2f, fade(0x50000000, p));
+            Render2D.circle(ctx, mx, my, 2.2f, white);
+        } else {
+            Render2D.rect(ctx, mx - 4.5f, my - 0.5f, 9, 1, white);
+            Render2D.rect(ctx, mx - 0.5f, my - 4.5f, 1, 9, white);
+        }
     }
 
     /** {@code pixels} screen pixels in menu units, near enough, for edges that stay hairline. */
     private float px(float pixels) {
-        return pixels / Math.max(0.5f, unitPixels);
+        return pixels / Math.max(0.05f, unitPixels);
     }
 
-    private void draw(DrawContext ctx, float dt) {
+    /** The glass, the menu on it and its edge, bar and dot, as things in the world. */
+    private void drawWorld(MatrixStack.Entry entry, Vec3d camera) {
         float p = menu.menuProgress();
         if (p <= 0.002f) return;
+        this.entry = entry;
+        camX = camera.x;
+        camY = camera.y;
+        camZ = camera.z;
         scale = 0.9f + 0.1f * p;
-        barGlow += ((barHover ? 1f : 0f) - barGlow) * Math.min(1f, dt * 14f);
-        dotGrow += ((dotHover ? 1f : 0f) - dotGrow) * Math.min(1f, dt * 14f);
+        // How many pixels one menu unit covers here, for hairline edges at any distance.
+        double dist = Math.max(0.2, Math.sqrt((cx - camX) * (cx - camX) + (cy - camY) * (cy - camY) + (cz - camZ) * (cz - camZ)));
+        unitPixels = (float) (paneH / sh * mc.getWindow().getFramebufferHeight() / (2 * dist * tanV));
         float[] win = menu.spatialWindow();
 
-        // A soft shadow, then the glass, with a feathered edge so it is smooth at any angle.
         if (win != null) {
-            ctx.createNewRootLayer();
-            MeshRenderState.Builder glass = new MeshRenderState.Builder(false);
+            VertexConsumer glass = BUFFERS.getBuffer(GLASS);
             float x = win[0], y = win[1], w = win[2], h = win[3], r = win[4];
             band(glass, x, y + 3, w, h, r, 0, 18, fade(0x40000000, p), fade(0x58000000, p), 0, 0);
             int top = fade(0xB0262A30, p), bottom = fade(0xC2171A1E, p);
@@ -417,42 +479,24 @@ public final class SpatialView {
             band(glass, x, y, w, h, r, 0, px(1.2f), top, bottom, clear(top), clear(bottom));
             // A faint sheen down from the top edge, as light catching glass.
             roundFill(glass, x, y, w, Math.min(60, h * 0.4f), r, fade(0x16FFFFFF, p), 0x00FFFFFF);
-            glass.submit(ctx, RenderPipelines.GUI, TextureSetup.empty(), sw, sh);
+            BUFFERS.draw(GLASS);
         }
 
-        // The menu itself (only from in front: from behind the pane is just glass).
+        // The menu itself (only from in front: from behind the pane is just glass). One quad: the
+        // graphics card keeps the picture true to perspective.
         GpuTextureView view = canvas.view();
         if (view != null && front) {
-            ctx.createNewRootLayer();
-            MeshRenderState.Builder mesh = new MeshRenderState.Builder(true);
-            float[] at = new float[(GRID_X + 1) * (GRID_Y + 1) * 2];
-            boolean[] ok = new boolean[(GRID_X + 1) * (GRID_Y + 1)];
-            for (int j = 0; j <= GRID_Y; j++) {
-                for (int i = 0; i <= GRID_X; i++) {
-                    int k = j * (GRID_X + 1) + i;
-                    ok[k] = project((double) i / GRID_X * sw, (double) j / GRID_Y * sh, at, k * 2);
-                }
-            }
-            int tint = 0xFFFFFFFF; // the menu fades itself as it opens and closes
-            for (int j = 0; j < GRID_Y; j++) {
-                for (int i = 0; i < GRID_X; i++) {
-                    int k00 = j * (GRID_X + 1) + i, k10 = k00 + 1, k01 = k00 + GRID_X + 1, k11 = k01 + 1;
-                    if (!ok[k00] || !ok[k10] || !ok[k01] || !ok[k11]) continue;
-                    float u0 = (float) i / GRID_X, u1 = (float) (i + 1) / GRID_X;
-                    float v0 = 1f - (float) j / GRID_Y, v1 = 1f - (float) (j + 1) / GRID_Y;
-                    mesh.quad(at[k00 * 2], at[k00 * 2 + 1], u0, v0, tint,
-                            at[k01 * 2], at[k01 * 2 + 1], u0, v1, tint,
-                            at[k11 * 2], at[k11 * 2 + 1], u1, v1, tint,
-                            at[k10 * 2], at[k10 * 2 + 1], u1, v0, tint);
-                }
-            }
-            mesh.submit(ctx, RenderPipelines.GUI_TEXTURED_PREMULTIPLIED_ALPHA,
-                    TextureSetup.of(view, RenderSystem.getSamplerCache().get(FilterMode.LINEAR)), sw, sh);
+            CanvasTexture.show(view);
+            VertexConsumer menuQuad = BUFFERS.getBuffer(PICTURE);
+            textured(menuQuad, 0, 0, 0, 1);
+            textured(menuQuad, 0, sh, 0, 0);
+            textured(menuQuad, sw, sh, 1, 0);
+            textured(menuQuad, sw, 0, 1, 1);
+            BUFFERS.draw(PICTURE);
         }
 
         if (win != null) {
-            ctx.createNewRootLayer();
-            MeshRenderState.Builder lines = new MeshRenderState.Builder(false);
+            VertexConsumer lines = BUFFERS.getBuffer(EDGE);
             float x = win[0], y = win[1], w = win[2], h = win[3], r = win[4];
             // The edge: a hairline of light, brightest along the top, fading away on both sides.
             float line = px(1.4f), soft = px(1.1f);
@@ -482,24 +526,43 @@ public final class SpatialView {
                 line(lines, dot[0] - c, dot[1] - c, dot[0] + c, dot[1] + c, 0.8f, cross);
                 line(lines, dot[0] - c, dot[1] + c, dot[0] + c, dot[1] - c, 0.8f, cross);
             }
-            lines.submit(ctx, RenderPipelines.GUI, TextureSetup.empty(), sw, sh);
+            BUFFERS.draw(EDGE);
         }
+    }
 
-        // The pointer: the crosshair, a dot while it is on something of the menu's.
-        ctx.createNewRootLayer();
-        float mx = sw / 2f, my = sh / 2f;
-        int white = fade(0xF2FFFFFF, p);
-        if (onPane || barHover || dotHover) {
-            Render2D.circle(ctx, mx, my, 3.2f, fade(0x50000000, p));
-            Render2D.circle(ctx, mx, my, 2.2f, white);
-        } else {
-            Render2D.rect(ctx, mx - 4.5f, my - 0.5f, 9, 1, white);
-            Render2D.rect(ctx, mx - 0.5f, my - 4.5f, 1, 9, white);
-        }
+    /** Menu coordinates to a point in the world, relative to the camera, into {@code out}. */
+    private void place(double x, double y, float[] out) {
+        double lx = (x / sw - 0.5) * paneW * scale, ly = (0.5 - y / sh) * paneH * scale;
+        out[0] = (float) (cx + rx * lx + ux * ly - camX);
+        out[1] = (float) (cy + ry * lx + uy * ly - camY);
+        out[2] = (float) (cz + rz * lx + uz * ly - camZ);
+    }
+
+    private final float[] tmp = new float[3];
+
+    private void colored(VertexConsumer b, double x, double y, int color) {
+        place(x, y, tmp);
+        b.vertex(entry, tmp[0], tmp[1], tmp[2]).color(color);
+    }
+
+    private void textured(VertexConsumer b, double x, double y, float u, float v) {
+        place(x, y, tmp);
+        b.vertex(entry, tmp[0], tmp[1], tmp[2]).texture(u, v).color(0xFFFFFFFF);
     }
 
     private static int fade(int color, float p) {
         return ColorUtil.withAlpha(color, Math.round((color >>> 24) * p));
+    }
+
+    /** The same colour, fully clear: feathered edges fade to this so they do not darken on the way. */
+    private static int clear(int color) {
+        return color & 0x00FFFFFF;
+    }
+
+    /** The colour between {@code top} and {@code bottom} at height {@code py}. */
+    private static int shade(int top, int bottom, float py, float y, float h) {
+        float t = Math.max(0f, Math.min(1f, (py - y) / Math.max(1e-3f, h)));
+        return ColorUtil.lerp(top, bottom, t);
     }
 
     /** The points round a rounded rectangle, clockwise from the top left, in menu coordinates. */
@@ -520,59 +583,48 @@ public final class SpatialView {
     }
 
     /** A rounded rectangle on the pane, shaded from {@code top} to {@code bottom}. */
-    private void roundFill(MeshRenderState.Builder b, float x, float y, float w, float h, float r, int top, int bottom) {
+    private void roundFill(VertexConsumer b, float x, float y, float w, float h, float r, int top, int bottom) {
         float[] pts = outline(x, y, w, h, r);
         float mxp = x + w / 2f, myp = y + h / 2f;
-        float[] c = new float[2], s0 = new float[2], s1 = new float[2];
-        if (!project(mxp, myp, c, 0)) return;
         int mid = ColorUtil.lerp(top, bottom, 0.5f);
         int n = pts.length / 2;
         for (int i = 0; i < n; i++) {
             int j = (i + 1) % n;
-            if (!project(pts[i * 2], pts[i * 2 + 1], s0, 0) || !project(pts[j * 2], pts[j * 2 + 1], s1, 0)) continue;
-            b.triangle(c[0], c[1], mid, s0[0], s0[1], shade(top, bottom, pts[i * 2 + 1], y, h), s1[0], s1[1], shade(top, bottom, pts[j * 2 + 1], y, h));
+            int c0 = shade(top, bottom, pts[i * 2 + 1], y, h), c1 = shade(top, bottom, pts[j * 2 + 1], y, h);
+            // A triangle, as a quad with its last corner twice.
+            colored(b, mxp, myp, mid);
+            colored(b, pts[i * 2], pts[i * 2 + 1], c0);
+            colored(b, pts[j * 2], pts[j * 2 + 1], c1);
+            colored(b, pts[j * 2], pts[j * 2 + 1], c1);
         }
     }
 
     /**
      * A band round a rounded rectangle on the pane, from {@code d0} to {@code d1} out from its edge
-     * (negative is inside), coloured top to bottom at each side of the band; a side of 0 colour
+     * (negative is inside), coloured top to bottom at each side of the band; a side that is clear
      * fades out, which is how the edges are feathered.
      */
-    private void band(MeshRenderState.Builder b, float x, float y, float w, float h, float r, float d0, float d1,
+    private void band(VertexConsumer b, float x, float y, float w, float h, float r, float d0, float d1,
                       int top0, int bottom0, int top1, int bottom1) {
         float[] p0 = outline(x - d0, y - d0, w + d0 * 2, h + d0 * 2, Math.max(0.01f, r + d0));
         float[] p1 = outline(x - d1, y - d1, w + d1 * 2, h + d1 * 2, Math.max(0.01f, r + d1));
-        float[] a0 = new float[2], a1 = new float[2], b0 = new float[2], b1 = new float[2];
         int n = p0.length / 2;
         for (int i = 0; i < n; i++) {
             int j = (i + 1) % n;
-            if (!project(p0[i * 2], p0[i * 2 + 1], a0, 0) || !project(p0[j * 2], p0[j * 2 + 1], a1, 0)
-                    || !project(p1[i * 2], p1[i * 2 + 1], b0, 0) || !project(p1[j * 2], p1[j * 2 + 1], b1, 0)) continue;
-            int ca0 = shade(top0, bottom0, p0[i * 2 + 1], y, h), ca1 = shade(top0, bottom0, p0[j * 2 + 1], y, h);
-            int cb0 = shade(top1, bottom1, p1[i * 2 + 1], y, h), cb1 = shade(top1, bottom1, p1[j * 2 + 1], y, h);
-            b.quad(a0[0], a0[1], 0, 0, ca0, a1[0], a1[1], 0, 0, ca1, b1[0], b1[1], 0, 0, cb1, b0[0], b0[1], 0, 0, cb0);
+            colored(b, p0[i * 2], p0[i * 2 + 1], shade(top0, bottom0, p0[i * 2 + 1], y, h));
+            colored(b, p0[j * 2], p0[j * 2 + 1], shade(top0, bottom0, p0[j * 2 + 1], y, h));
+            colored(b, p1[j * 2], p1[j * 2 + 1], shade(top1, bottom1, p1[j * 2 + 1], y, h));
+            colored(b, p1[i * 2], p1[i * 2 + 1], shade(top1, bottom1, p1[i * 2 + 1], y, h));
         }
     }
 
-    /** The colour between {@code top} and {@code bottom} at height {@code py}. */
-    private static int shade(int top, int bottom, float py, float y, float h) {
-        float t = Math.max(0f, Math.min(1f, (py - y) / Math.max(1e-3f, h)));
-        return ColorUtil.lerp(top, bottom, t);
-    }
-
-    /** The same colour, fully clear: feathered edges fade to this so they do not darken on the way. */
-    private static int clear(int color) {
-        return color & 0x00FFFFFF;
-    }
-
-    private void line(MeshRenderState.Builder b, float x1, float y1, float x2, float y2, float width, int color) {
+    private void line(VertexConsumer b, float x1, float y1, float x2, float y2, float width, int color) {
         double len = Math.hypot(x2 - x1, y2 - y1);
         if (len < 1e-3) return;
         float nx = (float) (-(y2 - y1) / len * width / 2), ny = (float) ((x2 - x1) / len * width / 2);
-        float[] a = new float[2], c = new float[2], d = new float[2], e = new float[2];
-        if (!project(x1 + nx, y1 + ny, a, 0) || !project(x2 + nx, y2 + ny, c, 0) || !project(x2 - nx, y2 - ny, d, 0)
-                || !project(x1 - nx, y1 - ny, e, 0)) return;
-        b.quad(a[0], a[1], 0, 0, color, c[0], c[1], 0, 0, color, d[0], d[1], 0, 0, color, e[0], e[1], 0, 0, color);
+        colored(b, x1 + nx, y1 + ny, color);
+        colored(b, x2 + nx, y2 + ny, color);
+        colored(b, x2 - nx, y2 - ny, color);
+        colored(b, x1 - nx, y1 - ny, color);
     }
 }
