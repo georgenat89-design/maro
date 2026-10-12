@@ -425,7 +425,7 @@ public final class TexturePacksScreen extends Screen {
         Fonts.drawRight(ctx, String.valueOf(on.size()), x + w - 10, y + 13, Theme.accent(), true, 0.7f);
         Render2D.rect(ctx, x + 8, y + 25, w - 16, 1, 0x14FFFFFF);
 
-        float top = y + 31, bottom = y + h - 26;
+        float top = y + 31, bottom = y + h - 30;
         if (on.isEmpty()) {
             Fonts.drawCentered(ctx, "Nothing on", x + w / 2f, top + 24, Theme.TEXT_DIM, false, 0.68f);
             Fonts.drawCentered(ctx, "Enable packs on the left", x + w / 2f, top + 37, Theme.TEXT_MUTED, false, 0.56f);
@@ -443,7 +443,8 @@ public final class TexturePacksScreen extends Screen {
             }
             Render2D.unclip(ctx);
         }
-        Fonts.drawCentered(ctx, "The top pack wins where two change the same thing", x + w / 2f, y + h - 13, Theme.TEXT_MUTED, false, 0.5f);
+        Fonts.drawCentered(ctx, Fonts.trim("Point at a pack to move it", w - 16, false, 0.52f), x + w / 2f, y + h - 19, Theme.TEXT_MUTED, false, 0.52f);
+        Fonts.drawCentered(ctx, Fonts.trim("The top one wins where two clash", w - 16, false, 0.52f), x + w / 2f, y + h - 9, Theme.TEXT_MUTED, false, 0.52f);
     }
 
     private void row(DrawContext ctx, TexturePacks.Pack pack, int index, int count, float x, float y, float w, float clipTop, float clipBottom,
@@ -454,9 +455,11 @@ public final class TexturePacksScreen extends Screen {
         Fonts.drawCentered(ctx, String.valueOf(index + 1), x + 9, y + ROW_H / 2f, index == 0 ? Theme.accent() : Theme.TEXT_MUTED, true, 0.6f);
         drawIcon(ctx, pack, x + 18, y + 5, 16);
 
+        // The name gets the whole row; the up, down and off buttons show over its end while pointed at.
         float bs = 16, gap = 2, bx = x + w - 5 - 3 * bs - 2 * gap, by = y + (ROW_H - bs) / 2f;
-        Fonts.drawV(ctx, Fonts.trim(pack.name(), bx - 6 - (x + 39), false, 0.62f), x + 39, y + ROW_H / 2f, Theme.TEXT, false, 0.62f);
-        if (!(my >= clipTop && my < clipBottom) || by < clipTop || by + bs > clipBottom) mx = -1000;
+        float nameEnd = hover ? bx - 6 : x + w - 8;
+        Fonts.drawV(ctx, Fonts.trim(pack.name(), nameEnd - (x + 39), false, 0.62f), x + 39, y + ROW_H / 2f, Theme.TEXT, false, 0.62f);
+        if (!hover || by < clipTop || by + bs > clipBottom) return;
         small(ctx, bx, by, bs, index > 0, mx, my, 0, () -> moveUp(pack.id()));
         small(ctx, bx + bs + gap, by, bs, index < count - 1, mx, my, 1, () -> moveDown(pack.id()));
         small(ctx, bx + 2 * (bs + gap), by, bs, true, mx, my, 2, () -> toggle(pack.id()));
