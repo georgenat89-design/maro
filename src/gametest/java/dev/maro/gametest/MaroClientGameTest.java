@@ -116,6 +116,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             CoordSnapperChecks.run(context);
             BetterTexturesChecks.run(context);
             TexturePacksChecks.run(context);
+            SpatialGuiChecks.run(context);
             DiscordPresenceChecks.run(context);
             StaffNotifierChecks.run(context);
             HudReadabilityChecks.run(context);

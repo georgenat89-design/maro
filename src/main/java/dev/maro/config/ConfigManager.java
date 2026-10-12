@@ -78,6 +78,7 @@ public final class ConfigManager {
         root.add("friends", friends);
         root.addProperty("config", current);
         root.add("panels", dev.maro.gui.PanelsView.save());
+        root.addProperty("spatialMenu", true);
         root.addProperty("version", CLIENT_VERSION);
         write(CLIENT_FILE, root);
     }
@@ -103,6 +104,8 @@ public final class ConfigManager {
             if (!name.isEmpty()) current = name;
         }
         dev.maro.gui.PanelsView.load(root.get("panels"));
+        // Once: the menu becomes the Spatial pane (it can be switched back under Settings, Menu Style).
+        if (!root.has("spatialMenu")) ClientSettings.menuStyle.set("Spatial");
     }
 
     // ---- module configs -----------------------------------------------------------------

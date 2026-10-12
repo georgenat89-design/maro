@@ -119,6 +119,14 @@ public class ClickGuiScreen extends Screen {
     private float lastProgress;
 
     private final PanelsView panels;
+    /** With the Spatial style: the menu on a glass pane in the world. */
+    private final dev.maro.gui.spatial.SpatialView spatial = new dev.maro.gui.spatial.SpatialView(this);
+    /** Where the window was drawn last frame, {x, y, w, h, corner radius}, for the Spatial pane's glass. */
+    private float[] spatialWindow;
+    /** Set while the menu is being drawn for the Spatial pane (no dimming, no window background of its own). */
+    private boolean paneDraw;
+    /** The middle of each tab and page button on the top bar last frame, by entry; for tests. */
+    private final java.util.Map<Integer, float[]> entryPlaces = new java.util.HashMap<>();
     /** With the Panels style: whether the window is showing over the panels. */
     private boolean windowOpen;
     private final Animation windowShown = new Animation(14f, 0f);
@@ -285,6 +293,35 @@ public class ClickGuiScreen extends Screen {
         return ClientSettings.menuStyle.is("Panels");
     }
 
+    /** Whether the menu floats on a pane in the world (the Spatial style). */
+    public static boolean spatialStyle() {
+        return ClientSettings.menuStyle.is("Spatial");
+    }
+
+    /** Whether the menu is on the Spatial pane now: the Spatial style, in a world (elsewhere it is a flat window). */
+    private boolean spatialOn() {
+        return spatialStyle() && client != null && client.world != null && client.player != null;
+    }
+
+    /** The Spatial pane; for tests. */
+    public dev.maro.gui.spatial.SpatialView spatialView() {
+        return spatial;
+    }
+
+    /** The middle of an entry's tab or button on the top bar as last drawn, {x, y}; for tests. */
+    public float[] entryPlace(int index) {
+        return entryPlaces.get(index);
+    }
+
+    /** The open page's index among the tabs and page buttons; for tests. */
+    public int selectedEntry() {
+        return selected;
+    }
+
+    public int entryCount() {
+        return entries.size();
+    }
+
     /** Whether the panels are what is showing (the Panels style, with no page open over them). */
     public boolean showingPanels() {
         return panelsStyle() && !windowOpen;
@@ -346,7 +383,60 @@ public class ClickGuiScreen extends Screen {
     }
 
     @Override
+    protected void init() {
+        if (spatialOn()) spatial.open();
+    }
+
+    @Override
     public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+        if (spatialOn()) {
+            try {
+                spatial.frame(ctx, delta);
+                return;
+            } catch (RuntimeException e) {
+                Maro.LOGGER.error("The Spatial menu could not be drawn; using the Window style", e);
+                ClientSettings.menuStyle.set("Window");
+                spatial.close();
+                Notifications.push("Spatial menu", "Could not be drawn here, so the menu is a window again", Notifications.Type.WARNING, 5000);
+            }
+        } else if (spatial.isOpen()) {
+            spatial.close();
+        }
+        drawMenu(ctx, mouseX, mouseY, delta);
+    }
+
+    /** The Spatial pane draws the menu, flat, into its picture with this. */
+    public void spatialDraw(DrawContext ctx, float delta) {
+        paneDraw = true;
+        try {
+            drawMenu(ctx, (int) Math.floor(mouseXd), (int) Math.floor(mouseYd), delta);
+        } finally {
+            paneDraw = false;
+        }
+    }
+
+    /** Where the crosshair points on the Spatial pane, in menu coordinates (far off when it is not on it). */
+    public void spatialPointer(double x, double y) {
+        mouseXd = x;
+        mouseYd = y;
+    }
+
+    /** The window as last drawn, {x, y, w, h, corner radius}; null before it is drawn. */
+    public float[] spatialWindow() {
+        return spatialWindow;
+    }
+
+    /** How far the menu is open, 0 to 1 (falls back to 0 as it closes). */
+    public float menuProgress() {
+        return progress();
+    }
+
+    public boolean isClosing() {
+        return closingAt >= 0;
+    }
+
+    private void drawMenu(DrawContext ctx, int mouseX, int mouseY, float delta) {
+        boolean spatialPane = paneDraw;
         currentCtx = ctx;
         hits.clear();
         scrollHits.clear();
@@ -363,7 +453,7 @@ public class ClickGuiScreen extends Screen {
         if (closingAt < 0) lastProgress = p;
 
         // background
-        if (ClientSettings.backgroundBlur.get() && client != null && client.world != null && p > 0.2f) {
+        if (!spatialPane && ClientSettings.backgroundBlur.get() && client != null && client.world != null && p > 0.2f) {
             try {
                 ctx.applyBlur();
             } catch (IllegalStateException ignored) {
@@ -371,13 +461,13 @@ public class ClickGuiScreen extends Screen {
             }
         }
         Render2D.setAlpha(p);
-        if (ClientSettings.backgroundDim.get()) {
+        if (!spatialPane && ClientSettings.backgroundDim.get()) {
             int dim = Math.round(255 * ClientSettings.dimAmount.getFloat() / 100f);
             Render2D.rectGradient(ctx, 0, 0, width, height, ColorUtil.withAlpha(0, Math.round(dim * 0.85f)), ColorUtil.withAlpha(0, Math.round(dim * 0.85f)),
                     ColorUtil.withAlpha(0, dim), ColorUtil.withAlpha(0, dim));
         }
         // The contour lines of the logo, faint, behind everything.
-        Logo.contours(ctx, width, height, 0.16f);
+        if (!spatialPane) Logo.contours(ctx, width, height, 0.16f);
 
         // The panels, fading back while the window is over them; a click outside the window returns to them.
         float win = 1f;
@@ -408,33 +498,38 @@ public class ClickGuiScreen extends Screen {
         ctx.createNewRootLayer();
         renderTooltip(ctx, p);
         Render2D.setAlpha(1f);
-        Notifications.render(ctx);
+        if (!spatialPane) Notifications.render(ctx); // on the pane they would float off in a corner; the HUD shows them
     }
 
     /** The window: tabs, header and the open page. */
     private void renderWindow(DrawContext ctx, float p) {
         Render2D.setAlpha(p);
 
-        // window layout
-        float ww = Math.min(width - 10f, Math.max(420f, Math.min(660f, width - 40f)));
-        float wh = Math.min(height - 10f, Math.max(250f, Math.min(380f, height - 40f)));
+        // window layout (a little smaller on the Spatial pane, so the world shows round it)
+        boolean spatialPane = paneDraw;
+        float ww = spatialPane ? Math.min(width - 10f, Math.max(420f, Math.min(600f, width * 0.62f)))
+                : Math.min(width - 10f, Math.max(420f, Math.min(660f, width - 40f)));
+        float wh = spatialPane ? Math.min(height - 40f, Math.max(250f, Math.min(360f, height * 0.64f)))
+                : Math.min(height - 10f, Math.max(250f, Math.min(380f, height - 40f)));
         float baseX = (width - ww) / 2f, baseY = (height - wh) / 2f;
         dragX = Math.max(-baseX + 2, Math.min(baseX - 2, dragX));
         dragY = Math.max(-baseY + 2, Math.min(baseY - 2, dragY));
-        float wx = baseX + dragX;
-        float wy = baseY + dragY + (1f - p) * 18f;
+        float wx = baseX + (spatialPane ? 0 : dragX);
+        float wy = baseY + (spatialPane ? -8 : dragY) + (1f - p) * 18f;
         float r = Theme.radius() + 3f;
+        spatialWindow = new float[]{wx, wy, ww, wh, r};
 
-        if (ClientSettings.shadow.get()) {
+        if (!spatialPane && ClientSettings.shadow.get()) {
             Render2D.shadow(ctx, wx, wy + 3, ww, wh, r, 24f, 0x80000000);
             if (Theme.glow()) Render2D.shadow(ctx, wx, wy, ww, wh, r, 36f, Theme.accent(0x12));
         }
         hit(wx, wy, ww, wh, (button, mx, my) -> {
         }); // the window takes clicks that land on it but on nothing in it
-        Render2D.roundRect(ctx, wx, wy, ww, wh, r, Theme.windowBg());
+        // On the Spatial pane the glass behind is the window's background, and its rim the outline.
+        if (!spatialPane) Render2D.roundRect(ctx, wx, wy, ww, wh, r, Theme.windowBg());
         // soft accent light falling from the top edge
         Render2D.roundRect(ctx, wx, wy, ww, Math.min(110f, wh), r, Theme.accent(0x18), Theme.accent2(0x18), 0x00000000, 0x00000000);
-        Render2D.roundOutline(ctx, wx, wy, ww, wh, r, 1f, 0xFF24242E, 0xFF24242E, 0xFF15151B, 0xFF15151B);
+        if (!spatialPane) Render2D.roundOutline(ctx, wx, wy, ww, wh, r, 1f, 0xFF24242E, 0xFF24242E, 0xFF15151B, 0xFF15151B);
         float hl = ww * 0.5f, hlx = wx + (ww - hl) / 2f;
         Render2D.rectGradient(ctx, hlx, wy + 0.5f, hl / 2, 1f, Theme.accent(0), Theme.accent(0xE0), Theme.accent(0xE0), Theme.accent(0));
         Render2D.rectGradient(ctx, hlx + hl / 2, wy + 0.5f, hl / 2, 1f, Theme.accent2(0xE0), Theme.accent2(0), Theme.accent2(0), Theme.accent2(0xE0));
@@ -466,7 +561,7 @@ public class ClickGuiScreen extends Screen {
     private void renderTopBar(DrawContext ctx, float x, float y, float w, float h) {
         // drag the window by the bar (registered first so every control on it wins)
         hit(x, y, w, h, (button, mx, my) -> {
-            if (button != 0) return;
+            if (button != 0 || paneDraw || spatial.isOpen()) return; // the Spatial pane moves by its bar instead
             final float sx = dragX, sy = dragY;
             final double ox = mx, oy = my;
             startDrag(WINDOW, (nx, ny) -> {
@@ -510,6 +605,7 @@ public class ClickGuiScreen extends Screen {
             e.icon().draw(ctx, gx + bs / 2f, ay + bs / 2f, 8.5f,
                     ColorUtil.lerp(ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT, hv), ColorUtil.shade(Theme.accent(), 0.45f), sel), Math.max(hv, sel));
             final int index = i;
+            entryPlaces.put(i, new float[]{gx + bs / 2f, ay + bs / 2f});
             hit(gx, ay, bs, bs, (button, mx, my) -> {
                 if (index != selected || searching) Sounds.click();
                 openPage(index);
@@ -553,6 +649,7 @@ public class ClickGuiScreen extends Screen {
         for (int i = 0; i < moduleEntries; i++) {
             Entry e = entries.get(i);
             float ex = xs[i], ew = widths[i];
+            entryPlaces.put(i, new float[]{ex + ew / 2f, ay + tabH / 2f});
             boolean hov = hovered(ex, ay, ew, tabH);
             float hv = Anims.of(e, "hover", hov);
             float sel = Anims.of(e, "sel", i == selected && !searching);
@@ -670,6 +767,7 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public void mouseMoved(double mouseX, double mouseY) {
+        if (spatial.isOpen()) return; // the crosshair points on the Spatial pane, not the hidden cursor
         mouseXd = mouseX;
         mouseYd = mouseY;
     }
@@ -678,6 +776,14 @@ public class ClickGuiScreen extends Screen {
     public boolean mouseClicked(Click click, boolean doubled) {
         double mouseX = click.x(), mouseY = click.y();
         int button = click.button();
+        if (spatial.isOpen()) {
+            // On the Spatial pane a click lands where the crosshair is; the bar and the dot are the pane's own.
+            if (closingAt >= 0) return true;
+            if (spatial.press(button)) return true;
+            if (!spatial.onPane()) return true;
+            mouseX = mouseXd;
+            mouseY = mouseYd;
+        }
         mouseXd = mouseX;
         mouseYd = mouseY;
         if (closingAt >= 0) return true;
@@ -709,6 +815,7 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public boolean mouseReleased(Click click) {
+        spatial.release();
         mouseDown = false;
         drag = null;
         dragOwner = null;
@@ -717,6 +824,10 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+        if (spatial.isOpen()) {
+            if (drag != null) drag.drag(mouseXd, mouseYd);
+            return true;
+        }
         mouseXd = click.x();
         mouseYd = click.y();
         if (drag != null) drag.drag(mouseXd, mouseYd);
@@ -725,6 +836,11 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (spatial.isOpen()) {
+            if (spatial.scroll(verticalAmount) || !spatial.onPane()) return true;
+            mouseX = mouseXd;
+            mouseY = mouseYd;
+        }
         for (int i = scrollHits.size() - 1; i >= 0; i--) {
             ScrollHit h = scrollHits.get(i);
             if (mouseX >= h.x && mouseX < h.x + h.w && mouseY >= h.y && mouseY < h.y + h.h) {
@@ -829,6 +945,7 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public void removed() {
+        spatial.close();
         Render2D.setAlpha(1f);
         Render2D.setScissor(null);
         ConfigManager.saveClient();

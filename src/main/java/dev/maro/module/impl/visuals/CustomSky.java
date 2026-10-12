@@ -34,11 +34,11 @@ public class CustomSky extends Module {
     /** Order matches sky() in custom_sky.fsh; the last is your own picture. */
     public static final String[] SKIES = {"Neon Waves", "Aurora", "Nebula", "Synthwave", "Golden Hour", "Cotton Candy",
             "Blood Moon", "Starry Night", "Matrix", "Inferno", "Frozen", "Deep Ocean", "Black Hole", "Prism", "Thunderstorm",
-            "Image"};
+            "Caustics", "Image"};
     private static final int PICTURE = SKIES.length - 1;
     /** Each sky's colour just above the horizon, which far-away land fades into when Match Fog is on. */
     private static final int[] HORIZONS = {0x23093C, 0x092728, 0x170C1D, 0xF95D72, 0xFC955A, 0xFBBFDF,
-            0x590808, 0x181F42, 0x020B05, 0x831E03, 0xD7EBFF, 0x07304B, 0x0A050C, 0x9A92A6, 0x1C1F29, 0x10141C};
+            0x590808, 0x181F42, 0x020B05, 0x831E03, 0xD7EBFF, 0x07304B, 0x0A050C, 0x9A92A6, 0x1C1F29, 0x2C2E30, 0x10141C};
     private static final double FADE_SECONDS = 1.5;
 
     private static CustomSky instance;

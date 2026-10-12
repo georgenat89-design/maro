@@ -598,6 +598,37 @@ vec3 thunderstorm(vec3 d, float t) {
     return col;
 }
 
+// One layer of caustic light: thin bright lines that wander and meet, as sunlight on a pool floor.
+// Tiles every 1.0 in uv.
+float causticLayer(vec2 uv, float time) {
+    vec2 p = mod(uv * TAU, TAU) - 250.0;
+    vec2 i = p;
+    float c = 1.0;
+    const float inten = 0.005;
+    for (int n = 0; n < 5; n++) {
+        float tt = time * (1.0 - 3.5 / float(n + 1));
+        i = p + vec2(cos(tt - i.x) + sin(tt + i.y), sin(tt - i.y) + cos(tt + i.x));
+        c += 1.0 / length(vec2(p.x / (sin(i.x + tt) / inten), p.y / (cos(i.y + tt) / inten)));
+    }
+    c /= 5.0;
+    c = 1.17 - pow(c, 1.4);
+    return pow(abs(c), 8.0);
+}
+
+// 15: Caustics - white light rippling over a dark grey dome, as if the sky were under water.
+vec3 caustics(vec3 d, float t) {
+    float h = d.y;
+    // Laid on a dome above you, so the lines stretch out towards the horizon.
+    vec2 uv = d.xz / (abs(h) + 0.42) * 0.42;
+    float time = t * 0.32 + 23.0;
+    float light = causticLayer(uv, time) * 0.75 + causticLayer(uv * 1.63 + vec2(0.37, 0.71), time * 0.83) * 0.4;
+    light = clamp(light, 0.0, 1.6);
+    vec3 col = mix(vec3(0.2, 0.205, 0.215), vec3(0.135, 0.14, 0.15), smoothstep(0.0, 0.8, h));
+    col += vec3(0.92, 0.94, 0.97) * light * (0.55 + 0.45 * smoothstep(-0.05, 0.25, h));
+    col = mix(col, vec3(0.11, 0.115, 0.12), sstep(0.0, -0.3, h));
+    return col;
+}
+
 // ---- your own picture ------------------------------------------------------------------------
 
 // A skybox laid out as a horizontal cross, four faces across the middle (left, front, right, back,
@@ -623,7 +654,7 @@ vec3 cubeCross(vec3 d) {
     return textureLod(u_Sky, (cell + uv) / vec2(4.0, 3.0), 0.0).rgb;
 }
 
-// 15: the player's picture.
+// 16: the player's picture.
 vec3 imageSky(vec3 d) {
     float c = cos(ImageParams.x), s = sin(ImageParams.x);
     d = vec3(c * d.x - s * d.z, d.y, s * d.x + c * d.z);
@@ -663,6 +694,7 @@ vec3 sky(int index, vec3 d, float t) {
         case 12: return blackHole(d, t);
         case 13: return prism(d, t);
         case 14: return thunderstorm(d, t);
+        case 15: return caustics(d, t);
         default: return imageSky(d);
     }
 }

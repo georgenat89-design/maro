@@ -40,7 +40,7 @@ public class Maro implements ClientModInitializer {
             Theme.update();
             ModuleManager.onRender2D(context, tickCounter.getTickProgress(false));
             dev.maro.runtime.RuntimeEvents.hud(context);
-            if (!(MinecraftClient.getInstance().currentScreen instanceof ClickGuiScreen)) Notifications.render(context);
+            if (!(MinecraftClient.getInstance().currentScreen instanceof ClickGuiScreen gui) || gui.spatialView().isOpen()) Notifications.render(context);
         });
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> { ConfigManager.saveAll(); dev.maro.runtime.RuntimeEvents.shutdown(); });
         ScreenEvents.AFTER_INIT.register((client, screen, width, height) ->
