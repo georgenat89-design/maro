@@ -220,6 +220,30 @@ public class BetterTextures extends Module {
         if (wanted.equals(before)) return;
         manager.setEnabledProfiles(wanted);
         mc.options.refreshResourcePacks(manager);
+        TexturePacks packs = TexturePacks.get();
+        if (packs != null) packs.syncPicks();
+    }
+
+    /** The switched-on list follows what the game really has on, after Texture Packs changed it. */
+    public void syncFromGame() {
+        if (!isEnabled() || dirty || mc.getResourcePackManager() == null) return;
+        ResourcePackManager manager = mc.getResourcePackManager();
+        Collection<String> ids = manager.getIds();
+        List<String> on = new ArrayList<>(manager.getEnabledIds());
+        List<String> now = new ArrayList<>();
+        for (int i = on.size() - 1; i >= 0; i--) {
+            for (Installed pack : installed.values()) {
+                if (on.get(i).equals(profileId(ids, pack.file())) && !now.contains(pack.projectId())) now.add(pack.projectId());
+            }
+        }
+        active.clear();
+        active.addAll(now);
+    }
+
+    /** The Modrinth name of a pack file downloaded through here, or null for any other file. */
+    public String titleOf(String file) {
+        for (Installed pack : installed.values()) if (pack.file().equals(file)) return pack.title();
+        return null;
     }
 
     /** The game's name for a pack file in the resourcepacks folder ("file/Faithful.zip"). */

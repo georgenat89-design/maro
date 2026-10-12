@@ -53,6 +53,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.movement.Vehicles());
         register(new dev.maro.module.impl.visuals.SpawnerNotifier());
         register(new dev.maro.module.impl.visuals.BetterTextures());
+        register(new dev.maro.module.impl.visuals.TexturePacks());
         register(new dev.maro.module.impl.visuals.BetterLooks());
         register(new dev.maro.module.impl.visuals.FakeBlock());
         register(new dev.maro.module.impl.visuals.PlayerESP());

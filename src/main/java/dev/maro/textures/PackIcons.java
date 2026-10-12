@@ -14,12 +14,17 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 /**
- * Modrinth pack icons as textures: fetched once each, off the game thread, shrunk to 64 by 64 and
- * kept for the session. Modrinth stores many icons as WebP, which Java cannot read itself, so those
- * go through the bundled WebP reader.
+ * Pack icons as textures: Modrinth's fetched from the web, your own packs' read from their
+ * pack.png. Each is loaded once, off the game thread, fitted into 64 by 64 and kept for the session.
+ * Modrinth stores many icons as WebP, which Java cannot read itself, so those go through the
+ * bundled WebP reader.
  */
 public final class PackIcons {
     private PackIcons() {
@@ -38,9 +43,29 @@ public final class PackIcons {
     /** The icon's texture once it is here, or null while it loads (or if it could not be read). */
     public static Identifier get(String key, String url) {
         if (url == null || url.isBlank()) return null;
+        return load(key, () -> Modrinth.bytes(url));
+    }
+
+    /** A pack's own icon, read by {@code read} off the game thread; null while it loads or if it has none. */
+    public static Identifier local(String key, Callable<byte[]> read) {
+        return load(key, () -> CompletableFuture.supplyAsync(() -> {
+            try {
+                return read.call();
+            } catch (Exception e) {
+                throw new CompletionException(e);
+            }
+        }, Modrinth.POOL));
+    }
+
+    /** Drops a loaded icon so the next ask reads it again (a pack file that was swapped for another). */
+    public static void forget(String key) {
+        ICONS.remove(key);
+    }
+
+    private static Identifier load(String key, Supplier<CompletableFuture<byte[]>> source) {
         Entry entry = ICONS.computeIfAbsent(key, k -> {
             Entry e = new Entry();
-            Modrinth.bytes(url).thenApplyAsync(PackIcons::decode, Modrinth.POOL).whenComplete((image, error) -> {
+            source.get().thenApplyAsync(PackIcons::decode, Modrinth.POOL).whenComplete((image, error) -> {
                 if (error != null || image == null) e.failed = true;
                 else e.ready = image;
             });
@@ -73,11 +98,13 @@ public final class PackIcons {
         if (source == null) source = webp(bytes);
         if (source == null) throw new IllegalStateException("Unreadable icon");
 
-        // Fit inside the square, centred, smooth.
+        // Fit inside the square, centred: smooth when shrunk, crisp pixels when a small pixel-art icon is blown up.
+        boolean small = source.getWidth() < SIZE && source.getHeight() < SIZE;
         BufferedImage square = new BufferedImage(SIZE, SIZE, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = square.createGraphics();
         try {
-            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, small ? RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR
+                    : RenderingHints.VALUE_INTERPOLATION_BICUBIC);
             g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
             float scale = Math.min((float) SIZE / source.getWidth(), (float) SIZE / source.getHeight());
             int w = Math.max(1, Math.round(source.getWidth() * scale)), h = Math.max(1, Math.round(source.getHeight() * scale));

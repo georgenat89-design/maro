@@ -4,6 +4,7 @@ import dev.maro.gui.render.Fonts;
 import dev.maro.gui.render.Render2D;
 import dev.maro.gui.theme.Theme;
 import dev.maro.module.impl.visuals.BetterTextures;
+import dev.maro.module.impl.visuals.TexturePacks;
 import dev.maro.textures.Modrinth;
 import dev.maro.textures.PackIcons;
 import dev.maro.util.ColorUtil;
@@ -186,6 +187,11 @@ public final class BetterTexturesScreen extends Screen {
         float cx = px + pw - 16 - bw;
         button(ctx, "Close", cx, by, bw, bh, true, mx, my, this::close);
         button(ctx, "Refresh", cx - 6 - bw, by, bw, bh, false, mx, my, () -> runSearch(false));
+        button(ctx, "My Packs", cx - 2 * (6 + bw) - 8, by, bw + 8, bh, false, mx, my, () -> {
+            if (client == null) return;
+            if (parent instanceof TexturePacksScreen) client.setScreen(parent);
+            else client.setScreen(new TexturePacksScreen(this, TexturePacks.get()));
+        });
     }
 
     private void button(DrawContext ctx, String label, float x, float y, float w, float h, boolean accent, int mx, int my, Runnable action) {
