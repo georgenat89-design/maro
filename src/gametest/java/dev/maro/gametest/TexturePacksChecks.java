@@ -9,6 +9,7 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.resource.InputSupplier;
 import net.minecraft.resource.ResourcePack;
+import net.minecraft.resource.ResourcePackManager;
 import net.minecraft.resource.ResourcePackProfile;
 
 import javax.imageio.ImageIO;
@@ -20,6 +21,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 import java.util.zip.ZipEntry;
@@ -121,6 +123,23 @@ final class TexturePacksChecks {
                     "Turning the module back on did not put the picks back");
             require(context.computeOnClient(c -> module.gameOn().indexOf(RED) < module.gameOn().indexOf(BLUE)),
                     "The order was lost going off and on: " + context.computeOnClient(c -> module.gameOn()));
+
+            // Blue switched off in the game's own menu while on: off and on again keeps it off.
+            context.runOnClient(c -> {
+                ResourcePackManager manager = c.getResourcePackManager();
+                List<String> ids = new ArrayList<>(manager.getEnabledIds());
+                ids.remove(BLUE);
+                manager.setEnabledProfiles(ids);
+                c.options.refreshResourcePacks(manager);
+            });
+            require(await(context, () -> settled() && !module.gameHasOn(BLUE), 1200), "Switching blue off in the game did not take");
+            context.runOnClient(c -> module.setEnabled(false));
+            require(await(context, () -> settled() && !module.gameHasOn(RED), 1200), "Turning the module off left red on");
+            context.runOnClient(c -> module.setEnabled(true));
+            require(await(context, () -> settled() && module.gameHasOn(RED), 1200), "Turning the module on again did not put red back");
+            context.waitTicks(5);
+            require(context.computeOnClient(c -> !module.gameHasOn(BLUE)),
+                    "A pack switched off in the game's own menu came back: " + context.computeOnClient(c -> module.gameOn()));
         } finally {
             context.runOnClient(c -> {
                 if (c.currentScreen instanceof TexturePacksScreen) c.setScreen(null);

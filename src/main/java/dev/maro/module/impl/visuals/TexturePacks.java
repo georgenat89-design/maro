@@ -87,7 +87,10 @@ public class TexturePacks extends Module {
     @Override
     protected void onDisable() {
         // Whatever was changed while on (here or in the game's own menu) is kept as the picks.
-        syncPicks();
+        if (holding && !dirty && mc.getResourcePackManager() != null) {
+            picked.clear();
+            picked.addAll(gameOn());
+        }
         requestApply();
     }
 
