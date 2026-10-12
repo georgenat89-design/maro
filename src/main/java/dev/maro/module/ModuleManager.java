@@ -35,6 +35,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.misc.InventoryHider());
         register(new dev.maro.module.impl.misc.BlockDisconnect());
         register(new dev.maro.module.impl.misc.CoordSnapper());
+        register(new dev.maro.module.impl.misc.FakePay());
         register(new dev.maro.module.impl.misc.DiscordPresence());
         register(new dev.maro.module.impl.misc.SpotifyPhone());
         register(new dev.maro.module.impl.misc.AutoGoliath());

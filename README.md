@@ -1,6 +1,6 @@
 # maro.gg
 
-A **Fabric 1.21.11 / Java 21** client with a smooth, modern ClickGUI and the 20 modules from Nathan's current 1.21.11 source. It runs directly on Fabric; Meteor Client is not required.
+A **Fabric 1.21.11 / Java 21** client with a smooth, modern ClickGUI and the 19 modules from Nathan's current 1.21.11 source. It runs directly on Fabric; Meteor Client is not required.
 
 Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 
