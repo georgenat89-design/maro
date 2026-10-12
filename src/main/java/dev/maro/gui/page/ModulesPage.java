@@ -176,12 +176,10 @@ public class ModulesPage extends Page {
 
         if (on > 0.01f && Theme.glow()) Render2D.shadow(ctx, x, y, w, h, r, 7f, Theme.accent(Math.round(0x26 * on)));
         Render2D.roundRect(ctx, x, y, w, h, r, ColorUtil.lerp(Theme.CARD, Theme.CARD_HOVER, hv));
-        if (on > 0.01f) {
-            Render2D.roundRect(ctx, x, y, w, h, r, Theme.accent(Math.round(0x34 * on)), Theme.accent2(Math.round(0x0A * on)), 0x00000000, Theme.accent(Math.round(0x10 * on)));
-        }
-        int border = ColorUtil.lerp(ColorUtil.lerp(Theme.BORDER, 0xFF3A374A, hv), Theme.accent(0x70), on);
-        Render2D.roundOutline(ctx, x, y, w, h, r, 1f, border, ColorUtil.lerp(border, Theme.BORDER, on * 0.7f),
-                ColorUtil.lerp(border, Theme.BORDER, on * 0.7f), border);
+        // On: a flat tint of the accent and a short bar of it down the left edge.
+        if (on > 0.01f) Render2D.roundRect(ctx, x, y, w, h, r, Theme.accent(Math.round(0x1E * on)));
+        Render2D.roundOutline(ctx, x, y, w, h, r, 1f, ColorUtil.lerp(ColorUtil.lerp(Theme.BORDER, 0xFF34323F, hv), Theme.accent(0x58), on));
+        if (on > 0.01f) Render2D.roundRect(ctx, x + 1.5f, y + 8, 2f, h - 16, 1f, Theme.accent(Math.round(0xFF * on)));
 
         float nx = x + 11;
         float toggleX = x + w - 32;
@@ -200,12 +198,13 @@ public class ModulesPage extends Page {
             }
         });
 
-        // keybind chip, right-aligned next to the controls
-        String bindLabel = gui.listening == m.getBind() ? "Press a key" : m.getBind().getKeyName();
-        float chipW = Fonts.width(bindLabel, false, 0.72f) + 9;
+        // keybind chip, right-aligned next to the controls: only with a key bound, or to bind one on hover
         float chipRight = hasSettings ? dotsX - 9 : toggleX - 7;
-        float chipX = chipRight - chipW;
-        Widgets.bindChip(gui, ctx, m.getBind(), chipX, y + h / 2f, 1f);
+        float chipX = chipRight;
+        if (m.getBind().isBound() || gui.listening == m.getBind() || hovered) {
+            chipX = chipRight - Widgets.bindChipWidth(gui, m.getBind());
+            Widgets.bindChip(gui, ctx, m.getBind(), chipX, y + h / 2f, 1f);
+        }
 
         // name + description
         float textMax = chipX - nx - 8;

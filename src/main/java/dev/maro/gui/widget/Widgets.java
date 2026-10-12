@@ -88,9 +88,18 @@ public final class Widgets {
     }
 
     /** Key chip ("RShift", "None", "...") that starts listening for a new bind when clicked. Returns width. */
+    /** What a keybind chip says: the key, "Bind" with none, or "Press a key" while waiting for one. */
+    private static String bindLabel(ClickGuiScreen gui, KeybindSetting bind) {
+        return gui.listening == bind ? "Press a key" : bind.isBound() ? bind.getKeyName() : "Bind";
+    }
+
+    public static float bindChipWidth(ClickGuiScreen gui, KeybindSetting bind) {
+        return Fonts.width(bindLabel(gui, bind), false, 0.72f) + 9;
+    }
+
     public static float bindChip(ClickGuiScreen gui, DrawContext ctx, KeybindSetting bind, float x, float cy, float scale) {
         boolean listening = gui.listening == bind;
-        String label = listening ? "Press a key" : bind.getKeyName();
+        String label = bindLabel(gui, bind);
         float h = 11f * scale;
         float w = Fonts.width(label, false, 0.72f) + 9;
         float y = cy - h / 2f;

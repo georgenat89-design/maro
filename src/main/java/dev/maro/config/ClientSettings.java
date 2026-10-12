@@ -28,8 +28,10 @@ public final class ClientSettings {
             "Move, jump, sneak and sprint while the floating window is open (not while typing in a box)", true).visible(spatialMenu::get));
     public static final BooleanSetting spatialRemember = INTERFACE.add(new BooleanSetting("Remember Spot",
             "The floating window opens where you left it when that is nearby and in front of you", true).visible(spatialMenu::get));
-    public static final BooleanSetting customFont = INTERFACE.add(new BooleanSetting("Custom Font", "Use the Inter font instead of the Minecraft font", true));
-    public static final BooleanSetting capsText = INTERFACE.add(new BooleanSetting("Caps Text", "Small bold all-caps labels (off = normal sentence case)", true));
+    public static final BooleanSetting customFont = INTERFACE.add(new BooleanSetting("Custom Font", "Use a smooth font instead of the Minecraft font", true));
+    public static final ModeSetting fontFace = INTERFACE.add(new ModeSetting("Font", "Rubik is rounder and friendlier, Inter tighter and plainer",
+            "Rubik", "Rubik", "Inter").visible(customFont::get));
+    public static final BooleanSetting capsText = INTERFACE.add(new BooleanSetting("Caps Text", "Small bold all-caps labels (off = normal sentence case)", false));
     public static final NumberSetting animSpeed = INTERFACE.add(new NumberSetting("Animation Speed", "How fast menu animations play", 1.0, 0.3, 3.0, 0.1).suffix("x"));
     public static final BooleanSetting backgroundBlur = INTERFACE.add(new BooleanSetting("Background Blur", "Frosted-glass blur behind the menu (strength = vanilla Menu Blur option)", true));
     public static final BooleanSetting backgroundDim = INTERFACE.add(new BooleanSetting("Background Dim", "Darken the game behind the menu", true));
@@ -56,7 +58,7 @@ public final class ClientSettings {
 
     public static final SettingSection ACCENT = new SettingSection("Accent");
     public static final ColorSetting accent = ACCENT.add(new ColorSetting("Accent Color", "Main highlight colour", 0xFF3391FC));
-    public static final BooleanSetting gradient = ACCENT.add(new BooleanSetting("Gradient", "Blend the accent into a second hue", true));
+    public static final BooleanSetting gradient = ACCENT.add(new BooleanSetting("Gradient", "Blend the accent into a second hue", false));
     public static final NumberSetting gradientShift = ACCENT.add(new NumberSetting("Gradient Shift",
             "Hue distance of the second colour: below 0 it turns one way round the wheel (Maro's blue towards cyan), above 0 the other",
             -0.07, -0.4, 0.4, 0.01)
@@ -69,9 +71,9 @@ public final class ClientSettings {
     public static final ColorSetting background = WINDOW.add(new ColorSetting("Background Color", "Colour of the menu window", 0xFF04070D));
     public static final NumberSetting opacity = WINDOW.add(new NumberSetting("Background Opacity", "How see-through the menu window is", 94, 0, 100, 1).suffix("%"));
     public static final NumberSetting radius = WINDOW.add(new NumberSetting("Corner Radius", "Roundness of panels and cards", 6, 0, 10, 0.5));
-    public static final BooleanSetting glow = WINDOW.add(new BooleanSetting("Accent Glow", "Soft glow around active elements", true));
+    public static final BooleanSetting glow = WINDOW.add(new BooleanSetting("Accent Glow", "Soft glow around active elements", false));
     public static final BooleanSetting shadow = WINDOW.add(new BooleanSetting("Window Shadow", "Drop shadow behind the window", true));
-    public static final BooleanSetting contourLines = WINDOW.add(new BooleanSetting("Contour Lines", "Faint map lines behind the menu, like the logo's", true));
+    public static final BooleanSetting contourLines = WINDOW.add(new BooleanSetting("Contour Lines", "Faint map lines behind the menu, like the logo's", false));
 
     public static final List<SettingSection> GENERAL_PAGE = List.of(INTERFACE, BEHAVIOUR);
     public static final List<SettingSection> THEME_PAGE = List.of(ACCENT, WINDOW);

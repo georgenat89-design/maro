@@ -17,25 +17,34 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Text helpers. Uses the bundled Inter TTF (assets/maro/font) when "Custom Font" is enabled,
- * otherwise the vanilla font. Supports fractional positions, scaling and global alpha.
+ * Text helpers. Uses a bundled TTF (assets/maro/font: Rubik, or Inter) when "Custom Font" is
+ * enabled, otherwise the vanilla font. Supports fractional positions, scaling and global alpha.
  */
 public final class Fonts {
     /**
-     * Inter SemiBold / ExtraBold, each defined once per oversample factor (1x..6x). The variant whose
-     * oversample matches the real pixel size of the text is picked at draw time, so glyphs are
-     * rasterised 1:1 with the screen instead of being resampled, which keeps them sharp.
+     * Each family's text and bold weights (Rubik Medium / Bold, Inter SemiBold / ExtraBold), each
+     * defined once per oversample factor (1x..6x). The variant whose oversample matches the real
+     * pixel size of the text is picked at draw time, so glyphs are rasterised 1:1 with the screen
+     * instead of being resampled, which keeps them sharp.
      */
     private static final int MAX_OVERSAMPLE = 6;
-    private static final Style[] REGULAR = new Style[MAX_OVERSAMPLE + 1];
-    private static final Style[] BOLD = new Style[MAX_OVERSAMPLE + 1];
+    private static final String[][] FAMILIES = {{"rubik_medium", "rubik_bold"}, {"inter_semibold", "inter_extrabold"}};
+    private static final Style[][] REGULAR = new Style[FAMILIES.length][MAX_OVERSAMPLE + 1];
+    private static final Style[][] BOLD = new Style[FAMILIES.length][MAX_OVERSAMPLE + 1];
     private static final Style VANILLA_BOLD = Style.EMPTY.withBold(true);
 
     static {
-        for (int i = 1; i <= MAX_OVERSAMPLE; i++) {
-            REGULAR[i] = Style.EMPTY.withFont(new StyleSpriteSource.Font(Identifier.of(Maro.MOD_ID, "inter_semibold_x" + i)));
-            BOLD[i] = Style.EMPTY.withFont(new StyleSpriteSource.Font(Identifier.of(Maro.MOD_ID, "inter_extrabold_x" + i)));
+        for (int f = 0; f < FAMILIES.length; f++) {
+            for (int i = 1; i <= MAX_OVERSAMPLE; i++) {
+                REGULAR[f][i] = Style.EMPTY.withFont(new StyleSpriteSource.Font(Identifier.of(Maro.MOD_ID, FAMILIES[f][0] + "_x" + i)));
+                BOLD[f][i] = Style.EMPTY.withFont(new StyleSpriteSource.Font(Identifier.of(Maro.MOD_ID, FAMILIES[f][1] + "_x" + i)));
+            }
         }
+    }
+
+    /** The chosen family: 0 Rubik, 1 Inter. */
+    private static int family() {
+        return ClientSettings.fontFace.is("Inter") ? 1 : 0;
     }
 
     private Fonts() {
@@ -91,7 +100,7 @@ public final class Fonts {
     private static Text styled(String s, boolean bold, float scale) {
         if (ClientSettings.customFont.get()) {
             int o = oversample(scale);
-            return Text.literal(s).setStyle(bold ? BOLD[o] : REGULAR[o]);
+            return Text.literal(s).setStyle(bold ? BOLD[family()][o] : REGULAR[family()][o]);
         }
         return bold ? Text.literal(s).setStyle(VANILLA_BOLD) : Text.literal(s);
     }

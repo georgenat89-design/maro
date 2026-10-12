@@ -158,8 +158,7 @@ public class SettingsList {
             }
             gui.startDrag(n, (dx, dy) -> n.setPercent((dx - tx) / tw));
         });
-        if (hovered && !dragging) gui.tooltip("Drag to change • Scroll on value • Right-click to reset");
-        gui.scrollHit(vx, y + 4, vw, 15, amount -> n.set(n.get() + n.getStep() * Math.signum(amount)));
+        if (hovered && !dragging) gui.tooltip("Drag to change • Right-click to reset");
     }
 
     // ---- text ---------------------------------------------------------------------------
@@ -239,7 +238,6 @@ public class SettingsList {
                     Dropdown.toggle(m);
                 }
             });
-            gui.scrollHit(px, cy - h / 2, pw, h, amount -> m.cycle(amount > 0 ? -1 : 1));
         }
     }
 

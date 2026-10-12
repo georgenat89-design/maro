@@ -37,8 +37,6 @@ import net.minecraft.entity.player.SkinTextures;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 
-import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -87,7 +85,6 @@ public class ClickGuiScreen extends Screen {
 
     private static final Object WINDOW = new Object();
     private static final Object INDICATOR = new Object();
-    private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm");
     private static final float BAR_H = 26f;
     private static final float HEADER_H = 24f;
 
@@ -723,25 +720,16 @@ public class ClickGuiScreen extends Screen {
         } else {
             subtitle = e.subtitle();
         }
-        float sw = Math.min(160f, w * 0.34f), sh = 18f;
+        float sw = Math.min(190f, w * 0.4f), sh = 18f;
         float sx = x + w - sw;
-        String time = LocalTime.now().format(CLOCK);
-        float cw = Fonts.width(time, false, 0.8f) + 16;
-        float cx = sx - cw - 5;
-        float titleMax = cx - x - 8;
+        float titleMax = sx - x - 12;
 
         // accent tick + title
-        Render2D.roundGradientV(ctx, x + 1, y + 3, 2.4f, h - 6, 1.2f, Theme.accent(), Theme.accent2());
+        Render2D.roundRect(ctx, x + 1, y + 3, 2.4f, h - 6, 1.2f, Theme.accent());
         Fonts.draw(ctx, Fonts.trim(title, titleMax, true, 1.25f), x + 9, y + 2.5f, Theme.TEXT, true, 1.25f);
         Fonts.draw(ctx, Fonts.trim(subtitle, titleMax, false, 0.7f), x + 9.5f, y + 15.5f, Theme.TEXT_MUTED, false, 0.7f);
 
         float cyy = y + (h - sh) / 2f;
-        Render2D.roundRect(ctx, cx, cyy, cw, sh, sh / 2f, Theme.INPUT);
-        Render2D.roundOutline(ctx, cx, cyy, cw, sh, sh / 2f, 1f, Theme.BORDER);
-        float pulse = 0.5f + 0.5f * (float) Math.sin(System.currentTimeMillis() / 500.0);
-        Render2D.circle(ctx, cx + 6.5f, cyy + sh / 2f, 1.6f, Theme.accent(0x80 + Math.round(0x7F * pulse)));
-        Fonts.drawV(ctx, time, cx + 10.5f, cyy + sh / 2f, Theme.TEXT_DIM, false, 0.8f);
-
         search.render(this, ctx, sx, cyy, sw, sh, Icons.SEARCH, focused == search ? null : "Ctrl K");
     }
 

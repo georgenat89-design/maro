@@ -79,6 +79,7 @@ public final class ConfigManager {
         root.addProperty("config", current);
         root.add("panels", dev.maro.gui.PanelsView.save());
         root.addProperty("spatialMenu", true);
+        root.addProperty("lookRevision", 2);
         root.addProperty("version", CLIENT_VERSION);
         write(CLIENT_FILE, root);
     }
@@ -112,6 +113,16 @@ public final class ConfigManager {
         dev.maro.gui.PanelsView.load(root.get("panels"));
         // Once: the menu floats (Settings, Floating Window turns it off).
         if (!root.has("spatialMenu")) ClientSettings.spatialMenu.set(true);
+        // Once: the plainer look, sentence case in Rubik without glows, two-tone gradients or
+        // contour lines (each can be turned back on under Settings and Theme).
+        if (!root.has("lookRevision") || root.get("lookRevision").getAsInt() < 2) {
+            ClientSettings.capsText.set(false);
+            ClientSettings.gradient.set(false);
+            ClientSettings.glow.set(false);
+            ClientSettings.contourLines.set(false);
+            ClientSettings.customFont.set(true);
+            ClientSettings.fontFace.set("Rubik");
+        }
     }
 
     // ---- module configs -----------------------------------------------------------------

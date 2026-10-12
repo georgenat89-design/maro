@@ -135,7 +135,6 @@ public final class CompactSettings {
         Render2D.roundRect(ctx, vx, cy - 5f, vw, 10f, 3f, 0xFF15141D);
         Render2D.roundOutline(ctx, vx, cy - 5f, vw, 10f, 3f, 1f, Theme.BORDER);
         Fonts.drawCentered(ctx, value, vx + vw / 2f, cy, Theme.accent(), false, 0.68f);
-        gui.scrollHit(vx, cy - 6f, vw, 12f, amount -> n.set(n.get() + n.getStep() * Math.signum(amount)));
 
         float tx = x + 5f, tw = w - 10f, ty = y + 17.5f;
         boolean dragging = gui.isDragging(n);
@@ -184,7 +183,6 @@ public final class CompactSettings {
                 Dropdown.toggle(m);
             }
         });
-        gui.scrollHit(x, y, w, h, amount -> m.cycle(amount > 0 ? -1 : 1));
     }
 
     // ---- colour ---------------------------------------------------------------------------
