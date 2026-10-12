@@ -17,10 +17,12 @@ import java.util.List;
  * {@link dev.maro.render.HandShaderRenderer}.
  */
 public class HandShader extends Module {
-    public static final String[] MODES = {"Glow", "Rainbow", "Galaxy", "Hologram", "Chams", "Glass", "Flame"};
+    public static final String[] MODES = {"Glow", "Rainbow", "Galaxy", "Hologram", "Chams", "Glass", "Flame", "Lava", "Ice", "Electric", "Chrome", "Matrix"};
 
-    private final ModeSetting mode = add(new ModeSetting("Mode", "Galaxy: a drifting nebula with stars. Rainbow: shifting colours. "
-            + "Hologram: see-through scanlines. Chams: one colour. Glass: the world bent through it. Flame: your hand on fire. Glow: only the outline",
+    private final ModeSetting mode = add(new ModeSetting("Mode", "Galaxy: a drifting nebula with stars. Rainbow: flowing colour bands. "
+            + "Hologram: see-through scanlines that glitch. Chams: one colour. Glass: the world bent through it. Flame: your hand on fire. "
+            + "Lava: glowing cracks in a dark crust. Ice: frosted crystal. Electric: crackling arcs. Chrome: polished mirror metal. "
+            + "Matrix: green code raining down. Glow: only the outline",
             "Galaxy", MODES));
     private final ColorSetting color = add(new ColorSetting("Color", "The colour of the outline, chams, hologram, glass tint and coloured flames", 0xFF8A4DFF));
     private final NumberSetting fill = add(new NumberSetting("Fill Opacity", "How much the look covers the hand", 85, 0, 100, 1)
@@ -59,7 +61,7 @@ public class HandShader extends Module {
     private static HandShader instance;
 
     public HandShader() {
-        super("Hand Shader", "Your hand and held item on fire, or as a galaxy, rainbow, hologram, chams or glass, with a glowing outline", Category.VISUALS);
+        super("Hand Shader", "Your hand and held item as fire, lava, ice, electric, chrome, matrix code, a galaxy, rainbow, hologram, chams or glass, with a glowing outline", Category.VISUALS);
         instance = this;
     }
 

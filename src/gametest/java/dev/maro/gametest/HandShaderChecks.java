@@ -79,10 +79,11 @@ final class HandShaderChecks {
                 context.runOnClient(c -> ((ModeSetting) module.getSettings().stream().filter(s -> s.getName().equals("Mode")).findFirst().orElseThrow()).set(mode));
                 context.waitTicks(3);
                 BufferedImage shot = read(context.takeScreenshot("maro-hand-shader-" + mode.toLowerCase()));
-                if (mode.equals("Flame")) {
-                    int flame = changed(plain, shot);
-                    System.out.println("HAND SHADER flame changed " + flame + " pixels");
-                    require(flame > 3000, "Flame did not set the hand on fire: " + flame + " pixels");
+                // Every look but the bare outline restyles the whole hand.
+                if (!mode.equals("Glow")) {
+                    int restyled = changed(plain, shot);
+                    System.out.println("HAND SHADER " + mode.toLowerCase() + " changed " + restyled + " pixels");
+                    require(restyled > 2000, mode + " hardly changed the hand: " + restyled + " pixels");
                 }
             }
             require(context.computeOnClient(c -> module.isEnabled()), "Hand Shader turned itself off (it failed to draw)");
