@@ -392,8 +392,8 @@ public class MaroClientGameTest implements FabricClientGameTest {
         long failures = context.computeOnClient(client -> dev.maro.runtime.MeteorClient.EVENT_BUS.failureCount());
         context.runOnClient(client -> {
             if (dev.maro.runtime.systems.modules.Modules.get().getAll().stream()
-                    .filter(m -> m.getClass().getPackageName().equals("dev.maro.nathan.modules")).count() != 20)
-                throw new AssertionError("Expected all 20 current Nathan modules");
+                    .filter(m -> m.getClass().getPackageName().equals("dev.maro.nathan.modules")).count() != 19)
+                throw new AssertionError("Expected all 19 current Nathan modules");
             for (var module : dev.maro.runtime.systems.modules.Modules.get().getAll()) {
                 if (module.getSettings().isEmpty()) throw new AssertionError("No settings for " + module.name);
                 module.setEnabled(false);
