@@ -53,6 +53,7 @@ final class GeekedChecks {
         BooleanSetting noVignette = (BooleanSetting) looks.getSettings().stream().filter(s -> s.getName().equals("No Vignette")).findFirst().orElseThrow();
         boolean looksEnabled = context.computeOnClient(c -> looks.isEnabled());
         boolean hidVignette = context.computeOnClient(c -> noVignette.get());
+        var initialMode = world.getServer().computeOnServer(s -> s.getPlayerManager().getPlayerList().getFirst().interactionManager.getGameMode());
         try {
             world.getServer().runCommand("gamemode creative @a");
             world.getServer().runCommand("gamerule minecraft:advance_time false");
@@ -144,6 +145,9 @@ final class GeekedChecks {
                 c.onResolutionChanged();
             });
             context.getInput().resizeWindow(1280, 720);
+            // Later checks open the survival inventory, which creative mode swaps for its own.
+            world.getServer().runCommand("gamemode " + initialMode.getId() + " @a");
+            context.waitFor(c -> c.interactionManager.getCurrentGameMode() == initialMode);
         }
     }
 }
