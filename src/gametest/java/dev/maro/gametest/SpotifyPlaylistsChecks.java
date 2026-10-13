@@ -29,12 +29,32 @@ final class SpotifyPlaylistsChecks {
             SpotifyPlaylists module = ModuleManager.get(SpotifyPlaylists.class);
             require(module != null, "Spotify Playlists was not registered");
 
-            require(ID.equals(SpotifyPlaylists.playlistId("https://open.spotify.com/playlist/" + ID + "?si=abc123")), "Share link with ?si= was rejected");
-            require(ID.equals(SpotifyPlaylists.playlistId("spotify:playlist:" + ID)), "Spotify URI was rejected");
-            require(ID.equals(SpotifyPlaylists.playlistId("  open.spotify.com/intl-de/playlist/" + ID + " ")), "Language-prefixed link was rejected");
-            require(SpotifyPlaylists.playlistId("https://open.spotify.com/album/" + ID) == null, "An album link was taken as a playlist");
-            require(SpotifyPlaylists.playlistId("https://evil.example/open.spotify.com/playlist/" + ID) == null, "Another site's link was accepted");
-            require(SpotifyPlaylists.playlistId("https://spotify.link/abc") == null, "A short link was accepted");
+            require(("playlist/" + ID).equals(SpotifyPlaylists.spotifyPath("https://open.spotify.com/playlist/" + ID + "?si=abc123")), "Share link with ?si= was rejected");
+            require(("playlist/" + ID).equals(SpotifyPlaylists.spotifyPath("spotify:playlist:" + ID)), "Spotify URI was rejected");
+            require(("playlist/" + ID).equals(SpotifyPlaylists.spotifyPath("  open.spotify.com/intl-de/playlist/" + ID + " ")), "Language-prefixed link was rejected");
+            require(("track/" + ID).equals(SpotifyPlaylists.spotifyPath("https://open.spotify.com/track/" + ID + "?si=x")), "A song link was rejected");
+            require(("album/" + ID).equals(SpotifyPlaylists.spotifyPath("https://open.spotify.com/album/" + ID)), "An album link was rejected");
+            require(SpotifyPlaylists.spotifyPath("https://open.spotify.com/artist/" + ID) == null, "An artist link was accepted");
+            require(SpotifyPlaylists.spotifyPath("https://evil.example/open.spotify.com/playlist/" + ID) == null, "Another site's link was accepted");
+            require(SpotifyPlaylists.spotifyPath("https://spotify.link/abc") == null, "A short link was accepted");
+
+            // Empty links fall back to the built-in ones.
+            Setting<String> mode = setting(module, "Open In");
+            String savedMode = mode.get();
+            String[][] builtIn = {{"Larp Aux", "spotify:playlist:28pZmz5AmsYUBNvgoQ81gw"}, {"Phonk", "spotify:playlist:1BzL7qnSMTufvz4Uq8Qamj"},
+                    {"House Music", "spotify:track:4m17nqEF8zjTEcKCxGI58J"}};
+            for (String[] expected : builtIn) {
+                Setting<String> link = setting(module, expected[0] + " Link");
+                String oldLink = link.get();
+                try {
+                    link.set("");
+                    mode.set("Spotify App");
+                    require(URI.create(expected[1]).equals(module.target(expected[0])), expected[0] + " lost its built-in link");
+                } finally {
+                    link.set(oldLink);
+                    mode.set(savedMode);
+                }
+            }
 
             for (String playlist : new String[]{"Larp Aux", "Phonk", "House Music", "Summer Music"}) {
                 Setting<String> link = setting(module, playlist + " Link"), openIn = setting(module, "Open In");
@@ -47,6 +67,8 @@ final class SpotifyPlaylistsChecks {
                     require(URI.create("spotify:playlist:" + ID).equals(module.target(playlist)), playlist + " did not open in the app");
                     openIn.set("Browser");
                     require(URI.create("https://open.spotify.com/playlist/" + ID).equals(module.target(playlist)), playlist + " did not open in the browser");
+                    link.set("spotify:track:" + ID);
+                    require(URI.create("https://open.spotify.com/track/" + ID).equals(module.target(playlist)), playlist + " did not open a song");
                 } finally {
                     link.set(oldLink);
                     openIn.set(oldMode);

@@ -15,14 +15,15 @@ import org.lwjgl.glfw.GLFW;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Pattern;
 
-/** Saved Spotify playlists, each opened by a button or its own key. No Spotify login is needed. */
+/** Saved Spotify playlists (or albums and songs), each opened by a button or its own key. No Spotify login is needed. */
 public final class SpotifyPlaylists extends Module {
-    private static final Pattern SPOTIFY_URI = Pattern.compile("spotify:playlist:([A-Za-z0-9]{22})");
-    // Share links may carry a language prefix and a ?si= tracking query; only the ID matters.
+    private static final Pattern SPOTIFY_URI = Pattern.compile("spotify:(playlist|album|track):([A-Za-z0-9]{22})");
+    // Share links may carry a language prefix and a ?si= tracking query; only the kind and ID matter.
     private static final Pattern SPOTIFY_LINK = Pattern.compile(
-            "(?:https?://)?open\\.spotify\\.com/(?:intl-[a-z-]+/)?playlist/([A-Za-z0-9]{22})(?:[/?#].*)?",
+            "(?:https?://)?open\\.spotify\\.com/(?:intl-[a-z-]+/)?(playlist|album|track)/([A-Za-z0-9]{22})(?:[/?#].*)?",
             Pattern.CASE_INSENSITIVE);
 
     /** One playlist: its link, an optional key and an Open button. */
@@ -38,7 +39,7 @@ public final class SpotifyPlaylists extends Module {
             this.builtIn = builtIn;
             // An empty link falls back to the built-in one, so a saved config never hides it.
             link = add(new TextSetting(name + " Link", "Spotify link for " + name + (builtIn.isEmpty() ? "" : "; leave empty for the built-in one"),
-                    "", 256, builtIn.isEmpty() ? "Paste Spotify playlist link" : builtIn));
+                    "", 256, builtIn.isEmpty() ? "Paste a Spotify link" : builtIn));
             key = add(new KeybindSetting(name + " Key", "Press in-game to open " + name, KeyUtil.NONE));
             open = add(new ButtonSetting(name, "Open " + name + " in Spotify", "Open", () -> play(this)));
         }
@@ -52,9 +53,9 @@ public final class SpotifyPlaylists extends Module {
     private final ModeSetting openIn = add(new ModeSetting("Open In", "Spotify App needs desktop Spotify installed; Browser uses the web player",
             "Spotify App", "Spotify App", "Browser"));
     private final List<Playlist> playlists = List.of(
-            new Playlist("Larp Aux", ""),
-            new Playlist("Phonk", ""),
-            new Playlist("House Music", ""),
+            new Playlist("Larp Aux", "https://open.spotify.com/playlist/28pZmz5AmsYUBNvgoQ81gw"),
+            new Playlist("Phonk", "https://open.spotify.com/playlist/1BzL7qnSMTufvz4Uq8Qamj"),
+            new Playlist("House Music", "https://open.spotify.com/track/4m17nqEF8zjTEcKCxGI58J"),
             new Playlist("Summer Music", ""));
 
     public SpotifyPlaylists() {
@@ -81,13 +82,12 @@ public final class SpotifyPlaylists extends Module {
         }
     }
 
-    /** The 22-character playlist ID in a Spotify link or URI, or null for anything else. */
-    public static String playlistId(String raw) {
+    /** "playlist/ID", "album/ID" or "track/ID" from a Spotify link or URI, or null for anything else. */
+    public static String spotifyPath(String raw) {
         String value = raw.trim();
         var match = SPOTIFY_URI.matcher(value);
-        if (match.matches()) return match.group(1);
-        match = SPOTIFY_LINK.matcher(value);
-        return match.matches() ? match.group(1) : null;
+        if (!match.matches()) match = SPOTIFY_LINK.matcher(value);
+        return match.matches() ? match.group(1).toLowerCase(Locale.ROOT) + "/" + match.group(2) : null;
     }
 
     /** Where the named playlist opens, or null while it has no valid link. */
@@ -97,9 +97,9 @@ public final class SpotifyPlaylists extends Module {
     }
 
     private URI target(Playlist p) {
-        String id = playlistId(p.url());
-        if (id == null) return null;
-        return URI.create(openIn.is("Browser") ? "https://open.spotify.com/playlist/" + id : "spotify:playlist:" + id);
+        String path = spotifyPath(p.url());
+        if (path == null) return null;
+        return URI.create(openIn.is("Browser") ? "https://open.spotify.com/" + path : "spotify:" + path.replace('/', ':'));
     }
 
     private void play(Playlist p) {
@@ -109,7 +109,7 @@ public final class SpotifyPlaylists extends Module {
         }
         URI target = target(p);
         if (target == null) {
-            Notifications.push(getName(), p.name + " needs a Spotify playlist link", Notifications.Type.WARNING);
+            Notifications.push(getName(), p.name + " needs a Spotify playlist, album or song link", Notifications.Type.WARNING);
             return;
         }
         Util.getOperatingSystem().open(target);

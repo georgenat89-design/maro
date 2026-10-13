@@ -60,10 +60,12 @@ remain available. The relay runs locally or on a LAN for now; see
 [phone relay setup](tools/phone-relay/README.md) for startup and testing instructions.
 
 **Spotify Playlists** (Misc) keeps four playlists one click away: **Larp Aux**, **Phonk**,
-**House Music** and **Summer Music**. Paste each one's Spotify link (Share → Copy link to
-playlist) and click **Open**, or give it a key and turn the module on to open it in-game.
-**Open In** chooses the Spotify app or the web player. Links with `?si=` or a language
-prefix work, as do `spotify:playlist:` URIs. Opening a playlist needs no Spotify login.
+**House Music** and **Summer Music**. Larp Aux, Phonk and House Music come with links built
+in; click **Open**, or give one a key and turn the module on to open it in-game. Paste a
+Spotify link (Share → Copy link) into a slot to change it, or leave it empty for the built-in
+one. Playlist, album and song links all work, with or without `?si=` or a language prefix,
+as do `spotify:` URIs. **Open In** chooses the Spotify app or the web player. No Spotify
+login is needed.
 
 **Staff Notifier** (Visuals) recreates SignalDebug's recovered staff-list settings
 and default account names in Maro. Edit **staff names** for your server. It shows
