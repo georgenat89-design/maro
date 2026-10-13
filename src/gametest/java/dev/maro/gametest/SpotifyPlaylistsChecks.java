@@ -42,7 +42,7 @@ final class SpotifyPlaylistsChecks {
             Setting<String> mode = setting(module, "Open In");
             String savedMode = mode.get();
             String[][] builtIn = {{"Larp Aux", "spotify:playlist:28pZmz5AmsYUBNvgoQ81gw"}, {"Phonk", "spotify:playlist:1BzL7qnSMTufvz4Uq8Qamj"},
-                    {"House Music", "spotify:track:4m17nqEF8zjTEcKCxGI58J"}};
+                    {"House Music", "spotify:track:4m17nqEF8zjTEcKCxGI58J"}, {"Summer Music", "spotify:playlist:2TmQRKC2wIDl3bvsWhKv7o"}};
             for (String[] expected : builtIn) {
                 Setting<String> link = setting(module, expected[0] + " Link");
                 String oldLink = link.get();

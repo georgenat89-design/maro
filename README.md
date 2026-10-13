@@ -60,8 +60,8 @@ remain available. The relay runs locally or on a LAN for now; see
 [phone relay setup](tools/phone-relay/README.md) for startup and testing instructions.
 
 **Spotify Playlists** (Misc) keeps four playlists one click away: **Larp Aux**, **Phonk**,
-**House Music** and **Summer Music**. Larp Aux, Phonk and House Music come with links built
-in; click **Open**, or give one a key and turn the module on to open it in-game. Paste a
+**House Music** and **Summer Music**, all with links built in. Click **Open**, or give one a
+key and turn the module on to open it in-game. Paste a
 Spotify link (Share → Copy link) into a slot to change it, or leave it empty for the built-in
 one. Playlist, album and song links all work, with or without `?si=` or a language prefix,
 as do `spotify:` URIs. **Open In** chooses the Spotify app or the web player. No Spotify
