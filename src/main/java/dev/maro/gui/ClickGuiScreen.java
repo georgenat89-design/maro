@@ -256,9 +256,12 @@ public class ClickGuiScreen extends Screen {
         if (clip == null || clip.contains(x, y)) places.put(key, new float[] {x, y});
     }
 
-    /** Where a module's card (or anything else {@link #place}d) was drawn last frame, as {x, y}; null if it was not. */
+    /** Where a module's card (or anything else {@link #place}d) was drawn last frame, as {x, y} on screen; null if it was not. */
     public float[] placeOf(Object key) {
-        return places.get(key);
+        float[] point = places.get(key);
+        if (point == null || !spatial.isOpen()) return point;
+        double[] mapped = screenPose.project(point[0], point[1]);
+        return new float[] {(float) mapped[0], (float) mapped[1]};
     }
 
     public float[] modulePlace(Module module) {
