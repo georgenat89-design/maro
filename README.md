@@ -4,7 +4,15 @@ A **Fabric 1.21.11 / Java 21** client with a smooth, modern ClickGUI and the 20 
 
 Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 
-Enable **Settings → Screen GUI** for either the Panels or Window layout to place the menu
+The menu is one window. The sidebar has the search, the categories with their module counts,
+and the Settings, Configs, Theme and Socials pages. Each category shows its modules as cards
+with an icon, a star and a switch; **All**, **Enabled** and **Starred** filter them.
+**Left-click** a card to open its settings in a panel that slides out on the right, and
+**right-click** it (or click its switch) to turn it on or off. Settings are grouped into
+cards; modules that change how players look, such as Player ESP and Nametags, show a live
+preview of your character. **Esc** closes the panel, then the menu.
+
+Enable **Screen GUI** at the bottom of the sidebar to place the menu
 in front of you in the world. Walk and look around normally, aim your crosshair at a control,
 and click or scroll to configure it. **Screen Distance** sets its opening distance. Click
 a text field (or press **Ctrl+F**) to type; movement pauses while a field is focused.
@@ -28,7 +36,7 @@ models work in first and third person, while capes and elytra remain intact. Ski
 asynchronously and are cached; use **Reload Skins** to retry or fetch an updated skin.
 Changes are visible locally, and disabling the module restores the original skins.
 
-**Keyboard Strokes** (Visuals) shows the keys you press on screen, lit while held. Right-click it (or
+**Keyboard Strokes** (Visuals) shows the keys you press on screen, lit while held. Click it (or
 **Choose Keys**) to open a menu of every keybind in the game and tick the ones you want shown;
 a live preview updates as you click. It reads your bindings, so it follows anything you rebind.
 Movement keys keep the W / A S D shape, mouse buttons pair up, jump runs along the bottom and the
@@ -146,7 +154,7 @@ attacked, collide with players, or interact with the server.
 | Visuals | Bloom, Color Correct, Custom Crosshair, Custom FOV, Fake XP, Hats, Key Zoom, Motion Blur, Region Map, Spotify HUD, Spin Bot, Swing Speed, existing Stretch Res |
 | Misc | Chat Macros, Key Sounds, existing Screen Hider |
 
-The Nathan modules use Maro's settings, keybinds, friend list, and saved configs. Right-click a module to edit its settings. Chat Macros includes a manager and editor under its Actions section. Strings and item lists have an Edit button; lists accept JSON arrays or semicolon-separated entries.
+The Nathan modules use Maro's settings, keybinds, friend list, and saved configs. Left-click a module to edit its settings. Chat Macros includes a manager and editor under its Actions section. Strings and item lists have an Edit button; lists accept JSON arrays or semicolon-separated entries.
 
 Spotify HUD supports the existing desktop/browser media bridge on Windows, album covers, playback controls, draggable positioning, seeking, and animated audio bars. Press **F9** while enabled to interact. Audio-reactive bars use Windows system output; they do not record a microphone. Live media/audio integration needs Windows; other systems keep the HUD's preview/fallback state. Spotify control integration is retained from Nathan, with Maro's renderer underneath.
 
@@ -219,17 +227,18 @@ the next throw in survival. Uses normal item interactions and release actions.
 - Floating top-bar navigation (category tabs with a sliding pill, icon buttons for general pages) over a black, top-lit window
 - Smooth, frame-rate independent animations everywhere: menu open/close, page transitions, staggered card entrances, the sliding tab indicator, toggles, sliders, hovers and accent colour fades
 - Anti-aliased vector renderer (rounded rects, outlines, gradients, soft shadows/glow, arcs, lines). Pure geometry, no textures or shaders, and it stays crisp at every GUI scale
-- Vector icon set (combat, movement, player, visuals, misc, settings, configs, theme, socials, search...)
+- Lucide line icons for every module, category and page
 - Bundled **Inter** font (SIL OFL), with a toggle back to the vanilla font
-- Draggable window (drag the header)
+- Draggable window (drag the logo)
 - Search across all modules (`Ctrl+K` / `Ctrl+F`, or just start typing)
 - `Tab` / `Shift+Tab` to cycle pages, `Esc` to back out or close
 - Tooltips on the info icons, toast notifications with progress bars, optional UI click sounds
 
 **Module cards**
-- Left-click toggles, right-click (or the `⋯` button) opens settings, middle-click starts rebinding
-- Keybind chip: click to rebind (keyboard or mouse buttons 3+), `Del`/`Backspace` unbinds, right-click resets
-- Red marker for experimental modules, green dot on a category tab when something in it is enabled
+- Left-click opens settings, right-click (or the switch) toggles, middle-click starts rebinding
+- The star keeps a module under the **Starred** filter; stars are saved with the client settings
+- Keybind chip in the settings' **Main** card: click to rebind (keyboard or mouse buttons 3+), `Del`/`Backspace` unbinds, right-click resets
+- Red marker for experimental modules
 
 **Settings widgets**
 - Boolean (switch), Number (animated slider; scroll on the value, right-click resets), Mode (segmented control or cycling pill), Color (HSV picker with hue/alpha bars and presets), Keybind
@@ -389,7 +398,7 @@ and is not bundled into Maro.
 
 ### Schematic Auto Builder
 
-Right-click **Player → Auto Builder** for a compact panel with schematic selection, origin/nudges, auction budget and **Start Build**. **Automatic** builds without holding right mouse. Imports `.schem`, `.schematic`, `.litematic` and vanilla `.nbt`, previews textured ghosts, prepares the whole material list in your selected double chests (press R on each to add, Shift + R to remove), restocks each layer, buys missing materials and cleans its temporary dirt. **Saved Builds** keeps named placements and restores progress after reconnecting; resume rescans matching world blocks. Optional head smoothing and timing variation are in **Options → Build**. See [Auto Builder setup and limits](docs/AUTO_BUILDER.md).
+Click **Player → Auto Builder** for a compact panel with schematic selection, origin/nudges, auction budget and **Start Build**. **Automatic** builds without holding right mouse. Imports `.schem`, `.schematic`, `.litematic` and vanilla `.nbt`, previews textured ghosts, prepares the whole material list in your selected double chests (press R on each to add, Shift + R to remove), restocks each layer, buys missing materials and cleans its temporary dirt. **Saved Builds** keeps named placements and restores progress after reconnecting; resume rescans matching world blocks. Optional head smoothing and timing variation are in **Options → Build**. See [Auto Builder setup and limits](docs/AUTO_BUILDER.md).
 
 Run its focused in-game checks with `./gradlew runProductionClientGameTest -PbuilderTestOnly=true`.
 
