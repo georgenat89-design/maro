@@ -97,7 +97,7 @@ public class ClickGuiScreen extends Screen {
 
     private static final Object WINDOW = new Object();
     /** The layout the menu is drawn in, scaled to fit the screen. */
-    private static final int CANVAS_W = 800, CANVAS_H = 440;
+    private static final int CANVAS_W = 860, CANVAS_H = 480;
     private static final float MAIN_W = 540f, MAIN_H = 384f, SIDEBAR_W = 140f, PANEL_GAP = 10f, HEADER_H = 28f;
     private static final Icons.Icon SEARCH_ICON = (ctx, cx, cy, s, c, h) -> Glyphs.draw(ctx, GlyphNames.SEARCH, cx, cy, s * 1.15f, c);
     /** The test hook name for the sidebar's Screen GUI switch. */
@@ -629,7 +629,8 @@ public class ClickGuiScreen extends Screen {
     private void renderHeader(DrawContext ctx, float x, float y, float w, float h) {
         boolean searching = !search.getText().isEmpty();
         Entry e = entries.get(selected);
-        boolean modules = searching || e.category() != null;
+        boolean locked = !searching && e.category() == Category.ANTI_CHEAT_OFF && !antiCheatSectionUnlocked;
+        boolean modules = (searching || e.category() != null) && !locked;
         String title = searching ? "Search" : e.label();
         String subtitle;
         if (searching) {

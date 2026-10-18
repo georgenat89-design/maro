@@ -122,7 +122,9 @@ final class MenuChecks {
             context.takeScreenshot("maro-menu-" + page);
         }
 
-        // Typing searches every category at once.
+        // Typing on a module page searches every category at once.
+        context.runOnClient(c -> screen(c).openPage(example.getCategory().ordinal()));
+        settle(context);
         context.getInput().typeChars("sky");
         settle(context);
         context.takeScreenshot("maro-menu-search");

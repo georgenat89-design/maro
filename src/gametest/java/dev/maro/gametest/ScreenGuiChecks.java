@@ -47,7 +47,7 @@ final class ScreenGuiChecks {
                 int bind = ClientSettings.guiBind.get();
                 ConfigManager.loadClient();
                 require(!ClientSettings.capsText.get() && !ClientSettings.backgroundBlur.get()
-                        && ClientSettings.opacity.getInt() == 82, "Old menu look was not migrated");
+                        && ClientSettings.opacity.getInt() == 94, "Old menu look was not migrated");
                 require(ClientSettings.accent.get() == 0xFF33BBAA && ClientSettings.guiBind.get() == bind, "Migration lost accent or menu key");
                 ClientSettings.accent.reset();
                 ClientSettings.capsText.set(false);

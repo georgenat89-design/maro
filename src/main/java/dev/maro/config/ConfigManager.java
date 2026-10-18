@@ -36,7 +36,7 @@ public final class ConfigManager {
     private static final Path CLIENT_FILE = DIR.resolve("client.json");
 
     /** v4: blue theme; v5: translucent menus, normal-case text and the new canvas layout. */
-    private static final int CLIENT_VERSION = 5;
+    private static final int CLIENT_VERSION = 6;
     private static String current = "default";
 
     public record ConfigInfo(String name, long lastModified) {
@@ -103,6 +103,8 @@ public final class ConfigManager {
                 ClientSettings.shadow.reset();
                 ClientSettings.contourLines.reset();
             }
+            // The redesigned window is a solid surface; a see-through one lets the world show through its cards.
+            if (version < 6) ClientSettings.opacity.reset();
         }
         if (root.has("friends") && root.get("friends").isJsonArray()) {
             FriendManager.clear();
