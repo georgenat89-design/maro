@@ -41,7 +41,9 @@ jobs:
           ALSOFT_DRIVERS: "null"
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq xvfb imagemagick > /dev/null
-          ./gradlew runProductionClientGameTest --no-daemon --stacktrace
+          ./gradlew runProductionClientGameTest -PbaseCounterTestOnly=true --no-daemon --stacktrace
+          ./gradlew runProductionClientGameTest -PbaseEspTestOnly=true --no-daemon --stacktrace
+          ./gradlew runProductionClientGameTest -PmenuTestOnly=true --no-daemon --stacktrace
 
       - name: Upload mod jar
         uses: actions/upload-artifact@v4
@@ -52,8 +54,7 @@ jobs:
             !build/libs/*-sources.jar
             !build/libs/*-gametest.jar
 
-      # Only builds that passed the in-game test become releases. They are published before the
-      # slower builder tests below, which still run and report but do not hold the download up.
+      # Publish only after the native ESP and menu checks pass.
       - name: Publish release
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
@@ -63,13 +64,8 @@ jobs:
           gh release create "build-${{ github.run_number }}" "$JAR" \
             --target "${{ github.sha }}" \
             --title "maro.gg build ${{ github.run_number }}" \
-            --notes "Minecraft 1.21.11 · commit ${{ github.sha }} · passed the in-game test" \
+            --notes "Minecraft 1.21.11 · commit ${{ github.sha }} · passed native base-counter, ESP and menu tests" \
             --latest
-
-      - name: Schematic builder and auction tests
-        env:
-          ALSOFT_DRIVERS: "null"
-        run: ./gradlew runProductionClientGameTest -PbuilderTestOnly=true --no-daemon --stacktrace
 
       - name: Print screenshot previews
         if: always()

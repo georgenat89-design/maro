@@ -1,0 +1,94 @@
+// Opt-in only: ./gradlew protectedRemapJar -PprotectedEdition=true -PlicensePublicConfig=/absolute/public.json
+def loomClasses=plugins.findPlugin('fabric-loom').getClass().classLoader
+sourceSets {
+    protectedClient {
+        java.srcDir 'protection/client'
+        compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+    }
+    protectionTools { java.srcDir 'protection/buildtools' }
+    protectionChecks {
+        java.srcDir 'protection/tests/native'
+        resources.srcDir 'protection/tests/resources'
+        compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output + sourceSets.protectedClient.output
+    }
+    protectionStandalone {
+        java.srcDir 'protection/tests/standalone'
+        compileClasspath += sourceSets.main.compileClasspath + sourceSets.protectedClient.output
+        runtimeClasspath += sourceSets.main.compileClasspath + sourceSets.protectedClient.output
+    }
+}
+configurations { protectionObfuscator }
+dependencies {
+    protectionToolsImplementation 'org.ow2.asm:asm:9.10.1'
+    protectionObfuscator 'com.guardsquare:proguard-base:7.10.0'
+}
+tasks.register('prepareProtectedJar', JavaExec) {
+    dependsOn jar, compileProtectedClientJava, compileProtectionToolsJava
+    classpath=sourceSets.protectionTools.runtimeClasspath
+    mainClass='dev.maro.build.ProtectJar'
+    outputs.file layout.buildDirectory.file('protection/instrumented.jar')
+    // Always rebuild: a changed public trust file or classes must never reuse a stale protected artifact.
+    outputs.upToDateWhen { false }
+    doFirst {
+        if(!providers.gradleProperty('licensePublicConfig').isPresent())throw new GradleException('Supply -PlicensePublicConfig=/absolute/PUBLIC-client-trust.json (no private keys)')
+        args=[tasks.jar.archiveFile.get().asFile.absolutePath,sourceSets.protectedClient.output.classesDirs.singleFile.absolutePath,
+              file(providers.gradleProperty('licensePublicConfig').get()).absolutePath,layout.buildDirectory.file('protection/instrumented.jar').get().asFile.absolutePath]
+    }
+}
+tasks.register('obfuscateProtected', JavaExec) {
+    dependsOn prepareProtectedJar
+    classpath=configurations.protectionObfuscator
+    mainClass='proguard.ProGuard'
+    maxHeapSize='2g'
+    doFirst {
+        def dir=layout.buildDirectory.dir('protection').get().asFile;dir.mkdirs()
+        def quote={p -> "'"+p.toString().replace('\\','/')+"'"}
+        def libraries=sourceSets.main.compileClasspath.files.findAll{it.exists()}.collect { '-libraryjars '+quote(it) }.join('\n')
+        def jmods=file("${System.getProperty('java.home')}/jmods").listFiles().findAll{it.name.endsWith('.jmod')}.collect{'-libraryjars '+quote(it)+'(!**.jar;!module-info.class)'}.join('\n')
+        def rules=file('protection/proguard.pro').text
+        new File(dir,'run.pro').text="-injars ${quote(new File(dir,'instrumented.jar'))}\n-outjars ${quote(new File(dir,'obfuscated.jar'))}\n-printmapping ${quote(new File(dir,'mapping-private.txt'))}\n"+libraries+'\n'+jmods+'\n'+rules
+        args=['@'+new File(dir,'run.pro').absolutePath]
+    }
+}
+tasks.register('protectedRemapJar',loomClasses.loadClass('net.fabricmc.loom.task.RemapJarTask')) {
+    dependsOn obfuscateProtected
+    input=layout.buildDirectory.file('protection/obfuscated.jar')
+    destinationDirectory=layout.buildDirectory.dir('protected')
+    archiveFileName='Maro-Protected-Test.jar'
+    addNestedDependencies=true
+    classpath.from(sourceSets.main.compileClasspath)
+}
+tasks.register('protectionChecksJar',Jar) {
+    from sourceSets.protectionChecks.output
+    archiveClassifier='protection-test-dev'
+    destinationDirectory=layout.buildDirectory.dir('devlibs')
+}
+tasks.register('remapProtectionChecks',loomClasses.loadClass('net.fabricmc.loom.task.RemapJarTask')) {
+    dependsOn protectionChecksJar
+    input=tasks.named('protectionChecksJar').flatMap{it.archiveFile}
+    archiveClassifier='protection-test'
+    destinationDirectory=layout.buildDirectory.dir('protection/testmods')
+    addNestedDependencies=false
+    classpath.from(sourceSets.protectionChecks.compileClasspath)
+}
+tasks.register('runProtectedIntegration',loomClasses.loadClass('net.fabricmc.loom.task.prod.ClientProductionRunTask')) {
+    dependsOn remapProtectionChecks
+    mods.from(configurations.productionMods,tasks.named('remapProtectionChecks').flatMap{it.archiveFile})
+    mods.from(providers.gradleProperty('signedProtectedJar').map{file(it)})
+    if(providers.gradleProperty('meteorTestJar').isPresent())mods.from(file(providers.gradleProperty('meteorTestJar').get()))
+    jvmArgs.addAll(providers.gradleProperty('protectionFixture').map { value ->
+        def fixture=file(value)
+        ['-Dfabric.client.gametest','-Dfabric.client.gametest.disableNetworkSynchronizer=true',
+            '-Dmaro.protection.fixture='+fixture.absolutePath,'-Djavax.net.ssl.trustStore='+new File(fixture,'truststore.p12').absolutePath,'-Djavax.net.ssl.trustStorePassword=changeit']
+    })
+}
+tasks.register('testCredentialVault',JavaExec) {
+    dependsOn compileProtectionStandaloneJava,compileProtectedClientJava
+    mainClass='dev.maro.protection.test.VaultChecks'
+    classpath=sourceSets.protectionStandalone.runtimeClasspath
+    doFirst {
+        def folder=layout.buildDirectory.dir('protection/test-resources').get().asFile;folder.mkdirs()
+        new File(folder,'maro-license-public.json').bytes=file(providers.gradleProperty('licensePublicConfig').get()).bytes
+        classpath+=files(folder)
+    }
+}

@@ -55,6 +55,7 @@ final class BaseEspChecks {
                 c.options.setPerspective(Perspective.FIRST_PERSON); module.getSettings().forEach(Setting::reset);
                 ((BooleanSetting)setting(module,"sound alerts")).set(false);
                 ((BooleanSetting)setting(module,"chat alerts")).set(false);
+                ((BooleanSetting)setting(module,"include surface bases")).set(false);
                 module.setEnabled(true);
             });
             long searching = System.nanoTime();

@@ -1,0 +1,9 @@
+{
+  "directory": "/srv/maro-private",
+  "origin": "https://license.example.invalid",
+  "device_limit": 2,
+  "access_seconds": 300,
+  "offline_seconds": 0,
+  "refresh_seconds": 604800,
+  "absolute_seconds": 2592000
+}

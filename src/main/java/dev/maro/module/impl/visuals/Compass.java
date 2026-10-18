@@ -31,6 +31,7 @@ public class Compass extends Module implements HudElement {
     private static final int MARGIN = 4;
     private static final int STRIP_H = 22;
     private static final int DIAL_R = 34;
+    private static final int DIAL_PAD = 12;
 
     private final ButtonSetting position = new ButtonSetting("Position", "Drag the compass where you want it and scroll to resize it", "Place",
             () -> mc.setScreen(new HudPlacementScreen(mc.currentScreen, this)));
@@ -184,12 +185,12 @@ public class Compass extends Module implements HudElement {
     // ---- placement ----------------------------------------------------------------------
 
     private float panelWidth() {
-        return style.is("Strip") ? width.getFloat() : DIAL_R * 2 + 8;
+        return style.is("Strip") ? width.getFloat() : (DIAL_R+DIAL_PAD)*2;
     }
 
     private float panelHeight() {
         if (style.is("Strip")) return STRIP_H + (degrees.get() ? 16 : 0) + 12;
-        return DIAL_R * 2 + 8;
+        return (DIAL_R+DIAL_PAD)*2;
     }
 
     @Override
@@ -199,7 +200,7 @@ public class Compass extends Module implements HudElement {
 
     @Override
     public float hudScale() {
-        return scale.getFloat();
+        return Math.min(scale.getFloat(),Math.max(.1f,Math.min((mc.getWindow().getScaledWidth()-MARGIN*2)/panelWidth(),(mc.getWindow().getScaledHeight()-MARGIN*2)/panelHeight())));
     }
 
     @Override
@@ -379,7 +380,7 @@ public class Compass extends Module implements HudElement {
     }
 
     private void dial(DrawContext ctx, float s) {
-        float c = DIAL_R + 4;
+        float c = DIAL_R + DIAL_PAD;
         float hair = Math.max(Render2D.px() / s, 0.5f);
         int accent = Theme.accent();
 

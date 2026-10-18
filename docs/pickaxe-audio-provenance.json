@@ -1,0 +1,122 @@
+[
+  {
+    "effect": "driver_equip",
+    "source": "Download.mp4",
+    "source_sha256": "f6886c05909772e553a371edaa1f145f80506ba32dd4b7ed26fc17aa3d3abb37",
+    "start_seconds": 0.02,
+    "end_seconds": 0.43,
+    "output_sha256": "1beff25e7285c7e021188526b0f531f53b43cd9d1afa2a61d8a8c1fb1f136014"
+  },
+  {
+    "effect": "driver_swing",
+    "source": "Download.mp4",
+    "source_sha256": "f6886c05909772e553a371edaa1f145f80506ba32dd4b7ed26fc17aa3d3abb37",
+    "start_seconds": 0.73,
+    "end_seconds": 1.52,
+    "output_sha256": "ec96767ca968411db35fa50b56e68622d39495467c7376f67ea692046697f954"
+  },
+  {
+    "effect": "driver_impact",
+    "source": "Download.mp4",
+    "source_sha256": "f6886c05909772e553a371edaa1f145f80506ba32dd4b7ed26fc17aa3d3abb37",
+    "start_seconds": 0.87,
+    "end_seconds": 1.52,
+    "output_sha256": "24be039a5d03ab869b3be4ba23914877eb4266443794cf319e0443a748c87095"
+  },
+  {
+    "effect": "merry_mint_axe_equip",
+    "source": "Replay 2026-10-14 18-10-44.mp4",
+    "source_sha256": "a658332ca0f58bce040fe6e27dbbbb0a31324b17905ddec448026a379f0ca877",
+    "start_seconds": 0.51,
+    "end_seconds": 1.09,
+    "output_sha256": "774351a836ba029c46423f4f7f9f0968247c84756f5ab6fc4cafb4a5385c2a36"
+  },
+  {
+    "effect": "merry_mint_axe_swing",
+    "source": "Replay 2026-10-14 18-10-44.mp4",
+    "source_sha256": "a658332ca0f58bce040fe6e27dbbbb0a31324b17905ddec448026a379f0ca877",
+    "start_seconds": 1.25,
+    "end_seconds": 2.12,
+    "output_sha256": "96dcb31aa087fc38baf563850181accdc4674a6facc79b1cb6b1c66cedc14bf3"
+  },
+  {
+    "effect": "merry_mint_axe_impact",
+    "source": "Replay 2026-10-14 18-10-44.mp4",
+    "source_sha256": "a658332ca0f58bce040fe6e27dbbbb0a31324b17905ddec448026a379f0ca877",
+    "start_seconds": 1.36,
+    "end_seconds": 2.12,
+    "output_sha256": "def0ccc2aa79679ab9fa2616efa8a64a78ec91b62f95b25807162a8d0e3a8648"
+  },
+  {
+    "effect": "leviathan_axe_equip",
+    "source": "Replay 2026-10-14 18-11-49.mp4",
+    "source_sha256": "701e544067b3b2edafc3a6eec3460f26bd8eb4ab7feb76d72144d1f045159d7d",
+    "start_seconds": 2.85,
+    "end_seconds": 3.39,
+    "output_sha256": "16e03b4c33705fc3614fe539d462fed1d5c02c35d4e53c9a83524ec653d62bda"
+  },
+  {
+    "effect": "leviathan_axe_swing",
+    "source": "Replay 2026-10-14 18-11-49.mp4",
+    "source_sha256": "701e544067b3b2edafc3a6eec3460f26bd8eb4ab7feb76d72144d1f045159d7d",
+    "start_seconds": 3.51,
+    "end_seconds": 4.36,
+    "output_sha256": "b93a1316a39621eee5c4a68cd721ece4724ee1b8fc2a2caddc5eb70bef1fe387"
+  },
+  {
+    "effect": "leviathan_axe_impact",
+    "source": "Replay 2026-10-14 18-11-49.mp4",
+    "source_sha256": "701e544067b3b2edafc3a6eec3460f26bd8eb4ab7feb76d72144d1f045159d7d",
+    "start_seconds": 3.62,
+    "end_seconds": 4.36,
+    "output_sha256": "dd89a2d6384d7b5423def89c245e2976bdd981fb223fc3da77244f97725261f4"
+  },
+  {
+    "effect": "cold_snap_equip",
+    "source": "Replay 2026-10-14 18-12-32.mp4",
+    "source_sha256": "8a297eec87af5e541188d57a8044c4c9b76ae22720bb77368ca85aa00b217532",
+    "start_seconds": 3.46,
+    "end_seconds": 4.03,
+    "output_sha256": "684cbff301883353361d2588a265ae9bb049d47025a85861a43991f4b2617fb5"
+  },
+  {
+    "effect": "cold_snap_swing",
+    "source": "Replay 2026-10-14 18-12-32.mp4",
+    "source_sha256": "8a297eec87af5e541188d57a8044c4c9b76ae22720bb77368ca85aa00b217532",
+    "start_seconds": 4.24,
+    "end_seconds": 5.12,
+    "output_sha256": "5f5548c66a70c0b19b3e613818f38f6325339ce0d2219e66de64ec0c670e02fb"
+  },
+  {
+    "effect": "cold_snap_impact",
+    "source": "Replay 2026-10-14 18-12-32.mp4",
+    "source_sha256": "8a297eec87af5e541188d57a8044c4c9b76ae22720bb77368ca85aa00b217532",
+    "start_seconds": 4.37,
+    "end_seconds": 5.12,
+    "output_sha256": "21b6d1740a3200e8fbe1fd94d49e94e3fc1fc6c4e25e44a0a530c4b257985990"
+  },
+  {
+    "effect": "star_wand_equip",
+    "source": "Replay 2026-10-14 18-13-05.mp4",
+    "source_sha256": "ae2f0f9db1c3199648d58ea2ed4d291368904ba9a009e91536e2944d26a5b32f",
+    "start_seconds": 1.0,
+    "end_seconds": 1.56,
+    "output_sha256": "aea14f1c3aa47ba09bb31c2a514cbb875a8e5b3fe8393b42e87ab1267b83bf6e"
+  },
+  {
+    "effect": "star_wand_swing",
+    "source": "Replay 2026-10-14 18-13-05.mp4",
+    "source_sha256": "ae2f0f9db1c3199648d58ea2ed4d291368904ba9a009e91536e2944d26a5b32f",
+    "start_seconds": 1.79,
+    "end_seconds": 2.68,
+    "output_sha256": "6c4f6724ca321281e9b3675ac4ce33004df5846ed1ee13ce096cfef469ded38d"
+  },
+  {
+    "effect": "star_wand_impact",
+    "source": "Replay 2026-10-14 18-13-05.mp4",
+    "source_sha256": "ae2f0f9db1c3199648d58ea2ed4d291368904ba9a009e91536e2944d26a5b32f",
+    "start_seconds": 1.93,
+    "end_seconds": 2.68,
+    "output_sha256": "d1021cfe207e84f76bf0de6e3a6d1d99a436f43c16bcd616e2daf0088e462d0e"
+  }
+]

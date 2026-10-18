@@ -54,11 +54,16 @@ public abstract class Module {
     }
 
     public boolean isEnabled() {
-        return enabled;
+        return enabled && !dev.maro.render.capture.CapturePass.active();
     }
 
     public String getName() {
         return name;
+    }
+
+    /** User-facing label; getName() remains the stable config and lookup key. */
+    public String getDisplayName() {
+        return getName();
     }
 
     public String getDescription() {

@@ -1,0 +1,7 @@
+{
+  "origin": "https://license.example.invalid",
+  "audience": "maro-protected",
+  "offline_max_seconds": 0,
+  "keys": { "REPLACE-WITH-SERVER-EXPORTED-KEY-ID": "REPLACE-WITH-EXPORTED-ED25519-PUBLIC-KEY-PEM" },
+  "release_public_key": "REPLACE-WITH-SEPARATE-ED25519-RELEASE-PUBLIC-KEY-PEM"
+}

@@ -9,6 +9,7 @@ import dev.maro.setting.NumberSetting;
 import dev.maro.setting.SettingSection;
 import dev.maro.util.KeyUtil;
 import net.minecraft.client.option.Perspective;
+import net.minecraft.client.world.ClientWorld;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.player.PlayerEntity;
@@ -46,12 +47,14 @@ public class Acrobatics extends Module {
     private final NumberSetting turns = add(new NumberSetting("Turns", "How many times round", 1, 1, 4, 1));
     private final NumberSetting speed = add(new NumberSetting("Speed", "How fast the trick goes", 1, 0.4, 2.5, 0.05).suffix("x"));
     private final BooleanSetting camera = add(new BooleanSetting("First Person Flip", "In first person the view flips and spins with you", false));
+    private final ModeSetting trickView = add(new ModeSetting("Trick View", "Auto shows your model during a trick, then restores your view; Follow Game keeps your chosen camera",
+            "Auto Third Person", "Auto Third Person", "Follow Game").visible(() -> !camera.get()));
     private final BooleanSetting puff = add(new BooleanSetting("Landing Puff", "A puff of cloud when you land a trick", true));
     private final BooleanSetting trail = add(new BooleanSetting("Trail", "Sparkles behind you through the trick", false));
 
     private final List<SettingSection> sections = List.of(
             SettingSection.of("Tricks", trick, when, key, who, turns, speed),
-            SettingSection.of("Effects", camera, puff, trail));
+            SettingSection.of("Effects", camera, trickView, puff, trail));
 
     /** One player's trick in the air: what it is and when it started, in world ticks. */
     private record Move(Kind kind, double start, double length, int turns, boolean hop) {
@@ -60,6 +63,9 @@ public class Acrobatics extends Module {
     private final Map<Integer, Move> moves = new HashMap<>();
     private final Map<Integer, Boolean> grounded = new HashMap<>();
     private boolean keyWasDown;
+    private boolean requested;
+    private ClientWorld activeWorld;
+    private Perspective savedPerspective;
     private int done;
 
     public Acrobatics() {
@@ -73,9 +79,41 @@ public class Acrobatics extends Module {
     }
 
     @Override
+    protected void onEnable() {
+        reset(); activeWorld = null; syncWorld();
+    }
+
+    @Override
     protected void onDisable() {
+        reset(); activeWorld = null;
+    }
+
+    private void reset() {
         moves.clear();
         grounded.clear();
+        keyWasDown = requested = false;
+        restoreView();
+    }
+
+    private void syncWorld() {
+        if (activeWorld == mc.world) return;
+        reset(); activeWorld = mc.world;
+        if (activeWorld != null) for (PlayerEntity player : activeWorld.getPlayers())
+            grounded.put(player.getId(), player.isOnGround());
+    }
+
+    private void restoreView() {
+        if (savedPerspective == null) return;
+        // A manual F5 change takes priority over the temporary trick camera.
+        if (mc.options.getPerspective() == Perspective.THIRD_PERSON_BACK)
+            mc.options.setPerspective(savedPerspective);
+        savedPerspective = null;
+    }
+
+    /** Queue the press event so a tap between client ticks cannot be missed by GLFW polling. */
+    public void onActionBind(int code) {
+        if (!isEnabled() || !inGame() || mc.currentScreen != null || code == KeyUtil.NONE || code != key.get()) return;
+        syncWorld(); requested = true;
     }
 
     private Kind pick() {
@@ -95,9 +133,15 @@ public class Acrobatics extends Module {
 
     /** Starts a trick for a player, a little hop added if they are on the ground. */
     public void perform(PlayerEntity player) {
-        if (!inGame()) return;
+        if (!isEnabled() || !inGame()) return;
+        syncWorld();
         double length = 13 / speed.get() * Math.max(1, 0.7 + turns.get() * 0.3);
         moves.put(player.getId(), new Move(pick(), now(0), length, turns.getInt(), player.isOnGround()));
+        if (player == mc.player && !camera.get() && trickView.is("Auto Third Person")
+                && savedPerspective == null && mc.options.getPerspective() == Perspective.FIRST_PERSON) {
+            savedPerspective = Perspective.FIRST_PERSON;
+            mc.options.setPerspective(Perspective.THIRD_PERSON_BACK);
+        }
     }
 
     private boolean keyDown() {
@@ -109,9 +153,11 @@ public class Acrobatics extends Module {
 
     @Override
     public void onTick() {
+        syncWorld();
         if (!inGame()) return;
         boolean down = keyDown();
-        if (down && !keyWasDown) perform(mc.player);
+        if (requested || down && !keyWasDown) perform(mc.player);
+        requested = false;
         keyWasDown = down;
 
         double time = now(0);
@@ -146,6 +192,9 @@ public class Acrobatics extends Module {
             }
         }
         grounded.keySet().removeIf(id -> mc.world.getEntityById(id) == null);
+        moves.keySet().removeIf(id -> mc.world.getEntityById(id) == null || id != mc.player.getId() && !who.is("Everyone"));
+        Move local = moves.get(mc.player.getId());
+        if (local == null || progress(local, 0) < 0 || camera.get() || !trickView.is("Auto Third Person")) restoreView();
     }
 
     /** How far through its trick a player is, 0 to 1 eased; -1 when none. */
@@ -252,7 +301,7 @@ public class Acrobatics extends Module {
         return (float) MathHelper.clamp(Math.min(t / 0.06, (1 - t) / 0.08), 0, 1);
     }
 
-    /** In first person, how far the view is turned this frame by your trick: {yaw, pitch}; null for none. */
+    /** In first person, how far the view turns this frame: {yaw, pitch, roll}; null for none. */
     public static float[] cameraTurn(float delta) {
         Acrobatics a = instance;
         if (a == null || !a.isEnabled() || !inGame() || !a.camera.get() || mc.options.getPerspective() != Perspective.FIRST_PERSON) return null;
@@ -262,11 +311,11 @@ public class Acrobatics extends Module {
         if (e < 0) return null;
         float angle = (float) (360 * move.turns() * e);
         return switch (move.kind()) {
-            case FRONT -> new float[] {0, angle};
-            case BACK -> new float[] {0, -angle};
-            case SPIN -> new float[] {angle, 0};
-            case CORKSCREW -> new float[] {angle, -angle};
-            case SIDE -> null;
+            case FRONT -> new float[] {0, angle, 0};
+            case BACK -> new float[] {0, -angle, 0};
+            case SPIN -> new float[] {angle, 0, 0};
+            case CORKSCREW -> new float[] {angle, -angle, 0};
+            case SIDE -> new float[] {0, 0, angle};
         };
     }
 

@@ -1,4 +1,5 @@
 package dev.maro.runtime.gui;
+import dev.maro.gui.render.Fonts;
 import com.google.gson.JsonParser;
 import dev.maro.setting.Setting;
 import net.minecraft.client.gui.screen.Screen;
@@ -13,7 +14,7 @@ final class ScalarEditorScreen extends Screen {
         addDrawableChild(ButtonWidget.builder(Text.literal("Save"),b->{try{setting.fromJson(JsonParser.parseString(field.getText()));close();}catch(RuntimeException e){error="Enter a valid value";}}).dimensions(width/2-120,height/2+20,116,20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"),b->close()).dimensions(width/2+4,height/2+20,116,20).build());
     }
-    @Override public void render(DrawContext ctx,int x,int y,float delta){ctx.fill(0,0,width,height,0xDD10121A);ctx.drawCenteredTextWithShadow(textRenderer,title,width/2,height/2-42,0xFFECEEF3);super.render(ctx,x,y,delta);if(!error.isEmpty())ctx.drawCenteredTextWithShadow(textRenderer,error,width/2,height/2+50,0xFFFF6B7A);}
+    @Override public void render(DrawContext ctx,int x,int y,float delta){ctx.fill(0,0,width,height,0xDD10121A);Fonts.centeredTop(ctx, title.getString(), width/2, height/2-42, width - 24, 0xFFECEEF3);super.render(ctx,x,y,delta);if(!error.isEmpty())Fonts.centeredTop(ctx, error, width/2, height/2+50, width - 24, 0xFFFF6B7A);}
     @Override public void close(){client.setScreen(parent);}
     @Override public boolean shouldPause(){return false;}
 }

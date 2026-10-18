@@ -89,12 +89,13 @@ public abstract class PlayerEspWorldRendererMixin {
         if (mask == null) return;
 
         var camera = worldState.cameraRenderState.pos;
+        boolean silhouettes = PlayerEspRenderer.silhouettesOn();
         Set<Entity> drawn = Collections.newSetFromMap(new IdentityHashMap<>());
 
         for (var state : worldState.entityRenderStates) {
             Entity entity = ((EntityRenderStateAccess) state).maro$getEntity();
             if (entity == null || !PlayerEspRenderer.shouldDraw(entity)) continue;
-            maro$drawSilhouette(entity, state, matrices, worldState);
+            if (silhouettes) maro$drawSilhouette(entity, state, matrices, worldState);
             PlayerEspRenderer.addTracer(entity, state.x, state.y, state.z, camera);
             drawn.add(entity);
         }
@@ -108,14 +109,14 @@ public abstract class PlayerEspWorldRendererMixin {
                 if (drawn.contains(player) || !PlayerEspRenderer.shouldDraw(player)) continue;
                 Vec3d at = player.getLerpedPos(tickProgress);
                 PlayerEspRenderer.addTracer(player, at.x, at.y, at.z, camera);
-                if (!PlayerEspRenderer.onScreen(at.x, at.y + player.getHeight() / 2, at.z, camera)) continue;
+                if (!silhouettes || !PlayerEspRenderer.onScreen(at.x, at.y + player.getHeight() / 2, at.z, camera)) continue;
                 EntityRenderState state = entityRenderManager.getAndUpdateRenderState(player, tickProgress);
                 maro$drawSilhouette(player, state, matrices, worldState);
                 drawn.add(player);
             }
         }
 
-        if (drawn.isEmpty()) return;
+        if (drawn.isEmpty() || !silhouettes) return;
 
         if (maro$silhouetteDispatcher == null) {
             MinecraftClient mc = MinecraftClient.getInstance();

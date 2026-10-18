@@ -26,4 +26,4 @@ Cases: dirt + native diamond shovel replacement; stone + native diamond pickaxe 
 
 This proves these local cases on this pinned stock Grim version. It does not prove every public server's custom configuration or the full710block schematic on Grim. Retain the existing separate integration tests for full schematic and auction regressions.
 
-The suite also drives Auto Trident with held mouse input in rain, requires at least three authoritative PlayerRiptideEvents, applies a real server teleport, and checks continued accepted launches with zero Grim FlagEvents. The player remains in survival without bypass permissions. `proof-trident.properties` records launch ticks and the same active-check proof. This is a pinned local compatibility check, not a DonutSMP bypass claim.
+The previous Auto Trident scenario was removed with that module. The builder checks above remain available as pinned local compatibility checks.

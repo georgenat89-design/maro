@@ -1,7 +1,7 @@
 package dev.maro.gui.page;
 
 import dev.maro.gui.ClickGuiScreen;
-import dev.maro.gui.Favorites;
+import dev.maro.config.ModuleFavorites;
 import dev.maro.gui.ModuleIcons;
 import dev.maro.gui.render.Fonts;
 import dev.maro.gui.render.GlyphNames;
@@ -52,7 +52,7 @@ public class ModulesPage extends Page {
     private List<Module> modules() {
         return switch (gui.filter()) {
             case ENABLED -> all().stream().filter(Module::isEnabled).toList();
-            case STARRED -> all().stream().filter(Favorites::starred).toList();
+            case STARRED -> all().stream().filter(ModuleFavorites::contains).toList();
             default -> all();
         };
     }
@@ -156,7 +156,7 @@ public class ModulesPage extends Page {
         float nx = tx + ts + 9, maxName = starX - 10 - nx;
         boolean listening = gui.listening == m.getBind();
         int nameColor = ColorUtil.lerp(ColorUtil.lerp(Theme.TEXT_DIM, Theme.TEXT, hv), 0xFFFFFFFF, on);
-        String name = listening ? "Press a key…" : Fonts.trim(m.getName(), maxName - (m.isExperimental() ? 11 : 0), false, 0.84f);
+        String name = listening ? "Press a key…" : Fonts.trim(m.getDisplayName(), maxName - (m.isExperimental() ? 11 : 0), false, 0.84f);
         Fonts.drawV(ctx, name, nx, cy, listening ? Theme.accent() : nameColor, false, 0.84f);
         if (m.isExperimental() && !listening) {
             float wx = nx + Fonts.width(name, false, 0.84f) + 6;
@@ -164,14 +164,14 @@ public class ModulesPage extends Page {
             if (gui.hovered(wx - 5, cy - 5, 10, 10)) gui.tooltip("Experimental - may be unstable or detectable");
         }
 
-        boolean starred = Favorites.starred(m);
+        boolean starred = ModuleFavorites.contains(m);
         boolean starHover = gui.hovered(starX - 7, cy - 7, 14, 14);
         float st = Anims.of(m, "starred", starred);
         int starIdle = ColorUtil.withAlpha(Theme.TEXT_MUTED, starHover ? 0xFF : Math.round(0x70 + 0x50 * hv));
         Glyphs.draw(ctx, GlyphNames.STAR, starX, cy, 10.5f, ColorUtil.lerp(starIdle, Theme.YELLOW, st));
         gui.hit(starX - 7, cy - 7, 14, 14, (button, mx, my) -> {
             if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return;
-            Favorites.toggle(m);
+            ModuleFavorites.toggle(m);
             Sounds.click();
         });
 

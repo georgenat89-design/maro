@@ -3,6 +3,9 @@ package dev.maro.module.impl.visuals;
 import dev.maro.gui.hud.HudElement;
 import dev.maro.gui.hud.HudPlacementScreen;
 import dev.maro.gui.hud.KeyboardStrokesScreen;
+import dev.maro.gui.hud.KeyboardArrangeScreen;
+import com.google.gson.JsonObject;
+import dev.maro.gui.hud.KeyboardLayout;
 import dev.maro.gui.render.Fonts;
 import dev.maro.gui.render.Render2D;
 import dev.maro.gui.theme.Theme;
@@ -14,6 +17,9 @@ import dev.maro.setting.SettingSection;
 import dev.maro.setting.TextSetting;
 import dev.maro.util.Animation;
 import dev.maro.util.ColorUtil;
+import dev.maro.util.KeyUtil;
+import net.minecraft.client.util.InputUtil;
+import org.lwjgl.glfw.GLFW;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.option.KeyBinding;
@@ -22,6 +28,7 @@ import org.joml.Matrix3x2fStack;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -31,12 +38,12 @@ import java.util.Set;
  * Shows the keys you hold, lit while they are down. You choose which of the game's keybinds appear
  * in a menu of their own (right-click the module, or "Choose Keys"). It reads the bindings rather
  * than fixed keys, so it follows whatever you have rebound and labels each cell with the key that is
- * really on it. Movement keys sit in the classic W / A S D shape; mouse buttons pair up; jump runs
- * along the bottom; everything else flows in rows of three underneath.
+ * really on it. Selected keyboard keys keep the chooser's physical positions, with mouse buttons
+ * grouped below. The bounds follow the selection, including wide and tall keys.
  */
 public class KeyboardStrokes extends Module implements HudElement {
     public static final float KEY = 22, GAP = 3;
-    /** Three keys across, which is also the width of a jump bar or a pair of mouse buttons. */
+    /** Reference width of a pair of mouse buttons. Keyboard bounds follow the selected keys. */
     public static final float WIDTH = KEY * 3 + GAP * 2;
     private static final float HALF = (WIDTH - GAP) / 2f;
     private static final float RADIUS = 5;
@@ -45,6 +52,8 @@ public class KeyboardStrokes extends Module implements HudElement {
 
     private final ButtonSetting chooseKeys = add(new ButtonSetting("Choose Keys", "Pick which keybinds are shown", "Open",
             () -> mc.setScreen(new KeyboardStrokesScreen(mc.currentScreen, this))));
+    private final ButtonSetting arrange = add(new ButtonSetting("Arrange Keys", "Drag individual keys into your own HUD layout", "Edit",
+            () -> mc.setScreen(new KeyboardArrangeScreen(mc.currentScreen, this))));
     private final ButtonSetting position = add(new ButtonSetting("Position", "Drag it where you want it and scroll to resize it", "Place",
             () -> mc.setScreen(new HudPlacementScreen(mc.currentScreen, this))));
     private final NumberSetting x = add(new NumberSetting("X", "Across the screen: 0 is the left edge, 100 the right", 2, 0, 100, 0.5).suffix("%"));
@@ -55,19 +64,54 @@ public class KeyboardStrokes extends Module implements HudElement {
     private final TextSetting keys = add(new TextSetting("Keys", "", DEFAULT_KEYS, 2000, "").visible(() -> false));
 
     private final List<SettingSection> sections = List.of(
-            SettingSection.of("Keys", chooseKeys),
+            SettingSection.of("Keys", chooseKeys, arrange),
             SettingSection.of("Look", opacity),
             SettingSection.of("Placement", position, x, y, scale));
 
+    public record KeyPosition(float x, float y) { }
+    private final Map<String, KeyPosition> positions = new HashMap<>();
+    private long layoutRevision, cachedRevision = -1;
+    public boolean customLayout() { return !positions.isEmpty(); }
+    public void resetLayout() { positions.clear(); layoutRevision++; }
+    /** Capture all current positions before the first move, so moving one key cannot move its neighbors. */
+    public void moveKey(String id, float x, float y) {
+        if (!Float.isFinite(x) || !Float.isFinite(y)) return;
+        var cells = cells();
+        if (cells.stream().noneMatch(c -> c.id().equals(id))) return;
+        for (Cell cell : cells) positions.putIfAbsent(cell.id(), new KeyPosition(cell.x(), cell.y()));
+        positions.put(id, new KeyPosition(Math.clamp(x, 0, 1200), Math.clamp(y, 0, 600)));
+        layoutRevision++;
+    }
+    @Override public JsonObject saveExtra() {
+        var data = new JsonObject(); var keys = new JsonObject();
+        positions.forEach((id,p) -> { var v=new JsonObject();v.addProperty("x",p.x());v.addProperty("y",p.y());keys.add(id,v); });
+        data.add("keyPositions", keys); return data;
+    }
+    @Override public void loadExtra(JsonObject data) {
+        positions.clear(); layoutRevision++;
+        if (!data.has("keyPositions") || !data.get("keyPositions").isJsonObject()) return;
+        for (var e : data.getAsJsonObject("keyPositions").entrySet()) try {
+            if (positions.size() >= 300 || !e.getKey().matches("(key\\.[a-zA-Z0-9_.-]+|physical:[0-9]+)")) continue;
+            var v=e.getValue().getAsJsonObject();float x=v.get("x").getAsFloat(),y=v.get("y").getAsFloat();
+            if (Float.isFinite(x)&&Float.isFinite(y)&&x>=0&&x<=1200&&y>=0&&y<=600) positions.put(e.getKey(),new KeyPosition(x,y));
+        } catch (RuntimeException ignored) { }
+    }
+
     private final Map<String, Animation> glow = new HashMap<>();
 
-    /** A key drawn at (x, y) in the layout, w wide and KEY tall. */
-    public record Cell(KeyBinding binding, float x, float y, float w) {
+    /** A selected physical key, or a fallback cell for an action without an ANSI position. */
+    public record Cell(KeyBinding binding, int code, float x, float y, float w, float h) {
+        public String id() { return binding != null ? binding.getId() : "physical:" + code; }
     }
 
     private List<Cell> cached = List.of();
     private String cachedFor = null;
-    private float cachedHeight;
+    private long cachedBindings;
+    private Set<Integer> physicalKeys = Set.of();
+    private float cachedWidth, cachedHeight;
+    private String chosenFor;
+    private Set<String> chosenCache = Set.of();
+    private final Set<Integer> heldPhysical = new java.util.HashSet<>();
 
     public KeyboardStrokes() {
         super("Keyboard Strokes", "Shows the keys you press on screen. Right-click it to choose which keybinds appear", Category.VISUALS);
@@ -90,9 +134,11 @@ public class KeyboardStrokes extends Module implements HudElement {
     }
 
     private Set<String> chosen() {
+        if (keys.get().equals(chosenFor)) return chosenCache;
         Set<String> out = new LinkedHashSet<>();
         for (String id : keys.get().split(",")) if (!id.isBlank()) out.add(id.trim());
-        return out;
+        chosenFor = keys.get(); chosenCache = Set.copyOf(out);
+        return chosenCache;
     }
 
     public boolean isShown(KeyBinding binding) {
@@ -100,9 +146,43 @@ public class KeyboardStrokes extends Module implements HudElement {
     }
 
     public void toggleKey(KeyBinding binding) {
-        Set<String> set = chosen();
+        Set<String> set = new LinkedHashSet<>(chosen());
         if (!set.remove(binding.getId())) set.add(binding.getId());
         keys.set(String.join(",", set));
+    }
+
+    /** Physical keyboard positions map to existing actions; unused keys can be displayed too. */
+    public static int code(KeyBinding binding) {
+        var key = net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper.getBoundKeyOf(binding);
+        return key.getCategory() == InputUtil.Type.MOUSE ? KeyUtil.mouse(key.getCode())
+                : key.getCategory() == InputUtil.Type.KEYSYM ? key.getCode() : KeyUtil.NONE;
+    }
+    public Set<Integer> physicalKeys() { layout(); return physicalKeys; }
+    public boolean isPhysicalShown(int code) { return physicalKeys().contains(code); }
+    public void togglePhysical(int code) {
+        Set<String> set = new LinkedHashSet<>(chosen());
+        String raw = "physical:" + code;
+        if (isPhysicalShown(code)) {
+            set.remove(raw);
+            for (KeyBinding binding : allBindings()) if (code(binding) == code) set.remove(binding.getId());
+        } else {
+            KeyBinding match = null;
+            for (KeyBinding binding : allBindings()) if (code(binding) == code) { match = binding; break; }
+            set.add(match == null ? raw : match.getId());
+        }
+        keys.set(String.join(",", set));
+    }
+    public void physicalInput(int code, int action) {
+        if (action == GLFW.GLFW_RELEASE) heldPhysical.remove(code);
+        else if (action == GLFW.GLFW_PRESS && isEnabled()) heldPhysical.add(code);
+    }
+    @Override protected void onDisable() { heldPhysical.clear(); }
+    @Override public void onTick() { if (!mc.isWindowFocused() || mc.currentScreen != null) heldPhysical.clear(); }
+    public boolean physicalDown(int code) {
+        if (code == KeyUtil.NONE || !mc.isWindowFocused() || mc.currentScreen != null) return false;
+        if (heldPhysical.contains(code)) return true;
+        return KeyUtil.isMouse(code) ? GLFW.glfwGetMouseButton(mc.getWindow().getHandle(), code - KeyUtil.MOUSE_OFFSET) == GLFW.GLFW_PRESS
+                : InputUtil.isKeyPressed(mc.getWindow(), code);
     }
 
     public void resetKeys() {
@@ -119,61 +199,86 @@ public class KeyboardStrokes extends Module implements HudElement {
 
     // ---- layout -------------------------------------------------------------------------------
 
-    /** Wide keys that start a row of their own: 0 normal, 1 half (mouse), 2 full-width. */
-    private static int kind(KeyBinding b) {
-        String id = b.getId();
-        if (id.equals("key.attack") || id.equals("key.use") || id.equals("key.pickItem")) return 1;
-        if (id.equals("key.jump")) return 2;
-        return 0;
-    }
-
     private void layout() {
         String now = keys.get();
-        if (now.equals(cachedFor)) return;
-        cachedFor = now;
         Set<String> chosen = chosen();
-        KeyBinding forward = null, left = null, back = null, right = null;
-        List<KeyBinding> rest = new ArrayList<>();
-        // In the game's own order, so the layout never depends on the order you clicked in.
-        for (KeyBinding b : allBindings()) {
+        KeyBinding[] bindings = allBindings();
+        long signature = 1;
+        for (KeyBinding b : bindings) if (chosen.contains(b.getId())) {
+            signature = 31 * signature + code(b);
+            signature = 31 * signature + System.identityHashCode(b);
+        }
+        if (now.equals(cachedFor) && signature == cachedBindings && cachedRevision == layoutRevision) return;
+        cachedFor = now; cachedBindings = signature; cachedRevision = layoutRevision;
+        Map<Integer, KeyBinding> selected = new LinkedHashMap<>();
+        List<Cell> extras = new ArrayList<>();
+        for (KeyBinding b : bindings) {
             if (!chosen.contains(b.getId())) continue;
-            switch (b.getId()) {
-                case "key.forward" -> forward = b;
-                case "key.left" -> left = b;
-                case "key.back" -> back = b;
-                case "key.right" -> right = b;
-                default -> rest.add(b);
-            }
+            int code = code(b);
+            if (code == KeyUtil.NONE) extras.add(new Cell(b, code, 0, 0, KEY, KEY));
+            else selected.putIfAbsent(code, b);
         }
+        chosen.stream().filter(id -> id.startsWith("physical:")).map(id -> {
+            try { return Integer.parseInt(id.substring(9)); } catch (NumberFormatException ignored) { return KeyUtil.NONE; }
+        }).filter(code -> code >= GLFW.GLFW_KEY_SPACE && code <= GLFW.GLFW_KEY_LAST
+                || code >= KeyUtil.MOUSE_OFFSET && code < KeyUtil.MOUSE_OFFSET + 8).sorted().forEach(code -> {
+            if (!selected.containsKey(code)) selected.put(code, null);
+        });
+        float minX = Float.POSITIVE_INFINITY, minY = Float.POSITIVE_INFINITY, maxX = 0, maxY = 0;
+        for (var entry : selected.entrySet()) {
+            if (KeyUtil.isMouse(entry.getKey())) continue;
+            var cap = KeyboardLayout.key(entry.getKey());
+            if (cap == null) { extras.add(new Cell(entry.getValue(), entry.getKey(), 0, 0, KEY, KEY)); continue; }
+            minX = Math.min(minX, cap.x()); minY = Math.min(minY, cap.y());
+            maxX = Math.max(maxX, cap.x() + cap.w()); maxY = Math.max(maxY, cap.y() + cap.h());
+        }
+        float unit = KEY / 30;
+        float keyboardW = Float.isFinite(minX) ? (maxX - minX) * unit : 0;
+        float keyboardH = Float.isFinite(minY) ? (maxY - minY) * unit : 0;
+        List<Integer> mouse = selected.keySet().stream().filter(KeyUtil::isMouse).sorted().toList();
+        float mouseW = mouse.isEmpty() ? 0 : Math.min(3, mouse.size()) * (HALF + GAP) - GAP;
+        float extrasW = extras.isEmpty() ? 0 : Math.min(3, extras.size()) * (KEY + GAP) - GAP;
+        cachedWidth = Math.max(keyboardW, Math.max(mouseW, extrasW));
         List<Cell> cells = new ArrayList<>();
-        float row = 0;
-        if (forward != null) {
-            cells.add(new Cell(forward, KEY + GAP, row, KEY));
-            row += KEY + GAP;
+        for (var cap : KeyboardLayout.keys()) if (!KeyUtil.isMouse(cap.code()) && selected.containsKey(cap.code())) {
+            cells.add(new Cell(selected.get(cap.code()), cap.code(),
+                    (cap.x() - minX) * unit + (cachedWidth - keyboardW) / 2, (cap.y() - minY) * unit,
+                    cap.w() * unit, cap.h() * unit));
         }
-        if (left != null || back != null || right != null) {
-            if (left != null) cells.add(new Cell(left, 0, row, KEY));
-            if (back != null) cells.add(new Cell(back, KEY + GAP, row, KEY));
-            if (right != null) cells.add(new Cell(right, (KEY + GAP) * 2, row, KEY));
-            row += KEY + GAP;
-        }
-        float cx = 0;
-        int prev = -1;
-        for (KeyBinding b : rest) {
-            int kind = kind(b);
-            float w = kind == 0 ? KEY : kind == 1 ? HALF : WIDTH;
-            // A new kind starts a row, so mouse buttons pair up and jump runs on its own.
-            if (cx > 0 && (kind != prev || cx + w > WIDTH + 0.01f)) {
-                row += KEY + GAP;
-                cx = 0;
+        float row = keyboardH;
+        if (!mouse.isEmpty()) {
+            if (row > 0) row += GAP * 2;
+            for (int i = 0; i < mouse.size(); i++) {
+                int columns = Math.min(3, mouse.size() - i / 3 * 3);
+                float width = columns * (HALF + GAP) - GAP;
+                int code = mouse.get(i);
+                cells.add(new Cell(selected.get(code), code, (cachedWidth - width) / 2 + i % 3 * (HALF + GAP),
+                        row + i / 3 * (KEY + GAP), HALF, KEY));
             }
-            cells.add(new Cell(b, cx, row, w));
-            cx += w + GAP;
-            prev = kind;
+            row += ((mouse.size() + 2) / 3) * (KEY + GAP) - GAP;
         }
-        if (cx > 0) row += KEY + GAP;
-        cached = cells;
-        cachedHeight = Math.max(0, row - GAP);
+        if (!extras.isEmpty()) {
+            if (row > 0) row += GAP * 2;
+            for (int i = 0; i < extras.size(); i++) {
+                int columns = Math.min(3, extras.size() - i / 3 * 3);
+                Cell extra = extras.get(i);
+                cells.add(new Cell(extra.binding(), extra.code(), (cachedWidth - (columns * (KEY + GAP) - GAP)) / 2
+                        + i % 3 * (KEY + GAP), row + i / 3 * (KEY + GAP), KEY, KEY));
+            }
+            row += ((extras.size() + 2) / 3) * (KEY + GAP) - GAP;
+        }
+        physicalKeys = Set.copyOf(selected.keySet());
+        cachedHeight = row;
+        if (!positions.isEmpty()) {
+            List<Cell> arranged = new ArrayList<>(); cachedWidth = cachedHeight = 0;
+            for (Cell c : cells) {
+                KeyPosition p = positions.get(c.id());
+                Cell placed = p == null ? c : new Cell(c.binding(),c.code(),p.x(),p.y(),c.w(),c.h());
+                arranged.add(placed);cachedWidth=Math.max(cachedWidth,placed.x()+placed.w());cachedHeight=Math.max(cachedHeight,placed.y()+placed.h());
+            }
+            cells=arranged;
+        }
+        cached = List.copyOf(cells);
     }
 
     public List<Cell> cells() {
@@ -186,6 +291,11 @@ public class KeyboardStrokes extends Module implements HudElement {
         return cachedHeight;
     }
 
+    public float layoutWidth() {
+        layout();
+        return cachedWidth;
+    }
+
     // ---- placement ----------------------------------------------------------------------------
 
     @Override
@@ -195,12 +305,14 @@ public class KeyboardStrokes extends Module implements HudElement {
 
     @Override
     public float hudScale() {
-        return scale.getFloat();
+        float fitX = Math.max(1, mc.getWindow().getScaledWidth() - MARGIN * 2) / Math.max(KEY, layoutWidth());
+        float fitY = Math.max(1, mc.getWindow().getScaledHeight() - MARGIN * 2) / Math.max(KEY, layoutHeight());
+        return Math.min(scale.getFloat(), Math.min(fitX, fitY));
     }
 
     @Override
     public float hudWidth() {
-        return WIDTH * hudScale();
+        return Math.max(KEY, layoutWidth()) * hudScale();
     }
 
     @Override
@@ -270,6 +382,25 @@ public class KeyboardStrokes extends Module implements HudElement {
         return b.getBoundKeyLocalizedText().getString().toUpperCase(Locale.ROOT);
     }
 
+    public static String label(int code) {
+        if (code >= GLFW.GLFW_KEY_KP_0 && code <= GLFW.GLFW_KEY_KP_9) return "KP" + (code - GLFW.GLFW_KEY_KP_0);
+        return switch (code) {
+            case GLFW.GLFW_KEY_SPACE -> "SPACE";
+            case GLFW.GLFW_KEY_ENTER -> "ENTER";
+            case GLFW.GLFW_KEY_BACKSPACE -> "BKSP";
+            case GLFW.GLFW_KEY_UP -> "UP";
+            case GLFW.GLFW_KEY_DOWN -> "DOWN";
+            case GLFW.GLFW_KEY_LEFT -> "LEFT";
+            case GLFW.GLFW_KEY_RIGHT -> "RIGHT";
+            case GLFW.GLFW_KEY_LEFT_SUPER -> "WIN";
+            case GLFW.GLFW_KEY_RIGHT_SUPER -> "RWIN";
+            case KeyUtil.MOUSE_OFFSET -> "LMB";
+            case KeyUtil.MOUSE_OFFSET + 1 -> "RMB";
+            case KeyUtil.MOUSE_OFFSET + 2 -> "MMB";
+            default -> KeyUtil.name(code).toUpperCase(Locale.ROOT);
+        };
+    }
+
     // ---- drawing ------------------------------------------------------------------------------
 
     @Override
@@ -290,7 +421,7 @@ public class KeyboardStrokes extends Module implements HudElement {
         matrices.scale(s, s);
         Fonts.beginRaw();
         try {
-            for (Cell cell : cells) cell(ctx, cell, live && cell.binding().isPressed(), hair, strength);
+            for (Cell cell : cells) cell(ctx, cell, live && ((cell.binding() != null && cell.binding().isPressed()) || physicalDown(cell.code())), hair, strength);
         } finally {
             Fonts.endRaw();
             matrices.popMatrix();
@@ -298,14 +429,14 @@ public class KeyboardStrokes extends Module implements HudElement {
     }
 
     private void cell(DrawContext ctx, Cell c, boolean down, float hair, float strength) {
-        float t = glow.computeIfAbsent(c.binding().getId(), k -> new Animation(26f, 0f)).update(down ? 1f : 0f);
+        float t = glow.computeIfAbsent(c.id(), k -> new Animation(26f, 0f)).update(down ? 1f : 0f);
         float inset = 1.2f * t;
-        float x = c.x() + inset, y = c.y() + inset, w = c.w() - inset * 2, h = KEY - inset * 2;
+        float x = c.x() + inset, y = c.y() + inset, w = c.w() - inset * 2, h = c.h() - inset * 2;
         int idle = ColorUtil.withAlpha(0xFF0B0D12, Math.round(235 * strength));
         int lit = Theme.accent(0xE6);
         Render2D.roundRect(ctx, x, y, w, h, RADIUS, ColorUtil.lerp(idle, lit, t));
         Render2D.roundOutline(ctx, x, y, w, h, RADIUS, hair, ColorUtil.lerp(0x1CFFFFFF, Theme.accent(0xFF), t));
-        String text = Fonts.trim(label(c.binding()), w - 4, true, 0.55f);
-        Fonts.drawCentered(ctx, text, c.x() + c.w() / 2f, c.y() + KEY / 2f, ColorUtil.lerp(Theme.TEXT_DIM, 0xFFFFFFFF, t), true, 0.55f);
+        String text = Fonts.trim(c.binding() != null ? label(c.binding()) : label(c.code()), w - 4, true, 0.55f);
+        Fonts.drawCentered(ctx, text, c.x() + c.w() / 2f, c.y() + c.h() / 2f, ColorUtil.lerp(Theme.TEXT_DIM, 0xFFFFFFFF, t), true, 0.55f);
     }
 }

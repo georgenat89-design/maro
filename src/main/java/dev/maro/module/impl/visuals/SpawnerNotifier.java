@@ -6,9 +6,14 @@ import dev.maro.gui.render.Render2D;
 import dev.maro.module.Category;
 import dev.maro.module.Module;
 import dev.maro.render.esp.BlockEspRenderer;
+import dev.maro.render.esp.Renderer3D;
+import dev.maro.render.esp.ShapeMode;
+import dev.maro.runtime.utils.render.color.Color;
 import dev.maro.setting.BooleanSetting;
+import dev.maro.setting.ColorSetting;
 import dev.maro.setting.NumberSetting;
 import dev.maro.setting.SettingSection;
+import dev.maro.util.ColorUtil;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.MobSpawnerBlockEntity;
 import net.minecraft.client.gui.DrawContext;
@@ -46,6 +51,13 @@ public class SpawnerNotifier extends Module {
     private final BooleanSetting notify = add(new BooleanSetting("Notification", "A Spawner Found notification for each new one", true));
     private final BooleanSetting chat = add(new BooleanSetting("Chat Message", "A line in chat with the spawner's coordinates (only you see it)", true));
     private final BooleanSetting sound = add(new BooleanSetting("Sound", "A ping when one is found", true));
+    private final BooleanSetting pillar = add(new BooleanSetting("Pillar", "A vertical marker over each spawner, visible through blocks", true));
+    private final NumberSetting pillarRange = add(new NumberSetting("Pillar Range", "Show pillars on spawners this close", 512, 16, 1024, 16)
+            .suffix(" blocks").visible(pillar::get));
+    private final NumberSetting pillarHeight = add(new NumberSetting("Pillar Height", "How high each pillar rises above its spawner", 256, 16, 512, 16)
+            .suffix(" blocks").visible(pillar::get));
+    private final ColorSetting pillarColor = add(new ColorSetting("Pillar Color", "Color of the pillar and spawner outline", SPAWNER_RED)
+            .visible(pillar::get));
     private final BooleanSetting tags = add(new BooleanSetting("Tags", "A tag over each spawner: what it spawns and how far", true));
     private final NumberSetting tagRange = add(new NumberSetting("Tag Range", "Tags on spawners this close", 512, 16, 1024, 16)
             .suffix(" blocks").visible(tags::get));
@@ -56,6 +68,7 @@ public class SpawnerNotifier extends Module {
 
     private final List<SettingSection> sections = List.of(
             SettingSection.of("Finding", range, notify, chat, sound),
+            SettingSection.of("Pillar", pillar, pillarRange, pillarHeight, pillarColor),
             SettingSection.of("Tags", tags, tagRange, tagScale, tagCoords));
 
     /** A spawner found: where, and what it spawns ("Unknown" when the server does not say). */
@@ -69,7 +82,7 @@ public class SpawnerNotifier extends Module {
     private final ItemStack icon = new ItemStack(Items.SPAWNER);
 
     public SpawnerNotifier() {
-        super("Spawner Notifier", "Tells you when a spawner is near, what it spawns and where, with a tag over each one", Category.VISUALS);
+        super("Spawner Notifier", "Find spawners with notifications, tags and pillars visible through blocks", Category.VISUALS);
     }
 
     @Override
@@ -197,6 +210,44 @@ public class SpawnerNotifier extends Module {
         List<Found> out = new ArrayList<>(found.values());
         if (mc.player != null) out.sort(Comparator.comparingDouble(f -> f.pos().getSquaredDistance(mc.player.getEntityPos())));
         return out;
+    }
+
+    // ---- pillars --------------------------------------------------------------------------------
+
+    public boolean hasPillars() {
+        return pillar.get() && inGame() && !mc.options.hudHidden && mc.world == world && !found.isEmpty();
+    }
+
+    /** Fixed world positions, batched geometry and a soft fade: no tick-based animation or extra scan. */
+    public void render(Renderer3D renderer) {
+        if (!hasPillars()) return;
+        Vec3d camera = renderer.camera();
+        double reach = pillarRange.get(), reachSq = reach * reach;
+        double height = pillarHeight.get();
+        int color = pillarColor.get();
+        renderer.throughWalls(true);
+        for (Found f : found.values()) {
+            BlockPos pos = f.pos();
+            double x = pos.getX() + 0.5, y = pos.getY() + 1.02, z = pos.getZ() + 0.5;
+            double dsq = camera.squaredDistanceTo(x, pos.getY() + 0.5, z);
+            if (dsq >= reachSq) continue;
+            float fade = (float) Math.min(1, (reach - Math.sqrt(dsq)) / Math.min(32, reach * 0.2));
+            column(renderer, x, y, z, height, 0.22, ColorUtil.withAlpha(color, Math.round(24 * fade)));
+            column(renderer, x, y, z, height, 0.07, ColorUtil.withAlpha(color, Math.round(150 * fade)));
+            renderer.box(pos.getX() - 0.01, pos.getY() - 0.01, pos.getZ() - 0.01,
+                    pos.getX() + 1.01, pos.getY() + 1.01, pos.getZ() + 1.01,
+                    new Color(ColorUtil.withAlpha(color, Math.round(18 * fade))),
+                    new Color(ColorUtil.withAlpha(color, Math.round(200 * fade))), ShapeMode.Both, 0);
+        }
+    }
+
+    private static void column(Renderer3D renderer, double x, double y, double z, double height, double radius, int color) {
+        int clear = ColorUtil.withAlpha(color, 0);
+        double top = y + height, left = x - radius, right = x + radius, front = z - radius, back = z + radius;
+        renderer.gradientQuad(left, y, front, right, y, front, right, top, front, left, top, front, color, color, clear, clear);
+        renderer.gradientQuad(right, y, back, left, y, back, left, top, back, right, top, back, color, color, clear, clear);
+        renderer.gradientQuad(left, y, back, left, y, front, left, top, front, left, top, back, color, color, clear, clear);
+        renderer.gradientQuad(right, y, front, right, y, back, right, top, back, right, top, front, color, color, clear, clear);
     }
 
     // ---- tags -----------------------------------------------------------------------------------

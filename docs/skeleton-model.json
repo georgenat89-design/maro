@@ -1,0 +1,14 @@
+{
+  "source_archive_sha256": "e76589cd73968e45a56ed82c881fe4c867a5c9318c40fdaf751a990266ca219c",
+  "glb_sha256": "ae74e0a94fd63947474fd95928551a4c73eeac7234faa220d6ac85a8cf579f8d",
+  "attribution": {
+    "author": "sanik.pdo (https://sketchfab.com/sanik.pdo)",
+    "license": "CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)",
+    "source": "https://sketchfab.com/3d-models/skeleton-aad392aff87246179789ac23063856a6",
+    "title": "skeleton"
+  },
+  "changes": "Embedded local buffers/textures; legacy diffuse material colors mapped to metallic-roughness where needed.",
+  "anc_sha256": "fd6836f019b2ce79317a7cb14ffc7b0b880ee7d2d13275d79a04025fbfc8069f",
+  "runtime_changes": "Centered/scaled to 30 model units; three detail levels. Offline anatomical shell repair replaces the shape-based arm ownership: 20 complete upper-arm, forearm, wrist and finger shells; ribs and pelvis remain on the torso. Shoulder/elbow pivots follow the real arm bones and grip anchors sit in the palm. Original geometry, material colors and source GLB preserved. All 2,682 source arm/hand triangles are retained at every detail level to preserve thin fingers.",
+  "bake_tool": "tools/BakeSkeleton.java (requires the original GLB SHA-256 above; shares the production CharacterBake reduction/atlas writer)"
+}

@@ -88,11 +88,12 @@ public final class BetterLooksScreen extends Screen {
     }
 
     private final List<Hit> hits = new ArrayList<>();
+    private final java.util.Map<String,double[]> visibleRows=new java.util.HashMap<>();
     private float px, py, pw, ph, listTop, listBottom;
     private float sideScroll, sideLeft, sideRight, sideTop, sideBottom;
 
     public BetterLooksScreen(Screen parent, BetterLooks module) {
-        super(Text.literal("Better Looks"));
+        super(Text.literal("Gameplay Textures · Appearance"));
         this.parent = parent;
         this.module = module;
         for (BetterLooks.Section s : module.sections()) {
@@ -103,6 +104,7 @@ public final class BetterLooksScreen extends Screen {
         embed("Color Correct", "Color", "Your Color Correct: hue, saturation, light and tint");
         embed("Motion Blur", "Motion Blur", "Blur on fast movement, the same at any frame rate");
         embed("Bloom", "Bloom", "A soft glow round bright things");
+        embed("Potato Graphics", "Potato Graphics", "Flat or Soft block textures · your video settings stay as you set them");
     }
 
     /** Another module's settings as a card of their own, its on/off switch at the top. */
@@ -152,6 +154,7 @@ public final class BetterLooksScreen extends Screen {
     public List<String> sectionTitles() {
         return cards.stream().map(Card::title).toList();
     }
+    public double[] rowPoint(String name){var point=visibleRows.get(name);if(point==null)throw new IllegalArgumentException("Row is not visible: "+name);return point.clone();}
 
     /** How many rows show for the search in a section (-1: all). */
     public int shownRows(int index) {
@@ -175,6 +178,7 @@ public final class BetterLooksScreen extends Screen {
         float dt = Math.min(0.1f, (now - lastFrame) / 1e9f);
         lastFrame = now;
         hits.clear();
+        visibleRows.clear();
         Theme.update();
 
         pw = Math.min(660, width - 24);
@@ -188,13 +192,12 @@ public final class BetterLooksScreen extends Screen {
         try {
             Render2D.rect(ctx, 0, 0, width, height, 0x90000000);
             Render2D.shadow(ctx, px, py + 4, pw, ph, 14, 20, 0x90000000);
-            Render2D.roundRect(ctx, px, py, pw, ph, 12, 0xF5121520);
+            Render2D.roundRect(ctx, px, py, pw, ph, 12, 0xFC101216);
             Render2D.roundOutline(ctx, px, py, pw, ph, 12, 1, 0x1CFFFFFF);
-            Render2D.roundRect(ctx, px, py, pw, 3, 1.5f, Theme.accent(0xC0));
 
             // Header: the name, the module's switch and Close.
-            Fonts.drawV(ctx, "Better Looks", px + 16, py + 19, Theme.TEXT, true, 1.05f);
-            Fonts.drawV(ctx, "Clean up how the game looks, all in one place", px + 16, py + 33, Theme.TEXT_MUTED, false, 0.6f);
+            Fonts.drawV(ctx, "Appearance", px + 16, py + 19, Theme.TEXT, true, 1.18f);
+            Fonts.drawV(ctx, "World, textures and visual effects", px + 16, py + 33, Theme.TEXT_MUTED, false, 0.68f);
             float bw = 66, bh = 20, by = py + 12, cx = px + pw - 16 - bw;
             button(ctx, "Close", cx, by, bw, bh, true, mx, my, this::close);
             boolean on = module.isEnabled();
@@ -205,7 +208,7 @@ public final class BetterLooksScreen extends Screen {
             Render2D.circle(ctx, tx + 11, by + bh / 2f, 2.6f, on ? Theme.GREEN : Theme.TEXT_MUTED);
             Fonts.drawV(ctx, on ? "Enabled" : "Disabled", tx + 18, by + bh / 2f, on ? 0xFFFFFFFF : Theme.TEXT_DIM, false, 0.66f);
             hit(tx, by, bw, bh, (hx, hy, b) -> {
-                module.toggle();
+                module.toggleAppearance();
                 Sounds.toggle(module.isEnabled());
             });
 
@@ -233,8 +236,7 @@ public final class BetterLooksScreen extends Screen {
     }
 
     private void sidebar(DrawContext ctx, float x, float y, float w, float h, int mx, int my) {
-        Render2D.roundRect(ctx, x, y, w, h, 9, 0xFF0F1219);
-        Render2D.roundOutline(ctx, x, y, w, h, 9, 1, 0x14FFFFFF);
+        Render2D.roundRect(ctx, x, y, w, h, 9, 0xFF171A20);
         Fonts.drawV(ctx, "Sections", x + 10, y + 13, Theme.TEXT_MUTED, false, 0.62f);
         // On a short window the rows close up a little, then scroll once they can close up no more.
         int n = cards.size() + 1;
@@ -255,8 +257,8 @@ public final class BetterLooksScreen extends Screen {
                 int count = shownRows(i);
                 boolean sel = section == i;
                 boolean hov = inside(mx, my, x + 6, iy, w - 12, rowH) && my >= sideTop && my < sideBottom;
-                Render2D.roundRect(ctx, x + 6, iy, w - 12, rowH, 6, sel ? Theme.accent(0xD0) : hov ? 0xFF1F2430 : 0xFF161A23);
-                Render2D.roundOutline(ctx, x + 6, iy, w - 12, rowH, 6, 1, sel ? Theme.accent(0xFF) : 0x16FFFFFF);
+                Render2D.roundRect(ctx, x + 6, iy, w - 12, rowH, 6, sel ? 0xFF283137 : hov ? 0xFF242930 : 0xFF171A20);
+                if(sel)Render2D.roundRect(ctx,x+6,iy+5,2,Math.max(2,rowH-10),1,Theme.accent());
                 Fonts.drawV(ctx, title, x + 14, iy + rowH / 2f, sel ? 0xFFFFFFFF : Theme.TEXT_DIM, false, 0.68f);
                 String c = String.valueOf(count);
                 float nw = Fonts.width(c, false, 0.56f) + 8;
@@ -280,7 +282,7 @@ public final class BetterLooksScreen extends Screen {
         float ty = y + h - 36;
         if (ty > iy + 4) {
             Fonts.drawV(ctx, "Tip", x + 10, ty, Theme.accent(), true, 0.6f);
-            for (String line : Fonts.wrap("Right-click Better Looks in the GUI to open this panel directly.", w - 20, false, 0.56f)) {
+            for (String line : Fonts.wrap("Gameplay Textures combines appearance controls and your resource-pack library.", w - 20, false, 0.56f)) {
                 ty += 9;
                 Fonts.drawV(ctx, line, x + 10, ty, Theme.TEXT_MUTED, false, 0.56f);
             }
@@ -330,8 +332,7 @@ public final class BetterLooksScreen extends Screen {
             for (Row r : rows) cardH += rowHeight(r) + ROW_GAP;
             cardH += 4;
             if (cy + cardH >= listTop && cy <= listBottom) {
-                Render2D.roundRect(ctx, cardX, cy, cardW, cardH, 8, 0xFF141822);
-                Render2D.roundOutline(ctx, cardX, cy, cardW, cardH, 8, 1, 0x18FFFFFF);
+                Render2D.roundRect(ctx, cardX, cy, cardW, cardH, 8, 0xFF1A1E25);
                 Fonts.drawV(ctx, card.title(), cardX + 12, cy + 12, Theme.TEXT, true, 0.9f);
                 Fonts.drawV(ctx, card.subtitle(), cardX + 12, cy + 24, Theme.TEXT_MUTED, false, 0.56f);
                 Fonts.drawRight(ctx, rows.size() + " settings", cardX + cardW - 12, cy + 12, Theme.accent(), false, 0.6f);
@@ -353,6 +354,7 @@ public final class BetterLooksScreen extends Screen {
     }
 
     private void row(DrawContext ctx, Row r, float x, float y, float w, float h, int mx, int my) {
+        if(y<listBottom&&y+h>listTop)visibleRows.put(r.name(),new double[]{x+w-30,Math.clamp(y+ROW/2,listTop+1,listBottom-1)});
         boolean hov = inside(mx, my, x, y, w, h) && my >= listTop && my < listBottom;
         Setting<?> s = r.setting();
         boolean lit = s instanceof BooleanSetting b ? b.get() : r.on() != null && r.on().getAsBoolean();

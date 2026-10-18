@@ -67,16 +67,25 @@ final class PhoneSharingChecks {
                 click(context, 45, 123); context.getInput().typeChars("Test Favorites");
                 require(context.computeOnClient(c -> !screen(c).allowsMovement()), "Typing a playlist name moved the player");
                 click(context, 45, 155);
-                context.runOnClient(c -> c.keyboard.setClipboard(LINK + "?si=test"));
-                // Fabric's synthetic pressKey does not infer modifier flags from held keys.
-                context.runOnClient(c -> screen(c).keyPressed(new net.minecraft.client.input.KeyInput(GLFW.GLFW_KEY_V, 0, GLFW.GLFW_MOD_CONTROL)));
+                // Some Windows test runners do not expose the OS clipboard. Keep URL entry covered there.
+                boolean pasted = context.computeOnClient(c -> {
+                    c.keyboard.setClipboard(LINK + "?si=test");
+                    if (!c.keyboard.getClipboard().startsWith(LINK)) return false;
+                    screen(c).keyPressed(new net.minecraft.client.input.KeyInput(GLFW.GLFW_KEY_V, 0, GLFW.GLFW_MOD_CONTROL));
+                    var link = (dev.maro.gui.widget.TextField)field(field(screen(c),"apps"),"playlistLink");
+                    return link.getText().equals(LINK + "?si=test");
+                });
+                if (!pasted) {
+                    System.out.println("[phone-apps] Native clipboard unavailable; entering the URL through character input");
+                    context.getInput().typeChars(LINK + "?si=test");
+                }
                 context.takeScreenshot("maro-phone-playlist-entry-" + device.toLowerCase());
                 context.runOnClient(c -> {
                     var apps = field(screen(c), "apps");
                     var title = ((dev.maro.gui.widget.TextField) field(apps, "playlistName")).getText();
                     var link = ((dev.maro.gui.widget.TextField) field(apps, "playlistLink")).getText();
                     require(title.equals("Test Favorites"), "Playlist title typing mismatch: " + title);
-                    require(link.startsWith(LINK), "Playlist clipboard paste mismatch: " + link);
+                    require(link.startsWith(LINK), "Playlist URL entry mismatch: " + link);
                 });
                 click(context, 85, 187);
                 until(context, () -> sender.snapshot().playlists().stream().anyMatch(p -> p.title().equals("Test Favorites") && p.url().equals(LINK)), "Saving a playlist through the phone failed");

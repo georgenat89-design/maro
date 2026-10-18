@@ -636,7 +636,7 @@ public class RegionMap extends Module {
     @EventHandler
     private void onRender2D(Render2DEvent event) {
         if (mc.player == null || mc.world == null || mc.options == null || mc.options.hudHidden) return;
-        if (!CrispFont.POPPINS_MEDIUM.ready() || !CrispFont.POPPINS_SEMIBOLD.ready()) return;
+        if (!CrispFont.current(false).ready() || !CrispFont.current(true).ready()) return;
 
         // Measured from the clock and capped, so the marker turns at the same rate
         // at 40 frames a second as at 400.
@@ -681,7 +681,7 @@ public class RegionMap extends Module {
 
         // ---- the bands, down the panel in units
 
-        CrispFont.Sized legendFont = CrispFont.POPPINS_SEMIBOLD.forCaps(LEGEND_CAPS * unit);
+        CrispFont.Sized legendFont = CrispFont.current(true).forCaps(LEGEND_CAPS * unit);
         Chips chips = legend.get() ? legendChips(legendFont, unit) : null;
 
         double gridTop = PAD + (header.get() ? HEADER + BAND_GAP : 0);
@@ -706,10 +706,10 @@ public class RegionMap extends Module {
         String group = locale == null ? "OFF THE MAP" : upper(locale.toString());
         String heading = HEADINGS[(int) Math.round(((shownYaw % 360) + 360) % 360 / 45) % 8];
 
-        CrispFont.Sized big = CrispFont.POPPINS_SEMIBOLD.forCaps(NUMBER_CAPS * unit);
-        CrispFont.Sized label = CrispFont.POPPINS_SEMIBOLD.forCaps(LABEL_CAPS * unit);
-        CrispFont.Sized groupFont = CrispFont.POPPINS_SEMIBOLD.forCaps(LOCALE_CAPS * unit);
-        CrispFont.Sized chipFont = CrispFont.POPPINS_SEMIBOLD.forCaps(CHIP_CAPS * unit);
+        CrispFont.Sized big = CrispFont.current(true).forCaps(NUMBER_CAPS * unit);
+        CrispFont.Sized label = CrispFont.current(true).forCaps(LABEL_CAPS * unit);
+        CrispFont.Sized groupFont = CrispFont.current(true).forCaps(LOCALE_CAPS * unit);
+        CrispFont.Sized chipFont = CrispFont.current(true).forCaps(CHIP_CAPS * unit);
 
         double bandMiddle = top + (PAD + HEADER / 2) * unit;
         double numberCapsTop = Math.round(bandMiddle - big.caps() / 2);
@@ -722,7 +722,7 @@ public class RegionMap extends Module {
         String atX = Long.toString((long) Math.floor(worldX));
         String atZ = Long.toString((long) Math.floor(worldZ));
         double footChip = (GRID - CHIP_GAP) / 2;
-        CrispFont.Sized footFont = fitted(CrispFont.POPPINS_SEMIBOLD, "X   " + (atX.length() > atZ.length() ? atX : atZ),
+        CrispFont.Sized footFont = fitted(CrispFont.current(true), "X   " + (atX.length() > atZ.length() ? atX : atZ),
             CHIP_CAPS * unit, (footChip - CHIP_PAD * 2.5) * unit);
 
         // ---- the shapes
@@ -909,7 +909,7 @@ public class RegionMap extends Module {
         String text = Integer.toString(shard.number());
         double w = shardWidth(shard, unit) + LIFT * 2 * unit;
         double h = shardHeight(shard, unit) + LIFT * 2 * unit;
-        CrispFont font = CrispFont.POPPINS_SEMIBOLD;
+        CrispFont font = CrispFont.current(true);
         double caps = Math.min(3.2 * numberSize.get() * unit, h * 0.62);
         CrispFont.Sized sized = fitted(font, text, caps, w - 1.4 * unit);
 
@@ -1193,9 +1193,9 @@ public class RegionMap extends Module {
      * never cut off.
      */
     private void tip(int cell, double unit, Color[] colors, Color ink, Color rim, Color panel) {
-        CrispFont.Sized strong = CrispFont.POPPINS_SEMIBOLD.forCaps(4.6 * unit);
-        CrispFont.Sized small = CrispFont.POPPINS_SEMIBOLD.forCaps(2.8 * unit);
-        CrispFont.Sized body = CrispFont.POPPINS_MEDIUM.forCaps(3.8 * unit);
+        CrispFont.Sized strong = CrispFont.current(true).forCaps(4.6 * unit);
+        CrispFont.Sized small = CrispFont.current(true).forCaps(2.8 * unit);
+        CrispFont.Sized body = CrispFont.current(false).forCaps(3.8 * unit);
 
         RegionGrid.Shard shard = RegionGrid.shard(cell);
 

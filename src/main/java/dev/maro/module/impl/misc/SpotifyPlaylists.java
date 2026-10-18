@@ -54,7 +54,7 @@ public final class SpotifyPlaylists extends Module {
             "Spotify App", "Spotify App", "Browser"));
     private final List<Playlist> playlists = List.of(
             new Playlist("Larp Aux", "https://open.spotify.com/playlist/28pZmz5AmsYUBNvgoQ81gw"),
-            new Playlist("Phonk", "https://open.spotify.com/playlist/1BzL7qnSMTufvz4Uq8Qamj"),
+            new Playlist("Phonk", "https://open.spotify.com/playlist/1kbzQ66BqTZf0ncvvtEWE6"),
             new Playlist("House Music", "https://open.spotify.com/track/4m17nqEF8zjTEcKCxGI58J"),
             new Playlist("Summer Music", "https://open.spotify.com/playlist/2TmQRKC2wIDl3bvsWhKv7o"));
 

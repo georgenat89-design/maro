@@ -10,6 +10,8 @@ import dev.maro.module.ModuleManager;
 import dev.maro.module.impl.player.FakePlayer;
 import dev.maro.render.esp.BlockEspRenderer;
 import dev.maro.setting.BooleanSetting;
+import dev.maro.setting.ButtonSetting;
+import dev.maro.setting.ItemSelectionSetting;
 import dev.maro.setting.ColorSetting;
 import dev.maro.setting.ModeSetting;
 import dev.maro.setting.NumberSetting;
@@ -24,7 +26,9 @@ import net.minecraft.enchantment.Enchantment;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.ItemEntity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.registry.tag.EnchantmentTags;
 import net.minecraft.text.Text;
@@ -76,6 +80,13 @@ public class Nametags extends Module {
     private final BooleanSetting itemBackground = add(new BooleanSetting("Item Background", "A dark square behind each piece", false)
             .visible(() -> showsItems() && gearStyle.is("Minimal")));
 
+    private final BooleanSetting droppedItems = add(new BooleanSetting("Item Tags", "Names, stack counts and distance above dropped items on the ground", false));
+    private final ItemSelectionSetting selectedItems = add(new ItemSelectionSetting("Selected Items", Items.TOTEM_OF_UNDYING, Items.DIAMOND, Items.NETHERITE_INGOT, Items.ELYTRA));
+    private final ButtonSetting chooseItems = add(new ButtonSetting("Choose Items", "Search item names or IDs and pick which dropped items get a label", "Pick Items",
+            () -> mc.setScreen(new dev.maro.gui.hud.DroppedItemPickerScreen(mc.currentScreen, selectedItems))).visible(droppedItems::get));
+    private final NumberSetting itemRange = add(new NumberSetting("Item Range", "Maximum distance for dropped-item labels", 64, 8, 256, 8).suffix(" blocks").visible(droppedItems::get));
+    private final BooleanSetting itemDistance = add(new BooleanSetting("Item Distance", "Show distance in metres on dropped-item tags, independently of player tags", true).visible(droppedItems::get));
+
     // ---- look
     private final ModeSetting layout = add(new ModeSetting("Layout", "Compact equipment and a quiet nameplate, or a larger detailed card", "Compact", "Compact", "Detailed"));
     private final ModeSetting style = add(new ModeSetting("Style", "Ember fire accents, Aurora neon, your own colours, or the original card", "Ember", "Ember", "Aurora", "Custom", "Classic"));
@@ -102,6 +113,7 @@ public class Nametags extends Module {
             SettingSection.of("Players", self, hideNpcs, range, edgeTags),
             SettingSection.of("Tag", health, healthMode, absorption, distance, pops),
             SettingSection.of("Items", armor, heldItem, gearStyle, itemName, enchants, enchantedGlow, durability, itemBackground),
+            SettingSection.of("Dropped Items", droppedItems, selectedItems, chooseItems, itemRange, itemDistance),
             SettingSection.of("Look", layout, style, glow, glowStrength, pulse, accent, accentEnd, healthStrip, background, backgroundColor, outline, textColor, healthColors, friendBackground, friendColor,
                     scale, constantSize, font, shadow));
 
@@ -111,6 +123,7 @@ public class Nametags extends Module {
     private Object popWorld;
     /** What each tag drawn last frame said; for tests. */
     private final List<String> drawn = new ArrayList<>();
+    private final List<String> drawnItems = new ArrayList<>();
 
     public Nametags() {
         super("Nametags", "Glowing player cards, long-range tags and edge indicators, with health, gear and totem pops", Category.VISUALS);
@@ -141,7 +154,7 @@ public class Nametags extends Module {
     private boolean tags(PlayerEntity player) {
         if (mc.player == null || mc.world == null) return false;
         if (player == mc.player) {
-            if (!self.get() || mc.options.getPerspective().isFirstPerson()) return false;
+            if (!self.get() || !mc.gameRenderer.getCamera().isThirdPerson()) return false;
         } else if (hideNpcs.get() && entry(player) == null) {
             return false;
         }
@@ -190,6 +203,7 @@ public class Nametags extends Module {
     @Override
     public void onRender2D(DrawContext ctx, float tickDelta) {
         drawn.clear();
+        drawnItems.clear();
         if (!inGame() || mc.options.hudHidden) return;
         Vec3d camera = mc.gameRenderer.getCamera().getCameraPos();
         int w = ctx.getScaledWindowWidth(), h = ctx.getScaledWindowHeight();
@@ -200,9 +214,10 @@ public class Nametags extends Module {
         List<float[]> edges = new ArrayList<>();
         Fonts.beginRaw();
         try {
+            if (droppedItems.get()) drawDroppedItems(ctx, tickDelta, camera, w, h);
             for (PlayerEntity p : players) {
-                Vec3d at = p.getLerpedPos(tickDelta);
-                float[] screen = BlockEspRenderer.toScreen(at.x, at.y + tagHeight(p), at.z, camera, w, h);
+                Vec3d anchor=tagAnchor(p,tickDelta);
+                float[] screen = BlockEspRenderer.toScreen(anchor.x, anchor.y, anchor.z, camera, w, h);
                 double dist = Math.sqrt(p.squaredDistanceTo(camera));
                 if (screen == null || screen[0] < 0 || screen[0] > w || screen[1] < 0 || screen[1] > h) {
                     if (edgeTags.get() && edges.size() < 12) drawEdge(ctx, p, camera, w, h, dist, edges);
@@ -216,19 +231,86 @@ public class Nametags extends Module {
         }
     }
 
+    public boolean labelsItem(ItemStack stack) {
+        return droppedItems.get() && stack != null && !stack.isEmpty() && selectedItems.contains(stack.getItem());
+    }
+
+    public List<String> drawnItemTags() { return List.copyOf(drawnItems); }
+
+    private void drawDroppedItems(DrawContext ctx, float tickDelta, Vec3d camera, int w, int h) {
+        double reach = itemRange.get(), reachSq = reach * reach;
+        // Keep the nearest 128 labels in a crowded drop pile without sorting or retaining every entity.
+        var nearest = new java.util.PriorityQueue<ItemEntity>(Comparator.comparingDouble((ItemEntity e) -> e.squaredDistanceTo(camera)).reversed());
+        for (Entity entity : mc.world.getEntities()) {
+            if (!(entity instanceof ItemEntity item) || item.isRemoved() || !labelsItem(item.getStack()) || item.squaredDistanceTo(camera) > reachSq) continue;
+            if (nearest.size() < 128) nearest.add(item);
+            else if (item.squaredDistanceTo(camera) < nearest.peek().squaredDistanceTo(camera)) { nearest.poll(); nearest.add(item); }
+        }
+        // Farthest first, so the closest item remains readable where labels overlap.
+        while (!nearest.isEmpty()) {
+            ItemEntity item = nearest.poll();
+            Vec3d anchor = item.getLerpedPos(tickDelta).add(0, item.getHeight() + .35, 0);
+            float[] at = BlockEspRenderer.toScreen(anchor.x, anchor.y, anchor.z, camera, w, h);
+            if (at == null || at[0] < 0 || at[0] > w || at[1] < 0 || at[1] > h) continue;
+            double dist = Math.sqrt(item.squaredDistanceTo(camera));
+            float s = scale.getFloat() * .85f * (constantSize.get() ? 1 : (float) Math.max(.45, Math.min(1, 10 / Math.max(1, dist))));
+            ItemStack stack = item.getStack();
+            String label = stack.getName().getString() + (stack.getCount() > 1 ? " ×" + stack.getCount() : "") + (itemDistance.get() ? "  " + Math.round(dist) + "m" : "");
+            float available = Math.max(32, (w - 12) / s - 30);
+            label = font.is("Minecraft") ? mc.textRenderer.trimToWidth(label, (int) available) : Fonts.trim(label, available, true, 1);
+            float width = renderedWidth(ctx, label, true) + 29, height = 22;
+            float x = Math.max(width * s / 2 + 3, Math.min(w - width * s / 2 - 3, at[0]));
+            float y = Math.max(height * s + 3, at[1]);
+            var matrices = ctx.getMatrices(); matrices.pushMatrix();
+            matrices.translate(x, y); matrices.scale(s, s);
+            float left = -width / 2;
+            if (background.get()) {
+                Render2D.roundRect(ctx, left, -height, width, height, 4, backgroundColor.get());
+                if (outline.get()) Render2D.roundOutline(ctx, left, -height, width, height, 4, .7f, 0x505D738C);
+            }
+            matrices.pushMatrix(); matrices.translate(left + 4, -height + 3); ctx.drawItem(stack, 0, 0); matrices.popMatrix();
+            text(ctx, label, left + 24, -height / 2, textColor.get(), true);
+            matrices.popMatrix(); drawnItems.add(label);
+        }
+    }
+
     /**
-     * How far above their feet the tag sits: over their head as if standing, since a player flying
-     * with an elytra, swimming or crawling is only 0.6 tall and a tag from there would sit on their body.
+     * Fallback for players without a rendered head this frame; use their current pose's height.
      */
     public double tagHeight(PlayerEntity p) {
-        return Math.max(p.getHeight(), p.getDimensions(net.minecraft.entity.EntityPose.STANDING).height()) + 0.45;
+        float customHeight=CustomModel.visualHeight(p);
+        if(Float.isFinite(customHeight)){
+            float standing=p.getDimensions(net.minecraft.entity.EntityPose.STANDING).height();
+            return customHeight*Math.min(1,p.getHeight()/Math.max(.1f,standing))+.3;
+        }
+        return p.getHeight() + 0.45;
+    }
+
+    public Vec3d tagAnchor(PlayerEntity player,float tickDelta){
+        Vec3d head=Float.isFinite(CustomModel.visualHeight(player))?dev.maro.render.character.CharacterLabelAnchors.point(player):null;
+        return head!=null?head:player.getLerpedPos(tickDelta).add(0,tagHeight(player),0);
     }
 
     private void draw(DrawContext ctx, PlayerEntity p, float x, float y, float s, double dist) {
+        draw(ctx,p,x,y,s,dist,true);
+    }
+
+    /** The real tag renderer, without world projection or changing the Self/module switches. */
+    public void renderPreview(DrawContext ctx,float x,float y,float maxWidth){
+        if(mc.player==null)return;
+        Fonts.beginRaw();
+        try{
+            float width=20;
+            for(Part part:parts(mc.player,0))width+=renderedWidth(ctx,part.text(),part.bold())+5;
+            draw(ctx,mc.player,x,y,Math.min(scale.getFloat()*.65f,maxWidth/width),0,false);
+        }finally{Fonts.endRaw();}
+    }
+
+    private void draw(DrawContext ctx, PlayerEntity p, float x, float y, float s, double dist,boolean record) {
         List<Part> parts = parts(p, dist);
         StringBuilder said = new StringBuilder();
         for (Part part : parts) said.append(part.text()).append(' ');
-        drawn.add(said.toString().trim());
+        if(record)drawn.add(said.toString().trim());
 
         boolean compact = layout.is("Compact"), styled = !style.is("Classic");
         float gap = compact ? 3 : styled ? 4.5f : 3.5f, pad = compact ? 5 : styled ? 7 : 5, tagH = compact ? 13 : styled ? 17 : 14;
@@ -525,6 +607,15 @@ public class Nametags extends Module {
 
     /** Centre the drawn glyphs, excluding font bearings, trailing advance and the shadow. */
     private void centeredGearText(DrawContext ctx, String label, float cx, float cy, int color, boolean bold, float scale) {
+        if (!vanillaFont()) {
+            var matrices = ctx.getMatrices(); matrices.pushMatrix();
+            try {
+                matrices.translate(cx,cy); matrices.scale(scale,scale);
+                Fonts.drawCentered(ctx,label,0,0,color,bold,CLIENT_SIZE);
+            } finally { matrices.popMatrix(); }
+            return;
+        }
+        label = dev.maro.gui.render.SmoothHudText.display(label);
         int c = ColorUtil.mulAlpha(color, Render2D.getAlpha());
         if (label.isEmpty() || ColorUtil.alpha(c) < 8) return;
         var matrices = ctx.getMatrices();
@@ -648,7 +739,7 @@ public class Nametags extends Module {
     }
 
     private float width(String s, boolean bold) {
-        return vanillaFont() ? mc.textRenderer.getWidth(Text.literal(s).styled(style -> style.withBold(bold))) : Fonts.width(s, bold, CLIENT_SIZE);
+        return vanillaFont() ? mc.textRenderer.getWidth(Text.literal(dev.maro.gui.render.SmoothHudText.display(s)).styled(style -> style.withBold(bold))) : Fonts.width(s, bold, CLIENT_SIZE);
     }
 
     /** Text with its left edge at x and its middle at cy. */
@@ -660,7 +751,7 @@ public class Nametags extends Module {
         var matrices = ctx.getMatrices();
         matrices.pushMatrix();
         matrices.translate(x, cy - 4);
-        ctx.drawText(mc.textRenderer, Text.literal(s).styled(style -> style.withBold(bold)), 0, 0, color | 0xFF000000, shadow.get());
+        ctx.drawText(mc.textRenderer, Text.literal(dev.maro.gui.render.SmoothHudText.display(s)).styled(style -> style.withBold(bold)), 0, 0, color | 0xFF000000, shadow.get());
         matrices.popMatrix();
     }
 

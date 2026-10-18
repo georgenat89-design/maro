@@ -37,19 +37,24 @@ public final class RuntimeEvents {
         }
     }
     public static void hud(DrawContext context){
+        if(dev.maro.render.capture.CapturePass.active())return;
         long now=System.nanoTime();double delta=lastHudFrame==0?1.0/60:Math.min(.1,(now-lastHudFrame)/1e9);lastHudFrame=now;
         Renderer2D.context(context);
         try{MeteorClient.EVENT_BUS.post(new Render2DEvent(context,delta));}
         finally{Renderer2D.context(null);}
     }
-    public static void worldFrame(){long now=System.nanoTime();double delta=lastWorldFrame==0?1.0/60:Math.min(.1,(now-lastWorldFrame)/1e9);lastWorldFrame=now;MeteorClient.EVENT_BUS.post(new Render3DEvent(delta));}
+    public static void worldFrame(){if(dev.maro.render.capture.CapturePass.active())return;long now=System.nanoTime();double delta=lastWorldFrame==0?1.0/60:Math.min(.1,(now-lastWorldFrame)/1e9);lastWorldFrame=now;MeteorClient.EVENT_BUS.post(new Render3DEvent(delta));}
     public static boolean key(KeyInput input,int action){
+        if(dev.maro.module.impl.visuals.ItemInspect.input(input.key(),action))return true;
+        if(dev.maro.anubis.inspect.WeaponInspectModule.input(input.key(),action))return true;
         syncBinds();
         var event=MeteorClient.EVENT_BUS.post(new KeyEvent(input,action));
         actionBind(input.key(),action);
         return event.isCancelled();
     }
     public static boolean mouse(MouseInput input,int action){
+        if(dev.maro.module.impl.visuals.ItemInspect.input(dev.maro.util.KeyUtil.mouse(input.button()),action))return true;
+        if(dev.maro.anubis.inspect.WeaponInspectModule.input(dev.maro.util.KeyUtil.mouse(input.button()),action))return true;
         syncBinds();
         var event=MeteorClient.EVENT_BUS.post(new MouseClickEvent(input,action));
         actionBind(dev.maro.util.KeyUtil.mouse(input.button()),action);

@@ -32,7 +32,7 @@ final class BetterTexturesChecks {
     }
 
     static void run(ClientGameTestContext context) {
-        BetterTextures module = ModuleManager.get(BetterTextures.class);
+        BetterTextures module = BetterTextures.get();
         require(module != null, "Better Textures was not registered");
         BetterTexturesScreen screen = context.computeOnClient(c -> {
             BetterTexturesScreen s = new BetterTexturesScreen(null, module);
@@ -76,7 +76,7 @@ final class BetterTexturesChecks {
         } finally {
             context.runOnClient(c -> {
                 module.disableAll();
-                module.setEnabled(false);
+                dev.maro.module.impl.visuals.TexturePacks.get().setEnabled(false);
                 if (c.currentScreen instanceof BetterTexturesScreen) c.setScreen(null);
             });
             await(context, () -> MinecraftClient.getInstance().getOverlay() == null, 1200);

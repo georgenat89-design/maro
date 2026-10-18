@@ -13,6 +13,18 @@ import java.util.Arrays;
 
 /** A batch of coloured quads submitted to the vanilla GUI renderer as a single element. */
 public final class ShapeRenderState implements SimpleGuiElementRenderState {
+    public record Geometry(float[] xy,int[] colors,int count,ScreenRect bounds) {
+        public void draw(DrawContext context,float opacity){
+            if(opacity>=.999f){draw(context);return;}
+            int[] faded=colors.clone();for(int i=0;i<faded.length;i++)faded[i]=dev.maro.util.ColorUtil.mulAlpha(faded[i],opacity);
+            new Geometry(xy,faded,count,bounds).draw(context);
+        }
+        public void draw(DrawContext context){
+            var pose=new Matrix3x2f(context.getMatrices());var clip=Render2D.getScissor();var area=bounds.transformEachVertex(pose);
+            if(clip!=null){area=area.intersection(clip);if(area==null)return;}
+            ((dev.maro.mixin.DrawContextAccessor)context).maro$getState().addSimpleElement(new ShapeRenderState(pose,xy,colors,count,clip,area));
+        }
+    }
     private final Matrix3x2f pose;
     private final float[] xy;
     private final int[] colors;
@@ -118,5 +130,6 @@ public final class ShapeRenderState implements SimpleGuiElementRenderState {
             }
             return new ShapeRenderState(pose, xy, colors, count, scissor, bounds);
         }
+        Geometry geometry(){return new Geometry(Arrays.copyOf(xy,count*2),Arrays.copyOf(colors,count),count,new ScreenRect((int)Math.floor(minX),(int)Math.floor(minY),Math.max(1,(int)Math.ceil(maxX-minX+1)),Math.max(1,(int)Math.ceil(maxY-minY+1))));}
     }
 }

@@ -1,0 +1,122 @@
+{
+  "pickaxe.driver.equip": {
+    "sounds": [
+      {
+        "name": "maro:pickaxe/driver_equip",
+        "preload": true
+      }
+    ]
+  },
+  "pickaxe.driver.swing": {
+    "sounds": [
+      {
+        "name": "maro:pickaxe/driver_swing",
+        "preload": true
+      }
+    ]
+  },
+  "pickaxe.driver.impact": {
+    "sounds": [
+      {
+        "name": "maro:pickaxe/driver_impact",
+        "preload": true
+      }
+    ]
+  },
+  "pickaxe.merry_mint_axe.equip": {
+    "sounds": [
+      {
+        "name": "maro:pickaxe/merry_mint_axe_equip",
+        "preload": true
+      }
+    ]
+  },
+  "pickaxe.merry_mint_axe.swing": {
+    "sounds": [
+      {
+        "name": "maro:pickaxe/merry_mint_axe_swing",
+        "preload": true
+      }
+    ]
+  },
+  "pickaxe.merry_mint_axe.impact": {
+    "sounds": [
+      {
+        "name": "maro:pickaxe/merry_mint_axe_impact",
+        "preload": true
+      }
+    ]
+  },
+  "pickaxe.leviathan_axe.equip": {
+    "sounds": [
+      {
+        "name": "maro:pickaxe/leviathan_axe_equip",
+        "preload": true
+      }
+    ]
+  },
+  "pickaxe.leviathan_axe.swing": {
+    "sounds": [
+      {
+        "name": "maro:pickaxe/leviathan_axe_swing",
+        "preload": true
+      }
+    ]
+  },
+  "pickaxe.leviathan_axe.impact": {
+    "sounds": [
+      {
+        "name": "maro:pickaxe/leviathan_axe_impact",
+        "preload": true
+      }
+    ]
+  },
+  "pickaxe.cold_snap.equip": {
+    "sounds": [
+      {
+        "name": "maro:pickaxe/cold_snap_equip",
+        "preload": true
+      }
+    ]
+  },
+  "pickaxe.cold_snap.swing": {
+    "sounds": [
+      {
+        "name": "maro:pickaxe/cold_snap_swing",
+        "preload": true
+      }
+    ]
+  },
+  "pickaxe.cold_snap.impact": {
+    "sounds": [
+      {
+        "name": "maro:pickaxe/cold_snap_impact",
+        "preload": true
+      }
+    ]
+  },
+  "pickaxe.star_wand.equip": {
+    "sounds": [
+      {
+        "name": "maro:pickaxe/star_wand_equip",
+        "preload": true
+      }
+    ]
+  },
+  "pickaxe.star_wand.swing": {
+    "sounds": [
+      {
+        "name": "maro:pickaxe/star_wand_swing",
+        "preload": true
+      }
+    ]
+  },
+  "pickaxe.star_wand.impact": {
+    "sounds": [
+      {
+        "name": "maro:pickaxe/star_wand_impact",
+        "preload": true
+      }
+    ]
+  }
+}

@@ -92,11 +92,11 @@ final class SkinAccessoriesChecks {
                 var shown = dev.maro.render.accessories.ItemLooks.shown(new ItemStack(Items.DIAMOND_SWORD), net.minecraft.item.ItemDisplayContext.GUI, c.player);
                 require(String.valueOf(shown.get(net.minecraft.component.DataComponentTypes.ITEM_MODEL)).equals("maro:cosmetic/sword_phoenix_grace"),
                         "A diamond sword is not drawn with the Phoenix Grace model: " + shown.get(net.minecraft.component.DataComponentTypes.ITEM_MODEL));
-                require(dev.maro.render.accessories.CosmeticItems.all(dev.maro.render.accessories.CosmeticItems.Kind.SWORD).size() == 50
-                        && dev.maro.render.accessories.CosmeticItems.all(dev.maro.render.accessories.CosmeticItems.Kind.PICKAXE).size() == 25
+                require(dev.maro.render.accessories.CosmeticItems.all(dev.maro.render.accessories.CosmeticItems.Kind.SWORD).size() == 66
+                        && dev.maro.render.accessories.CosmeticItems.all(dev.maro.render.accessories.CosmeticItems.Kind.PICKAXE).isEmpty()
                         && dev.maro.render.accessories.CosmeticItems.all(dev.maro.render.accessories.CosmeticItems.Kind.SHOVEL).size() == 25
                         && dev.maro.render.accessories.CosmeticItems.all(dev.maro.render.accessories.CosmeticItems.Kind.TRIDENT).size() == 25,
-                        "There are not 50 swords, 25 pickaxes, 25 shovels and 25 tridents");
+                        "Expanded cosmetic catalog is incomplete");
                 // Item Size reaches the sword wherever it is held (here, the preview's third-person hand), not in menus.
                 var itemSize = (dev.maro.setting.NumberSetting) setting(m, "Item Size");
                 itemSize.set(1.5);
@@ -116,13 +116,21 @@ final class SkinAccessoriesChecks {
             });
             context.waitTicks(3);
             context.takeScreenshot("maro-cosmetics-sword-big");
+            context.runOnClient(c->((ModeSetting)setting(m,"Sword")).set("Eclipse Splitblade"));
+            context.waitTicks(3);context.takeScreenshot("maro-cosmetics-eclipse-splitblade");
+            context.runOnClient(c->((ModeSetting)setting(m,"Sword")).set("Chrono Gearblade"));
+            context.waitTicks(3);context.takeScreenshot("maro-cosmetics-chrono-gearblade");
             context.runOnClient(c -> {
                 ((dev.maro.setting.NumberSetting) setting(m, "Item Size")).set(1.0);
                 ((SkinAccessoriesScreen) c.currentScreen).showTab("Pickaxe");
-                ((ModeSetting) setting(m, "Pickaxe")).set("Phoenix Pickaxe");
+                ((ModeSetting) setting(m, "Pickaxe")).set("Driver");
             });
             context.waitTicks(3);
             context.takeScreenshot("maro-cosmetics-pickaxe");
+            context.runOnClient(c->((ModeSetting)setting(m,"Pickaxe")).set("Merry Mint Axe"));
+            context.waitTicks(3);context.takeScreenshot("maro-cosmetics-neon-excavator");
+            context.runOnClient(c->((ModeSetting)setting(m,"Pickaxe")).set("Cold Snap"));
+            context.waitTicks(3);context.takeScreenshot("maro-cosmetics-dragon-jaw");
             // Tridents: a skin of their own, drawn on a held trident.
             context.runOnClient(c -> {
                 ((SkinAccessoriesScreen) c.currentScreen).showTab("Trident");

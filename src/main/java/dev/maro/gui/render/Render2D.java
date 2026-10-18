@@ -58,6 +58,8 @@ public final class Render2D {
     }
 
     /** Scissor applied to shapes submitted from now on (null = none). Kept in sync with DrawContext's scissor by the GUI. */
+    public static ScreenRect getScissor() { return scissor; }
+
     public static void setScissor(ScreenRect rect) {
         scissor = rect;
     }

@@ -1,0 +1,12 @@
+{
+  "source_archive_sha256": "5cfe978f08aa91acc88aa6e049ed8eedb8f58ec9270fb9a87a86ff979419514f",
+  "glb_sha256": "1e8cd4126baea32d8b29485db049e369a213abae970858fa9a0ed9988df29a74",
+  "attribution": {
+    "author": "AlexGIsHim (https://sketchfab.com/AlexGIsHim)",
+    "license": "CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)",
+    "source": "https://sketchfab.com/3d-models/chun-li-f517785069b543cab262ecd1cfe84efe",
+    "title": "Chun Li"
+  },
+  "changes": "Embedded local buffers/textures. LeBron unattached basketball omitted from wearable character.",
+  "anc_sha256": "2b132f8eeaff8f64be983b3b0e3d4d4102e5db5cf3f6039e94775f74b465932c"
+}

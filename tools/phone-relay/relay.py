@@ -7,21 +7,26 @@ import secrets
 import sqlite3
 import threading
 import time
+import os
 from contextlib import contextmanager
 from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlsplit, unquote
 
 NUMBER = re.compile(r"[2-9][0-9]{9}\Z")
 SECRET = re.compile(r"[A-Za-z0-9_-]{43}\Z")
 PLAYLIST = re.compile(r"https://open\.spotify\.com/playlist/[A-Za-z0-9]{22}\Z")
+VIDEO = re.compile(r"/v1/videos/([a-f0-9]{32})\.mp4\Z")
+MAX_VIDEO = 32 * 1024 * 1024
 
 
 class PhoneRelay(ThreadingHTTPServer):
     daemon_threads = True
     def __init__(self, address, database):
         self.database = str(database)
+        self.media = Path(str(database) + ".videos")
+        self.media.mkdir(parents=True, exist_ok=True)
         self.rates = OrderedDict()
         self.rate_lock = threading.Lock()
         with self.db() as db:
@@ -38,6 +43,9 @@ class PhoneRelay(ThreadingHTTPServer):
                 CREATE INDEX IF NOT EXISTS sent ON messages(sender, id);
                 CREATE TABLE IF NOT EXISTS blocks (
                     owner TEXT NOT NULL, blocked TEXT NOT NULL, PRIMARY KEY(owner, blocked));
+                CREATE TABLE IF NOT EXISTS videos (
+                    id TEXT PRIMARY KEY, sender TEXT NOT NULL, recipient TEXT NOT NULL,
+                    size INTEGER NOT NULL, created INTEGER NOT NULL);
             """)
         super().__init__(address, Handler)
 
@@ -113,6 +121,84 @@ class Handler(BaseHTTPRequestHandler):
     def message(row):
         return {k: row[k] for k in ("id", "client_id", "sender", "recipient", "kind", "text", "url", "created")}
 
+    def video_upload(self, db, number, query):
+        values = parse_qs(query)
+        target, key = values.get("to", [""])[0], values.get("client_id", [""])[0]
+        if not NUMBER.fullmatch(target) or not re.fullmatch(r"[A-Za-z0-9-]{16,64}", key):
+            raise ApiError(400, "Enter a valid phone number")
+        if db.execute("SELECT 1 FROM phones WHERE number=?", (target,)).fetchone() is None:
+            raise ApiError(404, "That number is not registered on this relay")
+        if db.execute("SELECT 1 FROM blocks WHERE owner=? AND blocked=?", (target, number)).fetchone():
+            raise ApiError(403, "This number cannot receive your video")
+        prior = db.execute("SELECT * FROM messages WHERE sender=? AND client_id=?", (number, key)).fetchone()
+        if prior is not None:
+            if prior["kind"] != "video" or prior["recipient"] != target:
+                raise ApiError(409, "Attachment ID already used")
+            return {"message": self.message(prior)}
+        if self.headers.get("Transfer-Encoding") or self.headers.get("Content-Type", "").split(";")[0] != "video/mp4":
+            raise ApiError(400, "Choose an MP4 video")
+        try:
+            size = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            raise ApiError(400, "Invalid video size")
+        if not 12 <= size <= MAX_VIDEO:
+            raise ApiError(413, "Videos must be 32 MB or smaller")
+        self.server.limit(("video", number), 6, 60)
+        title = unquote(self.headers.get("X-Video-Name", "Video.mp4"))
+        title = "".join(c for c in title if ord(c) >= 32 and c not in "/\\")[:80] or "Video.mp4"
+        token = secrets.token_hex(16)
+        temporary, destination = self.server.media / (token + ".part"), self.server.media / (token + ".mp4")
+        try:
+            self.connection.settimeout(30)
+            with temporary.open("xb") as out:
+                left = size
+                first = True
+                while left:
+                    data = self.rfile.read(min(65536, left))
+                    if not data:
+                        raise ApiError(400, "Incomplete video upload")
+                    if first and (len(data) < 12 or data[4:8] != b"ftyp"):
+                        raise ApiError(400, "Choose an MP4 video")
+                    first = False
+                    out.write(data)
+                    left -= len(data)
+            db.execute("BEGIN IMMEDIATE")
+            used, count = db.execute("SELECT COALESCE(SUM(size),0),COUNT(*) FROM videos WHERE sender=?", (number,)).fetchone()
+            total, all_count = db.execute("SELECT COALESCE(SUM(size),0),COUNT(*) FROM videos").fetchone()
+            if used + size > 256 * 1024 * 1024 or count >= 48 or total + size > 2 * 1024**3 or all_count >= 512:
+                raise ApiError(413, "Video storage is full; try again later")
+            if db.execute("SELECT 1 FROM blocks WHERE owner=? AND blocked=?", (target, number)).fetchone():
+                raise ApiError(403, "This number cannot receive your video")
+            created = int(time.time()*1000)
+            db.execute("INSERT INTO videos VALUES(?,?,?,?,?)", (token, number, target, size, created))
+            db.execute("INSERT INTO messages(client_id,sender,recipient,kind,text,url,created) VALUES(?,?,?,?,?,?,?)",
+                       (key, number, target, "video", title, "/v1/videos/" + token + ".mp4", created))
+            os.replace(temporary, destination)
+            row = db.execute("SELECT * FROM messages WHERE sender=? AND client_id=?", (number, key)).fetchone()
+            return {"message": self.message(row)}
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def video_download(self, db, number, path):
+        match = VIDEO.fullmatch(path)
+        if match is None:
+            raise ApiError(404, "Video not found")
+        row = db.execute("SELECT * FROM videos WHERE id=? AND (sender=? OR recipient=?)", (match[1], number, number)).fetchone()
+        if row is None:
+            raise ApiError(404, "Video not found")
+        file = self.server.media / (match[1] + ".mp4")
+        if not file.is_file():
+            raise ApiError(404, "Video no longer available")
+        self.send_response(200)
+        self.send_header("Content-Type", "video/mp4")
+        self.send_header("Content-Length", str(row["size"]))
+        self.send_header("Cache-Control", "private, no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        with file.open("rb") as source:
+            while data := source.read(65536):
+                self.wfile.write(data)
+
     def handle_api(self, method):
         try:
             self.connection.settimeout(10)
@@ -141,12 +227,21 @@ class Handler(BaseHTTPRequestHandler):
                     result = {"number": number}
                 else:
                     number = self.auth(db)
-                    if method == "GET" and url.path == "/v1/messages":
+                    if method == "POST" and url.path == "/v1/videos":
+                        result = self.video_upload(db, number, url.query)
+                    elif method == "GET" and url.path.startswith("/v1/videos/"):
+                        self.video_download(db, number, url.path)
+                        return
+                    elif method == "GET" and url.path == "/v1/messages":
                         try:
                             cursor = max(0, int(parse_qs(url.query).get("after", ["0"])[0]))
                         except ValueError:
                             raise ApiError(400, "Invalid message cursor")
                         db.execute("DELETE FROM messages WHERE created<?", (int((time.time()-30*86400)*1000),))
+                        expired = db.execute("SELECT id FROM videos WHERE created<?", (int((time.time()-30*86400)*1000),)).fetchall()
+                        for item in expired:
+                            (self.server.media / (item["id"] + ".mp4")).unlink(missing_ok=True)
+                        db.execute("DELETE FROM videos WHERE created<?", (int((time.time()-30*86400)*1000),))
                         # Even 1,000-character Unicode messages stay within the client's response cap.
                         rows = db.execute("SELECT * FROM messages WHERE id>? AND (sender=? OR recipient=?) ORDER BY id LIMIT 50", (cursor, number, number)).fetchall()
                         result = {"messages": [self.message(r) for r in rows], "cursor": rows[-1]["id"] if rows else cursor}

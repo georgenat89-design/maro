@@ -27,7 +27,7 @@ final class BetterLooksChecks {
     }
 
     static void run(ClientGameTestContext context) {
-        BetterLooks module = ModuleManager.get(BetterLooks.class);
+        BetterLooks module = BetterLooks.get();
         require(module != null, "Better Looks was not registered");
         try {
             BetterLooksScreen screen = context.computeOnClient(c -> {
@@ -70,7 +70,7 @@ final class BetterLooksChecks {
             // A No Render left on from before carries what it hid over to Better Looks, once.
             context.runOnClient(c -> {
                 NoRender old = NoRender.get();
-                module.setEnabled(false);
+                dev.maro.module.impl.visuals.TexturePacks.get().setEnabled(false);
                 old.getSettings().stream().filter(s -> s.getName().equals("Item Frames")).findFirst().map(s -> (BooleanSetting) s).orElseThrow().set(true);
                 old.setEnabled(true);
                 old.carryOver();
@@ -81,7 +81,7 @@ final class BetterLooksChecks {
                 ((BooleanSetting) setting(module, "Hide Item Frames")).set(false);
             });
             context.runOnClient(c -> {
-                module.setEnabled(true);
+                dev.maro.module.impl.visuals.TexturePacks.get().appearance.set(true); dev.maro.module.impl.visuals.TexturePacks.get().setEnabled(true);
                 ((BooleanSetting) setting(module, "No Clouds")).set(true);
                 ((BooleanSetting) setting(module, "No Vignette")).set(true);
                 ((ModeSetting) setting(module, "Particle Mode")).set("Minimal");
@@ -96,7 +96,7 @@ final class BetterLooksChecks {
             context.takeScreenshot("maro-better-looks-world");
         } finally {
             context.runOnClient(c -> {
-                module.setEnabled(false);
+                dev.maro.module.impl.visuals.TexturePacks.get().setEnabled(false);
                 module.getSettings().forEach(Setting::reset);
                 if (c.currentScreen instanceof BetterLooksScreen) c.setScreen(null);
             });

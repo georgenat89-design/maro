@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Draws the Cosmetics weapon and tool skins: 50 swords, 25 pickaxes, 25 shovels and 25 tridents as 32x32
-pixel art, with an item model and item definition for each, under assets/maro.
+"""Draws 66 swords and 37 pickaxes at 64x64, plus 25 shovels and 25 tridents at 32x32,
+with an item model and item definition for each, under assets/maro.
 
 Run from the repository root:  python3 tools/cosmeticgen.py
 Every skin is drawn from a shape (blade form, guard, head) and a material (colours and an
@@ -15,6 +15,7 @@ from PIL import Image
 
 ROOT = os.path.join("src", "main", "resources", "assets", "maro")
 SIZE = 32
+DETAIL = 1
 
 
 def hexc(s):
@@ -107,6 +108,24 @@ SWORDS = [
     ("Warped Cleaver", "cleaver", "round", "warped"), ("Wither Bane", "long", "curved", "wither"),
     ("Wyvern Fang Shuriken", "shuriken", "none", "obsidian"), ("Zenith Greatsword", "great", "winged", "zenith"),
 ]
+SWORDS += [
+    ("Eclipse Splitblade", "split", "winged", "void"), ("Astral Tuning Blade", "fork", "round", "celestial"),
+    ("Dragon Talon", "hook", "curved", "bone"), ("Chrono Gearblade", "saw", "disc", "copper"),
+    ("Seraph Wing", "feather", "winged", "radiant"), ("Neon Circuit Breaker", "split", "cross", "cyber"),
+    ("Bloodthorn Kris", "kris", "curved", "blood"), ("Obsidian Guillotine", "executioner", "winged", "obsidian"),
+    ("Tidal Crescent", "hook", "round", "ocean"), ("Frost Crystal Lance", "crystal", "cross", "frost"),
+    ("Solar Sawtooth", "saw", "winged", "solar"), ("Voidglass Needle", "fork", "disc", "nebula"),
+    ("Emerald Monarch", "feather", "winged", "emerald"), ("Thunder Fang", "kris", "cross", "thunder"),
+    ("Dwarven Forgeblade", "executioner", "cross", "ember"), ("Prismatic Shard", "crystal", "round", "diamond"),
+]
+EXTRA_PICKS = [
+    ("Gravity Anchor", "anchor", "void"), ("Neon Excavator", "drill", "cyber"),
+    ("Dragon Jaw", "jaw", "bone"), ("Clockwork Prospector", "hammer", "copper"),
+    ("Moon Harvester", "crescent", "midnight"), ("Thunder Twinstrike", "forked", "thunder"),
+    ("Solar Scarab", "wing", "solar"), ("Frostbreaker", "crystal", "frost"),
+    ("Obsidian Warpick", "hammer", "obsidian"), ("Coral Reef", "jaw", "ocean"),
+    ("Sculk Resonator", "forked", "echo"), ("Amethyst Geode", "crystal", "amethyst"),
+]
 
 TOOLS = ["Abyssal", "Amethyst", "Arctic", "Blaze", "Celestial", "Cobalt", "Copper", "Crystal", "Dragonbone", "Ember",
          "Emerald", "Frostbite", "Galaxy", "Gilded", "Jade", "Lava", "Lunar", "Netherite", "Obsidian", "Phoenix",
@@ -116,7 +135,7 @@ TOOL_MATERIAL = {"Abyssal": "void", "Amethyst": "amethyst", "Arctic": "frost", "
                  "Emerald": "emerald", "Frostbite": "frost", "Galaxy": "galaxy", "Gilded": "gold", "Jade": "jade",
                  "Lava": "lava", "Lunar": "midnight", "Netherite": "netherite", "Obsidian": "obsidian", "Phoenix": "phoenix",
                  "Prismarine": "prismarine", "Ruby": "ruby", "Sculk": "echo", "Thunder": "thunder", "Void": "nebula"}
-PICK_FORMS = ["classic", "heavy", "spike", "crescent", "classic"]
+PICK_FORMS = ["classic", "heavy", "spike", "crescent", "hammer", "jaw", "forked", "wing", "crystal"]
 SHOVEL_FORMS = ["spade", "round", "pointed", "broad", "spade"]
 TRIDENT_FORMS = ["classic", "barbed", "crescent", "royal", "classic"]
 
@@ -163,12 +182,12 @@ N = (-U[1], U[0])  # perpendicular, pointing to the lower right
 
 
 def coords(x, y):
-    px, py = x + 0.5 - P0[0], y + 0.5 - P0[1]
+    px, py = (x + 0.5) / DETAIL - P0[0], (y + 0.5) / DETAIL - P0[1]
     return (px * U[0] + py * U[1]) / L, px * N[0] + py * N[1]
 
 
 def at(t, d):
-    return P0[0] + U[0] * t * L + N[0] * d, P0[1] + U[1] * t * L + N[1] * d
+    return (P0[0] + U[0] * t * L + N[0] * d) * DETAIL, (P0[1] + U[1] * t * L + N[1] * d) * DETAIL
 
 
 def blade_profile(form, t):
@@ -203,6 +222,22 @@ def blade_profile(form, t):
         return (1.6 + 1.9 * u, 0.9 * u)
     if form == "flamberge":
         return (1.7 * tip(0.84) + 0.2 + 0.55 * math.sin(u * math.pi * 7), 0.0)
+    if form == "split":
+        return (2.5 * tip(.88) + .15, .3 * math.sin(u * 4))
+    if form == "fork":
+        return (2 * tip(.94) + .2, 0)
+    if form == "hook":
+        return (1.2 + 2.2 * math.sin(u * math.pi), -4 * u ** 3)
+    if form == "saw":
+        return (1.8 + (1 if int(u * 9) % 2 == 0 else 0), .4)
+    if form == "feather":
+        return (2.8 * math.sin(u * math.pi) + .3, -1.5 * u)
+    if form == "kris":
+        return (1.4 * tip(.8) + .15, 1.8 * math.sin(u * math.pi * 5))
+    if form == "executioner":
+        return (2.2 + 1.1 * u, .2)
+    if form == "crystal":
+        return (3 * (1 - abs(u - .5) * 2) + .2, 0)
     return None
 
 
@@ -216,10 +251,10 @@ def draw_sword(name, form, guard, mat):
     c = Canvas()
 
     if form == "shuriken":
-        cx, cy = 16, 16
+        cx, cy = SIZE/2, SIZE/2
         for y in range(SIZE):
             for x in range(SIZE):
-                dx, dy = x + 0.5 - cx, y + 0.5 - cy
+                dx, dy = (x + 0.5 - cx)/DETAIL, (y + 0.5 - cy)/DETAIL
                 r = math.hypot(dx, dy)
                 a = math.atan2(dy, dx)
                 star = 5 + 8.5 * (abs(math.cos(a * 2)) ** 3)
@@ -243,8 +278,8 @@ def draw_sword(name, form, guard, mat):
         curve = []
         for i in range(61):
             sv = i / 60
-            px = top[0] - N[0] * sv * 15 - U[0] * (sv * sv) * 9
-            py = top[1] - N[1] * sv * 15 - U[1] * (sv * sv) * 9
+            px = top[0] - DETAIL * (N[0] * sv * 15 + U[0] * (sv * sv) * 9)
+            py = top[1] - DETAIL * (N[1] * sv * 15 + U[1] * (sv * sv) * 9)
             curve.append((px, py, sv))
         blade = set()
         for y in range(SIZE):
@@ -255,7 +290,7 @@ def draw_sword(name, form, guard, mat):
                     if best is None or dist < best[0]:
                         best = (dist, sv, cx, cy)
                 dist, sv, cx, cy = best
-                width = 2.6 * (1 - sv) ** 0.8 + 0.35
+                width = DETAIL * (2.6 * (1 - sv) ** 0.8 + 0.35)
                 if dist <= width:
                     # Which side of the curve: towards the tip of the shaft (the cutting edge) is lit.
                     side = (x + 0.5 - cx) * U[0] + (y + 0.5 - cy) * U[1]
@@ -278,7 +313,9 @@ def draw_sword(name, form, guard, mat):
             if prof is not None:
                 half, off = prof
                 dd = d - off
-                if abs(dd) <= half:
+                slit = form in ("split", "fork") and t > (.57 if form == "split" else .72) and abs(dd) < .65
+                notch = form == "executioner" and .83 < t < .93 and abs(dd) < .9
+                if abs(dd) <= half and not slit and not notch:
                     blade_cells.add((x, y))
                     edge = abs(dd) / max(0.01, half)
                     base = mix(bm, bl, (t - 0.33) * 0.6)
@@ -295,7 +332,7 @@ def draw_sword(name, form, guard, mat):
             if 0.07 <= t <= 0.27 and abs(d) <= 1.05:
                 band = int(t * L) % 3 == 0
                 c.put(x, y, shade(grip, 1.35) if band else grip, 1)
-            if t < 0.09 and math.hypot(*(lambda p: (x + 0.5 - p[0], y + 0.5 - p[1]))(at(0.04, 0))) <= 1.7:
+            if t < 0.09 and math.hypot(*(lambda p: (x + 0.5 - p[0], y + 0.5 - p[1]))(at(0.04, 0))) <= 1.7 * DETAIL:
                 c.put(x, y, accent if t < 0.05 and abs(d) < 0.6 else mm, 2)
             # The guard.
             g = guard_shape(guard, t, d)
@@ -401,12 +438,20 @@ def draw_pickaxe(name, form, mat):
                 handle = mix(grip, md, 0.55)
                 c.put(x, y, mix(shade(handle, 0.9), shade(handle, 1.4), t) if int(t * L) % 4 else mm, 1)
             # The head: an arc across the top of the handle, curving back at the points.
-            span = {"classic": 11.5, "heavy": 10.5, "spike": 12.5, "crescent": 12.0}[form]
-            thick = {"classic": 1.9, "heavy": 2.6, "spike": 1.6, "crescent": 2.0}[form]
-            bend = {"classic": 0.11, "heavy": 0.08, "spike": 0.06, "crescent": 0.17}[form]
+            span = {"classic":11.5,"heavy":10.5,"spike":12.5,"crescent":12,"hammer":10,"jaw":11,"forked":11.5,"wing":12,"crystal":11,"anchor":10,"drill":7}[form]
+            thick = {"classic":1.9,"heavy":2.6,"spike":1.6,"crescent":2,"hammer":2.4,"jaw":2.4,"forked":1.5,"wing":2,"crystal":2.7,"anchor":1.8,"drill":3}[form]
+            bend = {"classic":.11,"heavy":.08,"spike":.06,"crescent":.25,"hammer":.06,"jaw":.18,"forked":.1,"wing":.18,"crystal":.08,"anchor":.25,"drill":.02}[form]
             centre = 0.84 - (d / span) ** 2 * bend * (1.0 if abs(d) <= span else 0)
             half = thick * (1 - (abs(d) / span) ** 2 * 0.65) + 0.15
-            if abs(d) <= span and abs((t - centre) * L) <= half:
+            inside = abs(d) <= span and abs((t - centre) * L) <= half
+            if form == "hammer": inside = (d < -2 and -9 < d and .73 < t < .94) or (d >= -2 and inside)
+            if form == "jaw": inside = inside or (.60 < t < .77 and abs(d) > 5 and abs(d) < 9 and int(abs(d)*1.5)%3 == 0)
+            if form == "forked": inside = inside or (1 < abs(d) < 10 and abs((t-(.77 if d>0 else .66))*L) < .8)
+            if form == "wing": inside = inside or (3 < abs(d) < 10 and .62+abs(d)*.01 < t < .67+abs(d)*.01 and int(abs(d))%3 != 0)
+            if form == "crystal": inside = inside or (2 < abs(d) < 7 and abs(t-.84)*L < (1-abs(abs(d)-4)/3)*4)
+            if form == "anchor": inside = inside or (abs(d)<1.4 and .83<t<1.0) or (7<abs(d)<10 and .55<t<.75)
+            if form == "drill": inside = (.64<t<1 and abs(d)<(1-t)*19 and (int(t*L*2)%4<3))
+            if inside:
                 head.add((x, y))
                 k = (t - centre) * L / half
                 col = mix(bm, bl, 0.5 - k * 0.5) if k < 0 else mix(bm, bd, k * 0.7)
@@ -535,7 +580,9 @@ def write(kind, name, image, catalogue):
     ident = kind + "_" + slug(name)
     tex = os.path.join(ROOT, "textures", "item", "cosmetic", ident + ".png")
     os.makedirs(os.path.dirname(tex), exist_ok=True)
-    image.save(tex)
+    previous = Image.open(tex).convert("RGBA") if os.path.isfile(tex) else None
+    if previous is None or previous.size != image.size or previous.tobytes() != image.tobytes():
+        image.save(tex)
     model = os.path.join(ROOT, "models", "item", "cosmetic", ident + ".json")
     os.makedirs(os.path.dirname(model), exist_ok=True)
     with open(model, "w") as f:
@@ -550,11 +597,13 @@ def write(kind, name, image, catalogue):
 
 
 def main():
+    global SIZE, DETAIL
     catalogue = []
+    SIZE, DETAIL = 64, 2
     for name, form, guard, mat in SWORDS:
         write("sword", name, draw_sword(name, form, guard, mat), catalogue)
-    for i, base in enumerate(TOOLS):
-        write("pickaxe", base + " Pickaxe", draw_pickaxe(base, PICK_FORMS[i % len(PICK_FORMS)], TOOL_MATERIAL[base]), catalogue)
+    # Pickaxes are the five recorded-reference 3D models in PickaxeModels.
+    SIZE, DETAIL = 32, 1
     for i, base in enumerate(TOOLS):
         write("shovel", base + " Shovel", draw_shovel(base, SHOVEL_FORMS[i % len(SHOVEL_FORMS)], TOOL_MATERIAL[base]), catalogue)
     for i, base in enumerate(TOOLS):
@@ -563,7 +612,7 @@ def main():
         json.dump(catalogue, f, indent=1)
         f.write("\n")
     # A contact sheet to look the set over.
-    sheet = Image.new("RGBA", (SIZE * 10 * 4, SIZE * 10 * 4), (24, 26, 34, 255))
+    sheet = Image.new("RGBA", (1280, math.ceil(len(catalogue)/10)*128), (24, 26, 34, 255))
     for i, entry in enumerate(catalogue):
         img = Image.open(os.path.join(ROOT, "textures", "item", "cosmetic", entry["id"] + ".png")).resize((SIZE * 4, SIZE * 4), Image.NEAREST)
         sheet.alpha_composite(img, ((i % 10) * SIZE * 4, (i // 10) * SIZE * 4))

@@ -18,7 +18,7 @@ import java.nio.file.Path;
  */
 public final class SkyImage implements AutoCloseable {
     /** How the picture is laid on the sky; order matches imageSky() in custom_sky.fsh. */
-    public enum Fit { PANORAMA, WRAP, CUBE }
+    public enum Fit { PANORAMA, WRAP, CUBE, ATLAS }
 
     /** About 4096 x 4096: plenty for a sky, and 64 MB at most. */
     private static final long MAX_PIXELS = 4096L * 4096L;
@@ -79,7 +79,7 @@ public final class SkyImage implements AutoCloseable {
                 average(pixels, w, horizonTop, Math.max(horizonTop + 1, horizonBottom)), fit);
     }
 
-    /** A 2:1 picture is a 360 degree panorama, a 4:3 one a cube cross; anything else is wrapped round. */
+    /** A 2:1 picture is a panorama, a 4:3 one a cube cross; other user pictures wrap round. */
     public static Fit autoFit(int width, int height) {
         double aspect = width / (double) height;
         if (Math.abs(aspect - 2.0) < 0.15) return Fit.PANORAMA;

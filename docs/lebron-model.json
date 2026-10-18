@@ -1,0 +1,12 @@
+{
+  "source_archive_sha256": "1445e386bab388d2675c89b8f09536e6413ec7836990ee19dc433004f4ee7fc5",
+  "glb_sha256": "0966c81a10ac96e7393c8f9edaa380eb917108af4621fdf330a9e97296e68d41",
+  "attribution": {
+    "author": "Looney Tunes (https://sketchfab.com/LooneyTunes1929)",
+    "license": "CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)",
+    "source": "https://sketchfab.com/3d-models/lebron-james-7c750ecf2a9d432c9dd3310a73aed7d3",
+    "title": "LeBron James"
+  },
+  "changes": "Embedded local buffers/textures. LeBron unattached basketball omitted from wearable character.",
+  "anc_sha256": "ecc4c35e0564e42bef447d20effa324c646a94e720f67b0bee38e4f912f93083"
+}

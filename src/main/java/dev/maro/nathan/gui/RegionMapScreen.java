@@ -1,5 +1,6 @@
 package dev.maro.nathan.gui;
 
+import dev.maro.gui.render.Fonts;
 import java.util.Locale;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.Click;
@@ -45,14 +46,10 @@ public class RegionMapScreen extends Screen {
     public void render(DrawContext graphics, int mouseX, int mouseY, float delta) {
         MinecraftClient minecraft = MinecraftClient.getInstance();
 
-        graphics.drawCenteredTextWithShadow(minecraft.textRenderer,
-            "Drag to move  -  Scroll or + / - to scale  -  Arrows to nudge (Shift: 10)  -  R to reset  -  Esc when done",
-            width / 2, 8, 0xFFFFFFFF);
+        Fonts.centeredTop(graphics, "Drag to move  -  Scroll or + / - to scale  -  Arrows to nudge (Shift: 10)  -  R to reset  -  Esc when done", width / 2, 8, width - 24, 0xFFFFFFFF);
 
-        graphics.drawCenteredTextWithShadow(minecraft.textRenderer,
-            "X " + Math.round(module.mapLeft()) + "    Y " + Math.round(module.mapTop())
-                + "    Scale " + String.format(Locale.ROOT, "%.2fx", module.mapScale()),
-            width / 2, 20, 0xFFA5A5B2);
+        Fonts.centeredTop(graphics, "X " + Math.round(module.mapLeft()) + "    Y " + Math.round(module.mapTop())
+                + "    Scale " + String.format(Locale.ROOT, "%.2fx", module.mapScale()), width / 2, 20, width - 24, 0xFFA5A5B2);
     }
 
     @Override

@@ -16,5 +16,5 @@ public abstract class ModuleEventsMixin {
     @Inject(method="renderWorld",at=@At("HEAD"))
     private void maro$worldFrame(CallbackInfo info){RuntimeEvents.worldFrame();}
     @Inject(method="render",at=@At("TAIL"))
-    private void maro$disposeTextures(CallbackInfo info){dev.maro.runtime.renderer.Texture.endFrame();}
+    private void maro$disposeTextures(CallbackInfo info){dev.maro.gui.render.SmoothHudText.endFrame();dev.maro.runtime.renderer.Texture.endFrame();}
 }

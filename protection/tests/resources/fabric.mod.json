@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"maro-protection-test","version":"1.0.0","name":"Protected integration checks","environment":"client","entrypoints":{"fabric-client-gametest":["dev.maro.protection.test.ProtectionChecks"]},"depends":{"maro":"*"}}

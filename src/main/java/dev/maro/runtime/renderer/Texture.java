@@ -20,6 +20,8 @@ public final class Texture implements AutoCloseable {
  public void upload(byte[] bytes){upload(ByteBuffer.wrap(bytes));}
  public void upload(ByteBuffer buffer){
   ByteBuffer bytes=buffer.duplicate();NativeImage image=texture.getImage();
+  if(closed)throw new IllegalStateException("Texture is closed");
+  if(format==TextureFormat.RGBA8){NativeImageUpload.rgba(image,bytes);texture.upload();return;}
   for(int y=0;y<height;y++)for(int x=0;x<width;x++){
    int r=255,g=255,b=255,a;
    if(format==TextureFormat.RED8)a=bytes.get()&255;

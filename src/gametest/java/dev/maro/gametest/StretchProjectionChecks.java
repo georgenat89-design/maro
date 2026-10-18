@@ -26,7 +26,7 @@ public final class StretchProjectionChecks {
         Object meteor = meteorEsp();
         context.runOnClient(client -> client.options.getBobView().setValue(false));
         try {
-            for (String ratio : new String[]{"4:3", "5:4", "3:2", "16:10", "1:1", "Custom"}) {
+            for (String ratio : new String[]{"4:3", "5:4", "3:2", "16:10", "1:1", "3:4", "2:3", "Custom"}) {
                 context.runOnClient(client -> {
                     setting(stretch, "Ratio", ratio); setting(stretch, "Custom Ratio", 0.8);
                     stretch.setEnabled(true);
@@ -45,7 +45,19 @@ public final class StretchProjectionChecks {
                     if (meteor != null) checkMeteorProjection();
                 });
             }
+            context.runOnClient(client -> {
+                setting(stretch,"Ratio","4:3");
+                float previous=0;
+                for(double amount:new double[]{100,150,250}) {
+                    setting(stretch,"Stretch Amount",amount);
+                    Matrix4f p=client.gameRenderer.getBasicProjectionMatrix(70);
+                    require(p.m00()>previous,"Stretch Amount did not increase horizontal width");previous=p.m00();
+                    if(amount==100)require(close(p.m00()/p.m11(),.75f),"100% no longer matches original 4:3");
+                }
+                setting(stretch,"Stretch Amount",150);
+            });
             if (meteor != null) checkMeteorEsp(context, singleplayer, stretch, meteor);
+            System.out.println("[stretch-strength] PASS: 8 ratios, stronger default and 100/150/250% projection strength; shared world/culling/GPU matrices and unchanged orthographic UI");
         } finally {
             context.runOnClient(client -> {
                 stretch.setEnabled(false);

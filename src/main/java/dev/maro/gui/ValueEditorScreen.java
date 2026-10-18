@@ -1,5 +1,6 @@
 package dev.maro.gui;
 
+import dev.maro.gui.render.Fonts;
 import dev.maro.runtime.settings.SettingAdapters.ValueSetting;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
@@ -23,10 +24,10 @@ public final class ValueEditorScreen extends Screen {
     }
     @Override public void render(DrawContext ctx,int mx,int my,float delta){
         ctx.fill(0,0,width,height,0xDD10121A);
-        ctx.drawCenteredTextWithShadow(textRenderer,title,width/2,height/2-54,0xFFECEEF3);
-        ctx.drawCenteredTextWithShadow(textRenderer,"Lists accept JSON arrays or entries separated by ;",width/2,height/2-32,0xFF999EAB);
+        Fonts.centeredTop(ctx, title.getString(), width/2, height/2-54, width - 24, 0xFFECEEF3);
+        Fonts.centeredTop(ctx, "Lists accept JSON arrays or entries separated by ;", width/2, height/2-32, width - 24, 0xFF999EAB);
         super.render(ctx,mx,my,delta);
-        if(!error.isEmpty())ctx.drawCenteredTextWithShadow(textRenderer,error,width/2,height/2+54,0xFFFF6B7A);
+        if(!error.isEmpty())Fonts.centeredTop(ctx, error, width/2, height/2+54, width - 24, 0xFFFF6B7A);
     }
     @Override public void close(){client.setScreen(parent);}
     @Override public boolean shouldPause(){return false;}

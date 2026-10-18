@@ -4,6 +4,10 @@ import dev.maro.module.ModuleManager;
 import dev.maro.module.impl.visuals.SpawnerNotifier;
 import dev.maro.render.esp.BlockEspRenderer;
 import dev.maro.setting.Setting;
+import dev.maro.setting.BooleanSetting;
+import dev.maro.setting.NumberSetting;
+import javax.imageio.ImageIO;
+import java.nio.file.Path;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.minecraft.client.option.Perspective;
@@ -66,6 +70,7 @@ final class SpawnerNotifierChecks {
         float[] angles = context.computeOnClient(c -> new float[] {c.player.getYaw(), c.player.getPitch()});
         var perspective = context.computeOnClient(c -> c.options.getPerspective());
         boolean flying = context.computeOnClient(c -> c.player.getAbilities().flying);
+        boolean hudHidden = context.computeOnClient(c -> c.options.hudHidden);
         var gameMode = world.getServer().computeOnServer(s -> s.getPlayerManager().getPlayerList().getFirst().interactionManager.getGameMode());
         try {
             world.getServer().runCommand("gamemode creative @a");
@@ -98,15 +103,43 @@ final class SpawnerNotifierChecks {
             context.takeScreenshot("maro-spawner-notifier");
             System.out.println("SPAWNER NOTIFIER " + context.computeOnClient(c -> module.describe(module.spawners().getFirst())));
 
+            // Both spawners are occluded by a solid wall; pillars must still draw with tags off.
+            world.getServer().runCommand("fill -6 -44 3 6 -32 4 minecraft:stone");
+            context.runOnClient(c -> {
+                ((BooleanSetting) setting(module, "Tags")).set(false);
+                ((BooleanSetting) setting(module, "Pillar")).set(false);
+                c.options.hudHidden = false;
+                c.inGameHud.getChatHud().clear(false);
+            });
+            context.waitTicks(8);
+            int off = redPixels(context.takeScreenshot("maro-spawner-pillar-off"));
+            context.runOnClient(c -> ((BooleanSetting) setting(module, "Pillar")).set(true));
+            context.waitTicks(4);
+            int on = redPixels(context.takeScreenshot("maro-spawner-pillar-through-wall"));
+            require(on > off + 100, "Pillars did not render through blocks with tags disabled: " + off + " -> " + on);
+            context.runOnClient(c -> ((NumberSetting) setting(module, "Pillar Range")).set(16.0));
+            world.getServer().runCommand("tp @a 0 -38 -25 0 0");
+            context.waitTicks(8);
+            int outside = redPixels(context.takeScreenshot("maro-spawner-pillar-outside-range"));
+            require(outside < 50, "Pillars outside their range remained visible: " + outside);
+            context.runOnClient(c -> ((NumberSetting) setting(module, "Pillar Range")).reset());
+            context.waitTicks(4);
+            require(redPixels(context.takeScreenshot("maro-spawner-pillars")) > outside + 100, "Restoring pillar range did not restore the markers");
+
             // Broken: it goes from the list.
             world.getServer().runCommand("setblock " + at(ZOMBIE) + " minecraft:air");
             await(context, () -> mobAt(module, ZOMBIE) == null, "A broken spawner stayed in Spawner Notifier");
             require(context.computeOnClient(c -> mobAt(module, EMPTY) != null), "Breaking one spawner lost the other");
+            world.getServer().runCommand("setblock " + at(EMPTY) + " minecraft:air");
+            await(context, () -> module.spawners().isEmpty(), "Broken spawners retained their pillars");
+            require(context.computeOnClient(c -> !module.hasPillars()), "Empty detection list kept the renderer active");
+            System.out.println("[spawner-pillars] PASS: real detection, occluded pillars, independent tags, toggle, range and broken-spawner cleanup; pixels " + off + " -> " + on);
         } finally {
             context.runOnClient(c -> {
                 module.setEnabled(false);
                 module.getSettings().forEach(Setting::reset);
                 c.options.setPerspective(perspective);
+                c.options.hudHidden = hudHidden;
                 c.player.getAbilities().flying = flying;
             });
             for (BlockPos pos : List.of(ZOMBIE, EMPTY)) world.getServer().runCommand("setblock " + at(pos) + " minecraft:air");
@@ -118,5 +151,18 @@ final class SpawnerNotifierChecks {
 
     private static String at(BlockPos pos) {
         return pos.getX() + " " + pos.getY() + " " + pos.getZ();
+    }
+
+    private static int redPixels(Path shot) {
+        try {
+            var image = ImageIO.read(shot.toFile());
+            int count = 0;
+            // Sample the world around the markers, excluding the player's hand and notification.
+            for (int y = 0; y < image.getHeight() * 0.7; y++) for (int x = image.getWidth() / 4; x < image.getWidth() * 3 / 4; x++) {
+                int color = image.getRGB(x, y), r = color >> 16 & 255, g = color >> 8 & 255, b = color & 255;
+                if (r > 80 && r > g * 1.5 && r > b * 1.5) count++;
+            }
+            return count;
+        } catch (Exception e) { throw new AssertionError(e); }
     }
 }

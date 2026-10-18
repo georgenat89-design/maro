@@ -12,11 +12,27 @@ with an icon, a star and a switch; **All**, **Enabled** and **Starred** filter t
 cards; modules that change how players look, such as Player ESP and Nametags, show a live
 preview of your character. **Esc** closes the panel, then the menu.
 
+
+Maro opens with a black/cobalt loading screen and matching main menu, a sharp
+split-M logo and real loading progress. Menus, editors, HUDs, phone and music text
+use smooth bold uppercase lettering. Existing native controls and server-entry
+fades are preserved. See [Startup](docs/startup.md) and [Typography](docs/typography.md).
+
+**Settings → Floating Window** floats the menu on a glass pane. Aim at a control and click; hold the bar below the pane
+to move it, scroll while holding to change its distance, and click the red dot
+to close. **Walk With Menu Open** enables movement while you configure the menu;
+typing into a field pauses movement. **Remember Spot** reopens the pane where
+you left it when that position is nearby and in front of you. Existing Spatial
+preferences migrate to Floating Window.
+**Custom Sky → Caustics** keeps build 690's animated light pattern.
+See [Build 691 merge](docs/build-691-merge.md) for merge details and validation.
+
 Enable **Screen GUI** at the bottom of the sidebar to place the menu
 in front of you in the world. Walk and look around normally, aim your crosshair at a control,
 and click or scroll to configure it. **Screen Distance** sets its opening distance. Click
 a text field (or press **Ctrl+F**) to type; movement pauses while a field is focused.
 Press **Enter** to finish typing and **Esc** to go back or close the menu.
+Turn Floating Window off to use Screen GUI's placement and distance controls.
 
 When the optional Zen companion is installed, Maro reserves the missing native vertex/index
 capacity for its Block Outlines star before it draws. This prevents the address-zero crash
@@ -29,6 +45,43 @@ The phone reuses its immutable album-art geometry across frames.
 
 ## Included modules
 
+**Name Protect** (Misc) changes your local display name and other players' aliases immediately
+while typing. It includes a searchable editor, anonymous player numbers and friend exclusions.
+Original account identities, commands and messages stay intact. See [Name Protect](docs/name-protect.md).
+
+**Streamproof** (Misc, Windows) keeps private visuals on your main game screen and presents clean
+gameplay to the normal Minecraft capture window. It uses an attached capture-excluded layer in
+the same game instance. Check your recorder's preview; see [Streamproof](docs/streamproof.md).
+
+Click a module for its usual settings. The folder icon in its settings header opens that module's
+public configs, including Top liked, preview, apply and undo. See [public configs](docs/public-configs.md).
+
+**Gameplay Textures** (Visuals) combines Better Looks, Better Textures and Texture
+Packs. Browse PacksMC's first 50 Trending packs with previews, download Modrinth
+packs, manage your installed loadout, and adjust appearance from one module.
+The charcoal workspace has a compact sidebar, live collection previews and a
+quiet master switch. **Download pack** opens the selected pack's original page in
+your default external web browser. **Browse website** opens PacksMC's listing.
+Import the downloaded ZIP through the menu or drag and drop it; saved packs have
+a one-click **Apply** button and work offline. The standard client remains small,
+with no embedded pack collection. Existing profiles migrate. Preview images have
+antialiased rounded corners.
+See [Gameplay Textures](docs/gameplay-textures.md) and [PacksMC](docs/packsmc.md).
+
+**Cosmetics** now includes 66 swords and five 3D pickaxes, with detailed textures and new
+split blades, gear teeth, crystal forms, drills, claws and asymmetric mining heads.
+Existing skin selections retain their names. Shovels and tridents retain their skins.
+
+**Keyboard Strokes → Arrange Keys** lets you drag each selected key into your own
+HUD layout. Snap, fine arrow-key nudges, profile persistence and physical-layout
+reset are included. **Place HUD** still moves/resizes the entire overlay.
+
+**Fake Pay** (Misc) intercepts `/pay <player> <amount>` while enabled and shows
+Glazed-style local chat feedback, with optional action bar and hit-marker sound.
+Compact/full amounts, exact decimal parsing, a preview button and optional local
+sidebar deductions are included. Invalid `/pay` input is consumed locally too.
+See [Fake Pay](docs/fake-pay.md) for controls and native packet checks.
+
 **Skin Changer** (Misc) adapts Anubis's skin changer. Set **Self Player** to the Minecraft
 username whose skin you want, and optionally **Others Player** to give other players a
 separate skin. Leave either field empty to keep the original skins. Classic and slim
@@ -37,35 +90,72 @@ asynchronously and are cached; use **Reload Skins** to retry or fetch an updated
 Changes are visible locally, and disabling the module restores the original skins.
 
 **Keyboard Strokes** (Visuals) shows the keys you press on screen, lit while held. Click it (or
-**Choose Keys**) to open a menu of every keybind in the game and tick the ones you want shown;
-a live preview updates as you click. It reads your bindings, so it follows anything you rebind.
-Movement keys keep the W / A S D shape, mouse buttons pair up, jump runs along the bottom and the
-rest flow underneath. Drag it anywhere, resize it, and set the key opacity.
+**Choose Keys**) to open a full 104-key keyboard with function keys, navigation, arrows,
+numpad and three mouse buttons. Click keycaps to select them; filled caps are shown on the HUD.
+Unused physical keys work too. **Game actions** selects individual bindings, including mod controls.
+A preview updates as you click. Selected game actions follow anything you rebind.
+Selected keys keep their positions from the keyboard chooser: F is beside D and R stays on the
+row above. Wide keys and tall numpad keys keep their shape; mouse buttons are grouped below.
+The preview and placement bounds follow the selection, and large layouts fit the viewport.
+Drag it anywhere, resize it, and set the key opacity.
+
+**Acrobatics** (Visuals) flips and spins on jumps or the **Trick Key** (G by default).
+**Trick View → Auto Third Person** makes a first-person player's trick visible, then restores
+their camera; manual F5 changes take priority. **Follow Game** keeps the current perspective.
+**First Person Flip** turns the view instead, including Side Flip's roll. Short key taps are
+queued reliably. See [keyboard and Acrobatics update](docs/keyboard-acrobatics.md).
 
 **Spotify Phone** (Misc) opens a handheld music player with **F10**. Click previous,
-play/pause or next, or use **Left / Ctrl+Space / Right**. Drag the progress bar to seek;
+play/pause or next, or use **Left / P / Right** (**Ctrl+Space** also plays/pauses).
+**Page Up / Page Down** adjusts output volume and **M** mutes. These shortcuts
+are configurable in the module and ignore typing and held-key repeats. Drag the progress bar to seek;
 **F10**, **Esc**, the close button or the bottom home bar puts the phone away.
 The phone shows live Spotify metadata and album artwork, pulls out of your pocket,
 and slips back when closed. Its hand uses your skin. Choose **Hand → Left/Right**, adjust **Size**, or hide
-the hand. Change its keybind in the module settings. It shares Spotify HUD's Windows
+the hand. A song change brings the opposite hand across the screen to swipe its
+artwork. Artwork is cropped without stretching, masked and decoded off-thread.
+Change its keybind in the module settings. It shares Spotify HUD's Windows
 media connection and works with desktop Spotify or the browser media session, without
 an API login. Start a song in Spotify first; an idle phone offers **Open Spotify**.
 Closing the phone keeps your music playing. It does not pause the world. **Move While Open**
-keeps your configured movement, jump, sneak and sprint keys active; hold right mouse outside
-the phone to look around. Space jumps; Ctrl+Space plays/pauses. Disable the option for
+keeps your configured movement, jump, sneak and sprint keys active. Mouse Look captures the
+cursor for normal camera movement; hold Alt or press I to use phone controls. Space jumps; Ctrl+Space plays/pauses. Disable movement for
 stationary controls with Space to play/pause. The phone's **− / +** buttons resize it from
 **55% to 145%**. Drag or scroll **Output volume**, or click its speaker to mute. This controls
 Windows output volume for all apps, including both desktop and browser Spotify.
+**Game Actions** is on by default: left mouse mines, including successive blocks directly
+below you; right mouse uses held items, launches fireworks and boosts Elytra with main-hand
+or offhand rockets. Opening the phone preserves held mining/use input. Alt, app controls,
+focus loss and closing release those actions. Turn it off in the module or phone Settings
+to keep gameplay clicks disabled. The old opt-in setting is replaced by this default-on option.
 
-The phone and iPad also include **Messages**, **Playlists**, and **Connection** apps.
+The phone and iPad also include **Messages**, **Playlists**, **Videos**, **Settings** and **Connection** apps.
 Press **I** (configurable **Interact Key**) or click **Interact** to open the app grid;
 press I again to return to mouse look. Connect both testers to the same test relay to
 get separate, persistent 10-digit phone numbers. Text by number, receive unread badges
 and HUD notifications, and block unwanted numbers. Long messages open in a scrollable
-reader. Saved Spotify playlist links can be shared as cards that the recipient can
-open or save. Typing pauses movement; the normal music controls and pocket animation
+reader. New senders go into **Requests**; accept them into **Inbox** or delete/block them.
+Settings control notifications, request alerts, sound and message previews. Saved
+Spotify links and playlists imported with **From Spotify** can be shared as cards the
+recipient opens or saves. **Videos** opens the real TikTok **For You**, **Entertainment** (`#funny`)
+and **Gaming** (`#gaming`) pages inside the phone using an installed Edge or Chrome
+browser with a separate phone profile. Sign in on TikTok's own page for
+personal recommendations. **Feed** selects a topic, with explanatory labels. The
+focused video view uses more of the phone and preserves aspect ratio; **··· → Show
+full website** restores page navigation and sign-in. That menu also offers retry,
+an external browser and **Local video files**, with scroll/arrow navigation, pause,
+sound and saved direct links. No demo videos are inserted. Typing pauses movement; music controls and pocket animation
 remain available. The relay runs locally or on a LAN for now; see
 [phone relay setup](tools/phone-relay/README.md) for startup and testing instructions.
+
+**Jump Circle** now uses Anubis's fading, expanding ring effect with the Maro logo.
+The old Neon/Orbit/Ripple renderer is replaced. **Logo**, **Logo Glow**, radius,
+lifetime and accent/custom color are configurable; jump/landing triggers and
+optional shared **Spotify Sync** remain available. Ring storage is
+bounded to 24, uses cached 64-segment geometry and respects world depth.
+**Hand Shader** and its render hooks have been removed.
+See [build 693 phone and rendering update](docs/build-693-phone-jump.md).
+See [phone apps](docs/phone-apps.md) for Spotify sign-in, video formats and validation.
 
 **Spotify Playlists** (Misc) keeps four playlists one click away: **Larp Aux**, **Phonk**,
 **House Music** and **Summer Music**, all with links built in. Click **Open**, or give one a
@@ -93,7 +183,7 @@ Soft and Alert tones have volume/pitch controls; leave and proximity sounds are 
 
 Staff names and details now use larger, brighter text in the same panel dimensions.
 **HUD → Text size** adjusts text independently of **Staff list size**. **Smooth text**
-is enabled by default: cached Inter lettering uses antialiasing and a 2× edge smoothing
+is enabled by default: cached lettering follows the selected client font (Sora by default), uses antialiasing and a 2× edge smoothing
 pass, then draws at one texture pixel per screen pixel through the normal GUI layers.
 Resizing creates the correct new text size rather than stretching the old lettering.
 
@@ -150,7 +240,7 @@ attacked, collide with players, or interact with the server.
 | Category | Modules |
 | --- | --- |
 | Movement | Auto Walk, Free Cam, Freelook |
-| Player | Auto Tool, Auto Trident, Fast XP, Smart Eat, Spawner Protect, existing Fast Place |
+| Player | Auto Tool, Fast XP, Smart Eat, Spawner Protect, existing Fast Place |
 | Visuals | Bloom, Color Correct, Custom Crosshair, Custom FOV, Fake XP, Hats, Key Zoom, Motion Blur, Region Map, Spotify HUD, Spin Bot, Swing Speed, existing Stretch Res |
 | Misc | Chat Macros, Key Sounds, existing Screen Hider |
 
@@ -213,22 +303,14 @@ stop mining or disable the module; a manual slot change is preserved. **Protect 
 skips tools with one durability point remaining. Both options are on by default.
 It leaves item use and creative mode alone and does not move items out of your inventory.
 
-**Auto Trident** (Player) repeatedly charges and releases a trident while you hold
-right-click (or your bound Use key). **Speed** ranges from **1–10**, defaulting to **10**:
-10 releases after the normal minimum of 10 charge ticks (0.5 seconds at 20 TPS),
-and 1 holds for 28 ticks (1.4 seconds). **Repeat Delay** defaults to one tick between
-releases and new charges. **Server Timing** waits for the full charge duration and native
-Riptide spin, and backs off after position corrections before resuming held use.
-Works in either hand, pauses in menus or on focus loss, and leaves other active item uses alone.
-Riptide still needs water or rain; thrown tridents must be returned or replaced before
-the next throw in survival. Uses normal item interactions and release actions.
+Auto Trident has been removed. Movement → Trident Boost remains available for manually charged Riptide.
 
 **GUI**
 - Floating top-bar navigation (category tabs with a sliding pill, icon buttons for general pages) over a black, top-lit window
 - Smooth, frame-rate independent animations everywhere: menu open/close, page transitions, staggered card entrances, the sliding tab indicator, toggles, sliders, hovers and accent colour fades
 - Anti-aliased vector renderer (rounded rects, outlines, gradients, soft shadows/glow, arcs, lines). Pure geometry, no textures or shaders, and it stays crisp at every GUI scale
 - Lucide line icons for every module, category and page
-- Bundled **Inter** font (SIL OFL), with a toggle back to the vanilla font
+- Bundled **Sora Bold / SemiBold** font (SIL OFL), all caps by default, with Rubik, Inter and vanilla alternatives
 - Draggable window (drag the logo)
 - Search across all modules (`Ctrl+K` / `Ctrl+F`, or just start typing)
 - `Tab` / `Shift+Tab` to cycle pages, `Esc` to back out or close
@@ -414,10 +496,17 @@ Run `./gradlew runProductionClientGameTest` to launch a real client against the 
 
 ## Tweaks
 
-- **Font:** Inter SemiBold / ExtraBold. Each weight has one definition per GUI scale (`assets/maro/font/inter_*_x1..x6.json`) so text is rasterised pixel-perfect; change `"shift"` / `"size"` there if text sits slightly high or low.
+- **Font:** Sora Bold / SemiBold by default. Each weight has one definition per GUI scale (`assets/maro/font/sora_*_x1..x6.json`) so text is rasterised at the matching scale. Settings offer Rubik and Inter alternatives and a separate Menu Text Size control.
 - **Colours:** see `gui/theme/Theme.java`.
 - **Window size:** see the layout block at the top of `ClickGuiScreen#render`.
 
-Inter font © The Inter Project Authors, SIL Open Font License 1.1 (`INTER_LICENSE.txt` in the jar).
+Sora font © The Sora Project Authors, SIL Open Font License 1.1 (`LICENSES/Sora-OFL.txt`). Inter and Rubik licenses are retained with their bundled alternatives.
 
 See [THIRD_PARTY.md](THIRD_PARTY.md) for bundled Nathan source, fonts, and retained notices.
+
+**Cosmetics → Pickaxe** contains only Driver, Minty, Leviathan Axe, Cold Snap and Star Wand,
+with rebuilt 3D details, smooth swing previews and fifteen tool sounds edited from the supplied
+recordings. Other pickaxe choices were removed. See [the pickaxe guide](docs/custom-pickaxes.md).
+
+The module grid and the settings panel have a clickable, draggable scrollbar. See
+[the startup menu](docs/startup.md).

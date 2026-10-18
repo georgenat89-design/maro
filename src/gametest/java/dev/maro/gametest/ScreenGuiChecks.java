@@ -32,25 +32,68 @@ final class ScreenGuiChecks {
         try {
             context.getInput().resizeWindow(1280, 720);
             context.runOnClient(c -> {
+                ClientSettings.spatialMenu.set(false);
                 // Upgrade an existing saved theme without losing its keybind or accent.
                 ClientSettings.accent.set(0xFF33BBAA);
-                ClientSettings.capsText.set(true);
+                ClientSettings.capsText.set(false);
                 ClientSettings.backgroundBlur.set(true);
                 ClientSettings.opacity.set(100d);
+                ClientSettings.guiSize.set(85d);
                 ConfigManager.saveClient();
                 try {
                     var file = ConfigManager.DIR.resolve("client.json");
                     var root = JsonParser.parseString(Files.readString(file)).getAsJsonObject();
                     root.addProperty("version", 4);
+                    root.addProperty("lookRevision", 2);
                     Files.writeString(file, root.toString());
                 } catch (Exception error) { throw new AssertionError(error); }
                 int bind = ClientSettings.guiBind.get();
                 ConfigManager.loadClient();
-                require(!ClientSettings.capsText.get() && !ClientSettings.backgroundBlur.get()
-                        && ClientSettings.opacity.getInt() == 94, "Old menu look was not migrated");
+                require(ClientSettings.capsText.get() && ClientSettings.customFont.get() && ClientSettings.fontFace.is("Sora") && !ClientSettings.backgroundBlur.get()
+                        && ClientSettings.opacity.get().equals(ClientSettings.opacity.getDefault()), "Old menu look was not migrated");
                 require(ClientSettings.accent.get() == 0xFF33BBAA && ClientSettings.guiBind.get() == bind, "Migration lost accent or menu key");
+                require(ClientSettings.guiSize.getInt() == 75, "Old default menu size was not compacted");
+                try {
+                    var file = ConfigManager.DIR.resolve("client.json");
+                    var root = JsonParser.parseString(Files.readString(file)).getAsJsonObject();
+                    root.addProperty("lookRevision", 3);
+                    root.getAsJsonObject("settings").addProperty("GUI Size", 90);
+                    Files.writeString(file, root.toString()); ConfigManager.loadClient();
+                    require(ClientSettings.guiSize.getInt() == 90, "Compact migration replaced a custom menu size");
+                    root.addProperty("lookRevision", 4);
+                    root.getAsJsonObject("settings").addProperty("GUI Size", 85);
+                    Files.writeString(file, root.toString()); ConfigManager.loadClient();
+                    require(ClientSettings.guiSize.getInt() == 85, "Compact migration repeated after opt-out");
+                    root.addProperty("lookRevision", 5);
+                    root.getAsJsonObject("settings").addProperty("Font", "Inter");
+                    Files.writeString(file, root.toString()); ConfigManager.loadClient();
+                    require(ClientSettings.fontFace.is("Inter"), "Sora migration replaced a later font choice");
+                    ClientSettings.fontFace.set("Sora");
+                    ClientSettings.guiSize.reset(); ConfigManager.saveClient();
+                } catch (Exception error) { throw new AssertionError(error); }
+
+                try {
+                    var file = ConfigManager.DIR.resolve("client.json");
+                    var root = JsonParser.parseString(Files.readString(file)).getAsJsonObject();
+                    root.getAsJsonObject("settings").addProperty("Menu Style", "Spatial");
+                    root.getAsJsonObject("settings").remove("Floating Window");
+                    Files.writeString(file, root.toString());
+                    ConfigManager.loadClient();
+                    require(ClientSettings.spatialMenu.get(), "Build 690 Spatial preference was not migrated");
+                    ClientSettings.spatialMenu.set(false);
+                    ConfigManager.saveClient();
+                    ClientSettings.spatialMenu.set(true);
+                    ConfigManager.loadClient();
+                    require(!ClientSettings.spatialMenu.get(), "Floating Window opt-out did not persist");
+                    root = JsonParser.parseString(Files.readString(file)).getAsJsonObject();
+                    root.remove("spatialMenu");
+                    root.getAsJsonObject("settings").addProperty("Screen GUI", true);
+                    Files.writeString(file, root.toString());
+                    ConfigManager.loadClient();
+                    require(ClientSettings.screenGui.get() && !ClientSettings.spatialMenu.get(), "Migration replaced an existing Screen GUI setup");
+                } catch (Exception error) { throw new AssertionError(error); }
                 ClientSettings.accent.reset();
-                ClientSettings.capsText.set(false);
+                ClientSettings.capsText.set(true);
                 ClientSettings.backgroundDim.set(false);
                 ClientSettings.backgroundBlur.set(false);
                 ClientSettings.screenDistance.set(4d);
@@ -61,7 +104,7 @@ final class ScreenGuiChecks {
                 ConfigManager.loadClient();
                 require(ClientSettings.screenGui.get() && ClientSettings.screenDistance.getInt() == 4, "Screen GUI settings did not persist");
             });
-            for (boolean floating : new boolean[] {false}) {
+            for (boolean floating : new boolean[] {false, true}) {
                 context.runOnClient(c -> {
                     ClientSettings.screenGui.set(floating);
                     ClientSettings.customFont.set(true);
@@ -75,7 +118,11 @@ final class ScreenGuiChecks {
                 int frames = context.computeOnClient(c -> ScreenGuiSurface.drawnFrames());
                 require(context.computeOnClient(c -> ClientSettings.screenGui.get()) == floating, "Screen GUI fell back after a rendering error");
                 require(context.computeOnClient(c -> ScreenGuiSurface.hasResources()) == floating, "Screen GUI allocation state differs from setting");
-                if (floating) require(frames > 0, "No perspective GPU frames drawn");
+                if (floating) {
+                    require(frames > 0, "No perspective GPU frames drawn");
+                    require(context.computeOnClient(c -> ScreenGuiSurface.textureWidth() > c.getWindow().getFramebufferWidth()
+                            && ScreenGuiSurface.textureHeight() > c.getWindow().getFramebufferHeight()), "World menu was not rendered at higher resolution");
+                }
                 context.takeScreenshot("maro-screen-gui-window" + (floating ? "-floating" : "-flat"));
                 context.runOnClient(c -> {
                     var gui = (ClickGuiScreen) c.currentScreen;
@@ -83,6 +130,12 @@ final class ScreenGuiChecks {
                         double[] projected = gui.screenPose().project(x, y);
                         double[] picked = gui.screenPose().unproject(projected[0], projected[1]);
                         require(Math.abs(picked[0] - x) < .01 && Math.abs(picked[1] - y) < .01, "Projective picking drift");
+                    }
+                    // Screen GUI clicks are crosshair rays, not absolute 2D coordinates;
+                    // WorldScreenGuiChecks below exercises those through native mouse input.
+                    if (floating) {
+                        gui.openModuleSettings(example);
+                        return;
                     }
                     float[] card = gui.modulePlace(example);
                     require(card != null, "Example card missing");
@@ -109,6 +162,7 @@ final class ScreenGuiChecks {
                 context.runOnClient(c -> ClientSettings.customFont.set(false));
                 context.waitTicks(5);
                 context.takeScreenshot("maro-screen-gui-window" + (floating ? "-floating-vanilla-font" : "-flat-vanilla-font"));
+                if (!floating) {
                 context.runOnClient(c -> {
                     var gui = (ClickGuiScreen) c.currentScreen;
                     float[] at = gui.placeOf(ClickGuiScreen.SCREEN_GUI_SWITCH);
@@ -120,6 +174,7 @@ final class ScreenGuiChecks {
                 context.waitTicks(5);
                 require(context.computeOnClient(c -> ClientSettings.screenGui.get()) != floating, "Sidebar Screen GUI shortcut missed");
                 require(context.computeOnClient(c -> ScreenGuiSurface.hasResources()) != floating, "Live Screen GUI toggle did not change allocation state");
+                }
                 context.runOnClient(c -> c.setScreen(null));
                 context.waitTicks(2);
                 require(!context.computeOnClient(c -> ScreenGuiSurface.hasResources()), "Closing the menu leaked GPU resources");

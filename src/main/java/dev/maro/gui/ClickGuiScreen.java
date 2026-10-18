@@ -32,7 +32,6 @@ import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.ScreenRect;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.client.input.CharInput;
 import net.minecraft.client.input.KeyInput;
 import net.minecraft.text.Text;
@@ -116,9 +115,19 @@ public class ClickGuiScreen extends Screen {
     private final Deque<Rect> clips = new ArrayDeque<>();
     private final List<Entry> entries = new ArrayList<>();
     private final Map<Object, float[]> places = new HashMap<>();
+    /** The middle of each sidebar row last frame, by entry; for tests. */
+    private final Map<Integer, float[]> entryPlaces = new HashMap<>();
     private final TextField search;
     private final ModulesPage searchPage;
     private final SettingsPanel settings = new SettingsPanel(this);
+    private final VisualPreview visualPreview = new VisualPreview(this);
+    /** With Floating Window: the menu on a glass pane in the world. */
+    private final dev.maro.gui.spatial.SpatialView spatial = new dev.maro.gui.spatial.SpatialView(this);
+    /** The glass behind the floating menu last frame, {x, y, w, h, corner radius}. */
+    private float[] spatialWindow;
+    /** Set while the menu is being drawn for the floating pane (no dimming of its own). */
+    private boolean paneDraw;
+    private final Map<Module, float[]> moduleConfigPlaces = new HashMap<>();
     private final Animation settingsShown = new Animation(13f, 0f);
     private Rect panelRect;
     private int selected;
@@ -161,13 +170,12 @@ public class ClickGuiScreen extends Screen {
     private boolean pointerKnown;
     private int menuWidth = CANVAS_W, menuHeight = CANVAS_H;
     private float lastLayoutScale;
-    private float layoutScale = 1, layoutX, layoutY;
     public int menuWidth() { return menuWidth; }
     public int menuHeight() { return menuHeight; }
     private final dev.maro.gui.render.ScreenGuiPose screenPose = new dev.maro.gui.render.ScreenGuiPose();
     public dev.maro.gui.render.ScreenGuiPose screenPose() { return screenPose; }
     private final dev.maro.gui.hud.ScreenGuiMovement worldMovement = new dev.maro.gui.hud.ScreenGuiMovement();
-    public boolean worldControls() { return ClientSettings.screenGui.get() && client != null && client.world != null && client.player != null; }
+    public boolean worldControls() { return !spatialStyle() && ClientSettings.screenGui.get() && client != null && client.world != null && client.player != null; }
     public boolean capturesMouse() { return worldControls() && client.isWindowFocused() && client.getOverlay() == null; }
     public net.minecraft.util.PlayerInput movementInput() { return worldControls() && focused == null && listening == null ? worldMovement.read() : net.minecraft.util.PlayerInput.DEFAULT; }
     public void prepareScreenView(net.minecraft.client.render.Camera camera) {
@@ -175,6 +183,7 @@ public class ClickGuiScreen extends Screen {
         if (worldControls()) screenPose.view(camera, client.options.getFov().getValue(), ClientSettings.screenDistance.getFloat());
     }
     private void syncMouseCapture() {
+        if (spatialOn()) return; // the floating pane owns its cursor capture and look
         if (capturesMouse()) { if (!client.mouse.isCursorLocked()) client.mouse.lockCursor(); }
         else if (client.mouse.isCursorLocked()) client.mouse.unlockCursor();
     }
@@ -318,8 +327,102 @@ public class ClickGuiScreen extends Screen {
         return drag != null && dragOwner == owner;
     }
 
+    public boolean hasPointerDrag() {
+        return drag != null;
+    }
+
     public boolean isMouseDown() {
         return mouseDown;
+    }
+
+    public VisualPreview visualPreview() {
+        return visualPreview;
+    }
+
+    /** Whether the menu floats on a glass window in the world (Floating Window). */
+    public static boolean spatialStyle() {
+        return ClientSettings.spatialMenu.get();
+    }
+
+    /** Whether the menu is on the floating pane now: Floating Window, in a world. */
+    private boolean spatialOn() {
+        return spatialStyle() && client != null && client.world != null && client.player != null;
+    }
+
+    /** The floating pane; for tests. */
+    public dev.maro.gui.spatial.SpatialView spatialView() {
+        return spatial;
+    }
+
+    /** The floating pane draws the menu, flat, into its picture with this. */
+    public void spatialDraw(DrawContext ctx, float delta) {
+        paneDraw = true;
+        try {
+            drawMenu(ctx, (int) Math.floor(mouseXd), (int) Math.floor(mouseYd));
+        } finally {
+            paneDraw = false;
+        }
+    }
+
+    /** Where the crosshair points on the floating pane, in menu coordinates (far off when it is not on it). */
+    public void spatialPointer(double x, double y) {
+        rawMouseX = x;
+        rawMouseY = y;
+        pointerKnown = true;
+    }
+
+    /** The window as last drawn, {x, y, w, h, corner radius}, on screen; null before it is drawn. */
+    public float[] spatialWindow() {
+        if (spatialWindow == null) return null;
+        double[] point = screenPose.project(spatialWindow[0], spatialWindow[1]);
+        double[] far = screenPose.project(spatialWindow[0] + spatialWindow[2], spatialWindow[1] + spatialWindow[3]);
+        float scale = (float) ((far[0] - point[0]) / spatialWindow[2]);
+        return new float[] {(float) point[0], (float) point[1], (float) (far[0] - point[0]), (float) (far[1] - point[1]), spatialWindow[4] * scale};
+    }
+
+    /** How far the menu is open, 0 to 1 (falls back to 0 as it closes). */
+    public float menuProgress() {
+        return progress();
+    }
+
+    public boolean isClosing() {
+        return closingAt >= 0;
+    }
+
+    /** A module's public presets, from the configs button in its settings. */
+    public void openPublicConfigs(Module module) {
+        listening = null;
+        focused = null;
+        net.minecraft.client.MinecraftClient.getInstance().setScreen(new ModuleConfigsScreen(this, module));
+    }
+
+    /** The button in a module's settings that opens its public presets. */
+    public void moduleConfigsButton(DrawContext ctx, Module module, float x, float y, float size) {
+        boolean over = hovered(x, y, size, size);
+        float hover = Anims.of(module, "publicConfigsHeader", over);
+        if (hover > .01f) Render2D.circle(ctx, x + size / 2f, y + size / 2f, size / 2f, ColorUtil.withAlpha(0xFFFFFFFF, Math.round(0x16 * hover)));
+        Glyphs.draw(ctx, GlyphNames.FOLDER, x + size / 2f, y + size / 2f, size * .62f, ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT, hover));
+        hit(x, y, size, size, (button, mx, my) -> {
+            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                Sounds.click();
+                openPublicConfigs(module);
+            }
+        });
+        moduleConfigPlaces.put(module, new float[] {x + size / 2f, y + size / 2f});
+        if (over) tooltip("Public configs for " + module.getDisplayName());
+    }
+
+    /** Where a module's public configs button was drawn last frame (on screen with the floating pane). */
+    public float[] moduleConfigsPlace(Module module) {
+        float[] point = moduleConfigPlaces.get(module);
+        if (point == null || !spatial.isOpen()) return point;
+        double[] at = screenPose.project(point[0], point[1]);
+        return new float[] {(float) at[0], (float) at[1]};
+    }
+
+    /** Back from a module's public presets to its settings. */
+    public void openModuleContextSettings(Module module) {
+        if (settings.module() != module) openModuleOptions(module);
     }
 
     public TextField getSearch() {
@@ -343,6 +446,22 @@ public class ClickGuiScreen extends Screen {
     /** The index of the page showing, as {@link #openPage} takes it. */
     public int selectedPage() {
         return selected;
+    }
+
+    public int selectedEntry() {
+        return selected;
+    }
+
+    public int entryCount() {
+        return entries.size();
+    }
+
+    /** The middle of a page's row in the sidebar as last drawn, {x, y} (on screen with the floating pane); for tests. */
+    public float[] entryPlace(int index) {
+        float[] point = entryPlaces.get(index);
+        if (point == null || !spatial.isOpen()) return point;
+        double[] mapped = screenPose.project(point[0], point[1]);
+        return new float[] {(float) mapped[0], (float) mapped[1]};
     }
 
     /** Jumps to a module's category and opens its settings (its own screen, if it has one). */
@@ -382,25 +501,6 @@ public class ClickGuiScreen extends Screen {
         return search.getText().isEmpty() ? entries.get(selected).page() : searchPage;
     }
 
-    /**
-     * Draws your character standing in a box of the menu (menu coordinates), facing the pointer;
-     * false when there is no player to draw. Skipped while the box fades or floats in the world.
-     */
-    boolean drawPlayerPreview(DrawContext ctx, float x1, float y1, float x2, float y2) {
-        if (client == null || client.player == null) return false;
-        if (screenPose.active() || Render2D.getAlpha() < 0.9f) return true;
-        int sx1 = Math.round(layoutX + x1 * layoutScale), sy1 = Math.round(layoutY + y1 * layoutScale);
-        int sx2 = Math.round(layoutX + x2 * layoutScale), sy2 = Math.round(layoutY + y2 * layoutScale);
-        if (sx2 - sx1 < 4 || sy2 - sy1 < 4) return true;
-        try {
-            InventoryScreen.drawEntity(ctx, sx1, sy1, sx2, sy2, Math.round((sy2 - sy1) * 0.42f), 0.0625f,
-                    (float) rawMouseX, (float) rawMouseY, client.player);
-        } catch (RuntimeException e) {
-            Maro.LOGGER.debug("Could not draw the settings preview", e);
-        }
-        return true;
-    }
-
     // ---- rendering ----------------------------------------------------------------------
 
     private float progress() {
@@ -423,28 +523,73 @@ public class ClickGuiScreen extends Screen {
     }
 
     @Override
+    protected void init() {
+        drag = null;
+        dragOwner = null;
+        mouseDown = false;
+        pointerKnown = false;
+        hits.clear();
+        scrollHits.clear();
+        if (spatialOn()) spatial.open();
+    }
+
+    @Override
     public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+        // Mark the main framebuffer before either flat or floating menu content is submitted.
+        if (!spatialOn() && ClientSettings.backgroundBlur.get() && client.world != null && progress() > 0.2f) {
+            try {
+                ctx.applyBlur();
+            } catch (IllegalStateException ignored) {
+                // something else already blurred this frame
+            }
+        }
+        if (spatialOn()) {
+            try {
+                spatial.frame(ctx, delta);
+                return;
+            } catch (RuntimeException e) {
+                Maro.LOGGER.error("The floating menu could not be drawn; using the flat window", e);
+                ClientSettings.spatialMenu.set(false);
+                spatial.close();
+                Notifications.push("Floating Window", "Could not be drawn here, so the menu is flat again", Notifications.Type.WARNING, 5000);
+            }
+        } else if (spatial.isOpen()) {
+            spatial.close();
+        }
+        drawMenu(ctx, mouseX, mouseY);
+    }
+
+    private void drawMenu(DrawContext ctx, int mouseX, int mouseY) {
+        Fonts.beginMenu();
+        try {
+            drawMenuContent(ctx, mouseX, mouseY);
+        } finally {
+            Fonts.endMenu();
+        }
+    }
+
+    private void drawMenuContent(DrawContext ctx, int mouseX, int mouseY) {
         DrawContext mainContext = ctx;
         if (!pointerKnown) { rawMouseX = mouseX; rawMouseY = mouseY; pointerKnown = true; }
         menuWidth = CANVAS_W;
         menuHeight = CANVAS_H;
         float fit = Math.min(width / (float) menuWidth, height / (float) menuHeight);
-        float scale = Math.min(fit * ClientSettings.guiSize.getFloat() / 100f, fit * .98f);
+        float scale = fit * (ClientSettings.guiFullscreen.get() ? .97f : Math.min(ClientSettings.guiSize.getFloat() / 100f, .98f));
         // Keep the size slider under the cursor until it is released.
         if (isDragging(ClientSettings.guiSize) && lastLayoutScale > 0) scale = lastLayoutScale;
         else lastLayoutScale = scale;
         float offsetX = (width - menuWidth * scale) / 2, offsetY = (height - menuHeight * scale) / 2;
-        layoutScale = scale;
-        layoutX = offsetX;
-        layoutY = offsetY;
         screenPose.layout(scale, offsetX, offsetY);
-        if (client.world == null) screenPose.update(width, height, false);
+        if (client.world == null || paneDraw) screenPose.update(width, height, false);
         double[] pointer = screenPose.unproject(worldControls() ? width / 2d : rawMouseX, worldControls() ? height / 2d : rawMouseY);
         mouseXd = pointer[0];
         mouseYd = pointer[1];
         hits.clear();
         scrollHits.clear();
         places.clear();
+        entryPlaces.clear();
+        visualPreview.beginFrame();
+        moduleConfigPlaces.clear();
         clips.clear();
         scissorActive = false;
         Render2D.setScissor(null);
@@ -458,21 +603,14 @@ public class ClickGuiScreen extends Screen {
         if (closingAt < 0) lastProgress = p;
 
         // background
-        if (ClientSettings.backgroundBlur.get() && client != null && client.world != null && p > 0.2f) {
-            try {
-                ctx.applyBlur();
-            } catch (IllegalStateException ignored) {
-                // something else already blurred this frame
-            }
-        }
         Render2D.setAlpha(p);
-        if (ClientSettings.backgroundDim.get()) {
+        if (!paneDraw && ClientSettings.backgroundDim.get()) {
             int dim = Math.round(255 * ClientSettings.dimAmount.getFloat() / 100f);
             Render2D.rectGradient(ctx, 0, 0, width, height, ColorUtil.withAlpha(0, Math.round(dim * 0.85f)), ColorUtil.withAlpha(0, Math.round(dim * 0.85f)),
                     ColorUtil.withAlpha(0, dim), ColorUtil.withAlpha(0, dim));
         }
         // The contour lines of the logo, faint, behind everything.
-        Logo.contours(ctx, width, height, 0.16f);
+        if (!paneDraw) Logo.contours(ctx, width, height, 0.16f);
 
         if (screenPose.active()) ctx = dev.maro.gui.render.ScreenGuiSurface.begin(client, (int) mouseXd, (int) mouseYd, screenPose);
         else dev.maro.gui.render.ScreenGuiSurface.release();
@@ -494,7 +632,7 @@ public class ClickGuiScreen extends Screen {
         Render2D.setAlpha(1f);
         ctx.getMatrices().popMatrix();
         Fonts.setMeasureScale(1);
-        Notifications.render(mainContext);
+        if (!paneDraw) Notifications.render(mainContext);
     }
 
     /** The window, and the settings panel beside it while a module's settings are open. */
@@ -505,16 +643,18 @@ public class ClickGuiScreen extends Screen {
         float slackX = Math.max(0, baseX - 2), slackY = Math.max(0, baseY - 2);
         dragX = Math.max(-slackX, Math.min(slackX, dragX));
         dragY = Math.max(-slackY, Math.min(slackY, dragY));
-        float wx = baseX + dragX;
-        float wy = baseY + dragY + (1f - p) * 18f;
+        float wx = baseX + (paneDraw ? 0 : dragX);
+        float wy = baseY + (paneDraw ? 0 : dragY) + (1f - p) * 18f;
         float r = windowRadius();
+        spatialWindow = new float[] {wx, wy, total, MAIN_H, r};
+        boolean shadows = ClientSettings.shadow.get() && !paneDraw;
 
         // The settings panel first: it slides out from behind the window.
         panelRect = null;
         if (t > 0.01f && settings.drawn() != null) {
             float sx = wx + MAIN_W + PANEL_GAP - (1 - t) * 26f;
             Render2D.setAlpha(p * t);
-            if (ClientSettings.shadow.get()) Render2D.shadow(ctx, sx, wy + 3, SettingsPanel.WIDTH, MAIN_H, r, 24f, 0x80000000);
+            if (shadows) Render2D.shadow(ctx, sx, wy + 3, SettingsPanel.WIDTH, MAIN_H, r, 24f, 0x80000000);
             interactive = settings.module() != null;
             settings.render(ctx, sx, wy, SettingsPanel.WIDTH, MAIN_H, r);
             interactive = true;
@@ -522,7 +662,7 @@ public class ClickGuiScreen extends Screen {
         }
         Render2D.setAlpha(p);
 
-        if (ClientSettings.shadow.get()) {
+        if (shadows) {
             Render2D.shadow(ctx, wx, wy + 3, MAIN_W, MAIN_H, r, 24f, 0x80000000);
             if (Theme.glow()) Render2D.shadow(ctx, wx, wy, MAIN_W, MAIN_H, r, 36f, Theme.accent(0x12));
         }
@@ -562,7 +702,7 @@ public class ClickGuiScreen extends Screen {
     private void renderSidebar(DrawContext ctx, float x, float y, float w, float h) {
         // The logo row is the handle that drags the window.
         hit(x, y, w, 36, (button, mx, my) -> {
-            if (button != 0) return;
+            if (button != 0 || paneDraw || spatial.isOpen()) return;
             final float sx = dragX, sy = dragY;
             startDrag(WINDOW, (nx, ny) -> { dragX = sx + (float) (nx - mx); dragY = sy + (float) (ny - my); });
         });
@@ -623,6 +763,7 @@ public class ClickGuiScreen extends Screen {
         if (count == null) Glyphs.draw(ctx, GlyphNames.LOCK, x + w - 11, y + h / 2f, 8f, Theme.TEXT_MUTED);
         else if (!count.isEmpty()) Fonts.drawRight(ctx, count, x + w - 8, y + h / 2f, ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT_DIM, sel), false, 0.64f);
         hit(x, y, w, h, (button, mx, my) -> { if (button == 0) { openPage(index); Sounds.click(); } });
+        if (interactive) entryPlaces.put(index, new float[] {x + w / 2f, y + h / 2f});
         if (hov && entry.subtitle() != null) tooltip(entry.subtitle());
     }
 
@@ -702,7 +843,7 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public void mouseMoved(double mouseX, double mouseY) {
-        if (worldControls()) return;
+        if (worldControls() || spatial.isOpen()) return;
         pointerKnown = true;
         rawMouseX = mouseX;
         rawMouseY = mouseY;
@@ -713,16 +854,21 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public boolean mouseClicked(Click click, boolean doubled) {
+        if (closingAt >= 0) return true;
         if (worldControls() && focused == null && listening == null) worldMovement.mouse(click, true);
         double mouseX = worldControls() ? width / 2d : click.x(), mouseY = worldControls() ? height / 2d : click.y();
         int button = click.button();
-        pointerKnown = true;
-        rawMouseX = mouseX;
-        rawMouseY = mouseY;
-        double[] point = screenPose.unproject(mouseX, mouseY);
-        mouseXd = point[0];
-        mouseYd = point[1];
-        if (closingAt >= 0) return true;
+        if (spatial.isOpen()) {
+            // On the floating pane a click lands where the crosshair is; the bar and the dot are the pane's own.
+            if (spatial.press(button) || !spatial.onPane()) return true;
+        } else {
+            pointerKnown = true;
+            rawMouseX = mouseX;
+            rawMouseY = mouseY;
+            double[] point = screenPose.unproject(mouseX, mouseY);
+            mouseXd = point[0];
+            mouseYd = point[1];
+        }
         mouseDown = true;
         if (listening != null) {
             if (button >= 2) {
@@ -739,19 +885,25 @@ public class ClickGuiScreen extends Screen {
 
     /** Clicks whatever was drawn at {@code x, y} in the last frame, front-most first. */
     public boolean clickAt(double x, double y, int button) {
-        for (int i = hits.size() - 1; i >= 0; i--) {
-            Hit h = hits.get(i);
-            if (x >= h.x && x < h.x + h.w && y >= h.y && y < h.y + h.h) {
-                h.handler.click(button, x, y);
-                return true;
+        Fonts.beginMenu();
+        try {
+            for (int i = hits.size() - 1; i >= 0; i--) {
+                Hit h = hits.get(i);
+                if (x >= h.x && x < h.x + h.w && y >= h.y && y < h.y + h.h) {
+                    h.handler.click(button, x, y);
+                    return true;
+                }
             }
+            return false;
+        } finally {
+            Fonts.endMenu();
         }
-        return false;
     }
 
     @Override
     public boolean mouseReleased(Click click) {
         worldMovement.mouse(click, false);
+        spatial.release();
         mouseDown = false;
         drag = null;
         dragOwner = null;
@@ -760,6 +912,10 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+        if (spatial.isOpen()) {
+            if (drag != null) drag.drag(mouseXd, mouseYd);
+            return true;
+        }
         mouseMoved(click.x(), click.y());
         if (drag != null && Double.isFinite(mouseXd) && Double.isFinite(mouseYd)) drag.drag(mouseXd, mouseYd);
         return true;
@@ -767,10 +923,17 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        if (worldControls()) { mouseX = width / 2d; mouseY = height / 2d; }
-        double[] point = screenPose.unproject(mouseX, mouseY);
-        mouseX = point[0];
-        mouseY = point[1];
+        if (drag != null || closingAt >= 0 || !Double.isFinite(verticalAmount)) return true;
+        if (spatial.isOpen()) {
+            if (spatial.scroll(verticalAmount) || !spatial.onPane()) return true;
+            mouseX = mouseXd;
+            mouseY = mouseYd;
+        } else {
+            if (worldControls()) { mouseX = width / 2d; mouseY = height / 2d; }
+            double[] point = screenPose.unproject(mouseX, mouseY);
+            mouseX = point[0];
+            mouseY = point[1];
+        }
         for (int i = scrollHits.size() - 1; i >= 0; i--) {
             ScrollHit h = scrollHits.get(i);
             if (mouseX >= h.x && mouseX < h.x + h.w && mouseY >= h.y && mouseY < h.y + h.h) {
@@ -841,7 +1004,8 @@ public class ClickGuiScreen extends Screen {
         char chr = (char) input.codepoint();
         if (closingAt >= 0 || listening != null || justOpened()) return true;
         if (focused != null) return focused.charTyped(chr);
-        if (ClientSettings.typeToSearch.get() && currentPage().typeToSearch() && Character.isLetterOrDigit(chr)) {
+        // Not with the floating window: there the letters walk you about.
+        if (ClientSettings.typeToSearch.get() && !spatial.isOpen() && currentPage().typeToSearch() && Character.isLetterOrDigit(chr)) {
             focused = search;
             return search.charTyped(chr);
         }
@@ -862,8 +1026,12 @@ public class ClickGuiScreen extends Screen {
     @Override
     public void tick() {
         if (!client.isWindowFocused()) { worldMovement.clear(); drag = null; mouseDown = false; }
+        if (!worldControls()) worldMovement.clear();
+        if (!spatialOn() && spatial.isOpen()) spatial.close();
         syncMouseCapture();
-        if (worldControls() && !client.player.isAlive()) { client.setScreen(null); return; }
+        if ((worldControls() || spatial.isOpen()) && !client.player.isAlive()) { client.setScreen(null); return; }
+        // You can walk about with the floating window open, except while typing into a box.
+        if (spatial.isOpen()) spatial.walk(closingAt < 0 && focused == null && listening == null);
         if (closingAt >= 0 && progress() <= 0.001f && client != null) client.setScreen(null);
     }
 
@@ -876,9 +1044,12 @@ public class ClickGuiScreen extends Screen {
     public void removed() {
         worldMovement.clear();
         if (client.mouse.isCursorLocked()) client.mouse.unlockCursor();
+        spatial.close();
         Render2D.setAlpha(1f);
         Render2D.setScissor(null);
         dev.maro.gui.render.ScreenGuiSurface.release();
+        dev.maro.gui.render.VisualPreviewEffect.release();
+        visualPreview.release();
         Fonts.setMeasureScale(1);
         ConfigManager.saveClient();
         if (ClientSettings.autoSave.get()) ConfigManager.save(ConfigManager.getCurrent());
@@ -886,7 +1057,7 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public boolean shouldPause() {
-        return !worldControls() && ClientSettings.pauseGame.get();
+        return false;
     }
 
     public static void resetPosition() {

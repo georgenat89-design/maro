@@ -1,5 +1,6 @@
 package dev.maro.gui.hud;
 
+import dev.maro.gui.render.Fonts;
 import dev.maro.gui.render.Render2D;
 import dev.maro.mixin.DrawContextAccessor;
 import dev.maro.module.impl.visuals.CustomSky;
@@ -90,16 +91,15 @@ public final class SkyImageScreen extends Screen {
         int w = Math.min(420, width - 32), y = height / 2 + 20;
         Render2D.rect(ctx, 0, 0, width, height, 0xC910121A);
         float px = width / 2f - PREVIEW_W / 2f, py = y - 30 - PREVIEW_H;
-        ctx.drawCenteredTextWithShadow(textRenderer, title, width / 2, (int) py - 14, 0xFFEAF4FF);
+        Fonts.centeredTop(ctx, title.getString(), width / 2, (int) py - 14, width - 24, 0xFFEAF4FF);
         Render2D.roundRect(ctx, px - 4, py - 4, PREVIEW_W + 8, PREVIEW_H + 8, 8, 0xFF202532);
         drawPreview(ctx, px, py, PREVIEW_W, PREVIEW_H);
-        ctx.drawCenteredTextWithShadow(textRenderer, "Browse, paste a path, or drag a PNG or JPG here", width / 2, y - 12, 0xFFADB5C7);
+        Fonts.centeredTop(ctx, "Browse, paste a path, or drag a PNG or JPG here", width / 2, y - 12, width - 24, 0xFFADB5C7);
         super.render(ctx, mx, my, delta);
         String status = !pickerError.isEmpty() ? pickerError : choosing ? "Choosing a file…" : module.pictureStatus();
-        ctx.drawCenteredTextWithShadow(textRenderer, textRenderer.trimToWidth(status, w), width / 2, y + 63, 0xFFADB5C7);
-        ctx.drawCenteredTextWithShadow(textRenderer, textRenderer.trimToWidth("2:1 images are used as 360° panoramas and 4:3 as skybox crosses;", w),
-            width / 2, y + 77, 0xFF7C8599);
-        ctx.drawCenteredTextWithShadow(textRenderer, textRenderer.trimToWidth("any other picture wraps round the horizon.", w), width / 2, y + 89, 0xFF7C8599);
+        Fonts.centeredTop(ctx, Fonts.trim(status, w, false, .9f), width / 2, y + 63, width - 24, 0xFFADB5C7);
+        Fonts.centeredTop(ctx, Fonts.trim("2:1 images are used as 360° panoramas and 4:3 as skybox crosses;", w, false, .9f), width / 2, y + 77, width - 24, 0xFF7C8599);
+        Fonts.centeredTop(ctx, Fonts.trim("any other picture wraps round the horizon.", w, false, .9f), width / 2, y + 89, width - 24, 0xFF7C8599);
     }
 
     /** The loaded picture, fitted inside the box and keeping its shape. */
@@ -107,7 +107,7 @@ public final class SkyImageScreen extends Screen {
         var texture = module.picture().texture();
         var info = module.picture().image();
         if (texture == null || info == null) {
-            ctx.drawCenteredTextWithShadow(textRenderer, "No image yet", (int) (x + w / 2), (int) (y + h / 2 - 4), 0xFF7C8599);
+            Fonts.centeredTop(ctx, "No image yet", (int) (x + w / 2), (int) (y + h / 2 - 4), width - 24, 0xFF7C8599);
             return;
         }
         float scale = Math.min(w / info.width(), h / info.height());

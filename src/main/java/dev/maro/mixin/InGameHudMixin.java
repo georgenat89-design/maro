@@ -4,6 +4,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import dev.maro.module.ModuleManager;
+import dev.maro.gui.ClickGuiScreen;
 import dev.maro.module.impl.visuals.CustomCrosshair;
 import dev.maro.module.impl.misc.ScreenHider;
 import net.minecraft.client.MinecraftClient;
@@ -18,6 +19,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(InGameHud.class)
 public abstract class InGameHudMixin {
+    /** The floating menu draws its own centered pointer; do not draw a second game reticle beneath it. */
+    @Inject(method="renderCrosshair",at=@At("HEAD"),cancellable=true)
+    private void maro$floatingPointer(DrawContext context,RenderTickCounter tickCounter,CallbackInfo ci){
+        if(MinecraftClient.getInstance().currentScreen instanceof ClickGuiScreen gui&&gui.spatialView().isOpen())ci.cancel();
+    }
     /** Replace just the crosshair sprite, keeping vanilla's attack indicator and visibility checks. */
     @WrapOperation(method = "renderCrosshair", at = @At(value = "INVOKE",
         target = "Lnet/minecraft/client/gui/DrawContext;drawGuiTexture(Lcom/mojang/blaze3d/pipeline/RenderPipeline;Lnet/minecraft/util/Identifier;IIII)V",

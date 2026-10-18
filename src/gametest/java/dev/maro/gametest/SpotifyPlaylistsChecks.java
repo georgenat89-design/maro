@@ -41,7 +41,7 @@ final class SpotifyPlaylistsChecks {
             // Empty links fall back to the built-in ones.
             Setting<String> mode = setting(module, "Open In");
             String savedMode = mode.get();
-            String[][] builtIn = {{"Larp Aux", "spotify:playlist:28pZmz5AmsYUBNvgoQ81gw"}, {"Phonk", "spotify:playlist:1BzL7qnSMTufvz4Uq8Qamj"},
+            String[][] builtIn = {{"Larp Aux", "spotify:playlist:28pZmz5AmsYUBNvgoQ81gw"}, {"Phonk", "spotify:playlist:1kbzQ66BqTZf0ncvvtEWE6"},
                     {"House Music", "spotify:track:4m17nqEF8zjTEcKCxGI58J"}, {"Summer Music", "spotify:playlist:2TmQRKC2wIDl3bvsWhKv7o"}};
             for (String[] expected : builtIn) {
                 Setting<String> link = setting(module, expected[0] + " Link");
@@ -75,5 +75,6 @@ final class SpotifyPlaylistsChecks {
                 }
             }
         });
+        System.out.println("[spotify-playlists] PASS: build 698 registration, four built-in links, app/browser targets, playlist/album/track parsing, language/query handling and invalid-host rejection; no external app launched");
     }
 }

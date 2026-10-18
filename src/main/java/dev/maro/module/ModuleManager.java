@@ -23,9 +23,12 @@ public final class ModuleManager {
     }
 
     public static void init() {
+        register(new dev.maro.anubis.tpa.AutoTpaHereModule());
+        register(new dev.maro.anubis.tpa.TpMacroModule());
+        register(new dev.maro.anubis.inspect.WeaponInspectModule());
         register(new dev.maro.module.impl.player.AutoTool());
-        register(new dev.maro.module.impl.player.AutoTrident());
-        register(new dev.maro.module.impl.player.TridentUtil());
+        register(new dev.maro.module.impl.player.AutoReplenish());
+        register(new dev.maro.module.impl.movement.TridentBoost());
         register(new dev.maro.module.impl.player.SpeedMine());
         register(new dev.maro.module.impl.player.BreakDelay());
         register(new dev.maro.module.impl.movement.Flight());
@@ -35,6 +38,7 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.misc.InventoryHider());
         register(new dev.maro.module.impl.misc.BlockDisconnect());
         register(new dev.maro.module.impl.misc.CoordSnapper());
+        register(new dev.maro.module.impl.misc.FakePay());
         register(new dev.maro.module.impl.misc.DiscordPresence());
         register(new dev.maro.module.impl.misc.SpotifyPhone());
         register(new dev.maro.module.impl.misc.SpotifyPlaylists());
@@ -48,6 +52,8 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.player.CrafterDisabler());
         register(new dev.maro.module.impl.player.ChestStealer());
         register(new dev.maro.module.impl.player.ChestDumper());
+        register(new dev.maro.module.impl.player.ShulkerDropper());
+        register(new dev.maro.module.impl.player.SpawnerDropper());
         register(new dev.maro.module.impl.visuals.StretchRes());
         register(new dev.maro.module.impl.visuals.InventoryHud());
         register(new dev.maro.module.impl.visuals.ArmorHud());
@@ -56,17 +62,22 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.PotatoGraphics());
         register(new dev.maro.module.impl.visuals.NoRender());
         register(new dev.maro.module.impl.visuals.ItemInspect());
+        register(new dev.maro.module.impl.misc.Streamproof());
+        register(new dev.maro.module.impl.misc.NameProtect());
         register(new dev.maro.module.impl.visuals.ViewModel());
         register(new dev.maro.module.impl.visuals.Compass());
+        register(new dev.maro.module.impl.visuals.Radar());
         register(new dev.maro.module.impl.visuals.CustomCrosshair());
         register(new dev.maro.module.impl.visuals.SkinAccessories());
         register(new dev.maro.module.impl.visuals.Pet());
+        register(new dev.maro.module.impl.visuals.CustomModel());
         register(new dev.maro.module.impl.visuals.BaseESP());
+        register(new dev.maro.module.impl.visuals.RedstoneBypass());
+        register(new dev.maro.module.impl.visuals.BedrockVoidESP());
         register(new dev.maro.module.impl.visuals.BlockESP());
         register(new dev.maro.module.impl.visuals.StorageESP());
         register(new dev.maro.module.impl.visuals.Nametags());
         register(new dev.maro.module.impl.visuals.Trajectories());
-        register(new dev.maro.module.impl.visuals.HandShader());
         register(new dev.maro.module.impl.visuals.Geeked());
         register(new dev.maro.module.impl.misc.OrderDropper());
         register(new dev.maro.module.impl.movement.CoordsFly());
@@ -74,14 +85,14 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.movement.NoFall());
         register(new dev.maro.module.impl.movement.Vehicles());
         register(new dev.maro.module.impl.visuals.SpawnerNotifier());
-        register(new dev.maro.module.impl.visuals.BetterTextures());
-        register(new dev.maro.module.impl.visuals.BetterLooks());
+        register(new dev.maro.module.impl.visuals.TexturePacks());
         register(new dev.maro.module.impl.visuals.FakeBlock());
         register(new dev.maro.module.impl.visuals.PlayerESP());
         register(new dev.maro.module.impl.visuals.CustomSky());
         register(new dev.maro.module.impl.visuals.CustomTotem());
         register(new dev.maro.module.impl.visuals.Emotes());
         register(new dev.maro.module.impl.visuals.Acrobatics());
+        register(new dev.maro.module.impl.visuals.JumpCircle());
         register(new dev.maro.module.impl.visuals.StaffNotifier());
         dev.maro.nathan.NameeProtectAddon.init();
 
@@ -92,6 +103,7 @@ public final class ModuleManager {
     public static void register(Module module) {
         if (getByName(module.getName()) != null) throw new IllegalStateException("Duplicate module name: " + module.getName());
         MODULES.add(module);
+        ModuleSearch.invalidate();
         BY_CLASS.putIfAbsent(module.getClass(), module);
         if(module instanceof dev.maro.runtime.systems.modules.Module ported) {
             PORTED_MODULES.add(ported);
@@ -109,7 +121,7 @@ public final class ModuleManager {
     public static List<Module> byCategory(Category category) {
         List<Module> list = new ArrayList<>();
         for (Module m : MODULES) if (m.getCategory() == category && !m.hiddenInGui()) list.add(m);
-        list.sort((a, b) -> String.CASE_INSENSITIVE_ORDER.compare(a.getName(), b.getName()));
+        list.sort((a, b) -> String.CASE_INSENSITIVE_ORDER.compare(a.getDisplayName(), b.getDisplayName()));
         return list;
     }
 
@@ -118,19 +130,7 @@ public final class ModuleManager {
     }
 
     public static List<Module> search(String query) {
-        String q = query.toLowerCase(Locale.ROOT).trim();
-        List<Module> starts = new ArrayList<>(), contains = new ArrayList<>(), desc = new ArrayList<>();
-        for (Module m : MODULES) {
-            if (m.hiddenInGui()) continue;
-            String n = m.getName().toLowerCase(Locale.ROOT);
-            String compact = n.replace(" ", "");
-            if (n.startsWith(q) || compact.startsWith(q.replace(" ", ""))) starts.add(m);
-            else if (n.contains(q) || compact.contains(q.replace(" ", ""))) contains.add(m);
-            else if (m.getDescription().toLowerCase(Locale.ROOT).contains(q)) desc.add(m);
-        }
-        starts.addAll(contains);
-        starts.addAll(desc);
-        return starts;
+        return ModuleSearch.find(MODULE_VIEW,query);
     }
 
     @SuppressWarnings("unchecked")
@@ -173,7 +173,7 @@ public final class ModuleManager {
             if (!m.getBind().matches(code)) continue;
             m.toggle();
             if (ClientSettings.toggleNotifications.get()) {
-                Notifications.push(m.getName(), m.isEnabled() ? "Enabled" : "Disabled",
+                Notifications.push(m.getDisplayName(), m.isEnabled() ? "Enabled" : "Disabled",
                         m.isEnabled() ? Notifications.Type.ENABLED : Notifications.Type.DISABLED);
             }
         }

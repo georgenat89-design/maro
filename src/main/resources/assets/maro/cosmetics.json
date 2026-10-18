@@ -250,129 +250,84 @@
   "name": "Zenith Greatsword"
  },
  {
-  "kind": "pickaxe",
-  "id": "pickaxe_abyssal_pickaxe",
-  "name": "Abyssal Pickaxe"
+  "kind": "sword",
+  "id": "sword_eclipse_splitblade",
+  "name": "Eclipse Splitblade"
  },
  {
-  "kind": "pickaxe",
-  "id": "pickaxe_amethyst_pickaxe",
-  "name": "Amethyst Pickaxe"
+  "kind": "sword",
+  "id": "sword_astral_tuning_blade",
+  "name": "Astral Tuning Blade"
  },
  {
-  "kind": "pickaxe",
-  "id": "pickaxe_arctic_pickaxe",
-  "name": "Arctic Pickaxe"
+  "kind": "sword",
+  "id": "sword_dragon_talon",
+  "name": "Dragon Talon"
  },
  {
-  "kind": "pickaxe",
-  "id": "pickaxe_blaze_pickaxe",
-  "name": "Blaze Pickaxe"
+  "kind": "sword",
+  "id": "sword_chrono_gearblade",
+  "name": "Chrono Gearblade"
  },
  {
-  "kind": "pickaxe",
-  "id": "pickaxe_celestial_pickaxe",
-  "name": "Celestial Pickaxe"
+  "kind": "sword",
+  "id": "sword_seraph_wing",
+  "name": "Seraph Wing"
  },
  {
-  "kind": "pickaxe",
-  "id": "pickaxe_cobalt_pickaxe",
-  "name": "Cobalt Pickaxe"
+  "kind": "sword",
+  "id": "sword_neon_circuit_breaker",
+  "name": "Neon Circuit Breaker"
  },
  {
-  "kind": "pickaxe",
-  "id": "pickaxe_copper_pickaxe",
-  "name": "Copper Pickaxe"
+  "kind": "sword",
+  "id": "sword_bloodthorn_kris",
+  "name": "Bloodthorn Kris"
  },
  {
-  "kind": "pickaxe",
-  "id": "pickaxe_crystal_pickaxe",
-  "name": "Crystal Pickaxe"
+  "kind": "sword",
+  "id": "sword_obsidian_guillotine",
+  "name": "Obsidian Guillotine"
  },
  {
-  "kind": "pickaxe",
-  "id": "pickaxe_dragonbone_pickaxe",
-  "name": "Dragonbone Pickaxe"
+  "kind": "sword",
+  "id": "sword_tidal_crescent",
+  "name": "Tidal Crescent"
  },
  {
-  "kind": "pickaxe",
-  "id": "pickaxe_ember_pickaxe",
-  "name": "Ember Pickaxe"
+  "kind": "sword",
+  "id": "sword_frost_crystal_lance",
+  "name": "Frost Crystal Lance"
  },
  {
-  "kind": "pickaxe",
-  "id": "pickaxe_emerald_pickaxe",
-  "name": "Emerald Pickaxe"
+  "kind": "sword",
+  "id": "sword_solar_sawtooth",
+  "name": "Solar Sawtooth"
  },
  {
-  "kind": "pickaxe",
-  "id": "pickaxe_frostbite_pickaxe",
-  "name": "Frostbite Pickaxe"
+  "kind": "sword",
+  "id": "sword_voidglass_needle",
+  "name": "Voidglass Needle"
  },
  {
-  "kind": "pickaxe",
-  "id": "pickaxe_galaxy_pickaxe",
-  "name": "Galaxy Pickaxe"
+  "kind": "sword",
+  "id": "sword_emerald_monarch",
+  "name": "Emerald Monarch"
  },
  {
-  "kind": "pickaxe",
-  "id": "pickaxe_gilded_pickaxe",
-  "name": "Gilded Pickaxe"
+  "kind": "sword",
+  "id": "sword_thunder_fang",
+  "name": "Thunder Fang"
  },
  {
-  "kind": "pickaxe",
-  "id": "pickaxe_jade_pickaxe",
-  "name": "Jade Pickaxe"
+  "kind": "sword",
+  "id": "sword_dwarven_forgeblade",
+  "name": "Dwarven Forgeblade"
  },
  {
-  "kind": "pickaxe",
-  "id": "pickaxe_lava_pickaxe",
-  "name": "Lava Pickaxe"
- },
- {
-  "kind": "pickaxe",
-  "id": "pickaxe_lunar_pickaxe",
-  "name": "Lunar Pickaxe"
- },
- {
-  "kind": "pickaxe",
-  "id": "pickaxe_netherite_pickaxe",
-  "name": "Netherite Pickaxe"
- },
- {
-  "kind": "pickaxe",
-  "id": "pickaxe_obsidian_pickaxe",
-  "name": "Obsidian Pickaxe"
- },
- {
-  "kind": "pickaxe",
-  "id": "pickaxe_phoenix_pickaxe",
-  "name": "Phoenix Pickaxe"
- },
- {
-  "kind": "pickaxe",
-  "id": "pickaxe_prismarine_pickaxe",
-  "name": "Prismarine Pickaxe"
- },
- {
-  "kind": "pickaxe",
-  "id": "pickaxe_ruby_pickaxe",
-  "name": "Ruby Pickaxe"
- },
- {
-  "kind": "pickaxe",
-  "id": "pickaxe_sculk_pickaxe",
-  "name": "Sculk Pickaxe"
- },
- {
-  "kind": "pickaxe",
-  "id": "pickaxe_thunder_pickaxe",
-  "name": "Thunder Pickaxe"
- },
- {
-  "kind": "pickaxe",
-  "id": "pickaxe_void_pickaxe",
-  "name": "Void Pickaxe"
+  "kind": "sword",
+  "id": "sword_prismatic_shard",
+  "name": "Prismatic Shard"
  },
  {
   "kind": "shovel",

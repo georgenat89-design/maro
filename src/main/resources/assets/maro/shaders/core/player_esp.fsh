@@ -33,8 +33,9 @@ layout(std140) uniform EspData {
     vec4 PlayerRects[MAX_PLAYERS];
     vec4 PlayerScales[MAX_PLAYERS / 4];
     // Each tracer from its start to its player (x0, y0, x1, y1 in pixels), and its colour.
-    vec4 TracerLines[MAX_PLAYERS];
-    vec4 TracerColors[MAX_PLAYERS];
+    vec4 TracerLines[256];
+    vec4 TracerColors[256];
+    vec4 TracerPhases[64];
 };
 
 out vec4 fragColor;
@@ -191,7 +192,7 @@ vec4 over(vec4 dst, vec3 color, float alpha) {
 // The mask at a screen-pixel offset: rgb un-premultiplied, a = coverage of that screen pixel.
 vec4 maskAt(vec2 uv) {
     vec4 s = texture(u_Mask, uv);
-    return vec4(s.a > 0.0 ? s.rgb / s.a : vec3(0.0), s.a);
+    return vec4(PlayerInfo.x < 0.0 ? PlayerInfo.yzw : (s.a > 0.0 ? s.rgb / s.a : vec3(0.0)), s.a);
 }
 
 // Coverage averaged over a two-pixel box: smooth enough that its 0.5 level is a straight line
@@ -245,11 +246,13 @@ vec4 tracer(int index, vec2 px) {
     float along = clamp(dot(px - a, ab) / max(dot(ab, ab), 1e-4), 0.0, 1.0);
     float d = length(px - a - ab * along);
     float alpha = clamp(PlayerInfo.y * 0.5 + 0.5 - d, 0.0, 1.0);
-    alpha *= smoothstep(6.0, 22.0, length(px - a));
+    float pixelScale = max(float(textureSize(u_Mask, 0).y) / max(GlowParams.w, 1.0) / 1080.0, 0.001);
+    alpha *= smoothstep(6.0 * pixelScale, 22.0 * pixelScale, length(px - a));
     vec3 color = TracerColors[index].rgb;
     if (PlayerInfo.z > 0.5) {
         float t = Timing.x * Timing.y;
-        color = hsv2rgb(vec3(fract(along * 0.6 + float(index) * 0.13 - t * 0.2), 0.7, 1.0));
+        float phase = TracerPhases[index / 4][index % 4];
+        color = hsv2rgb(vec3(fract(along * 0.6 + phase - t * 0.2), 0.7, 1.0));
     }
     return vec4(color, alpha * TracerColors[index].a);
 }
@@ -405,6 +408,13 @@ void main() {
     color = over(color, lineColor, clamp(innerAlpha, 0.0, 1.0));
     color = over(color, lineColor, clamp(lineAlpha, 0.0, 1.0));
 
-    if (color.a <= 0.002) discard;
-    fragColor = vec4(clamp(color.rgb, 0.0, 1.0), color.a);
+    if (PlayerInfo.x < 0.0) {
+        // Native GUI portraits are premultiplied. Paint the same effect over their real skin.
+        vec4 skin = texture(u_Mask, texCoord);
+        fragColor = vec4(clamp(color.rgb, 0.0, 1.0) * color.a + skin.rgb * (1.0 - color.a),
+                         color.a + skin.a * (1.0 - color.a));
+    } else {
+        if (color.a <= 0.002) discard;
+        fragColor = vec4(clamp(color.rgb, 0.0, 1.0), color.a);
+    }
 }

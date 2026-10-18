@@ -29,8 +29,6 @@ import org.lwjgl.glfw.GLFW;
 public final class SpotifyPhoneScreen extends Screen {
     public static final float PHONE_WIDTH = 208, PHONE_HEIGHT = 464;
     private static final int WHITE = 0xFFF5F7F6, MUTED = 0xFFA3ADA7, GREEN = 0xFF1ED760;
-    private record CoverMesh(float[] vertices, int[] colors) { }
-    private static final CoverMesh COVER_MESH = coverMesh();
     private final SpotifyPhone owner;
     private final SpotifyPlayback player;
     private final PhoneMovement movement = new PhoneMovement();
@@ -41,7 +39,21 @@ public final class SpotifyPhoneScreen extends Screen {
     private long closingAt;
     private float closingFrom;
     private long lastControlAt;
-    private Texture cover;
+    private String lastControl = "";
+    private long requestedSwipeAt;
+    private Texture cover, previousCover;
+    private SpotifyMedia.Artwork requestedArtwork;
+    private java.util.concurrent.CompletableFuture<byte[]> artworkJob;
+    private String observedTrack;
+    private long swipeAt, coverAt;
+    private long animationNow;
+    private boolean pendingSwipe;
+    private int swipeDirection = 1, requestedDirection = 1;
+    private final java.util.Set<Integer> mediaHeld = new java.util.HashSet<>();
+    private boolean attackHeld, useHeld;
+    private float interactGlow;
+    private long lastFrame;
+
     private SpotifyMedia.Artwork shownArtwork;
     private boolean dragging, draggingVolume, looking, removed, sizeChanged;
     private boolean leftAlt, rightAlt;
@@ -74,14 +86,26 @@ public final class SpotifyPhoneScreen extends Screen {
         this(owner, player, dev.maro.phone.PhoneNetwork.get());
     }
     public SpotifyPhoneScreen(SpotifyPhone owner, SpotifyPlayback player, dev.maro.phone.PhoneNetwork network) {
+        this(owner,player,network,null);
+    }
+    public SpotifyPhoneScreen(SpotifyPhone owner, SpotifyPlayback player, dev.maro.phone.PhoneNetwork network,dev.maro.phone.SpotifyLibrary library) {
+        this(owner,player,network,library,null);
+    }
+    public SpotifyPhoneScreen(SpotifyPhone owner, SpotifyPlayback player, dev.maro.phone.PhoneNetwork network,dev.maro.phone.SpotifyLibrary library,java.nio.file.Path clipsFolder) {
         super(Text.literal("Spotify Phone"));
         this.owner = owner;
         this.player = player;
         this.network = network;
-        this.apps = new PhoneApps(network);
+        this.apps = new PhoneApps(network,library,clipsFolder,owner);
         var window = net.minecraft.client.MinecraftClient.getInstance().getWindow();
         leftAlt = InputUtil.isKeyPressed(window, GLFW.GLFW_KEY_LEFT_ALT);
         rightAlt = InputUtil.isKeyPressed(window, GLFW.GLFW_KEY_RIGHT_ALT);
+        var c = net.minecraft.client.MinecraftClient.getInstance();
+        // Capture before setScreen releases vanilla bindings, so opening the phone preserves a held dig/use.
+        boolean resume = c.currentScreen == null && c.isWindowFocused() && owner.mouseLook.get()
+            && owner.gameInteraction.get() && !leftAlt && !rightAlt;
+        attackHeld = resume && c.options.attackKey.isPressed();
+        useHeld = resume && c.options.useKey.isPressed();
     }
 
     public Layout layout() {
@@ -104,6 +128,7 @@ public final class SpotifyPhoneScreen extends Screen {
 
     private float pocketProgress() {
         long now = System.nanoTime();
+        animationNow = now;
         if (closingAt != 0) {
             float t = (float) Math.clamp((now - closingAt) / 240_000_000.0, 0, 1);
             return closingFrom + (1 - closingFrom) * t * t * (3 - 2 * t);
@@ -115,6 +140,9 @@ public final class SpotifyPhoneScreen extends Screen {
 
     @Override public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
         var state = player.state();
+        observeTrack(state);
+        long now = System.nanoTime();
+        float dt = lastFrame == 0 ? 0 : Math.min(.1f, (now - lastFrame) / 1e9f); lastFrame = now;
         var layout = layout();
         float mx = layout.localX(mouseX, mouseY), my = layout.localY(mouseX, mouseY);
         if (allowsMouseLook()) { mx = -10000; my = -10000; }
@@ -125,7 +153,7 @@ public final class SpotifyPhoneScreen extends Screen {
         matrices.translate(layout.width / 2, layout.height - 40);
         matrices.rotate(layout.rotation);
         matrices.translate(-layout.width / 2, -(layout.height - 40));
-        Fonts.beginRaw();
+        Fonts.beginRaw(); Fonts.setMeasureScale(layout.scale);
         try {
             if (owner.showHand.get()) hand(ctx, false);
             int tint = 0xFF25352B;
@@ -138,22 +166,22 @@ public final class SpotifyPhoneScreen extends Screen {
                 ColorUtil.lerp(0xFF171B1D, tint, .18f), 0xFF111516);
             Render2D.roundRect(ctx, layout.width / 2 - 20, 17, 40, 4, 2, 0xFF080A0B);
             if (apps.music()) {
-                PhoneIcons.spotify(ctx, 30, 56);
-                text(ctx, "Spotify", 45, 51, WHITE, true, 1.2f);
+                PhoneIcons.spotify(ctx, 30, 75);
+                text(ctx, "Spotify", 45, 70, WHITE, true, 1.2f);
             }
-            float closeX = layout.width - 38;
-            boolean closeHover = hit(mx, my, closeX, 44, 24, 24);
-            if (closeHover) Render2D.roundRect(ctx, closeX, 44, 24, 24, 12, 0xFF303736);
-            Render2D.line(ctx, closeX + 8, 52, closeX + 16, 60, 1.5f, MUTED);
-            Render2D.line(ctx, closeX + 16, 52, closeX + 8, 60, 1.5f, MUTED);
+            float closeX = layout.width - 38, closeY = apps.music() ? 63 : 44;
+            boolean closeHover = hit(mx, my, closeX, closeY, 24, 24);
+            if (closeHover) Render2D.roundRect(ctx, closeX, closeY, 24, 24, 12, 0xFF303736);
+            Render2D.line(ctx, closeX + 8, closeY + 8, closeX + 16, closeY + 16, 1.5f, MUTED);
+            Render2D.line(ctx, closeX + 16, closeY + 8, closeX + 8, closeY + 16, 1.5f, MUTED);
             if (apps.music()) {
-            Render2D.shadow(ctx, 24, 86, 160, 160, 8, 8, 0x65000000);
-            if (cover != null) drawCover(ctx);
+            Render2D.shadow(ctx, PhoneAlbumMesh.X, PhoneAlbumMesh.Y, PhoneAlbumMesh.SIZE, PhoneAlbumMesh.SIZE, PhoneAlbumMesh.RADIUS, 8, 0x65000000);
+            if (cover != null || previousCover != null) drawCover(ctx);
             else {
-                Render2D.roundGradientV(ctx, 24, 86, 160, 160, 8,
+                Render2D.roundGradientV(ctx, PhoneAlbumMesh.X, PhoneAlbumMesh.Y, PhoneAlbumMesh.SIZE, PhoneAlbumMesh.SIZE, PhoneAlbumMesh.RADIUS,
                     ColorUtil.lerp(0xFF243D2F, tint, .4f), 0xFF14221A);
-                PhoneIcons.spotify(ctx, 104, 160);
-                centered(ctx, state.available() ? "NOW PLAYING" : "YOUR MUSIC, IN GAME", 104, 195, MUTED, false, .85f);
+                PhoneIcons.spotify(ctx, 104, 172);
+                centered(ctx, state.available() ? "NOW PLAYING" : "YOUR MUSIC, IN GAME", 104, 207, MUTED, false, .85f);
             }
             matrices.pushMatrix();
             if (tablet()) matrices.translate(192, -158);
@@ -181,7 +209,7 @@ public final class SpotifyPhoneScreen extends Screen {
                     Render2D.roundRect(ctx, 106, 343, 4, 14, 1, 0xFF07140C);
                 } else triangle(ctx, 100, 342, 100, 358, 112, 350, 0xFF07140C);
                 String hint = state.error().isBlank()
-                    ? (allowsMovement() ? "Ctrl+Space: play   Arrows: skip" : "Space: play   Arrows: skip") : state.error();
+                    ? owner.playPauseBind.getKeyName() + ": play · " + owner.previousBind.getKeyName() + " / " + owner.nextBind.getKeyName() + ": skip" : state.error();
                 centered(ctx, Fonts.trim(hint, 170, false, .7f), 104, 376, MUTED, false, .7f);
             } else {
                 boolean hover = hit(mx, my, 24, 337, 160, 27);
@@ -200,13 +228,15 @@ public final class SpotifyPhoneScreen extends Screen {
             float appMx = allowsMouseLook() ? -10000 : layout.localX(mouseX, mouseY);
             float appMy = allowsMouseLook() ? -10000 : layout.localY(mouseX, mouseY);
             apps.render(ctx, layout.width, layout.height, appMx, appMy);
+            interactionButton(ctx, layout.width, appMx, appMy, dt);
             Render2D.roundRect(ctx, layout.width / 2 - 27, layout.height - 12, 54, 3, 1.5f, 0xFF8B9591);
             if (owner.showHand.get()) hand(ctx, true);
-        } finally { Fonts.endRaw(); matrices.popMatrix(); }
+            if (owner.showHand.get() && owner.swipeAnimation.get() && apps.music()) swipeHand(ctx);
+        } finally { Fonts.setMeasureScale(1); Fonts.endRaw(); matrices.popMatrix(); }
         if ((allowsMovement() || owner.mouseLook.get()) && closingAt == 0) {
             float hintX = owner.hand.is("Left") ? layout.x + (layout.width + 30) * layout.scale : 8;
             Fonts.beginRaw();
-            String hint = owner.mouseLook.get() ? "Mouse: look · " + owner.interactBind.getKeyName() + ": interact · Alt: controls"
+            String hint = owner.mouseLook.get() ? "Mouse: look" + (owner.gameInteraction.get() ? " + game actions" : "") + " · " + owner.interactBind.getKeyName() + ": apps · Alt: controls"
                 : "Move keys · Right-drag outside phone to look";
             try { Fonts.draw(ctx, Fonts.trim(hint, width - hintX - 8, false, .7f),
                 hintX, height - 11, 0xBDE6ECE8, false, .7f); }
@@ -234,71 +264,121 @@ public final class SpotifyPhoneScreen extends Screen {
         if (plus) Render2D.line(ctx, x + 11, 433, x + 11, 441, 1.3f, WHITE);
     }
 
+    private void observeTrack(SpotifyMedia.State state) {
+        String key = state.available() ? SpotifyMedia.artworkKey(state) : "";
+        if (observedTrack != null && !key.isEmpty() && !observedTrack.isEmpty() && !key.equals(observedTrack)) {
+            pendingSwipe = true;
+            long now=System.nanoTime();
+            // Metadata can arrive before artwork. Local skips have already moved the hand.
+            if(requestedSwipeAt==0 || now-requestedSwipeAt>1_500_000_000L) {
+                swipeDirection=1;swipeAt=now;
+            }
+            requestedSwipeAt=0;requestedDirection=1;
+        }
+        observedTrack = key;
+    }
+
     private void updateArtwork(SpotifyMedia.State state) {
         var art = player.artwork();
         if (art != null && !art.key().equals(SpotifyMedia.artworkKey(state))) art = null;
-        if (art == shownArtwork) return;
-        if (cover != null) { cover.close(); cover = null; }
-        shownArtwork = art;
-        if (art != null) {
-            cover = new Texture(art.width(), art.height(), TextureFormat.RGBA8, FilterMode.LINEAR, FilterMode.LINEAR);
-            cover.upload(art.rgba());
+        if(!state.available()) {
+            if(artworkJob!=null)artworkJob.cancel(false);artworkJob=null;requestedArtwork=shownArtwork=null;
+            if(cover!=null)cover.close();if(previousCover!=null)previousCover.close();cover=previousCover=null;
+            swipeAt=coverAt=0;pendingSwipe=false;return;
         }
-    }
-
-    private static CoverMesh coverMesh() {
-        // Immutable geometry shared across frames; only the pose and texture change.
-        int segments = 10;
-        float[] vertices = new float[4 * 4 * 4 * segments];
-        int[] colors = new int[vertices.length / 4];
-        int index = 0;
-        for (int corner = 0; corner < 4; corner++) for (int step = 0; step < segments; step++) {
-            double a = Math.PI + corner * Math.PI / 2 + step * Math.PI / 2 / segments;
-            double b = a + Math.PI / 2 / segments;
-            float cx = corner == 0 || corner == 3 ? 32 : 176;
-            float cy = corner < 2 ? 94 : 238;
-            float[] points = {104, 166, cx + (float) Math.cos(a) * 8, cy + (float) Math.sin(a) * 8,
-                cx + (float) Math.cos(b) * 8, cy + (float) Math.sin(b) * 8, 104, 166};
-            // Include the straight edge between this corner and the next in the final segment.
-            if (step == segments - 1) {
-                int next = (corner + 1) % 4;
-                points[6] = (next == 0 || next == 3 ? 32 : 176) + (float) Math.cos(b) * 8;
-                points[7] = (next < 2 ? 94 : 238) + (float) Math.sin(b) * 8;
-            }
-            for (int p = 0; p < 4; p++) {
-                // GUI_TEXTURED culls clockwise faces, including mirrored controls.
-                int point = 3 - p;
-                float x = points[point * 2], y = points[point * 2 + 1];
-                vertices[index * 4] = x; vertices[index * 4 + 1] = y;
-                vertices[index * 4 + 2] = (x - 24) / 160; vertices[index * 4 + 3] = (y - 86) / 160;
-                colors[index++] = 0xFFFFFFFF;
+        if (art != requestedArtwork) {
+            requestedArtwork = art;
+            if (artworkJob != null) artworkJob.cancel(false);
+            artworkJob = null;
+            if (art != null) {
+                var request = art;
+                artworkJob = java.util.concurrent.CompletableFuture.supplyAsync(() -> PhoneAlbumArt.prepare(request,false),
+                    net.minecraft.util.Util.getMainWorkerExecutor());
             }
         }
-        return new CoverMesh(vertices, colors);
+        if (artworkJob != null && artworkJob.isDone()) {
+            try {
+                byte[] pixels = artworkJob.join();
+                var next = new Texture(PhoneAlbumArt.SIZE, PhoneAlbumArt.SIZE, TextureFormat.RGBA8, FilterMode.LINEAR, FilterMode.LINEAR);
+                try { next.upload(pixels); } catch(RuntimeException error) { next.close();throw error; }
+                if(previousCover!=null)previousCover.close();
+                previousCover=cover;cover=next;shownArtwork=requestedArtwork;
+                boolean transition=pendingSwipe&&previousCover!=null;
+                // Late artwork slides in without replaying the hand or blanking the old cover.
+                coverAt=transition ? (animationNow-swipeAt<PhoneSwipeMotion.DURATION*.65
+                    ? swipeAt : animationNow-(long)(PhoneSwipeMotion.DURATION*.12)) : animationNow;
+                pendingSwipe=false;
+                if(!transition&&previousCover!=null){previousCover.close();previousCover=null;}
+            } catch (RuntimeException ignored) { }
+            artworkJob = null;
+        }
+        if (previousCover != null && cover != null && animationNow - coverAt >= PhoneSwipeMotion.DURATION) {
+            previousCover.close(); previousCover = null;
+        }
     }
 
     private void drawCover(DrawContext ctx) {
-        var pose = new Matrix3x2f(ctx.getMatrices());
-        var bounds = new ScreenRect(24, 86, 160, 160).transformEachVertex(pose);
-        ((DrawContextAccessor) ctx).maro$getState().addSimpleElement(new GuiMeshState(pose, COVER_MESH.vertices, COVER_MESH.colors,
-            RenderPipelines.GUI_TEXTURED, TextureSetup.of(cover.getGlTextureView(), cover.getSampler()), bounds));
+        float t = PhoneSwipeMotion.stroke(PhoneSwipeMotion.time(animationNow,coverAt));
+        if (previousCover != null) PhoneAlbumMesh.draw(ctx, previousCover, -swipeDirection * t * PhoneAlbumMesh.SIZE);
+        if (cover != null) PhoneAlbumMesh.draw(ctx, cover, previousCover == null ? 0 : swipeDirection * (1 - t) * PhoneAlbumMesh.SIZE);
     }
+
+    private void interactionButton(DrawContext ctx, float width, float mx, float my, float dt) {
+        float x = width / 2 - 56;
+        boolean over = hit(mx, my, x, 27, 112, 20);
+        interactGlow += ((over ? 1 : 0) - interactGlow) * (1 - (float)Math.exp(-18 * dt));
+        Render2D.roundRect(ctx, x, 27, 112, 20, 10, ColorUtil.lerp(0xFF202E34, 0xFF344B49, interactGlow));
+        Render2D.roundOutline(ctx, x, 27, 112, 20, 10, .6f, ColorUtil.lerp(0x404C7067, 0xC061D89A, interactGlow));
+        for (int i = 0; i < 4; i++) Render2D.roundRect(ctx, x + 9 + i % 2 * 4, 33 + i / 2 * 4, 2.6f, 2.6f, .7f, GREEN);
+        String label = interacting && apps.app() == PhoneApps.App.HOME ? "Resume" : "Interact";
+        centered(ctx, label, x + 54, 33, WHITE, true, .78f);
+        String key = Fonts.trim(owner.interactBind.getKeyName(), 22, true, .61f);
+        Render2D.roundRect(ctx, x + 86, 30, 21, 14, 5, 0xFF111F26);
+        Fonts.drawCentered(ctx, key, x + 96.5f, 37, MUTED, true, .61f);
+    }
+
+    private void interact() {
+        if (interacting && apps.app() == PhoneApps.App.HOME) interacting = false;
+        else { interacting = true; apps.home(); }
+        movement.clear(); cancelDrags(); clearGameInput(); syncMouseCapture();
+    }
+
+    private void swipeHand(DrawContext ctx) {
+        if (client.player == null || swipeAt == 0) return;
+        float t = PhoneSwipeMotion.time(animationNow,swipeAt);
+        if (t < 0 || t >= 1) return;
+        boolean fromLeft = owner.hand.is("Right");
+        float reach = PhoneSwipeMotion.reach(t);
+        float stroke = PhoneSwipeMotion.stroke(t);
+        float tipX = swipeDirection > 0 ? 139 - stroke * 75 : 64 + stroke * 75;
+        float offX = fromLeft ? -90 : deviceWidth() + 90;
+        tipX = offX + (tipX - offX) * reach;
+        float tipY = deviceHeight() + 30 + (184 - (deviceHeight() + 30)) * reach;
+        var skin = client.player.getSkin().body().texturePath();
+        var m = ctx.getMatrices(); m.pushMatrix();
+        try {
+            m.translate(tipX, tipY); m.rotate(fromLeft ? .5f : -.5f);
+            PhoneSwipeHand.draw(ctx,skin,fromLeft);
+        } finally { m.popMatrix(); }
+    }
+    private static float smooth(float t) { t = Math.clamp(t, 0, 1); return t * t * (3 - 2 * t); }
 
     private void hand(DrawContext ctx, boolean thumb) {
         if (client.player == null) return;
         var skin = client.player.getSkin().body().texturePath();
         boolean left = owner.hand.is("Left");
+        boolean slim = client.player.getSkin().model() == net.minecraft.entity.player.PlayerSkinType.SLIM;
         var m = ctx.getMatrices(); m.pushMatrix();
-        if (thumb) {
-            m.translate(left ? -2 : deviceWidth() - 14, deviceHeight() - 172); m.rotate(left ? -.22f : .22f);
-            Render2D.rect(ctx, -2, -2, 20, 44, 0x70000000);
-            ctx.drawTexture(RenderPipelines.GUI_TEXTURED, skin, 0, 0, left ? 36 : 44, left ? 60 : 28, 16, 40, 4, 4, 64, 64);
-        } else {
-            m.translate(left ? -31 : deviceWidth() - 7, deviceHeight() - 165); m.rotate(left ? .25f : -.25f);
-            ctx.drawTexture(RenderPipelines.GUI_TEXTURED, skin, 0, 0, left ? 36 : 44, left ? 52 : 20, 38, 170, 4, 12, 64, 64);
-            ctx.drawTexture(RenderPipelines.GUI_TEXTURED, skin, 0, 0, left ? 52 : 44, left ? 52 : 36, 38, 170, 4, 12, 64, 64);
-        }
-        m.popMatrix();
+        try {
+            if (thumb) {
+                m.translate(left ? -9 : deviceWidth() - 6, deviceHeight() - 138); m.rotate(left ? -.14f : .14f);
+                Render2D.roundRect(ctx, -1, -1, 17, 30, 3, 0x50000000);
+                dev.maro.gui.render.HeldSkin.thumb(ctx, skin, left, slim, 0, 0, 15, 28);
+            } else {
+                m.translate(left ? -31 : deviceWidth() - 7, deviceHeight() - 165); m.rotate(left ? .25f : -.25f);
+                dev.maro.gui.render.HeldSkin.arm(ctx, skin, left, slim, 38, 170);
+            }
+        } finally { m.popMatrix(); }
     }
 
     private static void text(DrawContext ctx, String text, float x, float y, int color, boolean bold, float size) {
@@ -323,8 +403,11 @@ public final class SpotifyPhoneScreen extends Screen {
             new float[]{ax,ay,0,0, bx,by,0,0, cx,cy,0,0, ax,ay,0,0}, new int[]{color,color,color,color},
             RenderPipelines.GUI, TextureSetup.empty(), bounds));
     }
-    private static void skip(DrawContext ctx, float x, float mx, float my, boolean next) {
+    private void skip(DrawContext ctx, float x, float mx, float my, boolean next) {
         boolean hover = circleHit(mx, my, x, 350, 19);
+        float pulse=lastControl.equals(next?"next":"previous")
+            ? Math.max(0,1-(animationNow-lastControlAt)/220_000_000f):0;
+        if(pulse>0)Render2D.circle(ctx,x,350,19+pulse*2,ColorUtil.withAlpha(GREEN,(int)(pulse*95)));
         if (hover) Render2D.circle(ctx, x, 350, 19, 0xFF2D4134);
         int color = hover ? WHITE : 0xFFCAD3CD;
         float direction = next ? 1 : -1;
@@ -335,24 +418,33 @@ public final class SpotifyPhoneScreen extends Screen {
     private void control(String action) {
         if (!player.state().available()) return;
         long now = System.nanoTime();
-        if (lastControlAt != 0 && now - lastControlAt < 300_000_000L) return;
+        if (lastControlAt != 0 && now - lastControlAt < 90_000_000L) return;
         lastControlAt = now;
+        lastControl=action;
+        if (action.equals("next") || action.equals("previous")) {
+            requestedDirection=action.equals("next")?1:-1;
+            swipeDirection=requestedDirection;swipeAt=now;requestedSwipeAt=now;
+        }
         player.control(action);
     }
 
     @Override public boolean mouseClicked(Click event, boolean doubleClick) {
         if (owner.getBind().matches(dev.maro.util.KeyUtil.mouse(event.button()))) { close(); return true; }
         if (closingAt != 0) return true;
-        if (allowsMouseLook()) { movement.mouse(event, true); return true; }
+        if (allowsMouseLook()) {
+            if (mediaShortcut(dev.maro.util.KeyUtil.mouse(event.button()))) return true;
+            gameMouse(event, true); movement.mouse(event, true); return true;
+        }
         var l = layout(); float x = l.localX(event.x(), event.y()), y = l.localY(event.x(), event.y());
         if (allowsMovement() && !hit(x, y, -5, -5, l.width + 10, l.height + 10)) {
             movement.mouse(event, true);
             if (event.button() == 1) { looking = true; return true; }
         }
         if (event.button() != 0) return true;
-        if (hit(x, y, l.width - 38, 44, 24, 24)
+        if (hit(x, y, l.width / 2 - 56, 27, 112, 20)) { interact(); return true; }
+        if (hit(x, y, l.width - 38, apps.music() ? 63 : 44, 24, 24)
             || hit(x, y, l.width / 2 - 37, l.height - 16, 74, 12)) { close(); return true; }
-        if (apps.click(x, y)) { if (apps.typing()) movement.clear(); syncMouseCapture(); return true; }
+        if (apps.click(x, y)) { if (apps.typing()) {movement.clear();clearGameInput();} syncMouseCapture(); return true; }
         if (tablet() && x < 200) return true;
         x = controlsX(x); y = controlsY(y);
         if (hit(x, y, 85, 426, 22, 22) || hit(x, y, 162, 426, 22, 22)) {
@@ -383,6 +475,7 @@ public final class SpotifyPhoneScreen extends Screen {
     @Override public boolean mouseDragged(Click event, double dx, double dy) {
         if (closingAt != 0 || !client.isWindowFocused()) { cancelDrags(); return true; }
         if (allowsMouseLook()) return true;
+        if (event.button()==0 && apps.drag(layout().localX(event.x(),event.y()),layout().localY(event.x(),event.y())))return true;
         if (draggingVolume && event.button() == 0) { volumeAt(controlsX(layout().localX(event.x(), event.y()))); return true; }
         if (dragging && event.button() == 0) { scrub(controlsX(layout().localX(event.x(), event.y()))); return true; }
         if (looking && !owner.mouseLook.get() && event.button() == 1 && allowsMovement() && client.player != null
@@ -396,7 +489,10 @@ public final class SpotifyPhoneScreen extends Screen {
         return super.mouseDragged(event, dx, dy);
     }
     @Override public boolean mouseReleased(Click event) {
+        mediaHeld.remove(dev.maro.util.KeyUtil.mouse(event.button()));
+        gameMouse(event, false);
         movement.mouse(event, false);
+        if(event.button()==0 && apps.release(layout().localX(event.x(),event.y()),layout().localY(event.x(),event.y())))return true;
         if (event.button() == 1) { looking = false; return true; }
         if (draggingVolume && event.button() == 0) {
             if (client.isWindowFocused()) volumeAt(controlsX(layout().localX(event.x(), event.y())));
@@ -411,10 +507,19 @@ public final class SpotifyPhoneScreen extends Screen {
         return true;
     }
     @Override public boolean mouseScrolled(double mx, double my, double horizontal, double vertical) {
-        if (allowsMouseLook()) return true;
+        if (allowsMouseLook()) {
+            // With the cursor locked to the game, video navigation uses the center of the phone.
+            // Video feeds own the wheel even while mining/use remain enabled. Number keys still select slots.
+            if (apps.videos() && closingAt == 0) {
+                var l = layout(); apps.scroll(l.width / 2, l.height * .6f, vertical); return true;
+            }
+            if (allowsGameInteraction() && Double.isFinite(vertical) && vertical != 0)
+                client.player.getInventory().setSelectedSlot(Math.floorMod(client.player.getInventory().getSelectedSlot() - (int)Math.signum(vertical), 9));
+            return true;
+        }
         var l = layout();
         if (!apps.music()) {
-            if (hit(l.localX(mx, my), l.localY(mx, my), 6, 74, l.width - 12, l.height - 94)) apps.scroll(vertical);
+            if (hit(l.localX(mx, my), l.localY(mx, my), 6, 74, l.width - 12, l.height - 94)) apps.scroll(l.localX(mx,my),l.localY(mx,my),vertical);
             return true;
         }
         if (closingAt == 0 && hit(controlsX(l.localX(mx, my)), controlsY(l.localY(mx, my)), 20, 390, 168, 34)
@@ -443,25 +548,28 @@ public final class SpotifyPhoneScreen extends Screen {
         if (altKey(input.key(), true)) return true;
         if (owner.interactBind.matches(input.key())) {
             interacting = !interacting; if (interacting) apps.home();
-            movement.clear(); cancelDrags(); syncMouseCapture(); return true;
+            movement.clear(); cancelDrags(); clearGameInput(); syncMouseCapture(); return true;
         }
         if (closingAt != 0) { if (allowsMovement()) movement.key(input, true); return true; }
         if (apps.music() && input.key() == GLFW.GLFW_KEY_SPACE && (input.modifiers() & GLFW.GLFW_MOD_CONTROL) != 0) {
-            control("toggle"); return true;
+            if (mediaHeld.add(input.key())) control("toggle"); return true;
         }
+        if (gameKey(input, true)) return true;
         if (allowsMovement() && movement.key(input, true)) return true;
+        if (mediaShortcut(input.key())) return true;
         if (!apps.music()) return true;
         switch (input.key()) {
             case GLFW.GLFW_KEY_SPACE -> control("toggle");
-            case GLFW.GLFW_KEY_LEFT -> control("previous");
-            case GLFW.GLFW_KEY_RIGHT -> control("next");
             default -> { return true; }
         }
         return true;
     }
     @Override public boolean charTyped(CharInput input) { return apps.character(input.codepoint()); }
     @Override public boolean keyReleased(KeyInput input) {
+        mediaHeld.remove(input.key());
+        gameKey(input, false);
         movement.key(input, false);
+        if(apps.keyReleased(input))return true;
         altKey(input.key(), false);
         return true;
     }
@@ -470,6 +578,7 @@ public final class SpotifyPhoneScreen extends Screen {
         else if (key == GLFW.GLFW_KEY_RIGHT_ALT) rightAlt = down;
         else return false;
         cancelDrags();
+        clearGameInput();
         syncMouseCapture();
         return true;
     }
@@ -485,15 +594,77 @@ public final class SpotifyPhoneScreen extends Screen {
         } else if (client.mouse.isCursorLocked()) client.mouse.unlockCursor();
     }
     public boolean allowsMovement() { return owner.moveWhileOpen.get() && !apps.typing() && !removed; }
+    public boolean allowsGameInteraction() { return owner.gameInteraction.get() && allowsMouseLook() && closingAt == 0 && client.interactionManager != null; }
+
+    private boolean mediaShortcut(int code) {
+        Runnable action;
+        if (owner.previousBind.matches(code)) action = () -> control("previous");
+        else if (owner.nextBind.matches(code)) action = () -> control("next");
+        else if (owner.playPauseBind.matches(code)) action = () -> control("toggle");
+        else if (owner.volumeUpBind.matches(code)) action = () -> setVolume(player.volume().level() + .05, false);
+        else if (owner.volumeDownBind.matches(code)) action = () -> setVolume(player.volume().level() - .05, false);
+        else if (owner.muteBind.matches(code)) action = this::toggleMute;
+        else return false;
+        if (mediaHeld.add(code)) action.run();
+        return true;
+    }
+
+    private boolean gameKey(KeyInput input, boolean down) {
+        if (down && !allowsGameInteraction()) return false;
+        if (client.options.attackKey.matchesKey(input)) return gameInput(true, down);
+        if (client.options.useKey.matchesKey(input)) return gameInput(false, down);
+        if (down) for (int i = 0; i < 9; i++) if (client.options.hotbarKeys[i].matchesKey(input)) {
+            client.player.getInventory().setSelectedSlot(i); return true;
+        }
+        return false;
+    }
+    private void gameMouse(Click click, boolean down) {
+        if (client.options.attackKey.matchesMouse(click)) gameInput(true, down);
+        if (client.options.useKey.matchesMouse(click)) gameInput(false, down);
+    }
+    private boolean gameInput(boolean attack, boolean down) {
+        if (down && !allowsGameInteraction()) return false;
+        var access = (dev.maro.mixin.MinecraftClientAccessor)client;
+        if (attack) {
+            // Vanilla suppresses attacks with a 10000-tick counter while any screen is open.
+            if (down && !attackHeld) { access.maro$setAttackCooldown(0); access.maro$attack(); }
+            if (!down && attackHeld && client.player != null && client.interactionManager != null) access.maro$breakBlock(false);
+            if (attackHeld || down) client.options.attackKey.setPressed(down);
+            attackHeld = down;
+        } else {
+            if (down && !useHeld && access.maro$getItemUseCooldown() == 0) access.maro$useItem();
+            if (!down && useHeld && client.player != null && client.interactionManager != null && client.player.isUsingItem())
+                client.interactionManager.stopUsingItem(client.player);
+            if (useHeld || down) client.options.useKey.setPressed(down);
+            useHeld = down;
+        }
+        return true;
+    }
+    private void clearGameInput() {
+        if (attackHeld) gameInput(true, false);
+        if (useHeld) gameInput(false, false);
+    }
     public PlayerInput movementInput() { return allowsMovement() ? movement.read() : PlayerInput.DEFAULT; }
     private void cancelDrags() { dragging = false; draggingVolume = false; looking = false; }
     @Override public void close() {
         if (closingAt != 0 || removed) return;
-        closingFrom = pocketProgress(); closingAt = System.nanoTime(); cancelDrags();
+        closingFrom = pocketProgress(); closingAt = System.nanoTime(); cancelDrags(); clearGameInput(); mediaHeld.clear();
     }
     @Override public void tick() {
         if (client.player != null) network.playerName(client.player.getName().getString());
-        if (!client.isWindowFocused()) { movement.clear(); cancelDrags(); leftAlt = rightAlt = false; }
+        if (!client.isWindowFocused()) { movement.clear(); cancelDrags(); clearGameInput(); mediaHeld.clear(); leftAlt = rightAlt = false; }
+        if (!allowsGameInteraction()) clearGameInput();
+        else {
+            var access = (dev.maro.mixin.MinecraftClientAccessor)client;
+            if (attackHeld) {
+                client.options.attackKey.setPressed(true);
+                access.maro$setAttackCooldown(0); access.maro$breakBlock(true);
+            }
+            if (useHeld) {
+                client.options.useKey.setPressed(true);
+                if (!client.player.isUsingItem() && access.maro$getItemUseCooldown() == 0) access.maro$useItem();
+            }
+        }
         syncMouseCapture();
         if (client.player == null || client.world == null
             || closingAt != 0 && System.nanoTime() - closingAt >= 240_000_000L) {
@@ -503,12 +674,15 @@ public final class SpotifyPhoneScreen extends Screen {
     @Override public boolean shouldPause() { return false; }
     @Override public void removed() {
         if (removed) return;
-        removed = true; cancelDrags(); movement.clear();
+        removed = true; cancelDrags(); clearGameInput(); mediaHeld.clear(); movement.clear(); apps.close();
         if (client.mouse.isCursorLocked()) client.mouse.unlockCursor();
         if (cover != null) { cover.close(); cover = null; }
+        if (previousCover != null) { previousCover.close(); previousCover = null; }
+        if (artworkJob != null) { artworkJob.cancel(false); artworkJob = null; }
+        requestedArtwork = null;
         shownArtwork = null;
         owner.screenClosed(this);
-        if (sizeChanged && dev.maro.config.ClientSettings.autoSave.get())
+        if ((sizeChanged || apps.settingsChanged()) && dev.maro.config.ClientSettings.autoSave.get())
             dev.maro.config.ConfigManager.save(dev.maro.config.ConfigManager.getCurrent());
         super.removed();
     }

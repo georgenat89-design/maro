@@ -17,5 +17,6 @@ public abstract class ChestTransferProbe {
     @Inject(method = "onClickSlot", at = @At("HEAD"), cancellable = true)
     private void maroTest$chestClick(ClickSlotC2SPacket packet, CallbackInfo info) {
         if (ChestTransferChecks.click(player, packet)) info.cancel();
+        if (dev.maro.gametest.AutoReplenishChecks.click(player, packet)) info.cancel();
     }
 }

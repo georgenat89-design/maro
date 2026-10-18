@@ -16,7 +16,7 @@ import org.lwjgl.glfw.GLFW;
 
 /**
  * The region map for Auto Goliath: every goliath as a tile in its region's colour with its number,
- * where you are marked with a dot. Click a tile to aim for it; Start begins teleporting.
+ * where you are marked with a dot. Click tiles to select destinations; Start stops at any selection.
  */
 public final class GoliathPickerScreen extends Screen {
     private static final int[] COLORS = {0xFF3B82F6, 0xFF22C55E, 0xFFF59E0B, 0xFFEC4899, 0xFF14B8A6, 0xFFA855F7};
@@ -57,16 +57,15 @@ public final class GoliathPickerScreen extends Screen {
             Render2D.roundOutline(ctx, px, py, pw, ph, 12, 1, 0x1CFFFFFF);
             Render2D.roundRect(ctx, px, py, pw, 3, 1.5f, Theme.accent(0xC0));
             Fonts.drawV(ctx, "Auto Goliath", px + 14, py + 17, Theme.TEXT, true, 0.95f);
-            Fonts.drawV(ctx, "Click the goliath to land in", px + 14 + Fonts.width("Auto Goliath", true, 0.95f) + 8, py + 17, Theme.TEXT_MUTED, false, 0.6f);
+            Fonts.drawV(ctx, "Click tiles to add or remove", px + 14 + Fonts.width("Auto Goliath", true, 0.95f) + 8, py + 17, Theme.TEXT_MUTED, false, 0.6f);
 
             // The tiles.
             int target = module.regionIndex();
-            int number = module.goliathNumber();
             RegionGrid.Shard hovered = null;
             for (int i = 0; i < RegionGrid.count(); i++) {
                 RegionGrid.Shard s = RegionGrid.shard(i);
                 float x = mapX + s.col() * cell, y = mapY + s.row() * cell, w = s.width() * cell, h = s.height() * cell;
-                boolean picked = AutoGoliath.regionOf(s.locale()) == target && s.number() == number;
+                boolean picked = module.isPicked(AutoGoliath.regionOf(s.locale()), s.number());
                 boolean hov = mx >= x && my >= y && mx < x + w && my < y + h;
                 if (hov) hovered = s;
                 int base = colorOf(s.locale());
@@ -88,18 +87,30 @@ public final class GoliathPickerScreen extends Screen {
 
             // The legend and the choice on the right.
             float lx = mapX + RegionGrid.SIDE * cell + 14, ly = mapY + 4;
-            for (int r = 0; r < AutoGoliath.REGIONS.length; r++) {
-                Render2D.roundRect(ctx, lx, ly - 4, 8, 8, 2, COLORS[r]);
-                Fonts.drawV(ctx, AutoGoliath.REGIONS[r] + "  (" + AutoGoliath.count(r) + ")", lx + 12, ly, r == target ? 0xFFFFFFFF : Theme.TEXT_DIM, r == target, 0.62f);
-                ly += 13;
+            if (ph >= 280) {
+                for (int r = 0; r < AutoGoliath.REGIONS.length; r++) {
+                    Render2D.roundRect(ctx, lx, ly - 4, 8, 8, 2, COLORS[r]);
+                    Fonts.drawV(ctx, AutoGoliath.REGIONS[r] + "  (" + AutoGoliath.count(r) + ")", lx + 12, ly, r == target ? 0xFFFFFFFF : Theme.TEXT_DIM, r == target, 0.62f);
+                    ly += 13;
+                }
+                ly += 8;
             }
-            ly += 8;
-            Fonts.drawV(ctx, "Target", lx, ly, Theme.TEXT_MUTED, false, 0.6f);
-            Fonts.drawV(ctx, AutoGoliath.REGIONS[target] + " " + number, lx, ly + 12, Theme.accent(), true, 0.85f);
-            if (here != null) {
-                Fonts.drawV(ctx, "You are in", lx, ly + 30, Theme.TEXT_MUTED, false, 0.6f);
-                Fonts.drawV(ctx, AutoGoliath.name(here), lx, ly + 42, Theme.TEXT, false, 0.7f);
+            var selections = module.selectedTargets();
+            Fonts.drawV(ctx, "Selected · " + selections.size(), lx, ly, Theme.TEXT_MUTED, false, 0.6f);
+            int rows = Math.max(1, Math.min(4, (int) ((py + ph - 116 - ly) / 12)));
+            for (int i = 0; i < Math.min(rows, selections.size()); i++) {
+                Fonts.drawV(ctx, selections.get(i).name(), lx, ly + 12 + i * 12, Theme.accent(), true, 0.65f);
             }
+            ly += 12 + Math.min(rows, selections.size()) * 12;
+            if (selections.size() > rows) {
+                Fonts.drawV(ctx, "+ " + (selections.size() - rows) + " more on map", lx, ly, Theme.TEXT_DIM, false, 0.6f);
+                ly += 12;
+            }
+            if (here != null && ly + 6 < py + ph - 80) {
+                Fonts.drawV(ctx, "You are in " + AutoGoliath.name(here), lx, ly + 6, Theme.TEXT_DIM, false, 0.6f);
+            }
+            Fonts.drawV(ctx, "Stops at any selection", lx, py + ph - 68, Theme.TEXT_MUTED, false, 0.6f);
+            Fonts.drawV(ctx, "Right-click: select only one", mapX, py + ph - 6, Theme.TEXT_MUTED, false, 0.55f);
             if (hovered != null) Fonts.drawV(ctx, AutoGoliath.name(hovered), lx, py + ph - 52, Theme.TEXT_DIM, false, 0.66f);
 
             // Start / Stop and Done.
@@ -135,7 +146,8 @@ public final class GoliathPickerScreen extends Screen {
             RegionGrid.Shard s = RegionGrid.shard(id);
             int r = AutoGoliath.regionOf(s.locale());
             if (r >= 0) {
-                module.pick(r, s.number());
+                if (click.button() == GLFW.GLFW_MOUSE_BUTTON_RIGHT) module.pick(r, s.number());
+                else if (click.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) module.togglePick(r, s.number());
                 Sounds.click();
             }
             return true;
@@ -161,5 +173,16 @@ public final class GoliathPickerScreen extends Screen {
     @Override
     public boolean shouldPause() {
         return false;
+    }
+
+    /** Tile center in the same layout used for drawing and hit testing. */
+    public double[] tilePoint(int region, int number) {
+        for (int i = 0; i < RegionGrid.count(); i++) {
+            var shard = RegionGrid.shard(i);
+            if (AutoGoliath.regionOf(shard.locale()) == region && shard.number() == number)
+                return new double[] {mapX + (shard.col() + shard.width() * 0.5) * cell,
+                        mapY + (shard.row() + shard.height() * 0.5) * cell};
+        }
+        throw new IllegalArgumentException("Unknown Goliath");
     }
 }

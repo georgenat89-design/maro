@@ -389,8 +389,8 @@ public class SpotifyHud extends Module {
     }
 
     private static Rect timelineRect(SpotifyHudLayout layout, SpotifyMedia.State state) {
-        if (!CrispFont.POPPINS_MEDIUM.ready()) return layout.timeline();
-        CrispFont.Sized font = CrispFont.POPPINS_MEDIUM.forCaps(SpotifyHudLayout.TIME_CAPS * layout.scale());
+        if (!CrispFont.current(false).ready()) return layout.timeline();
+        CrispFont.Sized font = CrispFont.current(false).forCaps(SpotifyHudLayout.TIME_CAPS * layout.scale());
         // Reserve the longest time this track can display; dragging across an
         // hour boundary then leaves the track and its hit target in one place.
         String longest = state.durationMs() > 0 ? time(state.durationMs()) : "--:--";
@@ -512,11 +512,11 @@ public class SpotifyHud extends Module {
         closeLeavingArtwork(artFade, cardFade);
         if (titleFade >= 1) leavingState = null;
 
-        if (!CrispFont.POPPINS_MEDIUM.ready() || !CrispFont.POPPINS_SEMIBOLD.ready()) return;
-        CrispFont.Sized artist = CrispFont.POPPINS_MEDIUM.forCaps(10 * unit);
-        CrispFont.Sized title = CrispFont.POPPINS_SEMIBOLD.forCaps(15 * unit);
-        CrispFont.Sized timeFont = CrispFont.POPPINS_MEDIUM.forCaps(SpotifyHudLayout.TIME_CAPS * unit);
-        CrispFont.Sized statusFont = CrispFont.POPPINS_MEDIUM.forCaps(7 * unit);
+        if (!CrispFont.current(false).ready() || !CrispFont.current(true).ready()) return;
+        CrispFont.Sized artist = CrispFont.current(false).forCaps(10 * unit);
+        CrispFont.Sized title = CrispFont.current(true).forCaps(15 * unit);
+        CrispFont.Sized timeFont = CrispFont.current(false).forCaps(SpotifyHudLayout.TIME_CAPS * unit);
+        CrispFont.Sized statusFont = CrispFont.current(false).forCaps(7 * unit);
         String elapsed = state.available() ? time(position) : "--:--";
         String remaining = state.durationMs() > 0 ? "-" + time(Math.max(0, state.durationMs() - position)) : "--:--";
 
@@ -581,7 +581,7 @@ public class SpotifyHud extends Module {
             : karaoke ? words.estimated() ? "ESTIMATED WORDS" : "LIVE WORDS" : "LIVE LYRICS";
         CrispFont.begin(null);
         try {
-            var caption = CrispFont.POPPINS_MEDIUM.forCaps(6 * unit);
+            var caption = CrispFont.current(false).forCaps(6 * unit);
             caption.draw(heading, area.x() + 26 * unit, area.y() + 6 * unit - caption.capsTop(), opacity(MUTED, .65), 0, false);
         } finally { CrispFont.end(); }
         if (ambient) {
@@ -709,8 +709,10 @@ public class SpotifyHud extends Module {
     }
 
     private double lyricWidth(String text, double size, boolean bold) {
-        return latin(text) ? (bold ? CrispFont.POPPINS_SEMIBOLD : CrispFont.POPPINS_MEDIUM).forCaps(size).width(text, 0)
-            : mc.textRenderer.getWidth(text) * size / 8;
+        text = dev.maro.gui.render.SmoothHudText.display(text);
+        return latin(text) ? (bold ? CrispFont.current(true) : CrispFont.current(false)).forCaps(size).width(text, 0)
+            : dev.maro.gui.render.SmoothHudText.width(text, bold,
+                (float)(size / 8 / mc.getWindow().getScaleFactor()), 1) * mc.getWindow().getScaleFactor();
     }
     private static boolean latin(String text) { return text.codePoints().allMatch(c -> c >= 32 && c <= 255); }
     private String fitLyric(String text, double width, double size, boolean bold) {
@@ -729,9 +731,10 @@ public class SpotifyHud extends Module {
         lyricRun(text, left, top, size, ink, bold, left, left + width);
     }
     private void lyricRun(String text, double left, double top, double size, Color ink, boolean bold, double clipLeft, double clipRight) {
+        text = dev.maro.gui.render.SmoothHudText.display(text);
         if (text.isBlank() || ink.a < 8 || clipRight <= clipLeft) return;
         if (latin(text)) {
-            var font = (bold ? CrispFont.POPPINS_SEMIBOLD : CrispFont.POPPINS_MEDIUM).forCaps(size);
+            var font = (bold ? CrispFont.current(true) : CrispFont.current(false)).forCaps(size);
             CrispFont.begin(null);
             try { font.drawClipped(text, left, top - font.capsTop(), ink, 0, clipLeft, clipRight); }
             finally { CrispFont.end(); }
@@ -744,8 +747,8 @@ public class SpotifyHud extends Module {
             var matrices = context.getMatrices(); matrices.pushMatrix();
             try {
                 float gui = (float) mc.getWindow().getScaleFactor();
-                matrices.scale(1 / gui, 1 / gui); matrices.translate((float) left, (float) top); matrices.scale(factor, factor);
-                context.drawText(mc.textRenderer, net.minecraft.text.Text.literal(text), 0, 0, ink.getPacked(), false);
+                matrices.scale(1 / gui, 1 / gui);
+                dev.maro.gui.render.SmoothHudText.draw(context, text, (float)left, (float)top, ink.getPacked(), bold, (float)(size / 8));
             } finally { matrices.popMatrix(); context.disableScissor(); }
         }
     }

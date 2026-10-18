@@ -24,7 +24,8 @@ public abstract class PetRenderProbe {
         if (pet.position().squaredDistanceTo(state.x, state.y, state.z) > 1) return;
         PetChecks.renderedFrames++;
         PetChecks.renderedAge = state.age;
-        PetChecks.renderedScale = ((LivingEntityRenderState)state).baseScale;
+        PetChecks.renderedScale = state instanceof LivingEntityRenderState living ? living.baseScale : pet.modelScale();
+        if(state instanceof EnderDragonEntityRenderState dragon)PetChecks.renderedDragonWing=dragon.wingPosition;
         PetChecks.renderedCollar = state instanceof CatEntityRenderState cat ? cat.collarColor : null;
     }
 }

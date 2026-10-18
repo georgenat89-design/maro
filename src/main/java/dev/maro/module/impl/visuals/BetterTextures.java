@@ -57,7 +57,7 @@ public class BetterTextures extends Module {
     private final List<String> active = new ArrayList<>();
     private final Map<String, Job> jobs = new ConcurrentHashMap<>();
     /** The pack list wants putting into the game when it next can be (not mid-reload or at startup). */
-    private boolean dirty;
+    @Override public boolean isEnabled() { TexturePacks owner=TexturePacks.get(); return owner!=null&&owner.isEnabled(); }
 
     public BetterTextures() {
         super("Better Textures", "Search Modrinth resource packs and switch them on in one click", Category.VISUALS);
@@ -91,17 +91,15 @@ public class BetterTextures extends Module {
     // ---- what is on --------------------------------------------------------------------------
 
     public boolean isActive(String projectId) {
-        return isEnabled() && active.contains(projectId);
+        Installed p=installed.get(projectId);return isEnabled() && p!=null && TexturePacks.get().picked().contains("file/"+p.file());
     }
 
     /** The switched-on packs, top first. */
     public List<Installed> activePacks() {
         List<Installed> out = new ArrayList<>();
         if (!isEnabled()) return out;
-        for (String id : active) {
-            Installed pack = installed.get(id);
-            if (pack != null) out.add(pack);
-        }
+        for (String id : TexturePacks.get().picked())
+            for (Installed pack : installed.values()) if(id.equals("file/"+pack.file()))out.add(pack);
         return out;
     }
 
@@ -123,6 +121,7 @@ public class BetterTextures extends Module {
             activate(pack.id());
             return;
         }
+        long epoch=TexturePacks.get().activationVersion();
         Job job = new Job();
         jobs.put(pack.id(), job);
         Modrinth.POOL.execute(() -> {
@@ -136,90 +135,50 @@ public class BetterTextures extends Module {
                 mc.execute(() -> {
                     installed.put(pack.id(), done);
                     jobs.remove(pack.id());
-                    activate(pack.id());
+                    if(epoch==TexturePacks.get().activationVersion())activate(pack.id());
+                    dev.maro.config.ConfigManager.saveAll();
                 });
             } catch (Exception e) {
                 Throwable cause = e instanceof java.util.concurrent.ExecutionException && e.getCause() != null ? e.getCause() : e;
                 job.message = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
                 job.stage = Stage.FAILED;
-                if (notify.get()) mc.execute(() -> Notifications.push("Better Textures", pack.title() + " failed: " + job.message,
+                if (TexturePacks.get().notifications()) mc.execute(() -> Notifications.push("Gameplay Textures", pack.title() + " failed: " + job.message,
                         Notifications.Type.ERROR, 5000));
             }
         });
     }
 
     private void activate(String projectId) {
-        active.remove(projectId);
-        active.addFirst(projectId);
-        Installed pack = installed.get(projectId);
-        if (notify.get() && pack != null) Notifications.push("Better Textures", pack.title() + " on", Notifications.Type.SUCCESS, 2600);
-        if (!isEnabled()) setEnabled(true);
-        else requestApply();
+        Installed pack=installed.get(projectId);if(pack==null)return;
+        var owner=TexturePacks.get();owner.opened();mc.getResourcePackManager().scanPacks();
+        var next=new ArrayList<>(owner.picked());String profile="file/"+pack.file();next.remove(profile);next.addFirst(profile);owner.setPicked(next);
+        if(owner.notifications())Notifications.push("Gameplay Textures",pack.title()+" on",Notifications.Type.SUCCESS,2600);
+        dev.maro.config.ConfigManager.saveAll();
     }
-
     public void disable(String projectId) {
-        if (active.remove(projectId)) requestApply();
+        Installed pack=installed.get(projectId);if(pack==null)return;
+        var owner=TexturePacks.get();var next=new ArrayList<>(owner.picked());if(next.remove("file/"+pack.file()))owner.setPicked(next);
     }
-
     public void disableAll() {
-        if (active.isEmpty()) return;
-        active.clear();
-        requestApply();
+        var owner=TexturePacks.get();var next=new ArrayList<>(owner.picked());
+        next.removeIf(id->installed.values().stream().anyMatch(p->id.equals("file/"+p.file())));owner.setPicked(next);
     }
-
-    /** Puts a pack over the others, or under them. */
     public void moveUp(String projectId) {
-        int i = active.indexOf(projectId);
-        if (i > 0) {
-            active.remove(i);
-            active.add(i - 1, projectId);
-            requestApply();
-        }
+        Installed pack=installed.get(projectId);if(pack==null)return;
+        var owner=TexturePacks.get();var next=new ArrayList<>(owner.picked());int i=next.indexOf("file/"+pack.file());
+        if(i>0){java.util.Collections.swap(next,i,i-1);owner.setPicked(next);}
+    }
+    private void requestApply() { pump(); }
+    public void pump() { var owner=TexturePacks.get();if(owner!=null)owner.pump(); }
+    public void syncFromGame() {
+        active.clear();var owner=TexturePacks.get();if(owner==null)return;
+        for(String id:owner.picked())for(Installed p:installed.values())if(id.equals("file/"+p.file()))active.add(p.projectId());
     }
 
-    // ---- putting packs into the game -----------------------------------------------------------
-
-    private void requestApply() {
-        dirty = true;
-        pump();
-    }
-
-    /** Applies the pack list if it is waiting and the game can take it now. */
-    public void pump() {
-        if (!dirty) return;
-        if (mc.options == null || mc.getResourcePackManager() == null || mc.getOverlay() != null) return;
-        if (mc.world == null && mc.currentScreen == null) return;
-        dirty = false;
-        try {
-            apply();
-        } catch (RuntimeException e) {
-            Notifications.push("Better Textures", "Could not switch packs: " + e.getMessage(), Notifications.Type.ERROR, 5000);
-        }
-    }
-
-    private void apply() {
-        ResourcePackManager manager = mc.getResourcePackManager();
-        manager.scanPacks();
-        Collection<String> ids = manager.getIds();
-        List<String> before = new ArrayList<>(manager.getEnabledIds());
-        Set<String> ours = new HashSet<>();
-        for (Installed pack : installed.values()) {
-            String id = profileId(ids, pack.file());
-            if (id != null) ours.add(id);
-        }
-        List<String> wanted = new ArrayList<>(before);
-        wanted.removeAll(ours);
-        if (isEnabled()) {
-            // The game draws later packs over earlier ones, so the top pack goes in last.
-            for (int i = active.size() - 1; i >= 0; i--) {
-                Installed pack = installed.get(active.get(i));
-                String id = pack == null ? null : profileId(ids, pack.file());
-                if (id != null) wanted.add(id);
-            }
-        }
-        if (wanted.equals(before)) return;
-        manager.setEnabledProfiles(wanted);
-        mc.options.refreshResourcePacks(manager);
+    /** The Modrinth name of a pack file downloaded through here, or null for any other file. */
+    public String titleOf(String file) {
+        for (Installed pack : installed.values()) if (pack.file().equals(file)) return pack.title();
+        return null;
     }
 
     /** The game's name for a pack file in the resourcepacks folder ("file/Faithful.zip"). */
@@ -253,6 +212,7 @@ public class BetterTextures extends Module {
 
     @Override
     public JsonObject saveExtra() {
+        syncFromGame();
         JsonObject data = new JsonObject();
         JsonArray packs = new JsonArray();
         for (Installed pack : installed.values()) {

@@ -6,7 +6,7 @@ import org.joml.Matrix3f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
-/** A fixed world plane, projected and picked with the current game's camera. */
+/** A world-anchored panel that faces the viewer, projected and picked with the same geometry. */
 public final class ScreenGuiPose {
     private final Matrix3f forward = new Matrix3f(), inverse = new Matrix3f();
     private final Quaternionf rotation = new Quaternionf(), viewRotation = new Quaternionf();
@@ -35,9 +35,17 @@ public final class ScreenGuiPose {
             centre = camera.getCameraPos().add(ahead.x, ahead.y, ahead.z);
             planeHeight = 2 * halfFov * distance * .88f;
             planeWidth = planeHeight * width / height;
-            rotation.transform(new Vector3f(planeWidth, 0, 0), axisX);
-            rotation.transform(new Vector3f(0, -planeHeight, 0), axisY);
         }
+        // Keep its world position, but face the viewer as they walk around it. A nearly
+        // edge-on fixed plane squashes every label, regardless of texture resolution.
+        var toward = centre.subtract(camera.getCameraPos());
+        if (toward.lengthSquared() > .01) {
+            var direction = new Vector3f((float)toward.x, (float)toward.y, (float)toward.z).normalize();
+            var up = Math.abs(direction.y) > .98f ? new Vector3f(0,0,1) : new Vector3f(0,1,0);
+            rotation.identity().lookAlong(direction, up).conjugate();
+        }
+        rotation.transform(new Vector3f(planeWidth, 0, 0), axisX);
+        rotation.transform(new Vector3f(0, -planeHeight, 0), axisY);
         viewRotation.set(camera.getRotation()).conjugate();
         viewRotation.transform(axisX, cameraX); viewRotation.transform(axisY, cameraY);
         corner.set((float) (centre.x - camera.getCameraPos().x), (float) (centre.y - camera.getCameraPos().y), (float) (centre.z - camera.getCameraPos().z))

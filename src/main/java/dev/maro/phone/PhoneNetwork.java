@@ -22,18 +22,27 @@ import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /** One bounded worker handles relay requests and disk writes; rendering only reads snapshots. */
 public final class PhoneNetwork implements AutoCloseable {
+    public static final long MAX_VIDEO_BYTES=32L*1024*1024;
     public record Playlist(String id, String title, String url) { }
     public record Message(long id, String clientId, String sender, String recipient, String kind,
                           String text, String url, long created, String status, boolean unread) {
         public String peer(String ownNumber) { return sender.equals(ownNumber) ? recipient : sender; }
     }
     public record Snapshot(String endpoint, String number, boolean active, boolean online, String status,
-                           List<Message> messages, List<Playlist> playlists, Set<String> blocked) { }
+                           List<Message> messages, List<Playlist> playlists, Set<String> blocked,
+                           Set<String> accepted, Set<String> ignored, Preferences preferences) {
+        public boolean request(String peer) { return !accepted.contains(peer) && messages.stream().noneMatch(m -> m.sender().equals(number) && m.recipient().equals(peer)); }
+        public List<Message> visibleMessages() { return messages.stream().filter(m -> !ignored.contains(m.peer(number)) && !blocked.contains(m.peer(number))).toList(); }
+    }
+    public record Preferences(boolean notifications, boolean requests, boolean sound, boolean previews) { }
+    private static final Preferences DEFAULT_PREFERENCES = new Preferences(true, true, false, true);
     private static final Gson JSON = new GsonBuilder().setPrettyPrinting().create();
     private static PhoneNetwork instance;
     public static synchronized PhoneNetwork get() {
@@ -44,7 +53,17 @@ public final class PhoneNetwork implements AutoCloseable {
     public static synchronized void tickNotifications() {
         if (instance == null) return;
         var message = instance.notice.getAndSet(null);
-        if (message != null) dev.maro.gui.notification.Notifications.push("Maro Phone", "New " + (message.kind().equals("playlist") ? "playlist" : "message") + " from " + message.sender(), dev.maro.gui.notification.Notifications.Type.INFO);
+        if (message == null || !shouldNotify(instance.snapshot, message)) return;
+        var state = instance.snapshot;
+        String title = state.request(message.sender()) ? "Message request" : "Maro Phone";
+        String text = state.preferences().previews() ? message.sender() + ": " + message.text() : "New " + (message.kind().equals("playlist") ? "playlist" : "message") + " from " + message.sender();
+        dev.maro.gui.notification.Notifications.push(title, text.length() > 100 ? text.substring(0,97) + "…" : text, dev.maro.gui.notification.Notifications.Type.INFO);
+        if (state.preferences().sound()) net.minecraft.client.MinecraftClient.getInstance().getSoundManager().play(
+            net.minecraft.client.sound.PositionedSoundInstance.master(net.minecraft.sound.SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.5f, .35f));
+    }
+    public static boolean shouldNotify(Snapshot state, Message message) {
+        return state.preferences().notifications() && (!state.request(message.sender()) || state.preferences().requests())
+            && !state.blocked().contains(message.sender()) && !state.ignored().contains(message.sender()) && !message.sender().equals(state.number());
     }
 
     private static final class Account {
@@ -52,12 +71,14 @@ public final class PhoneNetwork implements AutoCloseable {
         long cursor;
         List<Message> messages = new ArrayList<>();
         Set<String> blocked = new HashSet<>();
+        Set<String> accepted = new HashSet<>(), ignored = new HashSet<>();
     }
     private static final class Store {
         String endpoint = "http://127.0.0.1:8765";
         boolean active;
         Map<String, Account> accounts = new HashMap<>();
         List<Playlist> playlists = new ArrayList<>();
+        Preferences preferences = DEFAULT_PREFERENCES;
     }
     private final Path file;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3))
@@ -66,7 +87,7 @@ public final class PhoneNetwork implements AutoCloseable {
         var thread = new Thread(r, "Maro phone relay"); thread.setDaemon(true); return thread;
     });
     private Store store = new Store();
-    private volatile Snapshot snapshot = new Snapshot("http://127.0.0.1:8765", "", false, false, "Connect to the test relay", List.of(), List.of(), Set.of());
+    private volatile Snapshot snapshot = new Snapshot("http://127.0.0.1:8765", "", false, false, "Connect to the test relay", List.of(), List.of(), Set.of(), Set.of(), Set.of(), DEFAULT_PREFERENCES);
     private volatile String playerName = "Player";
     private boolean registered, online, closed;
     private String status = "Connect to the test relay";
@@ -81,6 +102,15 @@ public final class PhoneNetwork implements AutoCloseable {
         worker.scheduleWithFixedDelay(this::poll, 500, 500, TimeUnit.MILLISECONDS);
     }
     public Snapshot snapshot() { return snapshot; }
+    public void preferences(Preferences value) { Objects.requireNonNull(value); worker.execute(() -> { store.preferences=value; notice.set(null); save(); publish(); }); }
+    public void accept(String peer) {
+        if (!validNumber(peer)) throw new IllegalArgumentException("Enter a 10-digit phone number");
+        worker.execute(() -> { account().accepted.add(peer); account().ignored.remove(peer); save(); publish(); });
+    }
+    public void ignore(String peer) {
+        if (!validNumber(peer)) throw new IllegalArgumentException("Enter a 10-digit phone number");
+        worker.execute(() -> { account().ignored.add(peer); notice.set(null); save(); publish(); });
+    }
     public void playerName(String name) { playerName = name; }
     public static String number(String raw) { return raw.replaceAll("[\\s()-]", ""); }
     public static boolean validNumber(String raw) { return number(raw).matches("[2-9][0-9]{9}"); }
@@ -131,6 +161,72 @@ public final class PhoneNetwork implements AutoCloseable {
     public void removePlaylist(String id) { worker.execute(() -> { store.playlists.removeIf(p -> p.id().equals(id)); save(); publish(); }); }
     public void send(String to, String text) { enqueue(to, "text", text.strip(), ""); }
     public void share(String to, Playlist playlist) { enqueue(to, "playlist", playlist.title(), playlistUrl(playlist.url())); }
+    public CompletableFuture<Void> sendVideo(String to,Path path,String clientId){
+        String target=number(to);
+        if(!validNumber(target))throw new IllegalArgumentException("Enter a 10-digit phone number");
+        if(!snapshot.active()||snapshot.number().isEmpty())throw new IllegalArgumentException("Connect your phone first");
+        if(!clientId.matches("[A-Za-z0-9-]{16,64}"))throw new IllegalArgumentException("Choose the video again");
+        String endpoint=snapshot.endpoint();
+        return CompletableFuture.runAsync(()->{
+            try{
+                if(!store.endpoint.equals(endpoint)||!store.active)throw new IOException("Reconnect to this contact's relay first");
+                validateVideo(path);
+                var a=account();status="Sending video…";publish();
+                var request=HttpRequest.newBuilder(URI.create(endpoint+"/v1/videos?to="+target+"&client_id="+clientId))
+                    .timeout(Duration.ofSeconds(35)).header("Authorization","Bearer "+a.secret).header("Content-Type","video/mp4")
+                    .header("X-Video-Name",java.net.URLEncoder.encode(path.getFileName().toString(),StandardCharsets.UTF_8).replace("+","%20"))
+                    .POST(HttpRequest.BodyPublishers.ofFile(path)).build();
+                var sent=readResponse(http.send(request,HttpResponse.BodyHandlers.ofInputStream()));
+                merge(a,message(sent.getAsJsonObject("message"),false));a.accepted.add(target);a.ignored.remove(target);trim(a);save();status="Video sent";publish();nextPoll=0;
+            }catch(Exception error){status="Video not sent";publish();throw new CompletionException(error);}
+        },worker);
+    }
+    public static void validateVideo(Path path)throws IOException{
+        if(path==null||!Files.isRegularFile(path)||!path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".mp4"))throw new IOException("Choose an H.264 MP4 video");
+        validateVideoContent(path);
+    }
+    public CompletableFuture<Path> video(Message message){
+        if(!message.kind().equals("video")||!message.url().matches("/v1/videos/[a-f0-9]{32}\\.mp4"))throw new IllegalArgumentException("Invalid video attachment");
+        String endpoint=snapshot.endpoint();
+        return CompletableFuture.supplyAsync(()->{
+            Path temp=null;
+            try{
+                if(!store.endpoint.equals(endpoint)||!store.active)throw new IOException("Connect to the video's relay first");
+                var a=account();if(a.messages.stream().noneMatch(m->m.url().equals(message.url())&&(m.sender().equals(a.number)||m.recipient().equals(a.number))))throw new IOException("Video is not in this conversation");
+                Path cache=file.getParent().resolve("phone-videos");Files.createDirectories(cache);
+                String key=HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest((endpoint+message.url()).getBytes(StandardCharsets.UTF_8)));
+                Path local=cache.resolve(key+".mp4");if(Files.isRegularFile(local))return local;
+                temp=cache.resolve(key+".part");
+                var request=HttpRequest.newBuilder(URI.create(endpoint+message.url())).timeout(Duration.ofSeconds(35)).header("Authorization","Bearer "+a.secret).GET().build();
+                var response=http.send(request,HttpResponse.BodyHandlers.ofInputStream());
+                try(var in=response.body()){
+                    if(response.statusCode()!=200)throw new IOException(response.statusCode()==404?"Video is no longer available":"Could not download video");
+                    if(response.headers().firstValueAsLong("Content-Length").orElse(0)>MAX_VIDEO_BYTES)throw new IOException("Video exceeds 32 MB");
+                    try(var out=Files.newOutputStream(temp)){
+                        byte[] buffer=new byte[32768];long total=0;int n;
+                        while((n=in.read(buffer))!=-1){total+=n;if(total>MAX_VIDEO_BYTES)throw new IOException("Video exceeds 32 MB");out.write(buffer,0,n);}
+                    }
+                }
+                validateVideoContent(temp);
+                Files.move(temp,local,StandardCopyOption.REPLACE_EXISTING);temp=null;
+                try(var paths=Files.list(cache)){
+                    long total=Files.size(local);var older=paths.filter(p->p.toString().endsWith(".mp4")&&!p.equals(local)).sorted(Comparator.comparingLong((Path p)->p.toFile().lastModified()).reversed()).toList();
+                    for(var old:older){total+=Files.size(old);if(total>128L*1024*1024)Files.deleteIfExists(old);}
+                }
+                return local;
+            }catch(Exception error){throw new CompletionException(error);}
+            finally{if(temp!=null)try{Files.deleteIfExists(temp);}catch(IOException ignored){}}
+        },worker);
+    }
+    private static void validateVideoContent(Path actual)throws IOException{
+        // A completed download is validated before entering the playable cache.
+        if(!Files.isRegularFile(actual)||Files.size(actual)<12||Files.size(actual)>MAX_VIDEO_BYTES)throw new IOException("Invalid video attachment");
+        try(var channel=org.jcodec.common.io.NIOUtils.readableChannel(actual.toFile())){
+            var track=org.jcodec.containers.mp4.demuxer.MP4Demuxer.createMP4Demuxer(channel).getVideoTrack();
+            if(track==null||track.getMeta().getCodec()!=org.jcodec.common.Codec.H264||track.getMeta().getVideoCodecMeta()==null)throw new IOException("Unsupported video attachment");
+            var size=track.getMeta().getVideoCodecMeta().getSize();if(size.getWidth()<1||size.getHeight()<1||(long)size.getWidth()*size.getHeight()>1280L*720)throw new IOException("Use MP4 videos at 720p or smaller");
+        }catch(RuntimeException error){throw new IOException("Unsupported video attachment",error);}
+    }
     private void enqueue(String to, String kind, String text, String url) {
         String target = number(to);
         if (!validNumber(target)) throw new IllegalArgumentException("Enter a 10-digit phone number");
@@ -139,6 +235,7 @@ public final class PhoneNetwork implements AutoCloseable {
         worker.execute(() -> {
             var a = account();
             if (a.messages.stream().filter(m -> m.status().equals("queued")).count() >= 50) { status = "Outbox full; reconnect before sending more"; publish(); return; }
+            a.accepted.add(target); a.ignored.remove(target);
             a.messages.add(new Message(0, UUID.randomUUID().toString(), a.number, target, kind, text, url, System.currentTimeMillis(), "queued", false));
             trim(a); save(); publish(); if (online) nextPoll = 0;
         });
@@ -180,7 +277,7 @@ public final class PhoneNetwork implements AutoCloseable {
                 var body = new JsonObject(); body.addProperty("secret", a.secret); body.addProperty("name", playerName);
                 String assigned = request("POST", "/v1/register", body, "").get("number").getAsString();
                 if (!validNumber(assigned)) throw new IOException("Invalid relay response");
-                if (!a.number.isEmpty() && !a.number.equals(assigned)) { a.cursor = 0; a.messages.clear(); a.blocked.clear(); }
+                if (!a.number.isEmpty() && !a.number.equals(assigned)) { a.cursor = 0; a.messages.clear(); a.blocked.clear(); a.accepted.clear(); a.ignored.clear(); }
                 a.number = assigned; registered = true; save();
             }
             int sent = 0;
@@ -200,7 +297,7 @@ public final class PhoneNetwork implements AutoCloseable {
                 var m = message(item.getAsJsonObject(), true);
                 if (!a.blocked.contains(m.sender())) {
                     boolean fresh = !m.sender().equals(a.number) && a.messages.stream().noneMatch(old -> old.sender().equals(m.sender()) && old.clientId().equals(m.clientId()));
-                    merge(a, m); if (fresh) notice.set(m);
+                    merge(a, m); if (fresh && !a.ignored.contains(m.sender())) notice.set(m);
                 }
             }
             a.cursor = response.get("cursor").getAsLong(); online = true; status = "Connected to test relay";
@@ -246,6 +343,9 @@ public final class PhoneNetwork implements AutoCloseable {
         if (body == null) builder.GET();
         else builder.header("Content-Type", "application/json").method(method, HttpRequest.BodyPublishers.ofString(body.toString()));
         var response = http.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream());
+        return readResponse(response);
+    }
+    private JsonObject readResponse(HttpResponse<java.io.InputStream> response)throws Exception{
         try (var stream = response.body()) {
             byte[] bytes = stream.readNBytes(262145);
             if (bytes.length > 262144) throw new IOException("Relay response too large");
@@ -257,7 +357,8 @@ public final class PhoneNetwork implements AutoCloseable {
     private void publish() {
         var a = store.accounts.get(store.endpoint);
         snapshot = new Snapshot(store.endpoint, a == null ? "" : a.number, store.active, online, status,
-                a == null ? List.of() : List.copyOf(a.messages), List.copyOf(store.playlists), a == null ? Set.of() : Set.copyOf(a.blocked));
+                a == null ? List.of() : List.copyOf(a.messages), List.copyOf(store.playlists), a == null ? Set.of() : Set.copyOf(a.blocked),
+                a == null ? Set.of() : Set.copyOf(a.accepted), a == null ? Set.of() : Set.copyOf(a.ignored), store.preferences);
     }
     private void load() {
         if (!Files.exists(file)) return;
@@ -265,9 +366,12 @@ public final class PhoneNetwork implements AutoCloseable {
             Store loaded = JSON.fromJson(Files.readString(file, StandardCharsets.UTF_8), Store.class);
             if (loaded == null || loaded.accounts == null || loaded.playlists == null) throw new IOException("Invalid phone store");
             loaded.endpoint = relayUrl(loaded.endpoint);
+            if (loaded.preferences == null) loaded.preferences = DEFAULT_PREFERENCES;
             for (var a : loaded.accounts.values()) {
                 if (a.secret == null || !a.secret.matches("[A-Za-z0-9_-]{43}") || a.messages == null || a.blocked == null) throw new IOException("Invalid phone identity");
                 trim(a);
+                if (a.accepted == null) a.accepted = new HashSet<>();
+                if (a.ignored == null) a.ignored = new HashSet<>();
             }
             store = loaded;
         } catch (Exception error) {

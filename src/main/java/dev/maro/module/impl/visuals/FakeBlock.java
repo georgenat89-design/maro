@@ -28,6 +28,8 @@ import java.util.List;
  */
 public class FakeBlock extends Module {
     private static FakeBlock instance;
+    private static int previewDepth;
+    public static void withoutSpoof(Runnable draw){previewDepth++;try{draw.run();}finally{previewDepth--;}}
 
     private final TextSetting source = add(new TextSetting("Source", "The block or item to change", "", 64, "None"));
     private final ButtonSetting pickSource = add(new ButtonSetting("Pick Source", "Choose it from every block and item", "Edit",
@@ -127,7 +129,7 @@ public class FakeBlock extends Module {
     /** The item to draw in place of this stack, or null to leave it. */
     public static ItemStack itemLook(ItemStack stack) {
         FakeBlock m = instance;
-        if (m == null || !m.isEnabled() || !m.spoofItems.get()) return null;
+        if (previewDepth>0 || m == null || !m.isEnabled() || !m.spoofItems.get()) return null;
         Item from = m.sourceItem(), to = m.replaceItem();
         if (from == Items.AIR || to == Items.AIR || !stack.isOf(from)) return null;
         ItemStack shown = stack.copy();
@@ -147,7 +149,7 @@ public class FakeBlock extends Module {
      */
     public static net.minecraft.text.Text nameLook(ItemStack stack) {
         FakeBlock m = instance;
-        if (m == null || !m.isEnabled() || !m.spoofItems.get() || !m.useName.get()) return null;
+        if (previewDepth>0 || m == null || !m.isEnabled() || !m.spoofItems.get() || !m.useName.get()) return null;
         if (stack.contains(DataComponentTypes.CUSTOM_NAME) || !mc.isOnThread()) return null;
         Item from = m.sourceItem(), to = m.replaceItem();
         if (from == Items.AIR || to == Items.AIR || !stack.isOf(from)) return null;

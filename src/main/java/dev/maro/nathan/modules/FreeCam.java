@@ -3,6 +3,7 @@ package dev.maro.nathan.modules;
 import dev.maro.runtime.events.game.GameLeftEvent;
 import dev.maro.runtime.events.meteor.MouseScrollEvent;
 import dev.maro.runtime.events.render.Render2DEvent;
+import dev.maro.runtime.events.render.GetFovEvent;
 import dev.maro.runtime.events.world.TickEvent;
 import dev.maro.runtime.settings.BoolSetting;
 import dev.maro.runtime.settings.DoubleSetting;
@@ -13,6 +14,7 @@ import dev.maro.runtime.systems.modules.Module;
 import dev.maro.runtime.systems.modules.Modules;
 
 import dev.maro.runtime.event.EventHandler;
+import dev.maro.runtime.event.EventPriority;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.math.ChunkSectionPos;
@@ -62,6 +64,15 @@ public class FreeCam extends Module {
         .range(0.5, 200)
         .sliderRange(1, 64)
         .decimalPlaces(2)
+        .build()
+    );
+
+    private final Setting<Integer> fov = sgCamera.add(new IntSetting.Builder()
+        .name("fov")
+        .description("Field of view while Freecam is enabled, in degrees. Updates live and leaves your normal FOV unchanged.")
+        .defaultValue(90)
+        .range(10, CustomFov.MOST)
+        .sliderRange(10, CustomFov.MOST)
         .build()
     );
 
@@ -247,12 +258,8 @@ public class FreeCam extends Module {
         if (!outsideLoadedTerrain()) return;
 
         String text = "Outside loaded terrain";
-        int width = mc.textRenderer.getWidth(text);
-
-        event.drawContext.drawText(mc.textRenderer, text,
-            (event.screenWidth - width) / 2,
-            event.screenHeight / 2 + 18,
-            0x9AB4BCC8, false);
+        dev.maro.gui.render.Fonts.drawCentered(event.drawContext, text, event.screenWidth / 2f,
+                event.screenHeight / 2f + 22, 0x9AB4BCC8, false, 1);
     }
 
     /** Dying, or ending up in another world, ends it: the camera belongs to the place it was turned on in. */
@@ -264,6 +271,13 @@ public class FreeCam extends Module {
     @EventHandler
     private void onGameLeft(GameLeftEvent event) {
         if (isActive()) toggle();
+    }
+
+    // Override the player's/Custom FOV lens, then let Key Zoom magnify this camera's lens.
+    @EventHandler(priority = EventPriority.HIGH - 1)
+    private void onGetFov(GetFovEvent event) {
+        if (mc.player == null || mc.world == null) return;
+        event.fov = fov.get();
     }
 
     @EventHandler

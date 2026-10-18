@@ -1,7 +1,13 @@
 # Bundled source and assets
 
+- Tpahere Kill Bot Bow Spam: Meteor Client's GPL-3.0 BowSpam at commit `6e5d69133352a1b71d525733535a467dc196a94f` was used as a charge/use/release behavior reference. Maro adds target ownership, native bow selection, trajectory and obstruction checks, adaptive range charge, cancellation and healing/selling coordination. Details in `THIRD_PARTY_NOTICES.md`; the Meteor GPL text is retained in `LICENSES/GPL-3.0-Meteor.txt`. No Meteor executable classes are bundled.
+
+
 - Skin Changer: adapted from the user-supplied Anubis 0.9.9 Skin Change module, GPL-3.0-only. License retained in `LICENSES/GPL-3.0-Anubis.txt`. Separate self/other usernames, asynchronous profile and skin loading, slim/classic models, cape/elytra preservation and bounded swap caching. Native Maro settings and player skin hook; stale requests and textures cleaned up on change/disable. Full corresponding source accompanies the jar.
-- Trident Util, Boat Fly and Boat No Clip: adapted from 4ldenz's user-supplied Anubis 0.9.9+mc1.21.11 (`Anubis Beta 0.9.9.jar`, SHA256 `01e01b0935186bb4c7a67df97d540159ef1a62d4f1857019b757d0ad0327cadf`), GPL-3.0-only, with its license retained in `LICENSES/GPL-3.0-Anubis.txt`. Trident Util retains charge scaling and optional dry use; adds native-server timing, use preflight and bounded correction backoff. Boat movement, collision handling and down/restore anti-floating sequencing are adapted to native Maro settings and mixins, with exclusive modes, disable/dismount cleanup and session resets. No original addon binaries are bundled. Full corresponding source accompanies the jar.
+- Boat Fly and Boat No Clip: adapted from 4ldenz's user-supplied Anubis 0.9.9+mc1.21.11 (`Anubis Beta 0.9.9.jar`, SHA256 `01e01b0935186bb4c7a67df97d540159ef1a62d4f1857019b757d0ad0327cadf`), GPL-3.0-only, with its license retained in `LICENSES/GPL-3.0-Anubis.txt`. Boat movement, collision handling and down/restore anti-floating sequencing are adapted to native Maro settings and mixins, with exclusive modes, disable/dismount cleanup and session resets. No original addon binaries are bundled. Full corresponding source accompanies the jar. Trident Util and its charge/dry-use overrides have been removed.
+- Tpahere Kill Bot, Tp Macro and Weapon Inspect: adapted from the supplied Anubis 0.9.9.1 JAR. See `THIRD_PARTY_NOTICES.md` for attribution, included license and the independent Bedrock Void ESP implementation.
+- Trident Boost: adapted from 4ldenz's Anubis 0.9.9.1 Trident Boost module and trident mixin, GPL-3.0-only. Native Maro settings, local-client impulse and water hooks, and manual Riptide use; see `THIRD_PARTY_NOTICES.md`. License and corresponding source accompany the JAR.
+- Auto Replenish: Meteor Client 1.21.11 build 85's AutoReplenish was inspected as a behavior reference. Native Maro implementation adds persistent empty-slot memory, exact component matching, optional replacement with the healthiest matching tool, overflow handling with an empty cursor between frames, context pauses and bounded rejection retries. See `THIRD_PARTY_NOTICES.md`; Meteor's existing GPL-3.0 license is retained in `LICENSES/GPL-3.0-Meteor.txt`, and corresponding Maro source accompanies the JAR.
 - Speed Mine, Break Delay and Flight: adapted from Meteor Client 1.21.11 build 85, GPL-3.0, SHA256 `7f8a5082ce6480b01db414e10d54cd3dc41bb0a262ab55b76b58bc256f9bbaba`; original notice retained in `LICENSES/GPL-3.0-Meteor.txt`. Includes the three mining modes, block filters, break cooldown/instant-break option, Flight abilities/velocity and normal/packet anti-floating modes. Modified for native Maro controls, nonpersistent activation, ability/effect cleanup, builder isolation and connection argument rewriting. The user-requested Anti-Cheat Off menu section is original Maro UI. Meteor is used only as a separate test companion and is not bundled in the production jar.
 
 - Air Stuck: adapted from `AirStuckModule` and `MixinAirStuckLocalPlayer` in 4ldenz's user-supplied Anubis 0.9.9+mc1.21.11 (`Anubis Beta 0.9.9.jar`, SHA256 `01e01b0935186bb4c7a67df97d540159ef1a62d4f1857019b757d0ad0327cadf`), GPL-3.0-only. Original license retained in `LICENSES/GPL-3.0-Anubis.txt`. Modified for native Maro toggles, nonpersistent activation, session/death resets, local movement freezing and movement/tick-end packet suppression. Server teleports and other packets remain native. Full corresponding source accompanies the built jar.
@@ -21,3 +27,13 @@
 - SnakeYAML 2.7: Apache License 2.0, bundled as a nested dependency with its original license notices. Used with safe loading to read LRCLIB word timestamps.
 
 The local `dev.maro.runtime` package implements the module APIs on Fabric and Maro. It does not bundle Meteor Client or Orbit binaries. The `nameeprotect` resource namespace is retained so existing Nathan shaders, textures, and fonts resolve correctly.
+
+- Phone Clips: JCodec/JCodec JavaSE 0.2.5, FreeBSD license retained in
+  `LICENSES/BSD-2-Clause-JCodec.txt`. The bundled JAAD AAC decoder is public domain
+  with JCodec changes under FreeBSD. Feed UI and the two generated demo loops are
+  original Maro work; their generator is `tools/GeneratePhoneClips.java`.
+
+- Phone TikTok browser: original Maro DevTools protocol adapter. Uses a separately
+  installed Edge/Chrome executable; no Chromium, Edge, Chrome, Rinku or JCEF binary
+  is bundled. Browser codecs, trademarks and website content retain their respective
+  ownership and licenses.

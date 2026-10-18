@@ -1,0 +1,11 @@
+Model Information:
+* title:	Roblox-Bacon-Hair
+* source:	https://sketchfab.com/3d-models/roblox-bacon-hair-88a62bc6286947e9846c5cd445d2628b
+* author:	Roblox (https://sketchfab.com/Robloxs)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Roblox-Bacon-Hair" (https://sketchfab.com/3d-models/roblox-bacon-hair-88a62bc6286947e9846c5cd445d2628b) by Roblox (https://sketchfab.com/Robloxs) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

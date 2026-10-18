@@ -1,7 +1,7 @@
 package dev.maro.gametest;
 
 import dev.maro.gui.ClickGuiScreen;
-import dev.maro.gui.Favorites;
+import dev.maro.config.ModuleFavorites;
 import dev.maro.module.Module;
 import dev.maro.module.ModuleManager;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
@@ -36,7 +36,7 @@ final class MenuChecks {
         Module example = ModuleManager.getByName("Example");
         require(example != null, "No Example module");
         boolean wasOn = context.computeOnClient(c -> example.isEnabled());
-        boolean wasStarred = context.computeOnClient(c -> Favorites.starred(example));
+        boolean wasStarred = context.computeOnClient(c -> ModuleFavorites.contains(example));
         context.runOnClient(c -> screen(c).openPage(example.getCategory().ordinal()));
         settle(context);
         float[] card = context.computeOnClient(c -> screen(c).modulePlace(example));
@@ -97,8 +97,8 @@ final class MenuChecks {
         context.runOnClient(c -> screen(c).openPage(example.getCategory().ordinal()));
         settle(context);
         context.runOnClient(c -> {
-            if (Favorites.starred(example)) Favorites.toggle(example);
-            Favorites.toggle(example);
+            if (ModuleFavorites.contains(example)) ModuleFavorites.toggle(example);
+            ModuleFavorites.toggle(example);
             var chip = screen(c).placeOf(ClickGuiScreen.Filter.STARRED);
             require(chip != null, "The Starred filter is missing");
             screen(c).clickAt(chip[0], chip[1], GLFW.GLFW_MOUSE_BUTTON_LEFT);
@@ -138,7 +138,7 @@ final class MenuChecks {
 
         context.runOnClient(c -> {
             example.setEnabled(wasOn);
-            if (Favorites.starred(example) != wasStarred) Favorites.toggle(example);
+            if (ModuleFavorites.contains(example) != wasStarred) ModuleFavorites.toggle(example);
             lit.forEach(m -> m.setEnabled(false));
         });
     }

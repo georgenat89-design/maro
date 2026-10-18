@@ -33,9 +33,9 @@ import dev.maro.nathan.NameeProtectAddon;
  * goes back to there - because "there" is worked out afresh every frame, not
  * remembered from before the zoom.
  *
- * <p><b>With F5, Freelook and Free Cam.</b> Those move the camera. This is how
- * wide the camera sees, which is the same question wherever it is, and is
- * answered the same way.
+ * <p><b>With F5, Freelook and Free Cam.</b> F5 and Freelook retain this field
+ * of view. Free Cam has its own FOV setting while enabled, which takes precedence
+ * over this one; disabling Free Cam returns to this view.
  *
  * <p><b>Why 155.</b> A flat picture cannot show 180 degrees: the edges run off
  * to infinity, and well before that the middle of the screen is a speck and the

@@ -23,10 +23,22 @@ public class ThemePage extends Page {
 
     @Override
     public void render(DrawContext ctx, float x, float y, float w, float h) {
-        float off = scroll.update();
         float lw = w - 6;
+        if(h<210){
+            float step=Math.min(25,lw/Theme.PRESETS.length);
+            for(int i=0;i<Theme.PRESETS.length;i++){
+                int preset=Theme.PRESETS[i];float px=x+step*(i+.5f);String label=Theme.PRESET_NAMES[i];
+                Render2D.circle(ctx,px,y+11,6,preset);
+                if(!ClientSettings.rainbow.get()&&(ClientSettings.accent.get()&0xFFFFFF)==(preset&0xFFFFFF))Render2D.ring(ctx,px,y+11,8,1,Theme.TEXT);
+                gui.hit(px-step/2,y,step,22,(button,mx,my)->{if(button==0){ClientSettings.accent.set(preset);ClientSettings.rainbow.set(false);Sounds.click();}});
+                if(gui.hovered(px-step/2,y,step,22))gui.tooltip(label);
+            }
+            list.renderPaged(gui,ctx,x,y+32,lw,h-32,ClientSettings.THEME_PAGE,false);
+            return;
+        }
+        int presetColumns=Math.max(1,(int)((lw+5)/51));
         gui.pushClip(x - 6, y, w + 12, h);
-        float cy = y - off;
+        float cy = y;
 
         Widgets.sectionLabel(ctx, "Presets", x + 2, cy + 1, lw - 4);
         cy += 13;
@@ -63,11 +75,9 @@ public class ThemePage extends Page {
             });
         }
         cy += rows * (tileH + gap) + 4;
-        float header = cy - (y - off);
+        float header = cy - y;
 
-        float content = list.render(gui, ctx, x, cy, lw, ClientSettings.THEME_PAGE);
+        list.renderPaged(gui, ctx, x, cy, lw,h-header,ClientSettings.THEME_PAGE,true);
         gui.popClip();
-        scroll.setBounds(header + content + 4, h);
-        scroll.drawBar(gui, ctx, x + w - 2, y, h);
     }
 }

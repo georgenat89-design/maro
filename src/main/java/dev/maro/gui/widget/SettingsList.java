@@ -35,6 +35,8 @@ public class SettingsList {
     private final Set<ColorSetting> expanded = new HashSet<>();
     private final Map<TextSetting, TextField> textFields = new IdentityHashMap<>();
     private final Map<SettingSection, Float> tops = new IdentityHashMap<>();
+    private final Map<Setting<?>, float[]> visiblePlaces = new IdentityHashMap<>();
+    private final Scroll boxScroll = new Scroll();
 
     /** A card's background and title, the same for the cards the settings panel draws itself. */
     public static void card(DrawContext ctx, String title, float x, float y, float w, float h) {
@@ -54,6 +56,30 @@ public class SettingsList {
         return HEADER;
     }
 
+    /** Where each setting's row was drawn last frame, {x, y, w, h}; for tests. */
+    public Map<Setting<?>, float[]> visiblePlaces() {
+        return Map.copyOf(visiblePlaces);
+    }
+
+    /**
+     * The cards in a box of their own, scrolling inside it, for pages that give the list a fixed
+     * area (the Settings and Theme pages).
+     */
+    public void renderPaged(ClickGuiScreen gui, DrawContext ctx, float x, float y, float w, float h, List<SettingSection> sections, boolean labels) {
+        float off = boxScroll.update(gui.hasPointerDrag());
+        gui.scrollHit(x, y, w, h, boxScroll::scroll);
+        gui.pushClip(x - 2, y, w + 4, h);
+        float content = render(gui, ctx, x, y - off, w - 8, sections, labels || sections.size() > 1);
+        gui.popClip();
+        boxScroll.setBounds(content + 4, h);
+        boxScroll.drawBar(gui, ctx, x + w - 2, y, h);
+    }
+
+    /** Back to the top of a {@link #renderPaged} box. */
+    public void resetPage() {
+        boxScroll.reset();
+    }
+
     /** Where a section's card started in the last frame, relative to the list's top. */
     public Float sectionTop(SettingSection section) {
         return tops.get(section);
@@ -70,6 +96,7 @@ public class SettingsList {
     public float render(ClickGuiScreen gui, DrawContext ctx, float x, float y, float w, List<SettingSection> sections, boolean labels) {
         float start = y;
         tops.clear();
+        visiblePlaces.clear();
         boolean first = true;
         for (SettingSection section : sections) {
             float rows = 0;
@@ -91,6 +118,7 @@ public class SettingsList {
                     Render2D.setAlpha(prevAlpha * vis);
                     gui.pushClip(x, ry, w, full * vis + 1);
                     renderRow(gui, ctx, s, x + PAD, ry, w - PAD * 2, full);
+                    visiblePlaces.put(s, new float[] {x + PAD, ry, w - PAD * 2, full});
                     gui.popClip();
                     Render2D.setAlpha(prevAlpha);
                 }
@@ -126,8 +154,7 @@ public class SettingsList {
         else if (s instanceof TextSetting t) text(gui, ctx, t, x, y, w);
         else if (s instanceof ColorSetting c) color(gui, ctx, c, x, y, w);
         else if (s instanceof KeybindSetting k) {
-            float cw = Fonts.width(gui.listening == k ? "Press a key" : k.getKeyName(), false, 0.72f) + 9;
-            Widgets.bindChip(gui, ctx, k, x + w - cw, y + ROW / 2f, 1f);
+            Widgets.bindChip(gui, ctx, k, x + w - Widgets.bindChipWidth(gui, k), y + ROW / 2f, 1f);
         } else if (s instanceof dev.maro.setting.ActionSetting action) {
             Widgets.button(gui, ctx, s, x + w - 46, y + 4, 46, 14, "Open", Widgets.Style.SECONDARY, null, action::run);
         } else if (s instanceof dev.maro.runtime.settings.SettingAdapters.ValueSetting value) {

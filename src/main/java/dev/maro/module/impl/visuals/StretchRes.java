@@ -15,9 +15,11 @@ public class StretchRes extends Module {
     private static StretchRes instance;
 
     private final ModeSetting ratio = add(new ModeSetting("Ratio", "Aspect ratio the world is rendered at",
-            "4:3", "4:3", "5:4", "3:2", "16:10", "1:1", "Custom"));
+            "4:3", "4:3", "5:4", "3:2", "16:10", "1:1", "3:4", "2:3", "Custom"));
+    private final NumberSetting amount = add(new NumberSetting("Stretch Amount", "Higher values make the selected ratio stretch wider; 100% is the original strength",
+            150, 100, 250, 5).suffix("%"));
     private final NumberSetting custom = add(new NumberSetting("Custom Ratio", "Width divided by height (1.33 = 4:3)",
-            1.33, 0.8, 2.4, 0.01).visible(() -> ratio.is("Custom")));
+            1.33, 0.5, 2.4, 0.01).visible(() -> ratio.is("Custom")));
 
     public StretchRes() {
         super("Stretch Res", "Stretch the world to another aspect ratio, like 4:3 stretched", Category.VISUALS);
@@ -57,13 +59,19 @@ public class StretchRes extends Module {
 
     /** Aspect ratio the world should be projected with. */
     public float targetAspect() {
-        return switch (ratio.get()) {
+        float selected = switch (ratio.get()) {
             case "5:4" -> 5f / 4f;
             case "3:2" -> 3f / 2f;
             case "16:10" -> 16f / 10f;
             case "1:1" -> 1f;
+            case "3:4" -> 3f / 4f;
+            case "2:3" -> 2f / 3f;
             case "Custom" -> custom.getFloat();
             default -> 4f / 3f;
         };
+        var window = mc.getWindow();
+        if (window.getFramebufferWidth() <= 0 || window.getFramebufferHeight() <= 0) return selected;
+        float aspect = (float) window.getFramebufferWidth() / window.getFramebufferHeight();
+        return (float) (aspect / Math.pow(aspect / selected, amount.getFloat() / 100f));
     }
 }

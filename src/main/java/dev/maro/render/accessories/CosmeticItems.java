@@ -52,7 +52,8 @@ public final class CosmeticItems {
     public static String[] choices(Kind kind) {
         List<String> out = new ArrayList<>();
         out.add("None");
-        out.addAll(BY_NAME.get(kind).keySet());
+        if(kind==Kind.PICKAXE)out.addAll(List.of(dev.maro.render.pickaxe.PickaxeModels.NAMES));
+        if(kind!=Kind.PICKAXE)out.addAll(BY_NAME.get(kind).keySet());
         return out.toArray(String[]::new);
     }
 

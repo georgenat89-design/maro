@@ -1,5 +1,6 @@
 package dev.maro.gui;
 
+import dev.maro.config.ModuleFavorites;
 import dev.maro.gui.render.Fonts;
 import dev.maro.gui.render.GlyphNames;
 import dev.maro.gui.render.Glyphs;
@@ -10,20 +11,16 @@ import dev.maro.gui.widget.Scroll;
 import dev.maro.gui.widget.SettingsList;
 import dev.maro.gui.widget.Widgets;
 import dev.maro.module.Module;
-import dev.maro.setting.ColorSetting;
 import dev.maro.setting.Setting;
 import dev.maro.setting.SettingSection;
 import dev.maro.util.ColorUtil;
 import dev.maro.util.Sounds;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * The selected module's settings, in a panel that slides out on the right of the menu window:
@@ -33,8 +30,6 @@ import java.util.Set;
 final class SettingsPanel {
     static final float WIDTH = 250f;
     private static final float ROW = 22f;
-    /** Modules whose effect shows on a player, so their panel previews your character. */
-    private static final Set<String> PREVIEWS = Set.of("player esp", "nametags", "cosmetics", "hats", "skin changer", "emotes", "acrobatics");
 
     private final ClickGuiScreen gui;
     private final SettingsList list = new SettingsList();
@@ -81,7 +76,7 @@ final class SettingsPanel {
     }
 
     static boolean hasPreview(Module m) {
-        return PREVIEWS.contains(m.getName().toLowerCase(Locale.ROOT));
+        return VisualPreview.supports(m);
     }
 
     private List<SettingSection> visibleSections(Module m) {
@@ -111,7 +106,7 @@ final class SettingsPanel {
         Render2D.roundRect(ctx, tx, ty, ts, ts, 8f, ColorUtil.lerp(0x14FFFFFF, Theme.accent(0x33), on));
         Glyphs.draw(ctx, ModuleIcons.of(m), tx + ts / 2f, ty + ts / 2f, 15f, ColorUtil.lerp(Theme.TEXT_DIM, Theme.accent(), on));
         float nx = tx + ts + 10, nameMax = x + w - 34 - nx;
-        Fonts.draw(ctx, Fonts.trim(m.getName(), nameMax, true, 0.98f), nx, ty + 2, Theme.TEXT, true, 0.98f);
+        Fonts.draw(ctx, Fonts.trim(m.getDisplayName(), nameMax - 18, true, 0.98f), nx, ty + 2, Theme.TEXT, true, 0.98f);
         List<String> about = Fonts.wrap(m.getDescription(), x + w - 16 - nx, false, 0.64f);
         for (int i = 0; i < Math.min(2, about.size()); i++) {
             String line = about.get(i);
@@ -131,6 +126,7 @@ final class SettingsPanel {
             }
         });
         if (closeHover) gui.tooltip("Close (Esc)");
+        gui.moduleConfigsButton(ctx, m, bx - 28, by - 8, 16);
         Render2D.rect(ctx, x + 1, y + 56, w - 2, Render2D.px(), ColorUtil.withAlpha(Theme.BORDER, 0x80));
 
         // the cards, scrolling under the header
@@ -181,16 +177,15 @@ final class SettingsPanel {
         ry += ROW;
 
         row(ctx, "Keybind", "Press it in-game to turn the module on or off", rx, ry, rw);
-        String bindLabel = gui.listening == m.getBind() ? "Press a key" : m.getBind().getKeyName();
-        float chipW = Fonts.width(bindLabel, false, 0.72f) + 9;
+        float chipW = Widgets.bindChipWidth(gui, m.getBind());
         Widgets.bindChip(gui, ctx, m.getBind(), rx + rw - chipW, ry + ROW / 2f, 1f);
         ry += ROW;
 
         boolean starHover = row(ctx, "Starred", "Keep it under the Starred filter", rx, ry, rw);
-        boolean starred = Favorites.starred(m);
+        boolean starred = ModuleFavorites.contains(m);
         gui.hit(rx - 4, ry, rw + 8, ROW, (button, mx, my) -> {
             if (button != 0) return;
-            Favorites.toggle(m);
+            ModuleFavorites.toggle(m);
             Sounds.click();
         });
         float st = Anims.of(m, "starred", starred);
@@ -212,38 +207,10 @@ final class SettingsPanel {
     // ---- preview ------------------------------------------------------------------------
 
     private float previewCard(DrawContext ctx, Module m, float x, float y, float w) {
-        float head = SettingsList.headerHeight() + 3, area = 116, h = head + area + 7;
-        if (!gui.isVisible(y, h)) return h;
-        SettingsList.card(ctx, "Preview", x, y, w, h);
-        float px = x + 7, py = y + head, pw = w - 14;
-        Render2D.roundRect(ctx, px, py, pw, area, 6f, 0x30000000);
-        float cx = px + pw / 2f, figureH = area - 14, figureW = figureH * 0.42f;
-        float top = py + 7;
-        String name = m.getName().toLowerCase(Locale.ROOT);
-        if (name.equals("player esp")) {
-            // The ESP's own colours, glowing round where your character stands.
-            int first = color(m, "Color", Theme.accent()), second = color(m, "Second Color", first);
-            Render2D.shadow(ctx, cx - figureW / 2f, top + 4, figureW, figureH - 6, figureW / 2f, 14f, ColorUtil.withAlpha(first, 0x90));
-            Render2D.shadow(ctx, cx - figureW / 3f, top + figureH * 0.3f, figureW * 0.66f, figureH * 0.6f, figureW / 3f, 10f, ColorUtil.withAlpha(second, 0x60));
-        }
-        boolean shown = gui.drawPlayerPreview(ctx, cx - pw * 0.3f, top, cx + pw * 0.3f, top + figureH);
-        if (!shown) {
-            Glyphs.draw(ctx, GlyphNames.USER, cx, py + area / 2f - 6, 26f, Theme.TEXT_MUTED);
-            Fonts.drawCentered(ctx, "Join a world to preview", cx, py + area / 2f + 18, Theme.TEXT_MUTED, false, 0.64f);
-        }
-        if (name.equals("nametags")) {
-            MinecraftClient mc = MinecraftClient.getInstance();
-            String label = mc.player != null ? mc.player.getName().getString() : "Player";
-            float lw = Fonts.width(label, false, 0.7f) + 10;
-            Render2D.roundRect(ctx, cx - lw / 2f, py + 4, lw, 11, 3f, 0x90000000);
-            Fonts.drawCentered(ctx, label, cx, py + 9.5f, 0xFFFFFFFF, false, 0.7f);
-        }
-        Fonts.drawRight(ctx, m.isEnabled() ? "On" : "Off", px + pw - 6, py + area - 8, m.isEnabled() ? Theme.accent() : Theme.TEXT_MUTED, false, 0.62f);
+        // The live preview draws its own card: what the module changes, drawn as you edit it.
+        float h = 176;
+        // Not while the panel slides away: the preview's 3D picture cannot fade with it.
+        if (gui.isVisible(y, h) && gui.settingsModule() == m) gui.visualPreview().draw(ctx, m, x, y, w, h);
         return h;
-    }
-
-    private static int color(Module m, String setting, int fallback) {
-        for (Setting<?> s : m.getSettings()) if (s instanceof ColorSetting c && s.getName().equalsIgnoreCase(setting)) return c.get() | 0xFF000000;
-        return fallback;
     }
 }
