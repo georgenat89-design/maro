@@ -8,32 +8,24 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.util.Identifier;
 
 /**
- * Maro's mark, the blue M, and the contour lines it is drawn with, spread faintly behind the menu
- * like a map. Both textures are filtered smoothly (their .mcmeta), so they stay clean at any size.
+ * Maro's mark and contour lines follow the live GUI accent, spread faintly behind the menu
+ * like a map. The M shares the resolution-independent outline used by startup and the title menu.
  */
 public final class Logo {
     public static final Identifier MARK = Identifier.of("maro", "textures/gui/logo.png");
     public static final Identifier CONTOURS = Identifier.of("maro", "textures/gui/topo.png");
     private static final int MARK_SIZE = 128, CONTOURS_W = 1024, CONTOURS_H = 576;
-    /** The M's own blue, for its glow whatever the accent. */
-    private static final int MARK_BLUE = 0xFF3391FC;
-
     private Logo() {
     }
 
     /** The M, {@code size} GUI pixels across, centred on {@code (cx, cy)}, glowing by {@code glow} (0 to 1). */
     public static void mark(DrawContext ctx, float cx, float cy, float size, float glow) {
+        Theme.update();
         if (Theme.glow()) {
             float g = size * 0.42f;
-            Render2D.shadow(ctx, cx - g, cy - g, g * 2, g * 2, g, 3f + glow * 5f, ColorUtil.withAlpha(MARK_BLUE, Math.round(0x28 + 0x38 * glow)));
+            Render2D.shadow(ctx, cx - g, cy - g, g * 2, g * 2, g, 3f + glow * 5f, Theme.accent(Math.round(0x28 + 0x38 * glow)));
         }
-        var matrices = ctx.getMatrices();
-        matrices.pushMatrix();
-        matrices.translate(cx - size / 2f, cy - size / 2f);
-        matrices.scale(size / MARK_SIZE, size / MARK_SIZE);
-        ctx.drawTexture(RenderPipelines.GUI_TEXTURED, MARK, 0, 0, 0, 0, MARK_SIZE, MARK_SIZE, MARK_SIZE, MARK_SIZE,
-                ColorUtil.mulAlpha(0xFFFFFFFF, Render2D.getAlpha()));
-        matrices.popMatrix();
+        BootMark.drawThemed(ctx,cx-size/2f,cy-size/2f,size,0xFFFFFFFF);
     }
 
     /** The contour lines across the whole screen, in the accent colour, {@code opacity} (0 to 1) strong. */

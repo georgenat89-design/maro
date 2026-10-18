@@ -1,5 +1,6 @@
 package dev.maro.gui.hud;
 
+import dev.maro.gui.render.Fonts;
 import dev.maro.gui.render.Render2D;
 import dev.maro.module.impl.visuals.CustomCrosshair;
 import net.minecraft.client.gui.DrawContext;
@@ -55,14 +56,14 @@ public final class CrosshairImageScreen extends Screen {
     @Override public void render(DrawContext ctx, int mx, int my, float delta) {
         int w = Math.min(420, width - 32), x = (width - w) / 2, y = height / 2;
         Render2D.rect(ctx, 0, 0, width, height, 0xC910121A);
-        ctx.drawCenteredTextWithShadow(textRenderer, title, width / 2, y - 83, 0xFFEAF4FF);
+        Fonts.centeredTop(ctx, title.getString(), width / 2, y - 83, width - 24, 0xFFEAF4FF);
         Render2D.roundRect(ctx, width / 2f - 25, y - 62, 50, 50, 8, 0xFF202532);
         module.renderPngPreview(ctx, width / 2f, y - 37, 32);
-        ctx.drawCenteredTextWithShadow(textRenderer, "Browse, paste a path, or drag a PNG here", width / 2, y - 5, 0xFFADB5C7);
+        Fonts.centeredTop(ctx, "Browse, paste a path, or drag a PNG here", width / 2, y - 5, width - 24, 0xFFADB5C7);
         super.render(ctx, mx, my, delta);
         String status = !pickerError.isEmpty() ? pickerError : choosing ? "Choosing a file…" : module.pngStatus();
-        ctx.drawCenteredTextWithShadow(textRenderer, textRenderer.trimToWidth(status, w), width / 2, y + 63, 0xFFADB5C7);
-        ctx.drawCenteredTextWithShadow(textRenderer, textRenderer.trimToWidth("Transparent PNGs work best. Original colors are preserved.", w), width / 2, y + 77, 0xFF7C8599);
+        Fonts.centeredTop(ctx, Fonts.trim(status, w, false, .9f), width / 2, y + 63, width - 24, 0xFFADB5C7);
+        Fonts.centeredTop(ctx, Fonts.trim("Transparent PNGs work best. Original colors are preserved.", w, false, .9f), width / 2, y + 77, width - 24, 0xFF7C8599);
     }
     @Override public void close() { client.setScreen(parent); }
     @Override public boolean shouldPause() { return false; }

@@ -1,0 +1,25 @@
+# Item Inspection
+
+Open **Visuals > Item Inspection**, enable it, choose a **Knife**, and select the Minecraft item it should replace using **Choose Item** or **Use Held Item**. Press **Y** to inspect it in first person. The inspect key is configurable.
+
+Choose from **Skeleton**, **Talon**, **Ursus**, **Falchion**, **Butterfly**, **Karambit**, **Bayonet**, **Bowie**, **Stiletto**, **Kukri**, **Huntsman** and **Maro Rift**. Each has a distinct 3D model and two original inspection routines. The chosen knife remains visible whenever you hold the selected item, including after inspection finishes. The former generic Twirl/Toss/Showcase/Flick animations and screen-space swoosh have been replaced.
+
+Models use original continuous geometry, ground cutting bevels, machined finger rings, fuller grooves, rounded grip profiles, collars and recessed fasteners. Butterfly has independently moving handle hinges; its safe handle stays attached to the grip. Toss arcs move the released knife independently of the hand; the glove and sleeve share their wrist transform, including reverse grips. Maro Rift is an original asymmetric tanto with an exposed tang, finger ring, blue handle inlays and an M badge. The original six silhouettes were guided by the supplied references; no CS2 model assets are extracted or bundled.
+
+**Finish** offers **Satin Steel**, **Damascus**, **Black Cerakote**, **Maro Blue** and **Item Material**. The saved **Vanilla Steel** option remains compatible and renders as satin. Deterministic material atlases provide brushed steel grain, Damascus layering, carbon/rubber grips and woven/wood-like grip detail. **Metal Reflections** adjusts view-dependent highlights that move as the knife turns. A dedicated surface pipeline retains the world lightmap without applying Minecraft's cardinal shading a second time; enchantment glint remains active. **Knife Size** adjusts the model. **Show Arm** controls hand visibility. **Hand Style** defaults to original curved tactical gloves with individual curled fingers, thumb, knuckle pads and a sleeve; **Your Skin** keeps the player's Minecraft arm.
+
+**Inspection Style > Cycle** alternates between the two routines on successive presses. **Signature** or **Alternate** chooses one consistently. The 24 routines include guard/ring orbits, edge presentations, heavy blade balancing, short airborne flips and Butterfly latch cascades. Motion uses bounded continuous curves with eased endpoints. Finger pivots, wrist presentation and airborne offsets are separate, and each routine returns to the same idle grip. Pressing inspect again during playback queues the next routine instead of snapping to its start.
+
+**Idle Motion** adds restrained breathing. **Camera Sway** controls a damped response to mouse look, calculated from elapsed time rather than frame count. Model geometry, material palettes and hinge curves are cached; tiny fittings use fewer segments than the visible finger rings.
+
+**Item Selection > Selected Item** limits replacement to that registered item type, including other stacks of it. The searchable grid also supports modded registered items. **Items > Any Item** applies it to every nonempty main hand. The selection, knife and playback settings are saved with the module.
+
+**Duration** controls inspection time. **Inspect On Equip** automatically plays when equipping an eligible item. Attacking, using an item, opening a screen or changing held item cancels inspection and returns the knife to its idle pose.
+
+Only your first-person appearance changes: inventory stacks, attacks, item use, other players and third-person rendering keep their normal behavior. Disabling Item Inspection immediately restores the original first-person item. Unselected items and the offhand keep their normal render paths. Item Inspection takes priority over Weapon Inspect for its selected main-hand item. The legacy Weapon Inspect module remains separate.
+
+**Weapon Inspect** now shares the continuous knife renderer, finishes and glove options. Its Knife Skin list includes all 12 knives plus a curved Katana; None preserves the held Minecraft weapon. Press **F** by default. **Style** includes **Classic**, **Twirl**, **Edge Check**, **Reverse Grip**, **Palm Roll**, **Showcase**, **Quick Flip** and **Cycle**. Classic uses each knife's signature routine; the other styles apply their wrist choreography to the chosen skin. Cycle advances through the seven styles on successive inspections. Speed, deploy, blade sparkle, slash trail and interruption settings remain available.
+
+The display name is **Item Inspection**; the existing `Item Inspect` configuration key is retained for saved enablement and item settings.
+
+Native verification: `gradlew.bat build runProductionClientGameTest -PitemInspectionTestOnly=true`. The focused run samples 24 distinct bounded routines and their endpoints, then renders all 12 knives, both inspections, coating options, native queued/cycling key input, searchable selection, item filtering, map and block paths, left-hand rendering, interrupts and the Panels entry regression.

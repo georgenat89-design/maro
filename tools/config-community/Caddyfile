@@ -1,0 +1,8 @@
+{$DOMAIN} {
+    request_body {
+        max_size 96KB
+    }
+    reverse_proxy api:8787 {
+        header_up X-Real-IP {remote_host}
+    }
+}

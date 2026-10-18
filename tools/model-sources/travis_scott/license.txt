@@ -1,0 +1,11 @@
+Model Information:
+* title:	Travis Scott
+* source:	https://sketchfab.com/3d-models/travis-scott-3353bd852c31409ebed67d49258867b9
+* author:	Alwxcat (https://sketchfab.com/ParallelAlex)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Travis Scott" (https://sketchfab.com/3d-models/travis-scott-3353bd852c31409ebed67d49258867b9) by Alwxcat (https://sketchfab.com/ParallelAlex) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

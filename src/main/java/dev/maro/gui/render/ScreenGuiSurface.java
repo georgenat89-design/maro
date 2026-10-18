@@ -43,18 +43,38 @@ public final class ScreenGuiSurface {
     private static GpuBuffer uniforms, vertices, indices;
     private static ScreenGuiPose pending;
     private static boolean drawing;
+    private static float rasterScale = 1;
     private static int frames;
 
     private ScreenGuiSurface() { }
 
     public static DrawContext begin(MinecraftClient client, int mouseX, int mouseY, ScreenGuiPose pose) {
         STATE.clear();
+        var main = client.getFramebuffer();
+        // Bound GPU memory at high resolutions while retaining 2x detail at 1080p.
+        rasterScale = qualityScale(main.textureWidth, main.textureHeight);
         pending = pose;
         return new DrawContext(client, STATE, mouseX, mouseY);
     }
 
     /** Only our renderer's final GUI pass is redirected; the world, HUD and item atlas stay vanilla. */
     public static Framebuffer targetOr(Framebuffer original) { return drawing ? target : original; }
+    public static float textScale(DrawContext ctx) {
+        return ((dev.maro.mixin.DrawContextAccessor)ctx).maro$getState() == STATE ? rasterScale : dev.maro.gui.spatial.SpatialCanvas.textScale(ctx);
+    }
+    public static float qualityScale(int w, int h) {
+        return (float)Math.max(1, Math.min(2, Math.min(4096d / Math.max(w,h), Math.sqrt(10_000_000d / ((double)w*h)))));
+    }
+    public static boolean scissor(net.minecraft.client.gui.ScreenRect area, com.mojang.blaze3d.systems.RenderPass pass) {
+        if (!drawing || target == null) return false;
+        var window = MinecraftClient.getInstance().getWindow();
+        double sx = (double)target.textureWidth / window.getFramebufferWidth() * window.getScaleFactor();
+        double sy = (double)target.textureHeight / window.getFramebufferHeight() * window.getScaleFactor();
+        int left = (int)Math.floor(area.getLeft()*sx), right = (int)Math.ceil(area.getRight()*sx);
+        int top = (int)Math.floor(area.getTop()*sy), bottom = (int)Math.ceil(area.getBottom()*sy);
+        pass.enableScissor(left, target.textureHeight-bottom, Math.max(0,right-left), Math.max(0,bottom-top));
+        return true;
+    }
 
     /** Called after vanilla's GUI pass, with its current fog buffer. Recursion is explicitly guarded. */
     public static void finish(GpuBufferSlice fog) {
@@ -67,8 +87,9 @@ public final class ScreenGuiSurface {
             if (renderer == null) renderer = new GuiRenderer(STATE, client.getBufferBuilders().getEntityVertexConsumers(),
                     client.gameRenderer.getEntityRenderCommandQueue(), client.gameRenderer.getEntityRenderDispatcher(), List.of());
             int w = main.textureWidth, h = main.textureHeight;
-            if (target == null) target = new SimpleFramebuffer("Maro Screen GUI", w, h, true);
-            else if (target.textureWidth != w || target.textureHeight != h) target.resize(w, h);
+            int tw = (int)Math.ceil(w*rasterScale), th = (int)Math.ceil(h*rasterScale);
+            if (target == null) target = new SimpleFramebuffer("Maro Screen GUI", tw, th, true);
+            else if (target.textureWidth != tw || target.textureHeight != th) target.resize(tw, th);
             var device = RenderSystem.getDevice();
             var encoder = device.createCommandEncoder();
             encoder.clearColorAndDepthTextures(target.getColorAttachment(), 0, target.getDepthAttachment(), 1);
@@ -111,6 +132,7 @@ public final class ScreenGuiSurface {
     public static void release() {
         pending = null;
         STATE.clear();
+        rasterScale = 1;
         if (renderer != null) { renderer.close(); renderer = null; }
         if (target != null) { target.delete(); target = null; }
         if (uniforms != null) { uniforms.close(); uniforms = null; }
@@ -120,4 +142,6 @@ public final class ScreenGuiSurface {
 
     public static int drawnFrames() { return frames; }
     public static boolean hasResources() { return renderer != null || target != null || uniforms != null; }
+    public static int textureWidth() { return target == null ? 0 : target.textureWidth; }
+    public static int textureHeight() { return target == null ? 0 : target.textureHeight; }
 }

@@ -13,32 +13,35 @@ import dev.maro.setting.ModeSetting;
 import dev.maro.setting.NumberSetting;
 import dev.maro.setting.SettingSection;
 import dev.maro.util.ColorUtil;
+import dev.maro.util.Animation;
 import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Item;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix3x2fStack;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Your armour on the HUD, clean: each piece in a small cell with a thin durability bar under it and
- * the percent left in its own colour, green to red. A piece about to break glows red. Your off hand
- * and what you hold can sit beside it. Placed by dragging, at any scale, in a row or a column.
+ * A single equipment card with readable condition indicators, grouped hand slots,
+ * and native item rendering. Slot metadata and durability animations are reused each frame.
  */
 public class ArmorHud extends Module implements HudElement {
-    private static final int CELL = 20, GAP = 3, PAD = 4, MARGIN = 4;
-    private static final float RADIUS = 6, CELL_RADIUS = 4.5f;
-    private static final EquipmentSlot[] ARMOR = {EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
-    private static final Identifier[] EMPTY = {
-            Identifier.ofVanilla("container/slot/helmet"),
-            Identifier.ofVanilla("container/slot/chestplate"),
-            Identifier.ofVanilla("container/slot/leggings"),
-            Identifier.ofVanilla("container/slot/boots")};
-    private static final Identifier EMPTY_OFFHAND = Identifier.ofVanilla("container/slot/shield");
+    private static final int CELL = 30, GAP = 3, PAD = 6, MARGIN = 4, COLUMN_WIDTH = 104, COLUMN_HEIGHT = 29;
+    private static final float RADIUS = 8, ITEM_SIZE = 20;
+    private record Piece(EquipmentSlot slot,Identifier empty,String label) { }
+    private static final Piece[] SLOTS = {
+            new Piece(EquipmentSlot.MAINHAND,null,"Main hand"),
+            new Piece(EquipmentSlot.HEAD,Identifier.ofVanilla("container/slot/helmet"),"Helmet"),
+            new Piece(EquipmentSlot.CHEST,Identifier.ofVanilla("container/slot/chestplate"),"Chestplate"),
+            new Piece(EquipmentSlot.LEGS,Identifier.ofVanilla("container/slot/leggings"),"Leggings"),
+            new Piece(EquipmentSlot.FEET,Identifier.ofVanilla("container/slot/boots"),"Boots"),
+            new Piece(EquipmentSlot.OFFHAND,Identifier.ofVanilla("container/slot/shield"),"Offhand")};
+    private final Animation[] condition = new Animation[SLOTS.length];
+    private final Item[] previousItem = new Item[SLOTS.length];
 
     private final ButtonSetting position = add(new ButtonSetting("Position", "Drag it where you want it and scroll to resize it (it starts beside the hotbar)", "Place",
             () -> mc.setScreen(new HudPlacementScreen(mc.currentScreen, this))));
@@ -54,7 +57,7 @@ public class ArmorHud extends Module implements HudElement {
     private final BooleanSetting offHand = add(new BooleanSetting("Off Hand", "Your off hand (a totem or shield) after the armour", true));
     private final BooleanSetting mainHand = add(new BooleanSetting("Main Hand", "What you hold, before the armour", false));
     private final BooleanSetting showEmpty = add(new BooleanSetting("Show Empty", "Faint outlines where nothing is worn", true));
-    private final BooleanSetting warn = add(new BooleanSetting("Low Warning", "A piece about to break glows red", true));
+    private final BooleanSetting warn = add(new BooleanSetting("Low Warning", "A subtle red highlight when equipment is about to break", true));
     private final NumberSetting warnAt = add(new NumberSetting("Warn Below", "How low counts as about to break", 15, 1, 50, 1).suffix("%").visible(warn::get));
     private final BooleanSetting panel = add(new BooleanSetting("Panel", "A dark card behind it all", true));
     private final NumberSetting opacity = add(new NumberSetting("Background Opacity", "How solid the card and cells are", 85, 0, 100, 1).suffix("%"));
@@ -63,12 +66,9 @@ public class ArmorHud extends Module implements HudElement {
             SettingSection.of("Look", layout, durability, offHand, mainHand, showEmpty, warn, warnAt, panel, opacity),
             SettingSection.of("Placement", position, x, y, scale));
 
-    /** One cell: what is in it and what to show when it is empty. */
-    private record Piece(ItemStack stack, Identifier empty) {
-    }
-
     public ArmorHud() {
-        super("Armor HUD", "Your armour on screen, clean: thin durability bars and percents, red when about to break", Category.VISUALS);
+        super("Armor HUD", "A clean equipment card with crisp icons, readable durability and low condition warnings", Category.VISUALS);
+        for(int i=0;i<condition.length;i++)condition[i]=new Animation(18,0);
     }
 
     @Override
@@ -76,14 +76,14 @@ public class ArmorHud extends Module implements HudElement {
         return sections;
     }
 
-    private List<Piece> pieces() {
-        List<Piece> out = new ArrayList<>();
+    private int visibleSlots() {
         PlayerEntity p = mc.player;
-        if (mainHand.get()) out.add(new Piece(p.getMainHandStack(), null));
-        for (int i = 0; i < ARMOR.length; i++) out.add(new Piece(p.getEquippedStack(ARMOR[i]), EMPTY[i]));
-        if (offHand.get()) out.add(new Piece(p.getOffHandStack(), EMPTY_OFFHAND));
-        if (!showEmpty.get()) out.removeIf(piece -> piece.stack().isEmpty());
-        return out;
+        int mask=0;
+        for(int i=0;i<SLOTS.length;i++){
+            if(i==0&&!mainHand.get()||i==5&&!offHand.get())continue;
+            if(p==null||showEmpty.get()||!p.getEquippedStack(SLOTS[i].slot()).isEmpty())mask|=1<<i;
+        }
+        return mask;
     }
 
     private boolean bar() {
@@ -94,27 +94,26 @@ public class ArmorHud extends Module implements HudElement {
         return durability.is("Percent") || durability.is("Bar & Percent");
     }
 
-    /** One cell's height: the item, then the bar, then the percent. */
     private int cellHeight() {
-        return CELL + (percent() ? 8 : bar() ? 2 : 0);
-    }
-
-    private int count() {
-        return inGame() ? Math.max(1, pieces().size()) : 5;
+        return 26+(percent()?10:0)+(bar()?5:0);
     }
 
     private boolean row() {
         return layout.is("Row");
     }
 
-    private int panelWidth() {
-        int n = count();
-        return PAD * 2 + (row() ? n * CELL + (n - 1) * GAP : CELL);
+    private static boolean handBoundary(int before,int current){
+        return before==0&&current<5||before>0&&current==5;
     }
-
-    private int panelHeight() {
-        int n = count();
-        return PAD * 2 + (row() ? cellHeight() : n * cellHeight() + (n - 1) * GAP);
+    private static int gap(int before,int current){return handBoundary(before,current)?8:GAP;}
+    private int panelWidth(int mask) {
+        if(!row())return PAD*2+COLUMN_WIDTH;
+        int width=PAD*2,previous=-1;
+        for(int i=0;i<SLOTS.length;i++)if((mask&(1<<i))!=0){width+=CELL+(previous<0?0:gap(previous,i));previous=i;}
+        return mask==0?PAD*2+CELL:width;
+    }
+    private int panelHeight(int mask) {
+        return PAD*2+(row()?cellHeight():Math.max(1,Integer.bitCount(mask))*(COLUMN_HEIGHT+GAP)-GAP);
     }
 
     // ---- placement ----------------------------------------------------------------------
@@ -126,17 +125,21 @@ public class ArmorHud extends Module implements HudElement {
 
     @Override
     public float hudScale() {
-        return scale.getFloat();
+        int mask=visibleSlots();float w=panelWidth(mask),h=panelHeight(mask);
+        float sw=mc.getWindow().getScaledWidth(),sh=mc.getWindow().getScaledHeight();
+        float fitted=Math.min(scale.getFloat(),Math.min(Math.max(1,sw-MARGIN*2)/w,Math.max(1,sh-MARGIN*2)/h));
+        if(!placed.get()&&!besideHotbar(w*fitted))fitted=Math.min(fitted,Math.max(1,sh-50-MARGIN)/h);
+        return fitted;
     }
 
     @Override
     public float hudWidth() {
-        return panelWidth() * hudScale();
+        return panelWidth(visibleSlots()) * hudScale();
     }
 
     @Override
     public float hudHeight() {
-        return panelHeight() * hudScale();
+        return panelHeight(visibleSlots()) * hudScale();
     }
 
     private float roomX() {
@@ -148,15 +151,15 @@ public class ArmorHud extends Module implements HudElement {
     }
 
     /** Beside the right end of the hotbar, bottoms level; above the health bars when there is no room there. */
-    private boolean besideHotbar() {
-        return mc.getWindow().getScaledWidth() / 2f + 97 + hudWidth() <= mc.getWindow().getScaledWidth() - MARGIN;
+    private boolean besideHotbar(float width) {
+        return mc.getWindow().getScaledWidth() / 2f + 97 + width <= mc.getWindow().getScaledWidth() - MARGIN;
     }
 
     @Override
     public float hudLeft() {
         if (!placed.get()) {
             int sw = mc.getWindow().getScaledWidth();
-            return besideHotbar() ? sw / 2f + 97 : Math.round((sw - hudWidth()) / 2f);
+            return besideHotbar(hudWidth()) ? sw / 2f + 97 : Math.round((sw - hudWidth()) / 2f);
         }
         return MARGIN + Math.round(roomX() * x.getFloat() / 100f);
     }
@@ -165,7 +168,7 @@ public class ArmorHud extends Module implements HudElement {
     public float hudTop() {
         if (!placed.get()) {
             int sh = mc.getWindow().getScaledHeight();
-            return besideHotbar() ? sh - hudHeight() - 1 : sh - 50 - hudHeight();
+            return besideHotbar(hudWidth()) ? sh - hudHeight() - MARGIN : Math.max(MARGIN,sh - 50 - hudHeight());
         }
         return MARGIN + Math.round(roomY() * y.getFloat() / 100f);
     }
@@ -196,11 +199,12 @@ public class ArmorHud extends Module implements HudElement {
     /** How much is left, 0 to 1; -1 for things that do not wear out. */
     public static float left(ItemStack stack) {
         if (stack.isEmpty() || !stack.isDamageable() || stack.getMaxDamage() <= 0) return -1;
-        return 1 - stack.getDamage() / (float) stack.getMaxDamage();
+        return Math.clamp(1 - stack.getDamage() / (float) stack.getMaxDamage(),0,1);
     }
 
     /** Green when whole, through yellow, to red when nearly gone. */
     public static int wearColor(float left) {
+        left=Math.clamp(Float.isFinite(left)?left:0,0,1);
         int green = 0xFF3DDC97, yellow = 0xFFFFC23D, red = 0xFFFF5D6C;
         return left > 0.5f ? ColorUtil.lerp(yellow, green, (left - 0.5f) * 2) : ColorUtil.lerp(red, yellow, left * 2);
     }
@@ -208,10 +212,10 @@ public class ArmorHud extends Module implements HudElement {
     @Override
     public void onRender2D(DrawContext ctx, float tickDelta) {
         if (!inGame() || mc.options.hudHidden || dev.maro.module.impl.misc.InventoryHider.hidesHotbar()) return;
-        List<Piece> pieces = pieces();
-        if (pieces.isEmpty()) return;
+        int mask=visibleSlots();
+        if(mask==0)return;
         float s = hudScale();
-        int w = panelWidth(), h = panelHeight();
+        int w = panelWidth(mask), h = panelHeight(mask);
         float hair = Math.max(Render2D.px() / s, 0.5f);
         float strength = opacity.getFloat() / 100f;
 
@@ -222,16 +226,20 @@ public class ArmorHud extends Module implements HudElement {
         Fonts.beginRaw();
         try {
             if (panel.get()) {
-                Render2D.shadow(ctx, 0, 1, w, h, RADIUS, 8, ColorUtil.withAlpha(0xFF000000, Math.round(110 * Math.max(0.3f, strength))));
-                Render2D.roundRect(ctx, 0, 0, w, h, RADIUS, ColorUtil.withAlpha(0xFF0B0D12, Math.round(235 * strength)));
-                Render2D.roundOutline(ctx, 0, 0, w, h, RADIUS, hair, 0x1CFFFFFF);
+                Render2D.shadow(ctx, 0, 1, w, h, RADIUS, 7, ColorUtil.withAlpha(0xFF000000, Math.round(90 * strength)));
+                Render2D.roundGradientV(ctx,0,0,w,h,RADIUS,ColorUtil.withAlpha(0xFF1B2230,Math.round(240*strength)),ColorUtil.withAlpha(0xFF0D121B,Math.round(240*strength)));
+                Render2D.roundOutline(ctx, 0, 0, w, h, RADIUS, hair, ColorUtil.withAlpha(0xFFB6C8E5,Math.round(28*strength)));
             }
-            long now = System.currentTimeMillis();
-            for (int i = 0; i < pieces.size(); i++) {
-                Piece piece = pieces.get(i);
-                float cx = PAD + (row() ? i * (CELL + GAP) : 0);
-                float cy = PAD + (row() ? 0 : i * (cellHeight() + GAP));
-                cell(ctx, piece, cx, cy, hair, strength, now);
+            float cursor=PAD;int previous=-1;
+            for(int i=0;i<SLOTS.length;i++){
+                if((mask&(1<<i))==0){previousItem[i]=null;continue;}
+                if(previous>=0&&row()){
+                    int space=gap(previous,i);
+                    if(handBoundary(previous,i))Render2D.rect(ctx,cursor+space/2-.25f,PAD+4,.5f,cellHeight()-8,ColorUtil.withAlpha(0xFFB6C8E5,Math.round(30*strength)));
+                    cursor+=space;
+                }
+                cell(ctx,i,row()?cursor:PAD,row()?PAD:cursor,hair,strength);
+                cursor+=row()?CELL:COLUMN_HEIGHT+GAP;previous=i;
             }
         } finally {
             Fonts.endRaw();
@@ -239,43 +247,49 @@ public class ArmorHud extends Module implements HudElement {
         }
     }
 
-    private void cell(DrawContext ctx, Piece piece, float cx, float cy, float hair, float strength, long now) {
-        ItemStack stack = piece.stack();
+    @Override protected void onEnable(){java.util.Arrays.fill(previousItem,null);}
+
+    private void cell(DrawContext ctx, int index, float cx, float cy, float hair, float strength) {
+        Piece piece=SLOTS[index];ItemStack stack=mc.player.getEquippedStack(piece.slot());
         float wear = left(stack);
         boolean low = warn.get() && wear >= 0 && wear * 100 < warnAt.getFloat();
+        float wellX=cx+(row()?3:0),wellY=cy+1;
+        Render2D.roundGradientV(ctx,wellX,wellY,24,24,5,ColorUtil.withAlpha(0xFFFFFFFF,Math.round((stack.isEmpty()?5:13)*strength)),ColorUtil.withAlpha(0xFFFFFFFF,Math.round(4*strength)));
+        if(low){
+            float pulse=.8f+.2f*(float)Math.sin(System.nanoTime()/450_000_000d);
+            Render2D.roundRect(ctx,wellX,wellY,24,24,5,ColorUtil.withAlpha(Theme.RED,Math.round(24*strength*pulse)));
+            Render2D.roundOutline(ctx,wellX,wellY,24,24,5,hair,ColorUtil.withAlpha(Theme.RED,Math.round(130*strength*pulse)));
+        }
+        float iconX=wellX+2,iconY=wellY+2;
+        var matrices=ctx.getMatrices();matrices.pushMatrix();matrices.translate(iconX,iconY);matrices.scale(ITEM_SIZE/16,ITEM_SIZE/16);
+        if(stack.isEmpty()){
+            if(piece.empty()!=null)ctx.drawGuiTexture(RenderPipelines.GUI_TEXTURED,piece.empty(),0,0,16,16,0x50FFFFFF);
+        }else ctx.drawItem(stack,0,0);
+        matrices.popMatrix();
+        if(stack.getCount()>1){
+            String count=Integer.toString(stack.getCount());float width=Fonts.width(ctx,count,true,.62f)+5;
+            Render2D.roundRect(ctx,wellX+26-width,wellY+17,width,9,3,0xF00C111A);
+            Fonts.drawRight(ctx,count,wellX+24,wellY+21.5f,0xFFF1F5FC,true,.62f);
+        }
+        int color=wearColor(wear),ink=low?Theme.RED:ColorUtil.lerp(color,0xFFF1F5FC,.8f);
+        float amount=0;
+        if(wear>=0){
+            if(previousItem[index]!=stack.getItem()||wear==0)condition[index].snap(wear);
+            amount=condition[index].update(wear);previousItem[index]=stack.getItem();
+        }else previousItem[index]=null;
+        if(row()){
+            if(percent())Fonts.drawCentered(ctx,wear>=0?Math.round(wear*100)+"%":stack.isEmpty()?"—":index==5?"Offhand":"Held",cx+CELL/2f,cy+31,wear>=0?ink:0xFF8997AB,wear>=0,wear>=0?.72f:.56f);
+            if(bar()&&wear>=0)meter(ctx,cx+3,cy+(percent()?38:28),24,amount,color);
+        }else{
+            Fonts.drawV(ctx,piece.label(),cx+32,cy+8,stack.isEmpty()?0xFF7B899D:0xFFDBE4F3,true,.67f);
+            if(percent()&&wear>=0)Fonts.drawRight(ctx,Math.round(wear*100)+"%",cx+COLUMN_WIDTH-2,cy+8,ink,true,.7f);
+            if(bar()&&wear>=0)meter(ctx,cx+32,cy+19,COLUMN_WIDTH-35,amount,color);
+            else if(wear<0)Fonts.drawV(ctx,stack.isEmpty()?"Empty":stack.getCount()>1?stack.getCount()+" items":"Equipped",cx+32,cy+20,0xFF8997AB,false,.59f);
+        }
+    }
 
-        // The cell: a soft square, or a red one pulsing gently when the piece is about to break.
-        if (low) {
-            float pulse = 0.65f + 0.35f * (float) Math.sin(now / 220.0);
-            Render2D.shadow(ctx, cx, cy, CELL, CELL, CELL_RADIUS, 5, ColorUtil.withAlpha(Theme.RED, Math.round(90 * pulse)));
-            Render2D.roundRect(ctx, cx, cy, CELL, CELL, CELL_RADIUS, ColorUtil.withAlpha(Theme.RED, Math.round(50 * pulse)));
-            Render2D.roundOutline(ctx, cx, cy, CELL, CELL, CELL_RADIUS, hair, ColorUtil.withAlpha(Theme.RED, 190));
-        } else {
-            Render2D.roundRect(ctx, cx, cy, CELL, CELL, CELL_RADIUS, ColorUtil.withAlpha(0xFFFFFFFF, Math.round(16 * Math.max(0.4f, strength))));
-            Render2D.roundOutline(ctx, cx, cy, CELL, CELL, CELL_RADIUS, hair, 0x14FFFFFF);
-        }
-
-        if (stack.isEmpty()) {
-            if (piece.empty() != null) ctx.drawGuiTexture(RenderPipelines.GUI_TEXTURED, piece.empty(), Math.round(cx + 2), Math.round(cy + 2), 16, 16, 0x40FFFFFF);
-            return;
-        }
-        ctx.drawItem(stack, Math.round(cx + 2), Math.round(cy + 2));
-        // Stack counts (totems, rockets), never the game's own durability bar: ours is cleaner.
-        if (stack.getCount() > 1) {
-            String n = Integer.toString(stack.getCount());
-            Fonts.drawRight(ctx, n, cx + CELL - 1.5f, cy + CELL - 4, 0xFFF4F6FA, true, 0.55f);
-        }
-        if (wear < 0) return;
-        int color = wearColor(wear);
-        float by = cy + CELL + 1.5f;
-        if (bar()) {
-            float bw = CELL - 6;
-            Render2D.roundRect(ctx, cx + 3, by, bw, 1.6f, 0.8f, 0x30FFFFFF);
-            Render2D.roundRect(ctx, cx + 3, by, Math.max(1.6f, bw * wear), 1.6f, 0.8f, color);
-        }
-        if (percent()) {
-            String text = Math.round(wear * 100) + "%";
-            Fonts.drawCentered(ctx, text, cx + CELL / 2f, by + (bar() ? 5.5f : 3.5f), low ? Theme.RED : ColorUtil.lerp(color, 0xFFF4F6FA, 0.35f), true, 0.5f);
-        }
+    private static void meter(DrawContext ctx,float x,float y,float width,float amount,int color){
+        Render2D.roundRect(ctx,x,y,width,2,1,0x28C1D3EE);
+        if(amount>0)Render2D.roundRect(ctx,x,y,width*amount,2,Math.min(1,width*amount/2),color);
     }
 }

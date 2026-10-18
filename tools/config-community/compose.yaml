@@ -1,0 +1,35 @@
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    environment:
+      COMMUNITY_ADMIN_TOKEN: ${COMMUNITY_ADMIN_TOKEN:?Set a long random admin token in .env}
+      TRUST_PROXY: "1"
+    volumes:
+      - community_data:/data
+    networks: [internal]
+    mem_limit: 256m
+    pids_limit: 64
+    read_only: true
+    tmpfs: [/tmp]
+  proxy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?Set your server domain in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [internal, public]
+networks:
+  internal:
+    internal: true
+  public: {}
+volumes:
+  community_data: {}
+  caddy_data: {}
+  caddy_config: {}

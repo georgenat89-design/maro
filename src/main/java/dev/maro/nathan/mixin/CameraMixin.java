@@ -2,6 +2,8 @@ package dev.maro.nathan.mixin;
 
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Final;
+import org.joml.Vector3f;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -51,6 +53,10 @@ public abstract class CameraMixin {
     @Shadow
     private float lastCameraY;
 
+    @Shadow @Final private Vector3f horizontalPlane;
+    @Shadow @Final private Vector3f verticalPlane;
+    @Shadow @Final private Vector3f diagonalPlane;
+
     @Shadow
     protected abstract void setPos(double x, double y, double z);
 
@@ -97,6 +103,12 @@ public abstract class CameraMixin {
         if (flip != null) {
             Camera camera = (Camera) (Object) this;
             setRotation(camera.getYaw() + flip[0], camera.getPitch() + flip[1]);
+            if (flip[2] != 0) {
+                var rotation = camera.getRotation().rotateZ(flip[2] * MathHelper.RADIANS_PER_DEGREE);
+                rotation.transform(0, 0, -1, horizontalPlane);
+                rotation.transform(0, 1, 0, verticalPlane);
+                rotation.transform(-1, 0, 0, diagonalPlane);
+            }
         }
 
         float[] look = FreeLook.frame();

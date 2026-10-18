@@ -25,6 +25,17 @@ import java.util.LinkedHashMap;
 
 /** Batched world geometry using the same perspective projection as terrain and other ESP. */
 public final class Renderer3D {
+    private static final Identifier JUMP_LOGO = Identifier.of("maro", "textures/gui/logo.png");
+    private static final RenderLayer JUMP_LOGO_LAYER = jumpLogoLayer(false), JUMP_LOGO_GLOW = jumpLogoLayer(true);
+    private static RenderLayer jumpLogoLayer(boolean glow) {
+        var pipeline = RenderPipeline.builder(RenderPipelines.POSITION_TEX_COLOR_SNIPPET)
+            .withLocation(Identifier.of("maro", glow ? "pipeline/jump_logo_glow" : "pipeline/jump_logo"))
+            .withVertexFormat(VertexFormats.POSITION_TEXTURE_COLOR, VertexFormat.DrawMode.QUADS)
+            .withBlend(BlendFunction.TRANSLUCENT).withCull(false).withDepthWrite(false);
+        if (glow) pipeline.withFragmentShader(Identifier.of("maro", "core/jump_logo_glow"));
+        return RenderLayer.of(glow ? "maro_jump_logo_glow" : "maro_jump_logo",
+            RenderSetup.builder(RenderPipelines.register(pipeline.build())).texture("Sampler0", JUMP_LOGO).translucent().build());
+    }
     private static final RenderLayer FILL = RenderLayer.of("maro_esp_fill", RenderSetup.builder(
         RenderPipelines.register(RenderPipeline.builder(RenderPipelines.POSITION_COLOR_SNIPPET)
             .withLocation(Identifier.of("maro", "pipeline/esp_fill")).withVertexFormat(VertexFormats.POSITION_COLOR, VertexFormat.DrawMode.QUADS)
@@ -63,6 +74,7 @@ public final class Renderer3D {
         buffers.put(FILL, FILL_BUFFER); buffers.put(LINE, LINE_BUFFER);
         buffers.put(VISIBLE_FILL,new BufferAllocator(262144)); buffers.put(VISIBLE_LINE,new BufferAllocator(262144));
         buffers.put(GLOW_FILL,new BufferAllocator(262144)); buffers.put(GLOW_LINE,new BufferAllocator(262144));
+        buffers.put(JUMP_LOGO_GLOW,new BufferAllocator(4096)); buffers.put(JUMP_LOGO_LAYER,new BufferAllocator(4096));
         BUFFERS = VertexConsumerProvider.immediate(buffers, FALLBACK_BUFFER);
     }
     private final MatrixStack.Entry transform;
@@ -78,26 +90,42 @@ public final class Renderer3D {
     private Renderer3D(WorldRenderContext context) {
         transform = context.matrices().peek(); camera = context.worldState().cameraRenderState.pos;
     }
+    private static java.util.List<BlockESP> blockEsps=java.util.List.of();
+    private static int registrySize=-1;
     public static void init() {
         WorldRenderEvents.END_MAIN.register(context -> {
             BaseESP module = ModuleManager.get(BaseESP.class);
             AutoBuilder builder=ModuleManager.get(AutoBuilder.class);
             // Block ESP and the modules built on it (Storage ESP).
-            java.util.List<BlockESP> esps=new java.util.ArrayList<>();
-            for(var m:ModuleManager.all())if(m instanceof BlockESP esp&&esp.isEnabled())esps.add(esp);
+            var registry=ModuleManager.all();
+            if(registry.size()!=registrySize){blockEsps=registry.stream().filter(BlockESP.class::isInstance).map(BlockESP.class::cast).toList();registrySize=registry.size();}
+            boolean espsOn=false;
+            for(var esp:blockEsps)if(esp.isEnabled()){espsOn=true;break;}
             dev.maro.module.impl.visuals.Trajectories paths=ModuleManager.get(dev.maro.module.impl.visuals.Trajectories.class);
             boolean pathsOn=paths!=null&&paths.isEnabled();
             dev.maro.module.impl.movement.CoordsFly coords=ModuleManager.get(dev.maro.module.impl.movement.CoordsFly.class);
             boolean coordsOn=coords!=null&&coords.isEnabled();
             dev.maro.module.impl.movement.Vehicles cars=ModuleManager.get(dev.maro.module.impl.movement.Vehicles.class);
             boolean carsOn=cars!=null&&cars.isEnabled();
-            if ((module == null || !module.isEnabled())&&(builder==null||!builder.isEnabled())&&esps.isEmpty()&&!pathsOn&&!coordsOn&&!carsOn) return;
+            dev.maro.module.impl.visuals.JumpCircle circles=ModuleManager.get(dev.maro.module.impl.visuals.JumpCircle.class);
+            boolean circlesOn=circles!=null&&circles.isEnabled();
+            var voids=ModuleManager.get(dev.maro.module.impl.visuals.BedrockVoidESP.class);
+            boolean voidsOn=voids!=null&&voids.isEnabled();
+            var spawners=ModuleManager.get(dev.maro.module.impl.visuals.SpawnerNotifier.class);
+            boolean spawnersOn=spawners!=null&&spawners.isEnabled()&&spawners.hasPillars();
+            var pulse=ModuleManager.get(dev.maro.module.impl.visuals.RedstoneBypass.class);
+            boolean pulseOn=pulse!=null&&pulse.hasOverlay();
+            if ((module == null || !module.isEnabled())&&(builder==null||!builder.isEnabled())&&!espsOn&&!pathsOn&&!coordsOn&&!carsOn&&!circlesOn&&!voidsOn&&!spawnersOn&&!pulseOn) return;
             try {
                 if(module!=null&&module.isEnabled())module.render(new Renderer3D(context));
                 if(pathsOn)paths.render(new Renderer3D(context),MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(true));
                 if(coordsOn)coords.render(new Renderer3D(context),MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(true));
                 if(carsOn)cars.render(new Renderer3D(context),MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(true));
-                for(BlockESP esp:esps)esp.render(new Renderer3D(context));
+                if(circlesOn)circles.render(new Renderer3D(context),MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(false));
+                if(voidsOn)voids.render(new Renderer3D(context));
+                if(spawnersOn)spawners.render(new Renderer3D(context));
+                if(pulseOn)pulse.render(new Renderer3D(context));
+                for(BlockESP esp:blockEsps)if(esp.isEnabled())esp.render(new Renderer3D(context));
                 if(builder!=null&&builder.isEnabled())SchematicRenderer.render(builder,new Renderer3D(context),context);
             }
             finally { BUFFERS.draw(); }
@@ -105,6 +133,24 @@ public final class Renderer3D {
     }
     private void vertex(VertexConsumer consumer, double x, double y, double z, Color color) {
         consumer.vertex(transform, (float)(x - camera.x), (float)(y - camera.y), (float)(z - camera.z)).color(color.getPacked());
+    }
+    /** Per-vertex coverage for soft world-space effects, with the normal terrain depth test. */
+    public void gradientQuad(double x1,double y1,double z1,double x2,double y2,double z2,
+                             double x3,double y3,double z3,double x4,double y4,double z4,
+                             int c1,int c2,int c3,int c4) {
+        VertexConsumer buffer = BUFFERS.getBuffer(throughWalls?FILL:VISIBLE_FILL);
+        buffer.vertex(transform,(float)(x1-camera.x),(float)(y1-camera.y),(float)(z1-camera.z)).color(c1);
+        buffer.vertex(transform,(float)(x2-camera.x),(float)(y2-camera.y),(float)(z2-camera.z)).color(c2);
+        buffer.vertex(transform,(float)(x3-camera.x),(float)(y3-camera.y),(float)(z3-camera.z)).color(c3);
+        buffer.vertex(transform,(float)(x4-camera.x),(float)(y4-camera.y),(float)(z4-camera.z)).color(c4);
+    }
+    /** Ground logo, with the normal world depth test and a cached texture/layer. */
+    public void jumpLogo(double x,double y,double z,double ax,double az,double bx,double bz,int color,boolean glow) {
+        var out=BUFFERS.getBuffer(glow?JUMP_LOGO_GLOW:JUMP_LOGO_LAYER);
+        out.vertex(transform,(float)(x+ax-camera.x),(float)(y-camera.y),(float)(z+az-camera.z)).texture(0,0).color(color);
+        out.vertex(transform,(float)(x+bx-camera.x),(float)(y-camera.y),(float)(z+bz-camera.z)).texture(1,0).color(color);
+        out.vertex(transform,(float)(x-ax-camera.x),(float)(y-camera.y),(float)(z-az-camera.z)).texture(1,1).color(color);
+        out.vertex(transform,(float)(x-bx-camera.x),(float)(y-camera.y),(float)(z-bz-camera.z)).texture(0,1).color(color);
     }
     public void quad(double x1, double y1, double z1, double x2, double y2, double z2,
                      double x3, double y3, double z3, double x4, double y4, double z4, Color color) {

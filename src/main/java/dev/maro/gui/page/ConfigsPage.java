@@ -94,7 +94,7 @@ public class ConfigsPage extends Page {
 
         float rowH = 30, gap = 4;
         scroll.setBounds(cache.size() * (rowH + gap) - gap + 2, viewH);
-        float off = scroll.update();
+        float off = scroll.update(gui.hasPointerDrag());
         gui.pushClip(x - 6, top, w + 12, viewH);
         long now = System.currentTimeMillis();
         for (int i = 0; i < cache.size(); i++) {

@@ -1,0 +1,11 @@
+Model Information:
+* title:	skeleton
+* source:	https://sketchfab.com/3d-models/skeleton-aad392aff87246179789ac23063856a6
+* author:	sanik.pdo (https://sketchfab.com/sanik.pdo)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "skeleton" (https://sketchfab.com/3d-models/skeleton-aad392aff87246179789ac23063856a6) by sanik.pdo (https://sketchfab.com/sanik.pdo) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

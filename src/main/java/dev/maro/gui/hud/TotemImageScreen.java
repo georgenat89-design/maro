@@ -1,5 +1,6 @@
 package dev.maro.gui.hud;
 
+import dev.maro.gui.render.Fonts;
 import dev.maro.gui.render.Render2D;
 import dev.maro.mixin.DrawContextAccessor;
 import dev.maro.module.impl.visuals.CustomTotem;
@@ -105,27 +106,27 @@ public final class TotemImageScreen extends Screen {
         int w = Math.min(420, width - 32), y = height / 2 + 20;
         Render2D.rect(ctx, 0, 0, width, height, 0xC910121A);
         float px = width / 2f - PREVIEW / 2f, py = y - 30 - PREVIEW;
-        ctx.drawCenteredTextWithShadow(textRenderer, title, width / 2, (int) py - 14, 0xFFEAF4FF);
+        Fonts.centeredTop(ctx, title.getString(), width / 2, (int) py - 14, width - 24, 0xFFEAF4FF);
         Render2D.roundRect(ctx, px - 4, py - 4, PREVIEW + 8, PREVIEW + 8, 8, 0xFF202532);
         drawPreview(ctx, px, py, PREVIEW);
-        ctx.drawCenteredTextWithShadow(textRenderer, "Browse, paste a path, or drag a PNG here", width / 2, y - 12, 0xFFADB5C7);
+        Fonts.centeredTop(ctx, "Browse, paste a path, or drag a PNG here", width / 2, y - 12, width - 24, 0xFFADB5C7);
         super.render(ctx, mx, my, delta);
         String status = !pickerError.isEmpty() ? pickerError : choosing ? "Choosing a file…" : module.imageStatus();
-        ctx.drawCenteredTextWithShadow(textRenderer, textRenderer.trimToWidth(status, w), width / 2, y + 63, 0xFFADB5C7);
+        Fonts.centeredTop(ctx, Fonts.trim(status, w, false, .9f), width / 2, y + 63, width - 24, 0xFFADB5C7);
         String[] help = switch (module.shapeSetting().get()) {
             case CustomTotem.CUT_OUT -> new String[] {"Cut Out: a plain background is taken away,", "so your picture's own outline is the totem."};
             case CustomTotem.SQUARE -> new String[] {"Square: the whole picture, background and all;", "see-through parts of it stay see-through."};
             default -> new String[] {"Wrap: your picture covers the totem's own shape,", "with the totem showing through its see-through parts."};
         };
-        ctx.drawCenteredTextWithShadow(textRenderer, textRenderer.trimToWidth(help[0], w), width / 2, y + 77, 0xFF7C8599);
-        ctx.drawCenteredTextWithShadow(textRenderer, textRenderer.trimToWidth(help[1], w), width / 2, y + 89, 0xFF7C8599);
+        Fonts.centeredTop(ctx, Fonts.trim(help[0], w, false, .9f), width / 2, y + 77, width - 24, 0xFF7C8599);
+        Fonts.centeredTop(ctx, Fonts.trim(help[1], w, false, .9f), width / 2, y + 89, width - 24, 0xFF7C8599);
     }
 
     /** Your totem as the game will use it, in the shape chosen, pixel-sharp, on a checkerboard so see-through parts show. */
     private void drawPreview(DrawContext ctx, float x, float y, int size) {
         var texture = module.previewTexture();
         if (texture == null) {
-            ctx.drawCenteredTextWithShadow(textRenderer, "No image yet", (int) (x + size / 2f), (int) (y + size / 2f - 4), 0xFF7C8599);
+            Fonts.centeredTop(ctx, "No image yet", (int) (x + size / 2f), (int) (y + size / 2f - 4), width - 24, 0xFF7C8599);
             return;
         }
         int cells = 8, cell = size / cells;

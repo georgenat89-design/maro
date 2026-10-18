@@ -59,7 +59,28 @@ final class HudReadabilityChecks {
                 scaleSetting.reset();
             });
             context.waitTicks(100);
-            context.takeScreenshot("maro-readable-staff-and-compact-map");
+            var staffShot=context.takeScreenshot("maro-readable-staff-and-compact-map");
+            try {
+                var image=javax.imageio.ImageIO.read(staffShot.toFile());
+                float[] placement=context.computeOnClient(c->new float[]{staff.hudLeft(),staff.hudTop(),staff.hudScale(),
+                        (float)c.getWindow().getScaleFactor()});
+                double unit=placement[2]*placement[3],cx=(placement[0]+staff.hudWidth()/2)*placement[3];
+                for(int line=0;line<2;line++){
+                    int left=image.getWidth(),right=-1,top=image.getHeight(),bottom=-1;
+                    int y1=(int)(placement[1]*placement[3]+(line==0?5:19)*unit);
+                    int y2=(int)(placement[1]*placement[3]+(line==0?19:31)*unit);
+                    for(int y=y1;y<y2;y++)for(int x=(int)(cx-60*unit);x<cx+60*unit;x++){
+                        int rgb=image.getRGB(x,y),r=rgb>>16&255,g=rgb>>8&255,b=rgb&255;
+                        boolean ink=line==0?r>210&&g>210&&b>210:r>80&&r<180&&g>r+3&&b>g+4;
+                        if(ink){left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);}
+                    }
+                    require(right>=left,"Staff header text was absent");
+                    require(Math.abs((left+right+1)/2d-cx)<=1.5,"Staff header text missed the card center: "+line);
+                    double cy=placement[1]*placement[3]+(line==0?13:23)*unit;
+                    require(Math.abs((top+bottom+1)/2d-cy)<=1.5,"Staff header baseline was not centered: "+line);
+                }
+                System.out.println("[staff-centering] PASS: title and live-presence ink centered inside the card");
+            } catch(java.io.IOException error){throw new AssertionError(error);}
             Object before = context.computeOnClient(client -> raster(map));
             context.waitTicks(4);
             require(before == context.computeOnClient(client -> raster(map)), "Stable compact map rebuilt its cached raster");

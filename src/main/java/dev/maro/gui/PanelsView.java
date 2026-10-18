@@ -12,9 +12,11 @@ import dev.maro.gui.widget.Anims;
 import dev.maro.gui.widget.CompactSettings;
 import dev.maro.gui.widget.Scroll;
 import dev.maro.gui.widget.Widgets;
+import dev.maro.gui.widget.ModuleSectionHeaders;
 import dev.maro.module.Category;
 import dev.maro.module.Module;
 import dev.maro.module.ModuleManager;
+import dev.maro.module.ModuleSections;
 import dev.maro.setting.SettingSection;
 import dev.maro.util.ColorUtil;
 import dev.maro.util.Easing;
@@ -45,7 +47,7 @@ public final class PanelsView {
     private record Popover(Object key, String title, Module module, List<SettingSection> sections, float anchorX, float anchorY) {
     }
 
-    private static final float POP_W = 172f, POP_HEAD = 20f, POP_FOOT = 18f;
+    private static final float POP_W = 240f, POP_HEAD = 28f, POP_FOOT = 18f;
 
     /** Where a panel is and whether it is folded; kept between openings and saved with the client settings. */
     private static final class Panel {
@@ -55,6 +57,8 @@ public final class PanelsView {
         /** Moved by hand; otherwise it sits in the automatic row. */
         boolean placed;
         boolean folded;
+        float bodyHeight;
+        final Object resizeHandle = new Object();
 
         Panel(Category category) {
             this.category = category;
@@ -84,6 +88,8 @@ public final class PanelsView {
     private final Map<PageLink, float[]> dockAnchors = new HashMap<>();
     /** Each panel's {x, y, width} last frame. */
     private final Map<Category, float[]> panelRects = new HashMap<>();
+    private final Map<Category, float[]> resizePlaces = new HashMap<>();
+    float[] resizePlace(Category category) { return resizePlaces.get(category); }
     private Popover popover;
     private long popoverSince;
     /** A dock page with no settings (Configs, Socials), in a box under its button so the panels stay the view. */
@@ -124,6 +130,7 @@ public final class PanelsView {
         pageBox = null;
         popoverSince = System.currentTimeMillis();
         popoverScroll.reset();
+        compact.resetPage();
         gui.focused = null;
         Sounds.click();
     }
@@ -155,7 +162,7 @@ public final class PanelsView {
     }
 
     /** A module's settings box beside its row, or the Auto Builder's own screen. */
-    private void openSettings(Module m) {
+    void openSettings(Module m) {
         if (m instanceof dev.maro.module.impl.player.AutoBuilder builder) {
             net.minecraft.client.MinecraftClient.getInstance().setScreen(new dev.maro.builder.BuilderControlScreen(gui, builder));
             return;
@@ -165,7 +172,12 @@ public final class PanelsView {
             net.minecraft.client.MinecraftClient.getInstance().setScreen(own);
             return;
         }
-        openPopover(new Popover(m, m.getName(), m, m.getSettingSections(), 0, 0));
+        openModuleOptions(m);
+    }
+
+    /** Raw controls for a custom screen's Settings button, without reopening that screen. */
+    void openModuleOptions(Module m) {
+        openPopover(new Popover(m, m.getDisplayName(), m, m.getSettingSections(), 0, 0));
     }
 
     // ---- layout -----------------------------------------------------------------------------
@@ -179,7 +191,8 @@ public final class PanelsView {
 
     private static float panelWidth(float width, int n) {
         float fit = (width - MARGIN * 2 - GAP * (n - 1)) / n;
-        return Math.max(MIN_W, Math.min(MAX_W, fit));
+        float textRatio=ClientSettings.menuTextSize.getFloat()/90f;
+        return Math.max(MIN_W*textRatio, Math.min(MAX_W*textRatio, fit));
     }
 
     /** Where a panel sits until it is moved: in one centred row, wrapping onto more if the screen is narrow. */
@@ -193,12 +206,23 @@ public final class PanelsView {
     }
 
     static void resetLayout() {
+        ModuleSectionHeaders.reset();
         for (Panel panel : PANELS) {
             panel.placed = false;
             panel.folded = false;
+            panel.bodyHeight = 0;
             panel.scroll.reset();
         }
         PANELS.sort((a, b) -> a.category.ordinal() - b.category.ordinal());
+    }
+
+    void revealCategory(Category category) {
+        for (Panel panel : List.copyOf(PANELS)) if (panel.category == category) {
+            panel.folded = false;
+            panel.scroll.reset();
+            toFront(panel);
+            return;
+        }
     }
 
     private static void toFront(Panel panel) {
@@ -216,6 +240,7 @@ public final class PanelsView {
         places.clear();
         rowPanels.clear();
         panelRects.clear();
+        resizePlaces.clear();
         // A click on nothing closes the settings box.
         if (popover != null || pageBox != null) gui.hit(0, 0, width, height, (button, mx, my) -> closePopover());
         float base = Render2D.getAlpha();
@@ -238,7 +263,7 @@ public final class PanelsView {
             if (!first) ctx.createNewRootLayer();
             first = false;
             panel.x = Math.max(0, Math.min(width - pw, panel.x));
-            panel.y = Math.max(0, Math.min(height - HEADER, panel.y));
+            panel.y = Math.max(0, Math.min(height - HEADER - (panel.folded?0:ROW*3+MARGIN+8), panel.y));
             // Each panel drops in a moment after the one before it.
             float since = (System.currentTimeMillis() - openedAt) / (1000f / ClientSettings.animationSpeed());
             float intro = Easing.outCubic((since - index * 0.045f) / 0.32f);
@@ -260,8 +285,10 @@ public final class PanelsView {
         }
         // How to use it, along the bottom.
         Render2D.setAlpha(base * shown);
-        Fonts.drawCentered(ctx, "Click to toggle  •  right click for settings  •  middle click for a key  •  drag a header to move it",
-                width / 2f, height - 7f, ColorUtil.withAlpha(Theme.TEXT_MUTED, 0xB0), false, 0.6f);
+        String hint = "Left click: settings  /  Right click: toggle";
+        hint = Fonts.trim(ctx, hint, width - 354, false, .65f);
+        if(width>680){float hintY=height+14;Fonts.drawV(ctx,Fonts.trim(ctx,hint,width-354-154,false,.58f),MARGIN+150,hintY,Theme.TEXT_MUTED,false,.58f);}
+        gui.renderPanelAntiCheatPrompt(ctx, width, height);
         Render2D.setAlpha(base);
     }
 
@@ -269,10 +296,10 @@ public final class PanelsView {
         if (panel.category == Category.ANTI_CHEAT_OFF && !gui.antiCheatSectionUnlocked()) {
             places.put(panel.category, new float[] {x + w / 2, y + HEADER / 2});
             Render2D.roundRect(ctx, x, y, w, HEADER + 23, Theme.radius() + 2, Theme.windowBg());
-            Render2D.roundOutline(ctx, x, y, w, HEADER + 23, Theme.radius() + 2, 1, 0xFF7D5B34);
-            Icons.LOCK.draw(ctx, x + 11, y + HEADER / 2, 9, 0xFFFFC36A, 0);
-            Fonts.drawV(ctx, "Anti-Cheat Off", x + 20, y + HEADER / 2, Theme.TEXT, true, 0.7f);
-            Fonts.drawCentered(ctx, "Enter Section", x + w / 2, y + HEADER + 10, 0xFFFFC36A, false, 0.7f);
+            Render2D.roundOutline(ctx, x, y, w, HEADER + 23, Theme.radius() + 2, 1, Theme.title(panel.category));
+            Icons.LOCK.draw(ctx, x + 11, y + HEADER / 2, 9, Theme.title(panel.category), 0);
+            Fonts.drawV(ctx, "Anti-Cheat Off", x + 20, y + HEADER / 2, Theme.title(panel.category), true, 0.7f);
+            Fonts.drawCentered(ctx, "Enter Section", x + w / 2, y + HEADER + 10, Theme.title(panel.category), false, 0.7f);
             gui.hit(x, y, w, HEADER + 23, (button, mx, my) -> { if (button == 0) gui.openPage(Category.ANTI_CHEAT_OFF.ordinal()); });
             return;
         }
@@ -283,10 +310,12 @@ public final class PanelsView {
         float open = Anims.of(panel, "open", !panel.folded && !rows.isEmpty());
         float dim = Anims.of(panel, "dim", searching && rows.isEmpty());
 
-        float content = rows.size() * ROW + 6f;
-        float room = Math.max(ROW * 3, screenH - y - HEADER - MARGIN - 8f);
-        float listH = Math.min(content, room);
-        float h = HEADER + listH * open;
+        rows.sort(java.util.Comparator.comparing(Module::getDisplayName,String.CASE_INSENSITIVE_ORDER));
+        float content=6+rows.size()*ROW;
+        float room = Math.max(ROW * 3, screenH - y - HEADER - MARGIN - 48f);
+        float minBody = Math.min(content, ROW * 3), maxBody = Math.min(content, Math.max(ROW * 3, screenH-y-HEADER-MARGIN-8));
+        float listH = panel.bodyHeight > 0 ? Math.clamp(panel.bodyHeight,minBody,maxBody) : Math.min(content,room);
+        float h = HEADER + (listH + 8) * open;
         float r = Theme.radius() + 2f;
         float prev = Render2D.getAlpha();
         Render2D.setAlpha(prev * (1f - dim * 0.6f));
@@ -308,16 +337,29 @@ public final class PanelsView {
         if (open > 0.01f) {
             float ly = y + HEADER, lh = listH * open;
             panel.scroll.setBounds(content, listH);
-            float off = panel.scroll.update();
+            float off = panel.scroll.update(gui.hasPointerDrag());
             gui.scrollHit(x, ly, w, lh, panel.scroll::scroll);
             gui.pushClip(x, ly, w, lh);
             float ry = ly + 3f - off;
-            for (Module m : rows) {
-                if (gui.isVisible(ry, ROW)) renderRow(ctx, panel, m, x + 4f, ry, w - 8f, ROW - 1f);
-                ry += ROW;
+            for(Module m:rows){
+                if(gui.isVisible(ry,ROW))renderRow(ctx,panel,m,x+4,ry,w-8,ROW-1);
+                ry+=ROW;
             }
             gui.popClip();
             panel.scroll.drawBar(gui, ctx, x + w - 2.5f, ly + 2f, lh - 4f);
+            float gripY=ly+lh;
+            boolean gripHover=gui.hovered(x+4,gripY-2,w-8,10)||gui.isDragging(panel.resizeHandle);
+            float grip=Anims.of(panel,"resize",gripHover);
+            Render2D.roundRect(ctx,x+w/2-13,gripY+3,26,2,1,ColorUtil.lerp(Theme.TEXT_MUTED,Theme.accent(),grip));
+            resizePlaces.put(panel.category,new float[]{x+w/2,gripY+4});
+            if(gripHover)gui.tooltip("Drag down to show more modules / right-click to reset height");
+            gui.hit(x+4,gripY-2,w-8,10,(button,mx,my)->{
+                toFront(panel);
+                if(button==1){panel.bodyHeight=0;return;}
+                if(button!=0)return;
+                final float initial=listH;
+                gui.startDrag(panel.resizeHandle,(dx,dy)->panel.bodyHeight=Math.clamp(initial+(float)(dy-my),minBody,maxBody));
+            });
         }
         Render2D.setAlpha(prev);
     }
@@ -349,11 +391,11 @@ public final class PanelsView {
         if (hov) gui.tooltip("Drag to move  •  right click to fold");
 
         float ix = x + 11;
-        panel.category.getIcon().draw(ctx, ix, cy, 8, Theme.TEXT_MUTED, 0);
+        panel.category.getIcon().draw(ctx, ix, cy, 8, Theme.title(panel.category), 0);
         float caretX = x + w - 9;
         String title = panel.category.getDisplayName();
         float tx = x + 21, room = w - 35;
-        Fonts.drawV(ctx, Fonts.trim(title, room, true, .83f), tx, cy, Theme.TEXT, true, .83f);
+        Fonts.drawV(ctx, Fonts.trim(title, room, true, .83f), tx, cy, Theme.title(panel.category), true, .83f);
 
         // A caret that turns as the panel folds.
         double turn = Math.toRadians(-90f * (1f - open));
@@ -381,10 +423,9 @@ public final class PanelsView {
         gui.hit(x, y, w, h, (button, mx, my) -> {
             toFront(panel);
             if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
-                m.toggle();
-                Sounds.toggle(m.isEnabled());
-            } else if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
                 openSettings(m);
+            } else if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+                m.toggle();Sounds.toggle(m.isEnabled());
             } else if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
                 gui.listening = m.getBind();
             }
@@ -405,16 +446,20 @@ public final class PanelsView {
             Fonts.drawRight(ctx, key, right, cy, keyColor, false, 0.6f);
             right -= Fonts.width(key, false, 0.6f) + 4f;
             Fonts.endRaw();
-        } else if (hv > 0.01f && !m.getSettings().isEmpty()) {
-            Icons.DOTS.draw(ctx, right - 3f, cy, 7f, ColorUtil.withAlpha(Theme.TEXT_MUTED, Math.round(0xFF * hv)), hv);
-            right -= 10f;
+        }
+        if(!m.getSettings().isEmpty()){
+            float settingsX=right-4f;
+            Icons.DOTS.draw(ctx,settingsX,cy,7f,gui.hovered(settingsX-6,cy-7,12,14)?Theme.TEXT:Theme.TEXT_MUTED,0);
+            gui.hit(settingsX-6,cy-7,12,14,(button,mxx,myy)->{if(button==0)openSettings(m);else if(button==1){m.toggle();Sounds.toggle(m.isEnabled());}});
+            if(gui.hovered(settingsX-6,cy-7,12,14))gui.tooltip("Open settings");
+            right-=13f;
         }
 
         // Its name, as it is written, nudged right while it is on.
         float nx = x + 6f + en * 2f;
         int color = ColorUtil.lerp(ColorUtil.lerp(Theme.TEXT_DIM, Theme.TEXT, hv), 0xFFFFFFFF, en);
         Fonts.beginRaw();
-        Fonts.drawV(ctx, Fonts.trim(m.getName(), right - nx - 2f, en > 0.5f, NAME_SCALE), nx, cy, color, en > 0.5f, NAME_SCALE);
+        Fonts.drawV(ctx, Fonts.trim(m.getDisplayName(), right - nx - 2f, en > 0.5f, NAME_SCALE), nx, cy, color, en > 0.5f, NAME_SCALE);
         Fonts.endRaw();
     }
 
@@ -452,7 +497,7 @@ public final class PanelsView {
         // A box from the dock stays under its button and scrolls rather than climbing over the dock.
         float room = m != null ? height - 8f : height - pop.anchorY() - 6f;
         float maxBody = Math.max(40f, room - POP_HEAD - foot - extra - 4f);
-        float body = Math.min(popoverContent, maxBody);
+        float body = Math.min(260,maxBody);
         float h = Anims.of(pop.key(), "popHeight", POP_HEAD + extra + body + foot + 4f, 22f);
         x = Math.max(4f, Math.min(width - w - 4f, x));
         y = Math.max(4f, Math.min(height - h - 4f, y));
@@ -485,10 +530,12 @@ public final class PanelsView {
                 Sounds.toggle(m.isEnabled());
             });
             right -= 24f;
+            gui.moduleConfigsButton(ctx,m,right-16f,hy-8f,16f);
+            right-=21f;
         }
         Render2D.roundGradientV(ctx, x + 6f, hy - 4.5f, 2f, 9f, 1f, Theme.accent(), Theme.accent2());
         Fonts.beginRaw();
-        Fonts.drawV(ctx, Fonts.trim(pop.title(), right - x - 16f, true, 0.84f), x + 12f, hy, Theme.TEXT, true, 0.84f);
+        Fonts.drawV(ctx, Fonts.trim(m != null ? m.getDisplayName() : pop.title(), right - x - 16f, true, 0.84f), x + 12f, hy, Theme.title(m == null ? null : m.getCategory()), true, 0.84f);
         Fonts.endRaw();
         Render2D.rectGradient(ctx, x + 6f, y + POP_HEAD, w - 12f, 1f, Theme.accent(0x60), Theme.accent2(0x10), Theme.accent2(0x10), Theme.accent(0x60));
 
@@ -498,19 +545,16 @@ public final class PanelsView {
             by += extra;
         }
 
-        // The settings, scrolling when there are more than fit.
-        popoverScroll.setBounds(popoverContent, body);
-        float off = popoverScroll.update();
-        gui.scrollHit(x, by, w, body, popoverScroll::scroll);
+        // Controls stay fully visible; explicit pages replace nested scrolling.
+        gui.scrollHit(x, by, w, body,amount->{});
         gui.pushClip(x + 2f, by, w - 4f, body);
         if (pop.sections().stream().allMatch(section -> section.getSettings().stream().noneMatch(dev.maro.setting.Setting::isVisible))) {
             Fonts.drawV(ctx, "No settings", x + 10f, by + 8f, Theme.TEXT_MUTED, false, 0.7f);
             popoverContent = 16f;
         } else {
-            popoverContent = compact.render(gui, ctx, x + 4f, by - off, w - 8f, pop.sections()) + 2f;
+            compact.renderPaged(gui, ctx, x + 4f, by, w - 8f,body, pop.sections());
         }
         gui.popClip();
-        popoverScroll.drawBar(gui, ctx, x + w - 2.5f, by + 2f, body - 4f);
 
         // Footer: the module's key, and a button to clear it.
         if (m != null) {
@@ -531,6 +575,11 @@ public final class PanelsView {
             }
             String key = gui.listening == m.getBind() ? "Press a key" : m.getBind().getKeyName();
             Widgets.bindChip(gui, ctx, m.getBind(), ux - (Fonts.width(key, false, 0.72f) + 9f), fy, 1f);
+        }
+        if(VisualPreview.supports(m)){
+            float pw=Math.min(216,Math.max(x-10,width-x-w-10)),ph=Math.min(270,height-8);
+            float px=x>=pw+10?x-pw-6:x+w+6;
+            if(px+pw<=width-4)gui.visualPreview().draw(ctx,m,px,Math.clamp(y,4,height-ph-4),pw,ph);
         }
         Render2D.setAlpha(prev);
     }
@@ -562,7 +611,7 @@ public final class PanelsView {
         gui.hit(right - 10f, hy - 6f, 12f, 12f, (button, mx, my) -> closePopover());
         page.icon().draw(ctx, x + 11f, hy, 8f, Theme.accent(), 0f);
         Fonts.beginRaw();
-        Fonts.drawV(ctx, page.label(), x + 20f, hy, Theme.TEXT, true, 0.84f);
+        Fonts.drawV(ctx, page.label(), x + 20f, hy, Theme.title(null), true, 0.84f);
         Fonts.endRaw();
         Render2D.rectGradient(ctx, x + 6f, y + POP_HEAD, w - 12f, 1f, Theme.accent(0x60), Theme.accent2(0x10), Theme.accent2(0x10), Theme.accent(0x60));
 
@@ -666,12 +715,14 @@ public final class PanelsView {
 
     public static JsonObject save() {
         JsonObject out = new JsonObject();
+        out.add("module-sections",ModuleSectionHeaders.save());
         for (Panel panel : PANELS) {
             JsonObject o = new JsonObject();
             o.addProperty("x", panel.x);
             o.addProperty("y", panel.y);
             o.addProperty("placed", panel.placed);
             o.addProperty("folded", panel.folded);
+            o.addProperty("height", panel.bodyHeight);
             out.add(panel.category.name(), o);
         }
         return out;
@@ -680,6 +731,7 @@ public final class PanelsView {
     public static void load(JsonElement json) {
         if (json == null || !json.isJsonObject()) return;
         JsonObject all = json.getAsJsonObject();
+        ModuleSectionHeaders.load(all.get("module-sections"));
         for (Panel panel : PANELS) {
             JsonElement e = all.get(panel.category.name());
             if (e == null || !e.isJsonObject()) continue;
@@ -687,11 +739,14 @@ public final class PanelsView {
                 JsonObject o = e.getAsJsonObject();
                 panel.placed = o.has("placed") && o.get("placed").getAsBoolean();
                 panel.folded = o.has("folded") && o.get("folded").getAsBoolean();
+                panel.bodyHeight=o.has("height")?o.get("height").getAsFloat():0;
+                if(!Float.isFinite(panel.bodyHeight)||panel.bodyHeight<0)panel.bodyHeight=0;
                 if (o.has("x")) panel.x = o.get("x").getAsFloat();
                 if (o.has("y")) panel.y = o.get("y").getAsFloat();
             } catch (RuntimeException ignored) {
                 // a hand-edited file: that panel goes back to its automatic place
                 panel.placed = false;
+                panel.bodyHeight = 0;
             }
         }
     }

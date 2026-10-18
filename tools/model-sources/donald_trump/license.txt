@@ -1,0 +1,11 @@
+Model Information:
+* title:	Donald Trump Running
+* source:	https://sketchfab.com/3d-models/donald-trump-running-9890c103b8f249789f11ec1be0fec94a
+* author:	Vadim Fedenko (https://sketchfab.com/vadimfedenko)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Donald Trump Running" (https://sketchfab.com/3d-models/donald-trump-running-9890c103b8f249789f11ec1be0fec94a) by Vadim Fedenko (https://sketchfab.com/vadimfedenko) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

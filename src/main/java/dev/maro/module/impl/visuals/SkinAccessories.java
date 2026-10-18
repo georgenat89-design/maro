@@ -45,6 +45,17 @@ public final class SkinAccessories extends Module {
     private final ModeSetting shovel = add(new ModeSetting("Shovel", "How your shovels look", "None", CosmeticItems.choices(CosmeticItems.Kind.SHOVEL)));
     private final ModeSetting trident = add(new ModeSetting("Trident", "How your tridents look", "None", CosmeticItems.choices(CosmeticItems.Kind.TRIDENT)));
     private final NumberSetting itemSize = add(new NumberSetting("Item Size", "How big skinned items are in your hand", 1, 0.5, 1.6, 0.05).suffix("x"));
+    public final NumberSetting pickaxeShine = add(new NumberSetting("Pickaxe Metal Shine", "Highlights on metal; wood and grips stay matte",75,0,100,5).suffix("%"));
+    public final BooleanSetting pickaxeOutline = add(new BooleanSetting("Pickaxe Outline", "Optional colored silhouette",false));
+    public final ColorSetting pickaxeOutlineColor = add(new ColorSetting("Pickaxe Outline Color", "Silhouette color",0xFFEC364B).visible(pickaxeOutline::get));
+    public final NumberSetting pickaxeOutlineWidth = add(new NumberSetting("Pickaxe Outline Width", "Silhouette thickness",1,.25,2,.25).visible(pickaxeOutline::get));
+    public final BooleanSetting pickaxeFirst = add(new BooleanSetting("Pickaxe First Person", "Show 3D pickaxes in your hand",true));
+    public final BooleanSetting pickaxeSwing = add(new BooleanSetting("Pickaxe Swing", "Smooth windup, strike and recovery for the selected tool",true));
+    public final BooleanSetting pickaxeThird = add(new BooleanSetting("Pickaxe Third Person", "Show 3D pickaxes on your own character",true));
+    public final BooleanSetting pickaxeIcons = add(new BooleanSetting("Pickaxe Inventory Icons", "Show 3D pickaxes in inventory slots",true));
+    public final BooleanSetting pickaxeSounds = add(new BooleanSetting("Pickaxe Sounds", "Recreated equip, swing and mining impact effects, heard locally",true));
+    public final NumberSetting pickaxeVolume = add(new NumberSetting("Pickaxe Volume", "The game's master volume also applies",60,0,100,5).suffix("%").visible(pickaxeSounds::get));
+    private final dev.maro.render.pickaxe.PickaxeSounds audio = new dev.maro.render.pickaxe.PickaxeSounds();
     private final long animationOrigin = System.nanoTime();
 
     private static SkinAccessories instance;
@@ -52,6 +63,7 @@ public final class SkinAccessories extends Module {
     @Override public net.minecraft.client.gui.screen.Screen panel(net.minecraft.client.gui.screen.Screen parent) { return new SkinAccessoriesScreen(parent, this); }
     @Override public List<SettingSection> getSettingSections() {
         return List.of(section("Looks & Preview", preset, preview, target), section("Items", sword, pickaxe, shovel, trident, itemSize),
+            section("3D Pickaxes",pickaxeShine,pickaxeOutline,pickaxeOutlineColor,pickaxeOutlineWidth,pickaxeFirst,pickaxeSwing,pickaxeThird,pickaxeIcons,pickaxeSounds,pickaxeVolume),
             section("Accessories", head, wings, tail, halo, shoulders, back),
             section("Fit", headSize, wingSize, wingSpread, tailLength, haloHeight), section("Palette", primary, accent, haloColor, rainbow, glow),
             section("Animation", motion, speed, strength, movement), section("Equipment", hideHelmet, hideElytra));
@@ -78,6 +90,8 @@ public final class SkinAccessories extends Module {
     private int rainbowColor(float offset) { return Color.HSBtoRGB((float)((System.nanoTime() - animationOrigin) / 1e9 / 16 + offset) % 1, 0.55f, 1); }
     public boolean wants(PlayerEntityRenderState state) {
         if (mc.player == null || state.invisible || state.spectator) return false;
+        if(state.id==dev.maro.gui.VisualPreview.ENTITY_ID && mc.currentScreen instanceof dev.maro.gui.ClickGuiScreen gui)
+            return isEnabled() || gui.visualPreview().module()==this;
         boolean previewing = mc.currentScreen instanceof SkinAccessoriesScreen;
         if (!isEnabled() && !previewing) return false;
         if (previewing) return state.id == mc.player.getId();
@@ -130,6 +144,13 @@ public final class SkinAccessories extends Module {
     // ---- weapon and tool skins ----------------------------------------------------------------
 
     public static SkinAccessories get() { return instance; }
+    public String selected(){return pickaxe.get();}
+    public void select(String name){pickaxe.set(name);}
+    public dev.maro.render.pickaxe.PickaxeRenderer.Style previewStyle(float yaw,float pitch,float zoom){return new dev.maro.render.pickaxe.PickaxeRenderer.Style(pickaxeShine.getFloat()/100,pickaxeOutline.get(),pickaxeOutlineColor.get(),pickaxeOutlineWidth.getFloat()*.004f,itemSize.getFloat(),yaw,pitch,zoom);}
+    @Override public void onTick(){audio.tick(this);}
+    @Override protected void onDisable(){audio.reset();}
+    public dev.maro.render.pickaxe.PickaxeSounds audio(){return audio;}
+    @Override public com.google.gson.JsonObject saveExtra(){var data=new com.google.gson.JsonObject();data.addProperty("pickaxesMerged",true);return data;}
 
     /** The skin to draw an item with, for your own items while Cosmetics is on (or previewing), else null. */
     public static CosmeticItems.Skin skinFor(net.minecraft.item.ItemStack stack) {

@@ -34,7 +34,11 @@ import dev.maro.nathan.render.SpotifyCardRaster;
 public final class SpotifyMedia implements SpotifyPlayback, AutoCloseable {
     /** Artwork is decoded off the render thread and uploaded only when the song changes. */
     public record Artwork(String key, int width, int height, byte[] rgba, int tintRgb,
-                          SpotifyCardRaster.Raster cardRaster, SpotifyCardRaster.Raster lyricsRaster) {
+                          SpotifyCardRaster.Raster cardRaster, SpotifyCardRaster.Raster lyricsRaster, byte[] rawRgba) {
+        public Artwork(String key, int width, int height, byte[] rgba, int tintRgb,
+                       SpotifyCardRaster.Raster cardRaster, SpotifyCardRaster.Raster lyricsRaster) {
+            this(key, width, height, rgba, tintRgb, cardRaster, lyricsRaster, rgba);
+        }
     }
 
     public record State(boolean available, String title, String artist, String album, String source,
@@ -503,7 +507,7 @@ public final class SpotifyMedia implements SpotifyPlayback, AutoCloseable {
             graphics.dispose();
         }
 
-        byte[] rgba = new byte[size * size * 4];
+        byte[] rgba = new byte[size * size * 4], rawRgba = new byte[size * size * 4];
         for (int y = 0; y < size; y++) {
             for (int x = 0; x < size; x++) {
                 int argb = square.getRGB(x, y);
@@ -515,11 +519,13 @@ public final class SpotifyMedia implements SpotifyPlayback, AutoCloseable {
                 rgba[offset + 1] = (byte) (argb >> 8);
                 rgba[offset + 2] = (byte) argb;
                 rgba[offset + 3] = (byte) Math.round((argb >>> 24) * coverage);
+                rawRgba[offset] = (byte)(argb >> 16); rawRgba[offset+1] = (byte)(argb >> 8);
+                rawRgba[offset+2] = (byte)argb; rawRgba[offset+3] = (byte)(argb >>> 24);
             }
         }
         int tint = artworkTint(square);
         return new Artwork(key, size, size, rgba, tint, SpotifyCardRaster.render(tint),
-            SpotifyCardRaster.render(tint, SpotifyCardRaster.Theme.AlbumColours, SpotifyCardRaster.LYRICS_PANEL_HEIGHT));
+            SpotifyCardRaster.render(tint, SpotifyCardRaster.Theme.AlbumColours, SpotifyCardRaster.LYRICS_PANEL_HEIGHT), rawRgba);
     }
 
     /** Samples colour once on the media worker; neutral covers keep a quiet blue accent. */

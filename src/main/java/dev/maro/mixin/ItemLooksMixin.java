@@ -27,6 +27,7 @@ public abstract class ItemLooksMixin {
     @Inject(method = "update", at = @At("HEAD"), cancellable = true)
     private void maro$look(ItemRenderState state, ItemStack stack, ItemDisplayContext context, World world, HeldItemContext holder, int seed,
                            CallbackInfo ci) {
+        if(dev.maro.module.impl.visuals.CustomPickaxe.update(state,stack,context,holder)){ci.cancel();return;}
         if (maro$swapping || stack.isEmpty()) return;
         ItemStack shown = ItemLooks.shown(stack, context, holder);
         if (shown == stack) return;

@@ -54,11 +54,23 @@ import dev.maro.nathan.NameeProtectAddon;
  * state left behind to put back.
  */
 public final class CrispFont {
-    /** Wide and round, for small figures and body text. SIL Open Font License. */
-    public static final CrispFont POPPINS_MEDIUM = new CrispFont("Poppins-Medium.ttf");
+    private static final CrispFont[][] FAMILIES = {
+        {new CrispFont("rubik_medium.ttf"), new CrispFont("rubik_bold.ttf")},
+        {new CrispFont("inter_semibold.ttf"), new CrispFont("inter_extrabold.ttf")},
+        {new CrispFont("sora_semibold.ttf"), new CrispFont("sora_bold.ttf")}
+    };
+    /** Source-compatible names for the default bold face. */
+    public static final CrispFont POPPINS_MEDIUM = FAMILIES[2][1];
 
     /** The same, a weight up, for titles. */
-    public static final CrispFont POPPINS_SEMIBOLD = new CrispFont("Poppins-SemiBold.ttf");
+    public static final CrispFont POPPINS_SEMIBOLD = POPPINS_MEDIUM;
+
+    /** Native mesh text follows the same font and uppercase weight as the GUI. */
+    public static CrispFont current(boolean bold) {
+        int family = dev.maro.config.ClientSettings.fontFace.is("Sora") ? 2
+                : dev.maro.config.ClientSettings.fontFace.is("Inter") ? 1 : 0;
+        return FAMILIES[family][bold || dev.maro.config.ClientSettings.capsText.get() ? 1 : 0];
+    }
 
     private static final int FIRST = 32;
     private static final int COUNT = 224;
@@ -85,6 +97,7 @@ public final class CrispFont {
     private int ascent;
     private int descent;
     private int capHeight;
+    private int inkCapHeight;
     private final int[] advances = new int[COUNT];
 
     private final Map<Integer, Sized> sizes = new LinkedHashMap<>(16, 0.75f, true);
@@ -98,7 +111,7 @@ public final class CrispFont {
         if (failed) return false;
         if (info != null) return true;
 
-        try (InputStream stream = CrispFont.class.getResourceAsStream("/assets/nameeprotect/fonts/" + file)) {
+        try (InputStream stream = CrispFont.class.getResourceAsStream("/assets/maro/font/" + file)) {
             if (stream == null) throw new IOException("missing from the jar: " + file);
 
             byte[] bytes = stream.readAllBytes();
@@ -126,6 +139,8 @@ public final class CrispFont {
             int[] x1 = new int[1];
             int[] y1 = new int[1];
             capHeight = STBTruetype.stbtt_GetCodepointBox(loaded, 'H', x0, y0, x1, y1) ? y1[0] : (int) (ascent * 0.7);
+            inkCapHeight = capHeight;
+            if (file.startsWith("sora_")) capHeight = (int)Math.round(capHeight / .86);
 
             int[] advance = new int[1];
             int[] bearing = new int[1];
@@ -152,7 +167,7 @@ public final class CrispFont {
 
     /** How far down the line the middle of a capital sits. */
     public double capsMiddle() {
-        return (ascent - capHeight / 2.0) / (ascent - descent);
+        return (ascent - inkCapHeight / 2.0) / (ascent - descent);
     }
 
     /**
@@ -161,6 +176,7 @@ public final class CrispFont {
      * {@link Sized#width} is what to place text by once it has.
      */
     public double unitWidth(String text) {
+        text = dev.maro.gui.render.SmoothHudText.display(dev.maro.module.impl.misc.NameProtect.mask(text));
         long total = 0;
 
         for (int i = 0; i < text.length(); i++) total += advances[index(text.charAt(i))];
@@ -310,7 +326,7 @@ public final class CrispFont {
 
         /** Height of a capital, and how far below the top of the line it starts. */
         public double caps() {
-            return pixels * capsRatio();
+            return pixels * (double)inkCapHeight / (ascent - descent);
         }
 
         public double capsTop() {
@@ -319,6 +335,7 @@ public final class CrispFont {
 
         /** Width with {@code tracking} extra pixels between each pair of characters. */
         public double width(String text, double tracking) {
+            text = dev.maro.gui.render.SmoothHudText.display(dev.maro.module.impl.misc.NameProtect.mask(text));
             double total = 0;
 
             for (int i = 0; i < text.length(); i++) total += advance[index(text.charAt(i))];
@@ -367,6 +384,7 @@ public final class CrispFont {
         }
 
         private void run(String text, double left, double top, Color color, double tracking, double clipLeft, double clipRight) {
+            text = dev.maro.gui.render.SmoothHudText.display(dev.maro.module.impl.misc.NameProtect.mask(text));
             double pen = left;
             double line = Math.round(top) + baseline;
 

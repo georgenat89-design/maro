@@ -49,10 +49,11 @@ final class GeekedChecks {
         var perspective = context.computeOnClient(c -> c.options.getPerspective());
         int guiScale = context.computeOnClient(c -> c.options.getGuiScale().getValue());
         boolean hudHidden = context.computeOnClient(c -> c.options.hudHidden);
-        BetterLooks looks = ModuleManager.get(BetterLooks.class);
+        BetterLooks looks = BetterLooks.get();
         BooleanSetting noVignette = (BooleanSetting) looks.getSettings().stream().filter(s -> s.getName().equals("No Vignette")).findFirst().orElseThrow();
         boolean looksEnabled = context.computeOnClient(c -> looks.isEnabled());
         boolean hidVignette = context.computeOnClient(c -> noVignette.get());
+        var initialMode = world.getServer().computeOnServer(s -> s.getPlayerManager().getPlayerList().getFirst().interactionManager.getGameMode());
         try {
             world.getServer().runCommand("gamemode creative @a");
             world.getServer().runCommand("gamerule minecraft:advance_time false");
@@ -80,7 +81,7 @@ final class GeekedChecks {
                 // Vanilla's vignette brightness eases for many frames after joining a world.
                 // Remove that changing overlay from the before/after GPU comparison.
                 noVignette.set(true);
-                looks.setEnabled(true);
+                dev.maro.module.impl.visuals.TexturePacks.get().appearance.set(true); dev.maro.module.impl.visuals.TexturePacks.get().setEnabled(true);
             });
             context.waitTicks(5);
             BufferedImage plain = read(context.takeScreenshot("maro-geeked-off"));
@@ -140,10 +141,13 @@ final class GeekedChecks {
                 c.options.getGuiScale().setValue(guiScale);
                 c.options.hudHidden = hudHidden;
                 noVignette.set(hidVignette);
-                looks.setEnabled(looksEnabled);
+                dev.maro.module.impl.visuals.TexturePacks.get().setEnabled(looksEnabled);
                 c.onResolutionChanged();
             });
             context.getInput().resizeWindow(1280, 720);
+            // Later checks open the survival inventory, which creative mode swaps for its own.
+            world.getServer().runCommand("gamemode " + initialMode.getId() + " @a");
+            context.waitFor(c -> c.interactionManager.getCurrentGameMode() == initialMode);
         }
     }
 }

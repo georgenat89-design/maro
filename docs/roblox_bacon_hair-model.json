@@ -1,0 +1,15 @@
+{
+  "source_archive_sha256": "1d354bbb30b4d865c28994b4f853764ee691ff2fd9141ede38cab28575870d96",
+  "glb_sha256": "d4504bd00cf552267ae3ac6575fb1672c58934a7a7f802b7ed9a71298ffda877",
+  "attribution": {
+    "author": "Roblox (https://sketchfab.com/Robloxs)",
+    "license": "CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)",
+    "source": "https://sketchfab.com/3d-models/roblox-bacon-hair-88a62bc6286947e9846c5cd445d2628b",
+    "title": "Roblox-Bacon-Hair"
+  },
+  "changes": "Embedded local buffers/textures; legacy diffuse material colors mapped to metallic-roughness where needed.",
+  "anc_sha256": "8007ce0cf83d898336db095e7b4d2e10fcb6dafd98f4a2abc96538c448d6ae1a",
+  "source_vertices": 3820,
+  "source_triangles": 3856,
+  "runtime_changes": "Centered and scaled to 30 model units; supplied Mixamo skeleton identifies head, shoulders, elbows, hands, hips and knees; lowered arms, original texture/materials, palm grip anchors and three prebaked detail levels. Runtime asset contains no GLB parsing."
+}

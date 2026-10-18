@@ -37,6 +37,22 @@ can be clicked to retry. Use **Block** inside a conversation to prevent new mess
 from that number. A successful send means the relay accepted it; it does not claim
 the recipient has read it.
 
+**Video messages:** open Messages, open a contact, click **Video**, choose an MP4,
+then click **Send**. The attachment appears as a draft first; click its strip to
+remove it. Failed uploads keep the draft so Send retries without creating a duplicate.
+Recipients click **Play video** to watch inside the chat, with pause and sound controls.
+This works on Phone and iPad. Playback stops when leaving the video or closing the phone.
+Videos must be H.264 MP4, up to 32 MB and 720p (921,600 pixels, including portrait).
+Playback starts muted. Upload, download and decoding run off the render thread.
+
+Both players need the updated mod and must connect to this updated relay. Replace
+the relay script and restart it while keeping its database. Video files are stored
+beside that database in `<database>.videos`; preserve that folder too. Attachments
+require the sender's or recipient's phone login to download. Blocked senders cannot
+upload to the conversation. Videos and messages expire after 30 days; uploads are
+limited to 6 per minute, 48 files / 256 MB per sender, and 512 files / 2 GB per relay.
+Each client keeps a bounded 128 MB playback cache beside phone.json.
+
 Numbers, authentication identities, recent history, blocked numbers and saved playlists
 live in `.minecraft/maro/phone.json`, outside the normal shared module configs.
 Keep this file to retain the number; it contains the device's private login secret.

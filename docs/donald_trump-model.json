@@ -1,0 +1,14 @@
+{
+  "source_archive_sha256": "7bbf86c7a40839c8ccdcfad351b5a40ecaeae2896cadc10c7b7732700f347e13",
+  "glb_sha256": "87bcbfc39a332e84d5de21575576bbf67d10974a1f7d18e3e1271c9b21f0f59d",
+  "attribution": {
+    "author": "Vadim Fedenko (https://sketchfab.com/vadimfedenko)",
+    "license": "CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)",
+    "source": "https://sketchfab.com/3d-models/donald-trump-running-9890c103b8f249789f11ec1be0fec94a",
+    "title": "Donald Trump Running"
+  },
+  "changes": "Embedded local buffers/textures; legacy diffuse material colors mapped to metallic-roughness where needed. Repaired inverted per-object body scale and inward normals from the supplied FBX export; source rig and running animation retained.",
+  "anc_sha256": "3d3e981cb5ad4d9be66d6e10737149693bd7d2d8bab886c287f1bd5babea3344",
+  "runtime_changes": "Restored the supplied FBX export body units and outward normals to match its original hair and bind positions; centered/scaled to 30 model units and baked at three detail levels; source textures/materials and rig preserved.",
+  "portable_animation": "Source running animation retained; runtime follows shared Minecraft movement renderer."
+}

@@ -32,32 +32,48 @@ public class Maro implements ClientModInitializer {
         ModuleManager.init();
         dev.maro.render.esp.Renderer3D.init();
         ConfigManager.init();
+        net.fabricmc.fabric.api.resource.ResourceManagerHelper.get(net.minecraft.resource.ResourceType.CLIENT_RESOURCES)
+            .registerReloadListener(new net.fabricmc.fabric.api.resource.SimpleSynchronousResourceReloadListener(){
+                @Override public Identifier getFabricId(){return Identifier.of(MOD_ID,"menu-landscape");}
+                @Override public void reload(net.minecraft.resource.ResourceManager manager){dev.maro.gui.render.MenuLandscape.invalidate();}
+            });
+        dev.maro.chunkpulse.PulseCommands.init();
         dev.maro.phone.PhoneNetwork.get();
         dev.maro.runtime.commands.Commands.add(new dev.maro.nathan.commands.BloomCommand());
 
         ClientTickEvents.START_CLIENT_TICK.register(client -> dev.maro.runtime.RuntimeEvents.tickPre());
-        ClientTickEvents.END_CLIENT_TICK.register(client -> { ModuleManager.onTick(); dev.maro.runtime.RuntimeEvents.tickPost(); dev.maro.phone.PhoneNetwork.tickNotifications(); });
+        ClientTickEvents.END_CLIENT_TICK.register(client -> { ModuleManager.onTick(); dev.maro.runtime.RuntimeEvents.tickPost(); dev.maro.phone.PhoneNetwork.tickNotifications(); dev.maro.render.sky.ResourcePackSky.tick(client); });
         HudElementRegistry.addLast(Identifier.of(MOD_ID, "hud"), (context, tickCounter) -> {
+            if(dev.maro.render.capture.CapturePass.active())return;
             Theme.update();
             ModuleManager.onRender2D(context, tickCounter.getTickProgress(false));
             dev.maro.runtime.RuntimeEvents.hud(context);
-            if (!(MinecraftClient.getInstance().currentScreen instanceof ClickGuiScreen)) Notifications.render(context);
+            if (!(MinecraftClient.getInstance().currentScreen instanceof ClickGuiScreen gui) || gui.spatialView().isOpen()) Notifications.render(context);
         });
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> { ConfigManager.saveAll(); dev.maro.gui.render.ScreenGuiSurface.release(); dev.maro.phone.PhoneNetwork.shutdown(); dev.maro.runtime.RuntimeEvents.shutdown(); });
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> { ConfigManager.saveAll(); dev.maro.config.CommunityConfigs.shutdown(); dev.maro.gui.render.ScreenGuiSurface.release(); dev.maro.render.sky.ResourcePackSky.shutdown(); dev.maro.phone.PhoneNetwork.shutdown(); dev.maro.phone.SpotifyLibrary.shutdown(); dev.maro.phone.browser.PhoneWebBrowser.shutdown(); dev.maro.runtime.RuntimeEvents.shutdown(); });
         ScreenEvents.AFTER_INIT.register((client, screen, width, height) ->
                 ScreenEvents.afterRender(screen).register((s, context, mouseX, mouseY, delta) -> ScreenHider.renderOver(s, context)));
 
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            var pulse=ModuleManager.get(dev.maro.module.impl.visuals.RedstoneBypass.class);
+            if(pulse!=null)pulse.finish();
+            dev.maro.chunkpulse.Persistence.shutdown();
+        });
         LOGGER.info("{} {} loaded", NAME, VERSION);
     }
 
     /** Called from {@link dev.maro.mixin.KeyboardMixin}. */
     public static void onKey(int key, int action) {
+        var strokes=ModuleManager.get(dev.maro.module.impl.visuals.KeyboardStrokes.class);
+        if(strokes!=null && key!=GLFW.GLFW_KEY_UNKNOWN)strokes.physicalInput(key,action);
         if (action != GLFW.GLFW_PRESS || key == GLFW.GLFW_KEY_UNKNOWN) return;
         handleBind(key);
     }
 
     /** Called from {@link dev.maro.mixin.MouseMixin}. */
     public static void onMouseButton(int button, int action) {
+        var strokes=ModuleManager.get(dev.maro.module.impl.visuals.KeyboardStrokes.class);
+        if(strokes!=null)strokes.physicalInput(KeyUtil.mouse(button),action);
         if (action != GLFW.GLFW_PRESS) return;
         handleBind(KeyUtil.mouse(button));
     }
@@ -70,6 +86,8 @@ public class Maro implements ClientModInitializer {
             return;
         }
         ModuleManager.onBind(code);
+        var acrobatics=ModuleManager.get(dev.maro.module.impl.visuals.Acrobatics.class);
+        if(acrobatics!=null)acrobatics.onActionBind(code);
         var builder=ModuleManager.get(dev.maro.module.impl.player.AutoBuilder.class);
         if(builder!=null)builder.onActionBind(code);
     }

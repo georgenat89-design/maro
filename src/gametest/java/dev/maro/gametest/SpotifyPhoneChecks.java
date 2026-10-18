@@ -35,7 +35,7 @@ final class SpotifyPhoneChecks {
         try {
             context.runOnClient(client -> {
                 phone.setEnabled(false); hud.setEnabled(false); client.setScreen(null);
-                phone.getSettings().forEach(setting -> setting.reset());
+                phone.getSettings().forEach(setting -> setting.reset());phone.gameInteraction.set(false);
                 phone.getBind().set(GLFW.GLFW_KEY_F10);
                 require(!phone.persistEnabled(), "Phone can reactivate on login");
                 hud.setEnabled(true);
@@ -147,7 +147,7 @@ final class SpotifyPhoneChecks {
             SpotifyPhoneScreen closing = context.computeOnClient(client -> {
                 var screen = (SpotifyPhoneScreen) client.currentScreen;
                 require(field(screen, "cover") != null, "Album artwork was not uploaded");
-                screen.mouseClicked(click(screen, 182, 56), false);
+                screen.mouseClicked(click(screen, 182, 75), false);
                 require(client.currentScreen == screen && field(screen, "cover") != null, "Close skipped pocket animation");
                 return screen;
             });
@@ -186,7 +186,7 @@ final class SpotifyPhoneChecks {
             context.takeScreenshot("maro-spotify-phone-no-session");
             context.runOnClient(client -> {
                 var screen = (SpotifyPhoneScreen) client.currentScreen;
-                screen.mouseClicked(click(screen, 182, 56), false);
+                screen.mouseClicked(click(screen, 182, 75), false);
             });
             context.waitTicks(7);
             context.runOnClient(client -> require(client.currentScreen == null, "Offline phone did not finish pocket animation"));
@@ -410,7 +410,7 @@ final class SpotifyPhoneChecks {
         context.runOnClient(c -> {
             var screen = (SpotifyPhoneScreen) c.currentScreen;
             var l = screen.layout();
-            screen.mouseClicked(click(screen, l.width() - 26, 56), false);
+            screen.mouseClicked(click(screen, l.width() - 26, 75), false);
         });
         context.waitTicks(7);
         context.runOnClient(c -> {
@@ -451,8 +451,9 @@ final class SpotifyPhoneChecks {
             volumes++; volume = new SpotifyMedia.Volume(true, level, muted, "");
         }
         private SpotifyMedia.Artwork art;
+        boolean artworkPaused;
         public SpotifyMedia.Artwork artwork() {
-            if (!state.available()) return null;
+            if (!state.available()||artworkPaused) return null;
             if (art == null || !art.key().equals(SpotifyMedia.artworkKey(state)))
                 art = new SpotifyMedia.Artwork(SpotifyMedia.artworkKey(state), 128, 128, pixels, 0x8B508F, null, null);
             return art;

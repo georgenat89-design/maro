@@ -63,6 +63,9 @@ public class PotatoGraphics extends Module {
     }
 
     @Override
+    public boolean hiddenInGui() { return true; }
+
+    @Override
     public List<SettingSection> getSettingSections() {
         return List.of(SettingSection.of("Look", textures, notify));
     }

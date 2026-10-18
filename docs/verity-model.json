@@ -1,0 +1,15 @@
+{
+  "source_archive_sha256": "ed83391d82553063fe04a71d41446fb9b6cfee8fc1e6dd673b5fe091ee0dbde1",
+  "glb_sha256": "fdd2a3b2c0bf06c750bc1859d81e449605ab67f312bb7fc3e2e7e87b846c20dd",
+  "attribution": {
+    "author": "SquishyFishyFish (https://sketchfab.com/skibidi_27636)",
+    "license": "CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)",
+    "source": "https://sketchfab.com/3d-models/veritytm-veritytm-be4400e1f850406387b8016383ccb0ad",
+    "title": "Verity\u2122 | Verity\u2122"
+  },
+  "changes": "Embedded local buffers/textures; legacy diffuse material colors mapped to metallic-roughness where needed.",
+  "anc_sha256": "97a736d8280adc59661aa6940954324f57596bdaf2203824a0e7c9cf9893e7dc",
+  "source_vertices": 418,
+  "source_triangles": 768,
+  "runtime_changes": "Original single-piece body, original two source materials and 768 triangles at each detail level; no fabricated humanoid limbs. Non-humanoid fallback imports now assign geometry to the body rather than a missing head pivot."
+}

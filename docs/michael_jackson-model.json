@@ -1,0 +1,13 @@
+{
+  "source_archive_sha256": "c1a5e8346874ab8fbca8cafe6d9ffc0ddc351ba9952947bbd3c877d411c41b0f",
+  "glb_sha256": "1f7b8fb646c4008e28d5be1879e2a0ed0744e789a848a92c774e086c9bf1826a",
+  "attribution": {
+    "author": "MrLOCKiDY (https://sketchfab.com/MrLOCKiDY)",
+    "license": "CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)",
+    "source": "https://sketchfab.com/3d-models/michael-jackson-the-way-you-make-me-feel-c2981b4047a54824ac06300c5b58c2d7",
+    "title": "Michael Jackson (The Way You Make Me Feel)"
+  },
+  "changes": "Embedded local buffers/textures; legacy diffuse material colors mapped to metallic-roughness where needed.",
+  "anc_sha256": "5cef61d600198a6c62157724c65cb5c8f849f82c38fa91edbee8c3a3218e95bb",
+  "runtime_changes": "Centered/scaled to 30 model units and baked at three detail levels; source textures/materials preserved; Minecraft movement and held-item poses use Maro character limbs."
+}

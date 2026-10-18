@@ -26,7 +26,7 @@ import java.util.UUID;
 
 /** A render-only companion. Never registered in a world, ticked by mob AI, or sent to a server. */
 public final class Pet extends Module {
-    public static final String[] STYLES = {"Wolf", "Cat", "Fox", "Bunny", "Bee", "Allay", "Parrot", "Axolotl", "Slime", "Turtle", "Panda", "Pig"};
+    public static final String[] STYLES = {"Wolf", "Cat", "Fox", "Bunny", "Bee", "Allay", "Parrot", "Axolotl", "Slime", "Turtle", "Panda", "Pig", "Dragon"};
     private final ModeSetting style = add(new ModeSetting("Pet", "Choose your companion", "Wolf", STYLES));
     private final NumberSetting size = add(new NumberSetting("Size", "Scale your companion", .85, .3, 2, .05));
     private final BooleanSetting baby = add(new BooleanSetting("Baby", "Use a baby model when available", false));
@@ -42,7 +42,7 @@ public final class Pet extends Module {
     private final BooleanSetting animate = add(new BooleanSetting("Animate", "Walking, wings, gentle floating, and idle movement", true));
     private final BooleanSetting bright = add(new BooleanSetting("Fullbright", "Keep the pet bright in dark areas", false));
     private final BooleanSetting nameTag = add(new BooleanSetting("Name Tag", "Show a nickname above your companion", false));
-    private final ModeSetting nickname = add(new ModeSetting("Nickname", "Your pet's name", "Buddy", "Buddy", "Nova", "Luna", "Mochi", "Pixel", "Bean", "Orbit").visible(nameTag::get));
+    private final ModeSetting nickname = add(new ModeSetting("Nickname", "Your pet's name", "Buddy", "Buddy", "Nova", "Luna", "Mochi", "Pixel", "Bean", "Orbit", "Draco", "Ember").visible(nameTag::get));
 
     private final ArrayDeque<Vec3d> trail = new ArrayDeque<>();
     private LivingEntity companion;
@@ -75,13 +75,13 @@ public final class Pet extends Module {
             case "Cat" -> EntityType.CAT; case "Fox" -> EntityType.FOX; case "Bunny" -> EntityType.RABBIT;
             case "Bee" -> EntityType.BEE; case "Allay" -> EntityType.ALLAY; case "Parrot" -> EntityType.PARROT;
             case "Axolotl" -> EntityType.AXOLOTL; case "Slime" -> EntityType.SLIME; case "Turtle" -> EntityType.TURTLE;
-            case "Panda" -> EntityType.PANDA; case "Pig" -> EntityType.PIG; default -> EntityType.WOLF;
+            case "Dragon" -> EntityType.ENDER_DRAGON; case "Panda" -> EntityType.PANDA; case "Pig" -> EntityType.PIG; default -> EntityType.WOLF;
         };
     }
     private boolean hovering() {
         if (movement.is("Hover")) return true;
         if (movement.is("Walk")) return false;
-        return style.is("Bee") || style.is("Allay") || style.is("Parrot") || mc.player.getAbilities().flying || mc.player.isGliding() || mc.player.isTouchingWater();
+        return style.is("Dragon") || style.is("Bee") || style.is("Allay") || style.is("Parrot") || mc.player.getAbilities().flying || mc.player.isGliding() || mc.player.isTouchingWater();
     }
     private Vec3d offset(double behind, double sideways) {
         double angle = Math.toRadians(heading);
@@ -161,9 +161,11 @@ public final class Pet extends Module {
         // Do not walk into an unloaded chunk or fall into a deep hole.
         return new Vec3d(target.x, hit.getType() == HitResult.Type.BLOCK ? hit.getPos().y + .015 : position != null ? position.y : mc.player.getY(), target.z);
     }
+    /** Dragons use their native detailed mesh at companion scale. */
+    public float modelScale() { return size.getFloat() * (companion instanceof net.minecraft.entity.boss.dragon.EnderDragonEntity ? .12f : 1); }
     private boolean clearAt(Vec3d target) {
-        double width = companion.getWidth() * size.get() * .45;
-        double tall = companion.getHeight() * size.get() * .9;
+        double width = companion.getWidth() * modelScale() * .45;
+        double tall = companion.getHeight() * modelScale() * .9;
         return mc.world.isBlockSpaceEmpty(null, new Box(target.x - width, target.y + .04, target.z - width, target.x + width, target.y + tall, target.z + width));
     }
     private void syncEntity() {
@@ -173,17 +175,41 @@ public final class Pet extends Module {
         companion.lastYaw = companion.lastBodyYaw = companion.lastHeadYaw = previousYaw;
         companion.setPosition(position); companion.setYaw(yaw); companion.setBodyYaw(yaw); companion.setHeadYaw(yaw);
         companion.setPitch(0); companion.age = animate.get() ? ticks : 0;
+        if(companion instanceof net.minecraft.entity.boss.dragon.EnderDragonEntity dragon){
+            // Only visual history is advanced. Boss AI, attacks, sounds and entity ticking never run.
+            dragon.frameTracker.tick(position.y,yaw+180);
+            dragon.lastWingPosition=animate.get()?Math.max(0,ticks-1)*.055f:0;
+            dragon.wingPosition=animate.get()?ticks*.055f:0;
+        }
+    }
+    private void renderDragon(EntityRenderManager manager,MatrixStack matrices,WorldRenderState worldState,OrderedRenderCommandQueue queue,EnderDragonEntityRenderState state){
+        float scale=modelScale();var camera=worldState.cameraRenderState;var relative=new Vec3d(state.x-camera.pos.x,state.y-camera.pos.y,state.z-camera.pos.z);
+        state.displayName=null;state.nameLabelPos=null;state.crystalBeamPos=null;state.ticksSinceDeath=0;state.hurt=false;
+        state.inLandingOrTakeoffPhase=false;state.sittingOrHovering=false;state.outlineColor=0;
+        state.shadowRadius=0;state.shadowPieces.clear();state.width*=scale;state.height*=scale;
+        if(bright.get())state.light=LightmapTextureManager.MAX_LIGHT_COORDINATE;
+        matrices.push();
+        try{matrices.translate(relative);matrices.scale(scale,scale,scale);manager.render(state,camera,0,0,0,matrices,queue);}
+        finally{matrices.pop();}
+        // Keep the name readable at normal label size rather than shrinking it with the boss mesh.
+        if(nameTag.get()){
+            matrices.push();
+            try{matrices.translate(relative);queue.submitLabel(matrices,new Vec3d(0,companion.getHeight()*scale+.35,0),0,Text.literal(nickname.get()),true,state.light,state.squaredDistanceToCamera,camera);}
+            finally{matrices.pop();}
+        }
     }
     public void render(EntityRenderManager manager, MatrixStack matrices, WorldRenderState worldState, OrderedRenderCommandQueue queue) {
         if (!isEnabled() || !inGame() || !mc.player.isAlive() || mc.player.isSpectator() || world != mc.world || companion == null || !owner.equals(mc.player.getUuid())) return;
         float delta = mc.getRenderTickCounter().getTickProgress(false);
-        var state = (LivingEntityRenderState)manager.getAndUpdateRenderState(companion, delta);
+        var state = manager.getAndUpdateRenderState(companion, delta);
         Vec3d interpolated = previous.lerp(position, delta);
         state.x = interpolated.x; state.y = interpolated.y; state.z = interpolated.z;
-        state.baseScale *= size.getFloat(); state.shadowRadius *= size.getFloat();
         state.age = animate.get() ? ticks + delta : 0;
-        state.limbSwingAmplitude = walkAmplitude;
-        state.limbSwingAnimationProgress = walkPhase;
+        if(state instanceof EnderDragonEntityRenderState dragon){renderDragon(manager,matrices,worldState,queue,dragon);return;}
+        var living=(LivingEntityRenderState)state;
+        living.baseScale *= size.getFloat(); state.shadowRadius *= size.getFloat();
+        living.limbSwingAmplitude = walkAmplitude;
+        living.limbSwingAnimationProgress = walkPhase;
         state.outlineColor = 0;
         if (bright.get()) state.light = LightmapTextureManager.MAX_LIGHT_COORDINATE;
         DyeColor dye = DyeColor.valueOf(collar.get().toUpperCase(java.util.Locale.ROOT));

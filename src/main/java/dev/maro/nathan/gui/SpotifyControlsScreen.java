@@ -1,5 +1,6 @@
 package dev.maro.nathan.gui;
 
+import dev.maro.gui.render.Fonts;
 import dev.maro.nathan.modules.SpotifyHud;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
@@ -22,11 +23,9 @@ public final class SpotifyControlsScreen extends Screen {
 
     @Override
     public void render(DrawContext graphics, int mouseX, int mouseY, float delta) {
-        graphics.drawCenteredTextWithShadow(client.textRenderer,
-            "Drag song text to move  -  Click cover to open Spotify  -  Esc to return",
-            width / 2, 12, 0xFFECEEF3);
+        Fonts.centeredTop(graphics, "Drag song text to move  -  Click cover to open Spotify  -  Esc to return", width / 2, 12, width - 24, 0xFFECEEF3);
         String hint = player.controlsHint();
-        if (!hint.isBlank()) graphics.drawCenteredTextWithShadow(client.textRenderer, hint, width / 2, 24, 0xFF999EAB);
+        if (!hint.isBlank()) Fonts.centeredTop(graphics, hint, width / 2, 24, width - 24, 0xFF999EAB);
     }
 
     @Override

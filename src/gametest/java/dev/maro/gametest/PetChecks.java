@@ -12,7 +12,7 @@ import net.minecraft.util.math.Vec3d;
 /** Real queued entity rendering, client-only lifecycle, movement, and live settings. */
 public final class PetChecks {
     public static long renderedFrames;
-    public static float renderedScale, renderedAge;
+    public static float renderedScale, renderedAge, renderedDragonWing;
     public static net.minecraft.util.DyeColor renderedCollar;
     private static void require(boolean condition, String message) { if (!condition) throw new AssertionError(message); }
     private static Setting<?> setting(Pet pet, String name) { return pet.getSettings().stream().filter(s -> s.getName().equals(name)).findFirst().orElseThrow(); }
@@ -57,6 +57,20 @@ public final class PetChecks {
                 });
                 context.takeScreenshot("maro-pet-" + style.toLowerCase());
             }
+            context.runOnClient(c->{
+                ((ModeSetting)setting(pet,"Pet")).set("Dragon");((ModeSetting)setting(pet,"Formation")).set("Orbit");
+                ((BooleanSetting)setting(pet,"Fullbright")).set(true);
+            });context.waitTicks(10);
+            var dragonId=context.computeOnClient(c->{require(pet.companion() instanceof net.minecraft.entity.boss.dragon.EnderDragonEntity,"Dragon selection created wrong entity");var dragon=(net.minecraft.entity.boss.dragon.EnderDragonEntity)pet.companion();for(var part:dragon.getBodyParts())require(c.world.getEntityById(part.getId())==null,"Dragon part was registered in the world");require(pet.position().y-c.player.getY()>.7,"Dragon did not fly by default");return dragon.getUuid();});
+            require(world.getServer().computeOnServer(server->server.getOverworld().getEntity(dragonId))==null,"Dragon leaked onto server");
+            float wing=context.computeOnClient(c->renderedDragonWing);var startDragon=context.computeOnClient(c->pet.position());context.waitTicks(12);
+            require(context.computeOnClient(c->renderedDragonWing)!=wing,"Dragon wings did not animate");require(context.computeOnClient(c->pet.position().distanceTo(startDragon))>.05,"Dragon orbit froze");
+            context.takeScreenshot("maro-pet-dragon-flight");
+            context.runOnClient(c->{((BooleanSetting)setting(pet,"Animate")).set(false);((NumberSetting)setting(pet,"Size")).set(.6);});context.waitTicks(4);
+            require(context.computeOnClient(c->renderedDragonWing)==0,"Dragon animation toggle did not freeze wings");float small=context.computeOnClient(c->renderedScale);
+            context.runOnClient(c->((NumberSetting)setting(pet,"Size")).set(1.2));context.waitTicks(4);require(Math.abs(context.computeOnClient(c->renderedScale)-small*2)<.001,"Dragon size did not update live");
+            context.runOnClient(c->{((BooleanSetting)setting(pet,"Animate")).set(true);((ModeSetting)setting(pet,"Formation")).set("Sidekick");((NumberSetting)setting(pet,"Size")).reset();((BooleanSetting)setting(pet,"Fullbright")).reset();});context.waitTicks(5);
+            System.out.println("[pet-dragon] PASS: native miniature dragon mesh, animated wings, hovering/orbit, live size/freeze, readable label and all parts remain unregistered client cosmetics");
             context.runOnClient(c -> {
                 ((ModeSetting)setting(pet, "Pet")).set("Cat");
                 ((BooleanSetting)setting(pet, "Baby")).set(true);

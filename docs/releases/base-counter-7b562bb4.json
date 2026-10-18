@@ -1,0 +1,36 @@
+{
+  "name": "Base counter desktop release",
+  "client_sha256": "7b562bb4ceaa74634e94fe6585608a1363a92109fe37399867891121884c384b",
+  "source_zip_sha256": "835128209381d9a1cc7374e3b202b313e50b84f8a8e8632db92e67f330e37bf0",
+  "minecraft": "1.21.11",
+  "java": 21,
+  "upstream_parent": "e03b1919f5332ae04f1fc18730436df67b894eb6",
+  "native_validation": [
+    "Five unique sites including a surface base and a bare storage cluster; two estimated raids; both Storage ESP and Block ESP linked.",
+    "Actual vanilla trial-chamber assembly and ancient-city barracks with added dense storage rejected.",
+    "Real mouse + / - controls, duplicate visits, re-enable, storage loss, and chunk unload passed.",
+    "Ledger reload, server/dimension separation, day rollover, partial observations, corrections, and damaged-file preservation passed.",
+    "Original Base ESP native regression suite passed."
+  ],
+  "source_rebuild": {
+    "build_successful": true,
+    "esp_runtime_entries_identical": 45
+  },
+  "native_log_sha256": {
+    "base-counter-native.log": "2bac0daf584c546c90e09eb013862efd7ec10ff486749ecaa512fa9f4277567b",
+    "base-esp-counter-regression.log": "f693ec88bada08a0579c8cf9aa5f1a31654c5d1f067381e4ab89b139dd50960d"
+  },
+  "builder_runtime_unchanged_from_previous_release": 40,
+  "builder_sources_unchanged": 13,
+  "protection_sources_unchanged": 29,
+  "github_only_changes": [
+    "Build workflow runs the native base-counter and Base ESP suites; canceled schematic CI step removed.",
+    "CLAUDE.md and release validation metadata added; runtime code matches the tested source snapshot."
+  ],
+  "limitations": [
+    "Raid estimates use blocks, not unopened chest contents.",
+    "Natural-structure filtering is conservative; player builds using the same markers/palette can be excluded.",
+    "Server-side masking and unknown/erased/very small bases can be missed.",
+    "Sites are scoped by server address and dimension; distinct world shards using both the same scope and coordinates may merge."
+  ]
+}

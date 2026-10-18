@@ -37,6 +37,7 @@ final class StaffNotifierChecks {
         StaffNotifier module = ModuleManager.get(StaffNotifier.class);
         require(module!=null,"Staff Notifier was not registered");
         UUID a=UUID.randomUUID(),b=UUID.randomUUID(),c=UUID.randomUUID(),d=UUID.randomUUID();
+        int accent=dev.maro.config.ClientSettings.accent.get();boolean rainbow=dev.maro.config.ClientSettings.rainbow.get();
         try {
             context.runOnClient(client -> {
                 require(module.isStaffName("DOUGH4")&&module.isStaffName("u_vv")&&module.isStaffName("cryptodaveyt"),"New staff defaults were missing");
@@ -102,14 +103,22 @@ final class StaffNotifierChecks {
                 var layout=(dev.maro.setting.ModeSetting)setting(module,"layout");layout.set("Compact");
             });
             context.waitTicks(3);context.takeScreenshot("maro-staff-notifier-compact");
+            context.runOnClient(client->{dev.maro.config.ClientSettings.rainbow.set(false);dev.maro.config.ClientSettings.accent.set(0xFFEC4899);});
+            context.waitTicks(15);context.takeScreenshot("maro-staff-watch-pink");
+            context.runOnClient(client->dev.maro.config.ClientSettings.accent.set(0xFF22C55E));
+            context.waitTicks(15);context.takeScreenshot("maro-staff-watch-green");
+            context.runOnClient(client->dev.maro.config.ClientSettings.rainbow.set(true));
+            context.waitTicks(3);context.takeScreenshot("maro-staff-watch-rainbow");
             context.runOnClient(client -> client.getNetworkHandler().onPlayerRemove(new PlayerRemoveS2CPacket(List.of(d))));
             context.waitTicks(3);
             require(context.computeOnClient(client -> module.onlineStaff().isEmpty() && !module.recentChanges().getLast().joined()),"Player removal packet did not report staff leaving");
             context.takeScreenshot("maro-staff-notifier-empty");
             context.runOnClient(client -> { module.setEnabled(false); require(module.onlineStaff().isEmpty() && module.recentChanges().isEmpty(),"Disabled module retained stale staff state"); });
+            System.out.println("[staff-watch-theme] PASS: native staff tracking, custom list, Compact layout, live pink/green/Rainbow captures, empty state and disable cleanup");
         } finally {
             context.runOnClient(client -> {
                 module.setEnabled(false); module.getSettings().forEach(Setting::reset);
+                dev.maro.config.ClientSettings.accent.set(accent);dev.maro.config.ClientSettings.rainbow.set(rainbow);
                 if (client.getNetworkHandler()!=null) client.getNetworkHandler().onPlayerRemove(new PlayerRemoveS2CPacket(List.of(a,b,c,d)));
             });
         }

@@ -56,6 +56,7 @@ public class Fullbright extends Module {
 
     /** The gamma the lightmap should use instead of the option's own. */
     public static double gamma(double option) {
+        if(dev.maro.render.capture.CapturePass.active())return option;
         Fullbright m = instance;
         if (m == null) return option;
         double amount = m.amount(m.isEnabled());

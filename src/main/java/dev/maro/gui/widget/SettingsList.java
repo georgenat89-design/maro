@@ -23,16 +23,98 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.ArrayList;
 
 /**
  * Renders a list of {@link SettingSection}s as rows of controls. Used for module settings,
  * the Settings page and the Theme page.
  */
 public class SettingsList {
-    private static final float GAP = 4f;
+    private static final float GAP = 8f;
     private static final float PICKER_H = 78f;
     private final Set<ColorSetting> expanded = new HashSet<>();
     private final Map<TextSetting, TextField> textFields = new IdentityHashMap<>();
+    /** Reused measurement buffer: bounds and drawing consume exactly the same row geometry. */
+    public static final class Layout {
+        private final ArrayList<Line> rows=new ArrayList<>();
+        private int count;
+        private float height;
+        public float height(){return height;}
+        private Line next(){if(count==rows.size())rows.add(new Line());return rows.get(count++);}
+    }
+    private static final class Line { Setting<?> setting;String label;float y,full,visibility; }
+    private final Layout measured=new Layout();
+    private int page,pageCount=1;
+    private List<SettingSection> pageScope=List.of();
+    private final Map<Integer,float[]> pagePlaces=new java.util.HashMap<>();
+    private final Map<Setting<?>,float[]> visiblePlaces=new IdentityHashMap<>();
+    public int page(){return page;}
+    public int pageCount(){return pageCount;}
+    public float[] pagePlace(int direction){return pagePlaces.get(direction);}
+    public Map<Setting<?>,float[]> visiblePlaces(){return Map.copyOf(visiblePlaces);}
+    public void resetPage(){page=0;}
+    public void changePage(int delta){page=Math.clamp(page+delta,0,pageCount-1);}
+
+    private record Tile(Setting<?> setting,String section,float x,float y,float w,float h,int page){}
+
+    /** Full controls on discrete pages: no clipped rows or nested wheel scrolling. */
+    public void renderPaged(ClickGuiScreen gui,DrawContext ctx,float x,float y,float w,float h,List<SettingSection> sections,boolean labels){
+        if(!pageScope.equals(sections)){pageScope=List.copyOf(sections);page=0;}
+        pagePlaces.clear();visiblePlaces.clear();
+        float body=Math.max(68,h-28),gap=6;
+        int columns=w>=360?2:1;
+        float cell=(w-gap*(columns-1))/columns;
+        var all=new ArrayList<Tile>();
+        var settings=new ArrayList<Setting<?>>();var titles=new ArrayList<String>();
+        for(var section:sections)for(var setting:section.getSettings())if(setting.isVisible()){settings.add(setting);titles.add(section.getTitle());}
+        int p=0;float cy=0;
+        for(int i=0;i<settings.size();i+=columns){
+            float row=0;
+            for(int j=i;j<Math.min(i+columns,settings.size());j++)row=Math.max(row,Math.min(body,rowHeight(settings.get(j))+(labels?13:0)));
+            if(cy>0&&cy+row>body+.01f){p++;cy=0;}
+            for(int j=i;j<Math.min(i+columns,settings.size());j++){
+                float label=labels?13:0,full=Math.min(body-label,rowHeight(settings.get(j)));
+                all.add(new Tile(settings.get(j),titles.get(j),x+(j-i)*(cell+gap),y+cy,cell,full,p));
+            }
+            cy+=row+gap;
+        }
+        pageCount=Math.max(1,p+1);page=Math.clamp(page,0,pageCount-1);
+        gui.scrollHit(x,y,w,h,amount->{});
+        for(var tile:all)if(tile.page==page){
+            float ry=tile.y;
+            if(labels){Fonts.draw(ctx,Fonts.trim(tile.section,tile.w-4,true,.59f),tile.x+2,ry+1,Theme.TEXT_MUTED,true,.59f);ry+=13;}
+            renderRow(gui,ctx,tile.setting,tile.x,ry,tile.w,tile.h);
+            visiblePlaces.put(tile.setting,new float[]{tile.x,ry,tile.w,tile.h});
+        }
+        float fy=y+h-22;
+        Fonts.drawV(ctx,settings.isEmpty()?"No settings":settings.size()+" settings",x+2,fy+10,Theme.TEXT_MUTED,false,.62f);
+        if(pageCount>1){
+            float prev=x+w-105,next=x+w-22;
+            Widgets.button(gui,ctx,this.toString()+"-prev",prev,fy,22,20,"",Widgets.Style.GHOST,Icons.BACK,()->{if(page>0){page--;Sounds.click();}});
+            Fonts.drawCentered(ctx,(page+1)+" / "+pageCount,x+w-53,fy+10,Theme.TEXT_DIM,true,.69f);
+            Widgets.button(gui,ctx,this.toString()+"-next",next,fy,22,20,"",Widgets.Style.GHOST,Icons.CHEVRON_RIGHT,()->{if(page+1<pageCount){page++;Sounds.click();}});
+            pagePlaces.put(-1,new float[]{prev+11,fy+10});pagePlaces.put(1,new float[]{next+11,fy+10});
+        }
+    }
+
+    public Layout layout(List<SettingSection> sections,boolean labels){
+        measured.count=0;measured.height=0;boolean first=true;
+        for(var section:sections){
+            if(section.getSettings().stream().noneMatch(Setting::isVisible))continue;
+            if(labels){
+                if(!first)measured.height+=6;
+                var line=measured.next();line.setting=null;line.label=section.getTitle();line.y=measured.height;
+                measured.height+=12;
+            }
+            first=false;
+            for(var setting:section.getSettings()){
+                float visibility=Anims.of(setting,"visible",setting.isVisible());if(visibility<.01f)continue;
+                var line=measured.next();line.setting=setting;line.y=measured.height;line.full=rowHeight(setting);line.visibility=visibility;
+                measured.height+=(line.full+GAP)*visibility;
+            }
+        }
+        return measured;
+    }
 
     /**
      * @return total content height
@@ -46,55 +128,39 @@ public class SettingsList {
      * @return total content height
      */
     public float render(ClickGuiScreen gui, DrawContext ctx, float x, float y, float w, List<SettingSection> sections, boolean labels) {
-        float start = y;
-        boolean firstSection = true;
-        for (SettingSection section : sections) {
-            boolean any = false;
-            for (Setting<?> s : section.getSettings()) any |= s.isVisible();
-            if (!any) continue;
-            if (labels) {
-                if (!firstSection) y += 6;
-                Widgets.sectionLabel(ctx, section.getTitle(), x + 2, y, w - 4);
-                y += 12;
-            }
-            firstSection = false;
-            for (Setting<?> s : section.getSettings()) {
-                float vis = Anims.of(s, "visible", s.isVisible());
-                if (vis < 0.01f) continue;
-                float full = rowHeight(s);
-                float h = full * vis;
-                if (gui.isVisible(y, h)) {
-                    float prevAlpha = Render2D.getAlpha();
-                    Render2D.setAlpha(prevAlpha * vis);
-                    gui.pushClip(x - 8, y, w + 16, h + 6);
-                    renderRow(gui, ctx, s, x, y, w, full);
-                    gui.popClip();
-                    Render2D.setAlpha(prevAlpha);
-                }
-                y += (full + GAP) * vis;
-            }
+        return render(gui,ctx,x,y,w,layout(sections,labels));
+    }
+
+    public float render(ClickGuiScreen gui,DrawContext ctx,float x,float y,float w,Layout layout){
+        for(int i=0;i<layout.count;i++){
+            var line=layout.rows.get(i);float rowY=y+line.y;
+            if(line.setting==null){Widgets.sectionLabel(ctx,line.label,x+2,rowY,w-4);continue;}
+            float h=line.full*line.visibility;if(!gui.isVisible(rowY,h))continue;
+            float alpha=Render2D.getAlpha();Render2D.setAlpha(alpha*line.visibility);
+            gui.pushClip(x-8,rowY,w+16,h+6);renderRow(gui,ctx,line.setting,x,rowY,w,line.full);gui.popClip();Render2D.setAlpha(alpha);
         }
-        return y - start;
+        return layout.height;
     }
 
     private float rowHeight(Setting<?> s) {
-        if (s instanceof NumberSetting) return 38f;
-        if (s instanceof ColorSetting c) return 30f + PICKER_H * Anims.of(c, "expand", expanded.contains(c));
-        return 30f;
+        if (s instanceof NumberSetting) return 68f;
+        if (s instanceof ColorSetting c) return 58f + PICKER_H * Anims.of(c, "expand", expanded.contains(c));
+        return 58f;
     }
 
     private void renderRow(ClickGuiScreen gui, DrawContext ctx, Setting<?> s, float x, float y, float w, float h) {
-        boolean hovered = gui.hovered(x, y, w, Math.min(h, 30f));
+        boolean hovered = gui.hovered(x, y, w, h);
         float hv = Anims.of(s, "hover", hovered);
         float r = Theme.radius();
         Render2D.roundRect(ctx, x, y, w, h, r, ColorUtil.lerp(Theme.CARD, Theme.CARD_HOVER, hv));
         Render2D.roundOutline(ctx, x, y, w, h, r, 1f, ColorUtil.withAlpha(Theme.BORDER, 0xC0));
 
         boolean hasDesc = !s.getDescription().isEmpty();
-        float nameY = hasDesc ? y + 6.5f : y + 11.5f;
-        float rightLimit = x + w * 0.5f;
+        if(gui.hovered(x+8,y+5,w-16,28))gui.tooltip(s.getName()+(hasDesc?": "+s.getDescription():""));
+        float nameY = y + 9f;
+        float rightLimit = x + w - (s instanceof NumberSetting ? 80 : 4);
         Fonts.draw(ctx, Fonts.trim(s.getName(), rightLimit - x - 10, false, 0.92f), x + 10, nameY, Theme.TEXT, false, 0.92f);
-        if (hasDesc) Fonts.draw(ctx, Fonts.trim(s.getDescription(), w * 0.55f, false, 0.7f), x + 10, y + 18f, Theme.TEXT_MUTED, false, 0.7f);
+        if (hasDesc) Fonts.draw(ctx, Fonts.trim(s.getDescription(), w - 24, false, 0.7f), x + 10, y + 24f, Theme.TEXT_MUTED, false, 0.7f);
 
         if (s instanceof BooleanSetting b) bool(gui, ctx, b, x, y, w, hv);
         else if (s instanceof NumberSetting n) number(gui, ctx, n, x, y, w);
@@ -103,15 +169,15 @@ public class SettingsList {
         else if (s instanceof ColorSetting c) color(gui, ctx, c, x, y, w, h);
         else if (s instanceof KeybindSetting k) {
             float cw = Fonts.width(gui.listening == k ? "Press a key" : k.getKeyName(), false, 0.72f) + 9;
-            Widgets.bindChip(gui, ctx, k, x + w - 10 - cw, y + 15, 1f);
+            Widgets.bindChip(gui, ctx, k, x + 12, y + 44, 1f);
         } else if (s instanceof dev.maro.setting.ActionSetting action) {
-            Widgets.button(gui,ctx,s,x+w-62,y+6,52,18,"Open",Widgets.Style.SECONDARY,null,action::run);
+            Widgets.button(gui,ctx,s,x+12,y+35,Math.min(90,w-24),20,"Open",Widgets.Style.SECONDARY,null,action::run);
         } else if (s instanceof dev.maro.runtime.settings.SettingAdapters.ValueSetting value) {
-            Widgets.button(gui,ctx,s,x+w-62,y+6,52,18,"Edit",Widgets.Style.SECONDARY,null,
+            Widgets.button(gui,ctx,s,x+12,y+35,Math.min(90,w-24),20,"Edit",Widgets.Style.SECONDARY,null,
                 ()->net.minecraft.client.MinecraftClient.getInstance().setScreen(new dev.maro.gui.ValueEditorScreen(gui,value)));
         } else if (s instanceof ButtonSetting b) {
             float bw = Widgets.buttonWidth(b.getLabel(), Icons.CHEVRON_RIGHT);
-            Widgets.button(gui, ctx, b, x + w - 10 - bw, y + 7, bw, 16, b.getLabel(), Widgets.Style.PRIMARY, Icons.CHEVRON_RIGHT, b::press);
+            Widgets.button(gui, ctx, b, x + 12, y + 35, Math.min(bw,w-24), 20, b.getLabel(), Widgets.Style.PRIMARY, Icons.CHEVRON_RIGHT, b::press);
         }
     }
 
@@ -119,8 +185,8 @@ public class SettingsList {
 
     private void bool(ClickGuiScreen gui, DrawContext ctx, BooleanSetting b, float x, float y, float w, float hv) {
         float t = Anims.of(b, "on", b.get());
-        Widgets.toggle(ctx, x + w - 32, y + 9.5f, 22, 11, t, hv);
-        gui.hit(x, y, w, 30, (button, mx, my) -> {
+        Widgets.toggle(ctx, x + w - 36, y + 40f, 22, 11, t, hv);
+        gui.hit(x, y, w, 58, (button, mx, my) -> {
             if (button != 0) return;
             b.toggle();
             Sounds.toggle(b.get());
@@ -136,7 +202,7 @@ public class SettingsList {
         Render2D.roundRect(ctx, vx, y + 6, vw, 11, 3, 0xFF15141D);
         Fonts.drawCentered(ctx, value, vx + vw / 2f, y + 11.5f, Theme.accent(), false, 0.8f);
 
-        float tx = x + 10, tw = w - 20, ty = y + 28.5f;
+        float tx = x + 10, tw = w - 20, ty = y + 53f;
         boolean dragging = gui.isDragging(n);
         boolean hovered = gui.hovered(tx - 2, ty - 6, tw + 4, 12);
         float hv = Anims.of(n, "slider", hovered || dragging);
@@ -158,8 +224,7 @@ public class SettingsList {
             }
             gui.startDrag(n, (dx, dy) -> n.setPercent((dx - tx) / tw));
         });
-        if (hovered && !dragging) gui.tooltip("Drag to change • Scroll on value • Right-click to reset");
-        gui.scrollHit(vx, y + 4, vw, 15, amount -> n.set(n.get() + n.getStep() * Math.signum(amount)));
+        if (hovered && !dragging) gui.tooltip("Drag to change • Right-click to reset");
     }
 
     // ---- text ---------------------------------------------------------------------------
@@ -170,8 +235,8 @@ public class SettingsList {
         // Follow the setting while it is not being typed in, after a reset or a config load.
         if (gui.focused != field && !field.getText().equals(t.get())) field.setText(t.get());
         field.onEnter(() -> gui.focused = null);
-        float fw = Math.min(140f, w * 0.38f);
-        field.render(gui, ctx, x + w - 10 - fw, y + 6, fw, 18, null, null);
+        float fw = w - 24;
+        field.render(gui, ctx, x + 12, y + 35, fw, 20, null, null);
     }
 
     // ---- mode ---------------------------------------------------------------------------
@@ -185,8 +250,8 @@ public class SettingsList {
             widths[i] = Fonts.width(modes.get(i), false, scale) + 12;
             total += widths[i];
         }
-        float h = 15, cy = y + 15;
-        if (total + 4 <= w * 0.5f) {
+        float h = 19, cy = y + 44;
+        if (total + 4 <= w - 24) {
             // segmented control
             float bx = x + w - 10 - total - 4;
             Render2D.roundRect(ctx, bx, cy - h / 2, total + 4, h, Math.min(h / 2, Theme.radius()), 0xFF15141D);
@@ -219,8 +284,8 @@ public class SettingsList {
         } else {
             // cycling pill
             String v = m.get();
-            float pw = Math.max(70, Fonts.width(v, false, scale) + 34);
-            float px = x + w - 10 - pw;
+            float pw = w - 24;
+            float px = x + 12;
             boolean hov = gui.hovered(px, cy - h / 2, pw, h);
             float hv = Anims.of(m, "pill", hov);
             Render2D.roundRect(ctx, px, cy - h / 2, pw, h, Math.min(h / 2, Theme.radius()), ColorUtil.lerp(0xFF15141D, 0xFF22202C, hv));
@@ -230,7 +295,7 @@ public class SettingsList {
             boolean open = Dropdown.isOpen(m);
             Fonts.drawV(ctx, v, px + 8, cy, open ? Theme.accent() : Theme.TEXT, false, scale);
             Icons.CHEVRON_RIGHT.draw(ctx, px + pw - 8, cy, 6, open ? Theme.accent() : Theme.TEXT_MUTED, open ? 1 : 0);
-            Fonts.drawRight(ctx, (m.index() + 1) + "/" + modes.size(), px - 6, cy, Theme.TEXT_MUTED, false, 0.65f);
+            Fonts.drawRight(ctx, (m.index() + 1) + "/" + modes.size(), px + pw - 19, cy, Theme.TEXT_MUTED, false, 0.65f);
             gui.hit(px, cy - h / 2, pw, h, (button, mx, my) -> {
                 if (button == 1) {
                     m.cycle(-1);
@@ -239,21 +304,20 @@ public class SettingsList {
                     Dropdown.toggle(m);
                 }
             });
-            gui.scrollHit(px, cy - h / 2, pw, h, amount -> m.cycle(amount > 0 ? -1 : 1));
         }
     }
 
     // ---- colour -------------------------------------------------------------------------
 
     private void color(ClickGuiScreen gui, DrawContext ctx, ColorSetting c, float x, float y, float w, float h) {
-        float sw = 22, sh = 12, sx = x + w - 10 - sw, sy = y + 9;
+        float sw = 26, sh = 14, sx = x + w - 12 - sw, sy = y + 36;
         float r = 3f;
         if (c.allowsAlpha()) Render2D.checker(ctx, sx, sy, sw, sh, 3);
         Render2D.roundRect(ctx, sx, sy, sw, sh, r, c.get());
         Render2D.roundOutline(ctx, sx, sy, sw, sh, r, 1f, 0x30FFFFFF);
         Fonts.drawRight(ctx, ColorUtil.toHex(c.get(), c.allowsAlpha()), sx - 6, sy + sh / 2f, Theme.TEXT_DIM, false, 0.72f);
 
-        gui.hit(x, y, w, 30, (button, mx, my) -> {
+        gui.hit(x, y, w, 58, (button, mx, my) -> {
             if (button == 1) c.reset();
             else if (!expanded.remove(c)) expanded.add(c);
             Sounds.click();
@@ -262,8 +326,8 @@ public class SettingsList {
         float open = Anims.of(c, "expand", expanded.contains(c));
         if (open < 0.02f) return;
 
-        float py = y + 32, ph = PICKER_H - 12;
-        float bw = Math.min(150, w - 150);
+        float py = y + 60, ph = Math.max(20,Math.min(PICKER_H - 12,h-70));
+        float bw = Math.max(35,Math.min(150, w - 110));
         float bx = x + 10;
         float hue = c.getHue();
         int hueColor = ColorUtil.hsv(hue, 1, 1);
@@ -323,7 +387,7 @@ public class SettingsList {
             });
             if (hov) gui.tooltip(Theme.PRESET_NAMES[i]);
         }
-        Fonts.draw(ctx, "Click to collapse • Right-click header to reset", gx, py + ph - 5, Theme.TEXT_MUTED, false, 0.6f);
+        if(w>340)Fonts.draw(ctx, "Click to collapse", gx, py + ph - 5, Theme.TEXT_MUTED, false, 0.6f);
     }
 
     private static float clamp(double v) {

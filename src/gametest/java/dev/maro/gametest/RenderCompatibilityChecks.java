@@ -16,13 +16,26 @@ import java.util.Set;
 final class RenderCompatibilityChecks {
     static void run(ClientGameTestContext context, TestSingleplayerContext world) {
         System.out.println("[render-compat] Starting native renderer checks");
+        if (ModuleManager.getByName("Custom Model") != null)
+            throw new AssertionError("Retired Custom Model is still registered");
+        for (String retired : new String[] {
+                "dev.maro.module.impl.visuals.CustomModel",
+                "dev.maro.gui.hud.CustomModelScreen",
+                "dev.maro.render.character.CharacterLayer",
+                "dev.maro.mixin.CustomModelAvatarRenderer"}) {
+            try {
+                Class.forName(retired, false, RenderCompatibilityChecks.class.getClassLoader());
+                throw new AssertionError("Retired class is still bundled: " + retired);
+            } catch (ClassNotFoundException expected) {
+                // The replacement renderer must be entirely absent, including when disabled.
+            }
+        }
         // Exercise companion block outlines before any other renderer initializes its triangle mesh.
         context.runOnClient(c -> c.player.setPitch(90));
         context.waitTicks(8);
         if (!context.computeOnClient(c -> c.crosshairTarget != null && c.crosshairTarget.getType() == net.minecraft.util.hit.HitResult.Type.BLOCK))
             throw new AssertionError("No solid block under the test player's crosshair");
         RenderFaultChecks.assertClean();
-        HandShaderChecks.run(context);
         // This world uses bounded readiness because companion scanners continuously rebuild
         // chunks. Exercise the phone here too, rather than requiring a quiescent chunk queue.
         SpotifyPhoneChecks.run(context);
@@ -39,7 +52,7 @@ final class RenderCompatibilityChecks {
         }
         System.out.println("[render-compat] Enabling combined visuals");
         var names = Set.of("Nametags", "Trajectories", "Player ESP", "Custom Sky", "Custom Crosshair", "Compass",
-            "Region Map", "Keyboard Strokes", "Spotify Hud", "Motion Blur", "Color Correct", "View Model", "Inventory", "Better Looks", "Hand Shader");
+            "Region Map", "Keyboard Strokes", "Spotify Hud", "Motion Blur", "Color Correct", "View Model", "Inventory", "Better Looks");
         String profile = System.getProperty("maro.gametest.renderProfile", "");
         try {
             context.runOnClient(c -> {

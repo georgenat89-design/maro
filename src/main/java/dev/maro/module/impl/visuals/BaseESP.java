@@ -3,6 +3,9 @@ package dev.maro.module.impl.visuals;
 
 import dev.maro.nathan.NameeProtectAddon;
 import dev.maro.render.esp.DonutSignatureCatalog;
+import dev.maro.render.esp.BaseDiscoveryLog;
+import dev.maro.render.esp.BaseEvidence;
+import net.minecraft.util.math.BlockPos;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -59,8 +62,8 @@ public final class BaseESP extends Module implements HudElement {
   public enum DisplayStyle { Both, Outline, Filled }
   private static final int SCAN_PADDING = 4;
   private static final int SCAN_MIN_Y = -64;
-  private static final int SCAN_MAX_Y = -1;
-  private static final int HEIGHT_BUCKETS = 165;
+  private static final int SCAN_MAX_Y = 319;
+  private static final int HEIGHT_BUCKETS = SCAN_MAX_Y - SCAN_MIN_Y + 1;
   private static final int REGION_COLUMN_GAP = 5;
   private static final int CELL_SIZE_XZ = 6;
   private static final int OUTLIER_NEIGHBOR_RADIUS = 3;
@@ -113,6 +116,13 @@ public final class BaseESP extends Module implements HudElement {
   private final SettingGroup sgChunkMark = this.settings.createGroup("Chunk Mark");
   private final SettingGroup sgScan = this.settings.createGroup("Scanning");
   private final SettingGroup sgHud = this.settings.createGroup("Detector HUD");
+  private final SettingGroup sgDiscovery = this.settings.createGroup("Base Counter");
+  private final Setting<Boolean> hideRaided = sgDiscovery.add(new BoolSetting.Builder().name("hide-likely-raided")
+      .description("Hide likely raided outlines and alerts; discoveries still count. Raid status is an estimate, not a chest-content check.").defaultValue(true).build());
+  private final Setting<Boolean> shareEsp = sgDiscovery.add(new BoolSetting.Builder().name("link-storage-and-block-esp")
+      .description("Verify clusters found by Storage ESP and Block ESP before counting. Ores, spawners and generated structures never count by themselves.").defaultValue(true).build());
+  private final Setting<Boolean> scanSurface = sgScan.add(new BoolSetting.Builder().name("include-surface-bases")
+      .description("Scan the full loaded height as well as underground bases").defaultValue(true).onChanged(v -> { if(isActive())clearAll(); }).build());
   private final Setting<ScanSpeed> scanSpeed = sgScan.add(new EnumSetting.Builder<ScanSpeed>()
       .name("scan-speed").description("Fast prioritizes discoveries; Eco spreads scans over more ticks").defaultValue(ScanSpeed.Fast).build());
   private final Setting<Integer> scanRange = sgScan.add(new IntSetting.Builder().name("scan-radius")
@@ -128,9 +138,11 @@ public final class BaseESP extends Module implements HudElement {
   private final Setting<Integer> alertCooldown = sgGeneral.add(new IntSetting.Builder().name("alert-cooldown")
       .description("Seconds before a rediscovered nearby base can alert again").defaultValue(120).range(0,600).build());
   private final Setting<Boolean> detectorHud = sgHud.add(new BoolSetting.Builder().name("detector-hud").defaultValue(true).build());
-  private final Setting<Integer> hudEntries = sgHud.add(new IntSetting.Builder().name("hud-entries").defaultValue(3).range(1,5).build());
-  private final Setting<Double> hudX = sgHud.add(new DoubleSetting.Builder().name("hud-x").defaultValue(2).range(0,100).build());
-  private final Setting<Double> hudY = sgHud.add(new DoubleSetting.Builder().name("hud-y").defaultValue(25).range(0,100).build());
+  private final Setting<Boolean> nearbyList = sgHud.add(new BoolSetting.Builder().name("nearby-bases")
+      .description("Expand the compact counter with nearby base coordinates and estimated raid status").defaultValue(false).build());
+  private final Setting<Integer> hudEntries = sgHud.add(new IntSetting.Builder().name("hud-entries").defaultValue(3).range(1,5).visible(nearbyList::get).build());
+  private final Setting<Double> hudX = sgHud.add(new DoubleSetting.Builder().name("hud-x").defaultValue(100).range(0,100).build());
+  private final Setting<Double> hudY = sgHud.add(new DoubleSetting.Builder().name("hud-y").defaultValue(2).range(0,100).build());
   private final Setting<Double> hudSize = sgHud.add(new DoubleSetting.Builder().name("hud-scale").defaultValue(.8).range(.5,2.5).build());
   private final Setting<Integer> minBlocks =
       this.sgGeneral.add(
@@ -191,6 +203,7 @@ public final class BaseESP extends Module implements HudElement {
   private final ArrayDeque<ChunkPos> urgentChunks = new ArrayDeque<>();
   private final Set<ChunkPos> urgentSet = new HashSet<>();
   private final Map<ChunkPos, Long> changeVersions = new HashMap<>();
+  private final Map<ChunkPos, Long> publishedVersions = new HashMap<>();
   private final ArrayDeque<AlertStamp> alertHistory = new ArrayDeque<>();
   private long nextChangeVersion;
   private long nextScanId;
@@ -211,22 +224,88 @@ public final class BaseESP extends Module implements HudElement {
   private volatile boolean regionsDirty;
   private volatile boolean rebuildQueued;
   private volatile BaseESP.RebuildResult pendingRebuild;
+  private final Map<String,BaseDiscoveryLog> histories = new HashMap<>();
+  private BaseDiscoveryLog discoveries;
+  private String discoveryScope;
+  private final Map<Long,Integer> sharedEspChunks = new HashMap<>();
+  private record Confirmation(Box bounds,int firstTick,int lastTick,int observations) {}
+  private final List<Confirmation> confirmations = new ArrayList<>();
+
+  private void openDiscoveryLog() {
+    if(mc.world==null)return;
+    String server;
+    if(mc.isInSingleplayer() && mc.getServer()!=null)server="local:"+mc.getServer().getSavePath(net.minecraft.util.WorldSavePath.ROOT).toAbsolutePath().normalize();
+    else if(mc.getCurrentServerEntry()!=null)server="remote:"+mc.getCurrentServerEntry().address.trim().toLowerCase(java.util.Locale.ROOT).replaceFirst(":25565$", "");
+    else { discoveries=null;discoveryScope=null;return; }
+    String scope=server+"|"+mc.world.getRegistryKey().getValue();
+    if(scope.equals(discoveryScope))return;
+    discoveryScope=scope;
+    discoveries=histories.computeIfAbsent(scope,s->new BaseDiscoveryLog(dev.maro.config.ConfigManager.DIR.resolve("base-discoveries"),s,java.time.Clock.systemDefaultZone()));
+  }
+  public BaseDiscoveryLog.Totals discoveryTotals() {
+    openDiscoveryLog();return discoveries==null?new BaseDiscoveryLog.Totals(0,0,0,0,0):discoveries.totals();
+  }
+  public void adjustDiscoveries(int amount) {openDiscoveryLog();if(discoveries!=null)discoveries.adjust(amount);}
+  /** Shared findings schedule a verified snapshot; they never increment a counter directly. */
+  public void onEspCluster(ChunkPos chunk,int count,boolean storage) {
+    if(!isActive()||!shareEsp.get()||mc.world!=lastWorld||mc.player==null||count<4)return;
+    if(chunkDistanceSq(mc.player.getChunkPos(),chunk)>scanRadius()*scanRadius())return;
+    sharedEspChunks.merge(chunk.toLong(),storage?1:2,(a,b)->a|b);
+    requestUrgent(chunk);
+  }
+  public int linkedEspChunks(){return sharedEspChunks.size();}
+  public int linkedEspSources(){return sharedEspChunks.values().stream().reduce(0,(a,b)->a|b);}
+  private BaseDiscoveryLog.Condition condition(BaseRegion r) {
+    return discoveries==null?r.condition:discoveries.condition(bounds(r),r.condition);
+  }
+  private boolean visibleRegion(BaseRegion r) {return !hideRaided.get()||condition(r)!=BaseDiscoveryLog.Condition.LikelyRaided;}
+  private void recordDiscoveries() {
+    if(discoveries==null)return;
+    confirmations.removeIf(c->tickCounter-c.lastTick>100);
+    List<BaseDiscoveryLog.Sighting> stable=new ArrayList<>();
+    for(BaseRegion region:baseRegions) {
+      Box b=bounds(region);Confirmation previous=confirmations.stream().filter(c->BaseDiscoveryLog.sameSite(c.bounds,b)).findFirst().orElse(null);
+      Confirmation next=new Confirmation(b,previous==null?tickCounter:previous.firstTick,tickCounter,previous==null?1:previous.observations+1);
+      if(previous!=null)confirmations.remove(previous);confirmations.add(next);
+      if(next.observations<2 || tickCounter-next.firstTick<20)continue;
+      boolean alreadyKnown=discoveries.knownBounds().stream().anyMatch(k->BaseDiscoveryLog.sameSite(k,b));
+      Box coverage=discoveries.knownBounds().stream().filter(k->BaseDiscoveryLog.sameSite(k,b)).reduce(b,Box::union);
+      if(!alreadyKnown)coverage=coverage.expand(24,0,24);
+      boolean complete=true;
+      // Require a fresh complete footprint before inferring a loss of storage.
+      for(int x=Math.floorDiv((int)Math.floor(coverage.minX),16);x<=Math.floorDiv((int)Math.floor(coverage.maxX),16);x++)
+        for(int z=Math.floorDiv((int)Math.floor(coverage.minZ),16);z<=Math.floorDiv((int)Math.floor(coverage.maxZ),16);z++) {
+          ChunkPos p=new ChunkPos(x,z);Integer t=lastScanTickByChunk.get(p);
+          if(getLoadedChunk(x,z)==null || t==null || tickCounter-t>rescanTicks()+40
+              || !publishedVersions.getOrDefault(p,-1L).equals(changeVersions.getOrDefault(p,0L)))complete=false;
+        }
+      if(alreadyKnown || complete)stable.add(new BaseDiscoveryLog.Sighting(b,region.storageBlocks,region.condition,complete));
+    }
+    discoveries.observe(stable);
+  }
 
   public BaseESP() {
-    super(NameeProtectAddon.CATEGORY, "base-esp", "Detects underground bases.");
+    super(NameeProtectAddon.CATEGORY, "base-esp", "Verify built bases, estimate raid status, and count unique discoveries.");
+  }
+  @Override public com.google.gson.JsonObject saveExtra() {
+    var data=super.saveExtra();data.addProperty("baseCounterLayout",1);return data;
+  }
+  @Override public void loadExtra(com.google.gson.JsonObject data) {
+    super.loadExtra(data);
+    if(!data.has("baseCounterLayout")){hudX.reset();hudY.reset();}
   }
 
   /** Immutable bounds for the currently detected underground shells. */
   public List<net.minecraft.util.math.Box> detectedBounds() {
-    return this.baseRegions.stream().map(region -> new net.minecraft.util.math.Box(
+    return this.baseRegions.stream().filter(this::visibleRegion).map(region -> new net.minecraft.util.math.Box(
         region.shell.minX, region.shell.minY, region.shell.minZ,
         region.shell.maxX + 1, region.shell.maxY + 1, region.shell.maxZ + 1)).toList();
   }
 
-  public record Detection(Box bounds, int storageBlocks, int totalBlocks, int chunks, String title, double templateSimilarity) {}
+  public record Detection(Box bounds, int storageBlocks, int totalBlocks, int chunks, String title, double templateSimilarity, BaseDiscoveryLog.Condition condition) {}
   public List<Detection> detections() {
-    return baseRegions.stream().map(r -> new Detection(bounds(r), r.storageBlocks, r.totalBlocks,
-        r.chunkCount, r.familyTitle == null ? "Built base" : r.familyTitle, r.matchScore))
+    return baseRegions.stream().filter(this::visibleRegion).map(r -> new Detection(bounds(r), r.storageBlocks, r.totalBlocks,
+        r.chunkCount, r.familyTitle == null ? "Built base" : r.familyTitle, r.matchScore,condition(r)))
         .sorted(Comparator.comparingDouble(d -> mc.player == null ? 0 : d.bounds.getCenter().squaredDistanceTo(mc.player.getEntityPos()))).toList();
   }
   private static Box bounds(BaseRegion r) {
@@ -280,7 +359,7 @@ public final class BaseESP extends Module implements HudElement {
     return null;
   }
 
-  @Override public String getInfoString() { return Integer.toString(this.baseRegions.size()); }
+  @Override public String getInfoString() { return Integer.toString(discoveryTotals().today()); }
 
   public void onActivate() {
     this.clearAll();
@@ -317,6 +396,7 @@ public final class BaseESP extends Module implements HudElement {
         this.lastWorld = this.mc.world;
       }
 
+      openDiscoveryLog();
       ChunkPos playerChunk = this.mc.player.getChunkPos();
       int radius = this.scanRadius();
       if (!playerChunk.equals(this.lastOrigin)
@@ -349,7 +429,7 @@ public final class BaseESP extends Module implements HudElement {
           int bottomY = Math.max(this.mc.world.getBottomY(), SCAN_MIN_Y);
           for (int i = 0; i < sections.length; i++) {
             int sectionY = (bottomSection + i) << 4;
-            if (sectionY <= SCAN_MAX_Y && sectionY + 15 >= bottomY && sections[i] != null
+            if (sectionY <= (scanSurface.get()?SCAN_MAX_Y:-1) && sectionY + 15 >= bottomY && sections[i] != null
                 && !sections[i].isEmpty() && sections[i].hasAny(BaseESP::isTrackedState)) snapshot[i] = sections[i].copy();
           }
           boolean touchesStorage = this.touchesStorageChunk(chunkPos);
@@ -359,6 +439,7 @@ public final class BaseESP extends Module implements HudElement {
 
       this.prune(playerChunk, radius + 4);
       this.applyPendingRebuild();
+      if(tickCounter%10==0)recordDiscoveries();
       this.scheduleRegionRebuildIfNeeded();
     }
   }
@@ -385,7 +466,7 @@ public final class BaseESP extends Module implements HudElement {
         this.alertedRegions.retainAll(result.activeAnchors);
 
         for (BaseESP.BaseRegion region : this.baseRegions) {
-          if (this.alertedRegions.add(region.anchor) && shouldAlert(region)) {
+          if (visibleRegion(region) && this.alertedRegions.add(region.anchor) && shouldAlert(region)) {
             this.alertRegion(region);
           }
         }
@@ -401,13 +482,14 @@ public final class BaseESP extends Module implements HudElement {
         this.rebuildQueued = true;
         long revision = this.scanRevision;
         ArrayList<BaseESP.ChunkScan> snapshot = new ArrayList<>(this.chunkScans.values());
+        List<Box> known=discoveries==null?List.of():discoveries.knownBounds();
         int minBlocksValue = this.minBlocks.get();
         long rebuildSession = this.session;
         this.scanExecutor.submit(
             () -> {
               try {
                 if (rebuildSession != this.session || Thread.currentThread().isInterrupted()) return;
-                RebuildResult result = this.rebuildRegionsSnapshot(snapshot, minBlocksValue, revision);
+                RebuildResult result = this.rebuildRegionsSnapshot(snapshot, minBlocksValue, revision,known);
                 this.mc.execute(() -> { if (isActive() && rebuildSession == this.session) this.pendingRebuild = result; });
               } catch (Exception error) {
                 dev.maro.Maro.LOGGER.error("Base ESP rebuild failed", error);
@@ -428,7 +510,9 @@ public final class BaseESP extends Module implements HudElement {
       int chunkAnchorBlocks = 0;
       int startX = chunkPos.getStartX();
       int startZ = chunkPos.getStartZ();
-      int worldTop = -1;
+      int worldTop = SCAN_MAX_Y;
+      BaseEvidence evidence=new BaseEvidence();
+      int lastEvidence=0;
       Block lastBlock = null;
       BlockKind lastKind = UNTRACKED;
 
@@ -449,7 +533,8 @@ public final class BaseESP extends Module implements HudElement {
                 for (int z = 0; z < 16; z++) {
                   Block block = section.getBlockState(x, y, z).getBlock();
                   // Runs of the same block (stone, deepslate) skip even the cache.
-                  if (block != lastBlock) { lastBlock = block; lastKind = kindOf(block); }
+                  if (block != lastBlock) { lastBlock = block; lastKind = kindOf(block); lastEvidence=BaseEvidence.kind(block); }
+                  evidence.add(worldX,worldY,startZ+z,lastEvidence);
                   BaseESP.BaseBlockType type = lastKind.type();
                   BaseESP.StructureTrait trait = lastKind.trait();
                   if (lastKind != UNTRACKED) {
@@ -472,7 +557,8 @@ public final class BaseESP extends Module implements HudElement {
 
       ArrayList<BaseESP.ScannedColumn> compactColumns = new ArrayList<>(columns.size());
       BaseESP.ChunkScan nextScan = null;
-      boolean includeChunk = chunkAnchorBlocks > 0 || touchesStorage;
+      List<BaseEvidence.Cell> cells=evidence.snapshot();
+      boolean includeChunk = chunkAnchorBlocks > 0 || touchesStorage || columns.size()>=20 || !cells.isEmpty();
       if (includeChunk) {
         for (BaseESP.ChunkColumnBuilder builder : columns.values()) {
           if (builder.anchorCount > 0
@@ -485,8 +571,8 @@ public final class BaseESP extends Module implements HudElement {
         compactColumns.sort(
             Comparator.<BaseESP.ScannedColumn>comparingInt(column -> column.x)
                 .thenComparingInt(column -> column.z));
-        if (!compactColumns.isEmpty()) {
-          nextScan = new BaseESP.ChunkScan(chunkPos, List.copyOf(compactColumns));
+        if (!compactColumns.isEmpty() || !cells.isEmpty()) {
+          nextScan = new BaseESP.ChunkScan(chunkPos, List.copyOf(compactColumns),cells);
         }
       }
 
@@ -502,6 +588,7 @@ public final class BaseESP extends Module implements HudElement {
               ? this.chunkScans.remove(chunkPos)
               : this.chunkScans.put(chunkPos, result);
       this.lastScanTickByChunk.put(chunkPos, scanTick);
+      this.publishedVersions.put(chunkPos,version);
       boolean changed = !this.sameScan(previous,result);
       if (changed && result != null && anchors > 0) {
         for (int dx = -1; dx <= 1; dx++) {
@@ -555,8 +642,9 @@ public final class BaseESP extends Module implements HudElement {
   }
 
   private BaseESP.RebuildResult rebuildRegionsSnapshot(
-      List<BaseESP.ChunkScan> scans, int minBlocksValue, long revision) {
+      List<BaseESP.ChunkScan> scans, int minBlocksValue, long revision,List<Box> known) {
     HashMap<Long, BaseESP.ColumnRef> columnMap = new HashMap<>();
+    List<BaseEvidence.Cell> evidence=scans.stream().flatMap(c->c.evidence.stream()).toList();
 
     for (BaseESP.ChunkScan scan : scans) {
       for (BaseESP.ScannedColumn scannedColumn : scan.columns) {
@@ -609,7 +697,7 @@ public final class BaseESP extends Module implements HudElement {
 
       ArrayList<BaseESP.RegionBuilder> mergedBuilders =
           this.mergeNearbyBuilders(new ArrayList<>(builders.values()));
-      mergedBuilders = this.dropVerticallyDetachedBuilders(mergedBuilders);
+      // Separate bases at different heights remain independent discoveries.
       ArrayList<BaseESP.BaseRegion> nextRegions = new ArrayList<>();
       Set<Long> activeAnchors = ConcurrentHashMap.newKeySet();
       ChunkPos bestMarkedChunk = null;
@@ -617,6 +705,25 @@ public final class BaseESP extends Module implements HudElement {
       int bestMarkedRegionBlocks = -1;
 
       for (BaseESP.RegionBuilder builder : mergedBuilders) {
+        Box raw=new Box(builder.minX,builder.minY,builder.minZ,builder.maxX+1,builder.maxY+1,builder.maxZ+1);
+        BaseEvidence.Assessment identity=BaseEvidence.assess(evidence,raw);
+        if(identity.generated())continue;
+        int storage=storageAnchorBlocks(builder);
+        boolean knownSite=known.stream().anyMatch(b->BaseDiscoveryLog.sameSite(b,raw));
+        long storageColumns=builder.columns.stream().filter(c->c.anchorCount>0).count();
+        double area=raw.getLengthX()*raw.getLengthZ();
+        boolean compactStorage=storage>=Math.max(24,minBlocksValue) && storageColumns>=8 && storage/area>=.12
+            && (builder.typeCounts.getOrDefault(BaseBlockType.BARREL,0)>=16
+                ||builder.typeCounts.getOrDefault(BaseBlockType.CHEST,0)>=32||identity.playerBuilt());
+        // Remains require a substantial built shell plus independent player evidence or a recorded site.
+        if(compactStorage || storage<16 && minBlocksValue<=15 && (identity.playerBuilt()||knownSite)
+            && builder.structureBlocks>=72 && builder.columns.size()>=20
+            && raw.getLengthX()>=5 && raw.getLengthZ()>=5 && raw.getLengthY()>=3) {
+          ShellGeometry shell=buildUnifiedShell(builder.columns,builder.minY,builder.maxY);
+          nextRegions.add(new BaseRegion(ChunkPos.toLong(builder.bestChunk().x,builder.bestChunk().z),builder.totalBlocks,storage,
+              builder.chunkCounts.size(),builder.bestChunk(),builder.bestChunkCount(),shell,builder.minY,builder.maxY,null,null,0,null));
+          continue;
+        }
         if (builder.qualifies(minBlocksValue) && this.isBuiltRegion(builder)) {
           ChunkPos bestChunk = builder.bestChunk();
           int bestChunkCount = builder.bestChunkCount();
@@ -679,8 +786,7 @@ public final class BaseESP extends Module implements HudElement {
               .thenComparing(
                   Comparator.<BaseESP.BaseRegion>comparingInt(region -> region.chunkCount)
                       .reversed()));
-      nextRegions = this.suppressDuplicateFamilies(nextRegions);
-      nextRegions = this.suppressIsolatedRegions(nextRegions);
+      // A template is not a location: distinct copies of a base both count.
       activeAnchors.clear();
       bestMarkedChunk = null;
       bestMarkedCount = -1;
@@ -833,7 +939,7 @@ public final class BaseESP extends Module implements HudElement {
     int start = Integer.MIN_VALUE;
     int last = Integer.MIN_VALUE;
 
-    for (int bucket = 0; bucket < 165; bucket++) {
+    for (int bucket = 0; bucket < HEIGHT_BUCKETS; bucket++) {
       if (column.yCounts[bucket] <= 0) {
         if (start != Integer.MIN_VALUE) {
           runs.add(new BaseESP.IntRange(start, last));
@@ -1606,7 +1712,7 @@ public final class BaseESP extends Module implements HudElement {
 
   private static int anchorWeight(BaseESP.BaseBlockType type) {
     return switch (type) {
-      case CHEST, TRAPPED_CHEST, BARREL, HOPPER, SHULKER_BOX -> 10;
+      case CHEST, TRAPPED_CHEST, ENDER_CHEST, BARREL, HOPPER, SHULKER_BOX -> 10;
       case CRAFTER, BEACON, ENCHANTING_TABLE -> 9;
       case SPAWNER -> 6;
       case DISPENSER, DROPPER -> 1;
@@ -2555,16 +2661,20 @@ public final class BaseESP extends Module implements HudElement {
   }
 
   @Override public dev.maro.runtime.gui.widgets.WWidget getWidget(dev.maro.runtime.gui.GuiTheme theme) {
+    var list=theme.verticalList();
     var button = theme.button("Place detector HUD");
     button.action = () -> { detectorHud.set(true); setEnabled(true); mc.setScreen(new HudPlacementScreen(mc.currentScreen,this)); };
-    return button;
+    list.add(button);
+    var plus=theme.button("Add one base (+)");plus.action=()->adjustDiscoveries(1);list.add(plus);
+    var minus=theme.button("Subtract one base (-)");minus.action=()->adjustDiscoveries(-1);list.add(minus);
+    return list;
   }
   @Override public String hudName() { return "Base ESP"; }
   @Override public float hudScale() {
     return (float)Math.min(hudSize.get(), Math.min((mc.getWindow().getScaledWidth()-8)/224.0,
         (mc.getWindow().getScaledHeight()-8)/(double)panelHeight()));
   }
-  private int panelHeight() { return 42+Math.max(1,Math.min(hudEntries.get(),baseRegions.size()))*42; }
+  private int panelHeight() { return nearbyList.get()?106+Math.max(1,Math.min(hudEntries.get(),detections().size()))*42:106; }
   @Override public float hudWidth() { return 224*hudScale(); }
   @Override public float hudHeight() { return panelHeight()*hudScale(); }
   private float roomX() { return Math.max(0,mc.getWindow().getScaledWidth()-hudWidth()-8); }
@@ -2577,6 +2687,20 @@ public final class BaseESP extends Module implements HudElement {
   }
   @Override public void hudResize(float by) { hudSize.set(clamp(hudSize.get()+by,.5,2.5)); }
   @Override public void hudReset() { hudX.reset(); hudY.reset(); hudSize.reset(); }
+  /** Pointer controls work only while chat has released the cursor. */
+  public boolean counterClick(double x,double y) {
+    if(!isActive()||!detectorHud.get()||mc.world!=lastWorld||mc.options.hudHidden||!(mc.currentScreen instanceof net.minecraft.client.gui.screen.ChatScreen))return false;
+    double lx=(x-hudLeft())/hudScale(),ly=(y-hudTop())/hudScale();
+    if(ly<9||ly>31)return false;
+    if(lx>=169&&lx<=191){adjustDiscoveries(-1);return true;}
+    if(lx>=195&&lx<=217){adjustDiscoveries(1);return true;}
+    return false;
+  }
+  @EventHandler private void counterMouse(dev.maro.runtime.events.meteor.MouseClickEvent event) {
+    if(event.button()!=0||event.action!=dev.maro.runtime.utils.misc.input.KeyAction.Press)return;
+    var w=mc.getWindow();
+    if(counterClick(mc.mouse.getX()*w.getScaledWidth()/w.getWidth(),mc.mouse.getY()*w.getScaledHeight()/w.getHeight()))event.cancel();
+  }
   @Override public void onRender2D(DrawContext ctx,float delta) {
     if (!detectorHud.get() || mc.player==null || mc.world!=lastWorld || mc.options.hudHidden) return;
     var matrix = ctx.getMatrices(); matrix.pushMatrix();
@@ -2584,20 +2708,30 @@ public final class BaseESP extends Module implements HudElement {
     try {
       matrix.translate(hudLeft(),hudTop()); matrix.scale(hudScale(),hudScale());
       Render2D.roundRect(ctx,0,0,224,panelHeight(),8,0xE80B0D12);
-      Render2D.roundOutline(ctx,0,0,224,panelHeight(),8,.6f,0x504F645C);
-      Fonts.draw(ctx,"BASE ESP",10,9,0xFFECF5EF,true,.7f);
-      Fonts.drawRight(ctx,scanSpeed.get().name().toUpperCase(),214,10+Fonts.height(.6f)/2,0xFF83DCA0,false,.6f);
-      Fonts.draw(ctx,baseRegions.size()+" found  ·  "+checkedChunks()+" checked  ·  "+pendingScans()+" pending",10,25,0xFF98A69F,false,.6f);
+      Render2D.roundOutline(ctx,0,0,224,panelHeight(),8,.6f,dev.maro.gui.theme.Theme.accent(110));
+      var counts=discoveryTotals();
+      Fonts.draw(ctx,"BASES FOUND",10,11,0xFFF0F4FC,true,.7f);
+      for(int x:new int[]{169,195})Render2D.roundRect(ctx,x,9,22,22,6,dev.maro.gui.theme.Theme.accent(55));
+      Fonts.drawCentered(ctx,"−",180,20,0xFFF2F6FF,true,.95f);
+      Fonts.drawCentered(ctx,"+",206,20,0xFFF2F6FF,true,.95f);
+      Fonts.draw(ctx,Integer.toString(counts.today()),10,31,0xFFFFFFFF,true,1.7f);
+      Fonts.draw(ctx,"TODAY",11,53,dev.maro.gui.theme.Theme.accent(255),true,.55f);
+      Fonts.draw(ctx,counts.total()+" all time  ·  "+counts.automaticToday()+" auto today",10,65,0xFFB7C5D8,false,.6f);
+      Fonts.draw(ctx,"Correction "+(counts.correction()>=0?"+":"")+counts.correction()+"  ·  Open chat for + / −",10,78,0xFF93A2B9,false,.55f);
+      String status=discoveries!=null&&discoveries.saveFailed()?"History save error — keep the original file":checkedChunks()+" chunks checked  ·  "+pendingScans()+" pending";
+      Fonts.draw(ctx,status,10,91,discoveries!=null&&discoveries.saveFailed()?0xFFFFB05C:0xFF93A2B9,false,.55f);
+      if(!nearbyList.get())return;
       var found = detections();
       if (found.isEmpty()) {
-        Fonts.draw(ctx,"Scanning loaded underground chunks",10,49,0xFFCFDAD4,false,.65f);
-        Fonts.draw(ctx,"New chunks and block changes get priority",10,65,0xFF7F9186,false,.55f);
+        Fonts.draw(ctx,"Scanning loaded chunks",10,117,0xFFCFDAD4,false,.65f);
+        Fonts.draw(ctx,hideRaided.get()?"Likely raided sites stay in your total":"Only verified clusters count",10,133,0xFF7F9186,false,.55f);
       }
       for (int i=0; i<Math.min(hudEntries.get(),found.size()); i++) {
-        Detection d = found.get(i); var center=d.bounds.getCenter(); int y=42+i*42;
+        Detection d = found.get(i); var center=d.bounds.getCenter(); int y=106+i*42;
         Render2D.roundRect(ctx,7,y,210,37,5,0x70303B34);
-        Fonts.draw(ctx,Fonts.trim(d.title,148,true,.65f),12,y+5,0xFFF1F6F2,true,.65f);
-        Fonts.drawRight(ctx,Math.round(center.distanceTo(mc.player.getEntityPos()))+"m",210,y+5+Fonts.height(.65f)/2,0xFF83DCA0,true,.65f);
+        Fonts.draw(ctx,Fonts.trim(d.title,95,true,.65f),12,y+5,0xFFF1F6F2,true,.65f);
+        String label=switch(d.condition){case LikelyIntact->"Likely intact";case LikelyRaided->"Likely raided";case Uncertain->"Uncertain";};
+        Fonts.drawRight(ctx,label,210,y+5+Fonts.height(.55f)/2,d.condition==BaseDiscoveryLog.Condition.LikelyRaided?0xFFFFB05C:0xFF83DCA0,true,.55f);
         String info=(int)Math.floor(center.x)+" / "+(int)Math.floor(center.y)+" / "+(int)Math.floor(center.z)+"  ·  "+d.storageBlocks+" storage";
         Fonts.draw(ctx,Fonts.trim(info,198,false,.55f),12,y+21,0xFFADBAB2,false,.55f);
       }
@@ -2661,10 +2795,11 @@ public final class BaseESP extends Module implements HudElement {
               : (double) Math.min(100, this.mc.world.getBottomY() + this.mc.world.getHeight() - 1);
 
       for (BaseESP.BaseRegion region : this.baseRegions) {
+        if(!visibleRegion(region))continue;
         this.renderShell(event, region.shell, sideColor, lineColor);
       }
 
-      if (this.chunkMark.get() && this.markedChunk != null) {
+      if (this.chunkMark.get() && this.markedChunk != null && baseRegions.stream().anyMatch(r->r.bestChunk.equals(markedChunk)&&visibleRegion(r))) {
         double y2;
         double y1;
         if (this.chunkMarkMode.get() == BaseESP.ChunkMarkMode.Pillar) {
@@ -2919,7 +3054,7 @@ public final class BaseESP extends Module implements HudElement {
   }
 
   private static boolean isTrackedState(BlockState state) {
-    return kindOf(state.getBlock()) != UNTRACKED;
+    return kindOf(state.getBlock()) != UNTRACKED || BaseEvidence.kind(state.getBlock())!=0;
   }
 
   /** What a block counts as: its storage type or structure trait, or neither. */
@@ -2952,6 +3087,8 @@ public final class BaseESP extends Module implements HudElement {
       return BaseESP.BaseBlockType.CHEST;
     } else if (block == Blocks.TRAPPED_CHEST) {
       return BaseESP.BaseBlockType.TRAPPED_CHEST;
+    } else if (block == Blocks.ENDER_CHEST) {
+      return BaseESP.BaseBlockType.ENDER_CHEST;
     } else if (block == Blocks.BARREL) {
       return BaseESP.BaseBlockType.BARREL;
     } else if (block == Blocks.HOPPER) {
@@ -3088,6 +3225,8 @@ public final class BaseESP extends Module implements HudElement {
       this.markRegionsDirty();
     }
     changeVersions.keySet().removeIf(pos -> chunkDistanceSq(center,pos)>radiusSq || getLoadedChunk(pos.x,pos.z)==null);
+    publishedVersions.keySet().removeIf(pos -> !lastScanTickByChunk.containsKey(pos));
+    sharedEspChunks.keySet().removeIf(pos -> chunkDistanceSq(center,new ChunkPos(pos))>radiusSq || getLoadedChunk(ChunkPos.getPackedX(pos),ChunkPos.getPackedZ(pos))==null);
   }
 
   private int chunkDistanceSq(ChunkPos a, ChunkPos b) {
@@ -3105,8 +3244,9 @@ public final class BaseESP extends Module implements HudElement {
     this.chunkScans.clear();
     this.lastScanTickByChunk.clear();
     this.baseRegions.clear();
+    this.confirmations.clear();this.sharedEspChunks.clear();
     this.queuedChunks.clear();
-    this.urgentChunks.clear(); this.urgentSet.clear(); this.changeVersions.clear(); this.alertHistory.clear();
+    this.urgentChunks.clear(); this.urgentSet.clear(); this.changeVersions.clear(); this.publishedVersions.clear(); this.alertHistory.clear();
     this.alertedRegions.clear();
     this.scanOrder.clear();
     this.scanIndex = 0;
@@ -3126,6 +3266,7 @@ public final class BaseESP extends Module implements HudElement {
   private static enum BaseBlockType {
     CHEST,
     TRAPPED_CHEST,
+    ENDER_CHEST,
     BARREL,
     HOPPER,
     CRAFTER,
@@ -3154,6 +3295,7 @@ public final class BaseESP extends Module implements HudElement {
     final String familyHash;
     final String familySlug;
     final double matchScore;
+    final BaseDiscoveryLog.Condition condition;
 
     BaseRegion(
         long anchor,
@@ -3171,6 +3313,8 @@ public final class BaseESP extends Module implements HudElement {
       this.anchor = anchor;
       this.totalBlocks = totalBlocks;
       this.storageBlocks = storageBlocks;
+      this.condition=storageBlocks<4?BaseDiscoveryLog.Condition.LikelyRaided:
+          storageBlocks>=16?BaseDiscoveryLog.Condition.LikelyIntact:BaseDiscoveryLog.Condition.Uncertain;
       this.familyTitle = familyTitle;
       this.chunkCount = chunkCount;
       this.bestChunk = bestChunk;
@@ -3202,7 +3346,7 @@ public final class BaseESP extends Module implements HudElement {
     int engineeredCount;
     int storageMinY = Integer.MAX_VALUE;
     int storageMaxY = Integer.MIN_VALUE;
-    final int[] yCounts = new int[165];
+    final int[] yCounts = new int[HEIGHT_BUCKETS];
     final EnumMap<BaseESP.BaseBlockType, Integer> typeCounts =
         new EnumMap<>(BaseESP.BaseBlockType.class);
     final EnumSet<BaseESP.StructureTrait> structureTraits =
@@ -3218,7 +3362,7 @@ public final class BaseESP extends Module implements HudElement {
       this.maxY = Math.max(this.maxY, y);
       this.count++;
       int bucket = y - -64;
-      if (bucket >= 0 && bucket < 165) {
+      if (bucket >= 0 && bucket < HEIGHT_BUCKETS) {
         this.yCounts[bucket]++;
       }
 
@@ -3256,7 +3400,7 @@ public final class BaseESP extends Module implements HudElement {
           this.structureCount,
           this.storageMinY,
           this.storageMaxY,
-          Arrays.copyOf(this.yCounts, 165),
+          Arrays.copyOf(this.yCounts, HEIGHT_BUCKETS),
           new EnumMap<>(this.typeCounts),
           this.structureTraits.isEmpty()
               ? EnumSet.noneOf(BaseESP.StructureTrait.class)
@@ -3275,11 +3419,13 @@ public final class BaseESP extends Module implements HudElement {
     final ChunkPos chunkPos;
     final List<BaseESP.ScannedColumn> columns;
     final int signatureHash;
+    final List<BaseEvidence.Cell> evidence;
 
-    ChunkScan(ChunkPos chunkPos, List<BaseESP.ScannedColumn> columns) {
+    ChunkScan(ChunkPos chunkPos, List<BaseESP.ScannedColumn> columns,List<BaseEvidence.Cell> evidence) {
       this.chunkPos = chunkPos;
       this.columns = columns;
-      int hash = 1;
+      this.evidence=evidence;
+      int hash = evidence.hashCode();
 
       for (BaseESP.ScannedColumn column : columns) {
         hash = 31 * hash + column.signatureHash();
@@ -3299,7 +3445,7 @@ public final class BaseESP extends Module implements HudElement {
     int structureCount;
     int storageMinY = Integer.MAX_VALUE;
     int storageMaxY = Integer.MIN_VALUE;
-    final int[] yCounts = new int[165];
+    final int[] yCounts = new int[HEIGHT_BUCKETS];
     final ChunkPos chunkPos;
     final EnumMap<BaseESP.BaseBlockType, Integer> typeCounts =
         new EnumMap<>(BaseESP.BaseBlockType.class);
@@ -3316,7 +3462,7 @@ public final class BaseESP extends Module implements HudElement {
       this.structureCount = scannedColumn.structureCount;
       this.storageMinY = scannedColumn.storageMinY;
       this.storageMaxY = scannedColumn.storageMaxY;
-      System.arraycopy(scannedColumn.yCounts, 0, this.yCounts, 0, 165);
+      System.arraycopy(scannedColumn.yCounts, 0, this.yCounts, 0, HEIGHT_BUCKETS);
       this.chunkPos = chunkPos;
       this.typeCounts.putAll(scannedColumn.typeCounts);
       this.structureTraits.addAll(scannedColumn.structureTraits);
@@ -3327,7 +3473,7 @@ public final class BaseESP extends Module implements HudElement {
       this.maxY = Math.max(this.maxY, y);
       this.count++;
       int bucket = y - -64;
-      if (bucket >= 0 && bucket < 165) {
+      if (bucket >= 0 && bucket < HEIGHT_BUCKETS) {
         this.yCounts[bucket]++;
       }
 
@@ -3359,7 +3505,7 @@ public final class BaseESP extends Module implements HudElement {
         this.storageMaxY = Math.max(this.storageMaxY, scannedColumn.storageMaxY);
       }
 
-      for (int i = 0; i < 165; i++) {
+      for (int i = 0; i < HEIGHT_BUCKETS; i++) {
         this.yCounts[i] = this.yCounts[i] + scannedColumn.yCounts[i];
       }
 
@@ -3403,7 +3549,7 @@ public final class BaseESP extends Module implements HudElement {
   private static class RegionBuilder {
     final ArrayList<BaseESP.ColumnRef> columns = new ArrayList<>();
     final HashMap<ChunkPos, Integer> chunkCounts = new HashMap<>();
-    final int[] yCounts = new int[165];
+    final int[] yCounts = new int[HEIGHT_BUCKETS];
     final EnumMap<BaseESP.BaseBlockType, Integer> typeCounts =
         new EnumMap<>(BaseESP.BaseBlockType.class);
     final EnumSet<BaseESP.StructureTrait> structureTraits =
@@ -3431,7 +3577,7 @@ public final class BaseESP extends Module implements HudElement {
       this.maxZ = Math.max(this.maxZ, column.z);
       this.chunkCounts.merge(column.chunkPos, column.weight(), Integer::sum);
 
-      for (int i = 0; i < 165; i++) {
+      for (int i = 0; i < HEIGHT_BUCKETS; i++) {
         this.yCounts[i] = this.yCounts[i] + column.yCounts[i];
       }
 
@@ -3509,7 +3655,7 @@ public final class BaseESP extends Module implements HudElement {
     int outlineMinY() {
       int threshold = this.yThreshold();
 
-      for (int i = 0; i < 165; i++) {
+      for (int i = 0; i < HEIGHT_BUCKETS; i++) {
         if (this.yCounts[i] >= threshold) {
           return -64 + i;
         }

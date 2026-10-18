@@ -1,0 +1,7 @@
+license.example.invalid {
+    request_body { max_size 16KB }
+    reverse_proxy 127.0.0.1:8788 {
+        header_up Host license.example.invalid
+    }
+    # Do not enable request-body or Authorization-header logging.
+}

@@ -13,6 +13,7 @@ public final class ChestSessions {
     private static BlockPos pending;
     private static long openedAt;
     private static ScreenHandler physical, ready;
+    private static BlockPos physicalPos;
 
     private ChestSessions() { }
 
@@ -31,10 +32,12 @@ public final class ChestSessions {
     public static void opened() {
         MinecraftClient client = MinecraftClient.getInstance();
         physical = ready = null;
+        physicalPos = null;
         if (pending != null && client.world == world && client.player != null
                 && System.nanoTime() - openedAt <= 5_000_000_000L
                 && client.player.squaredDistanceTo(pending.toCenterPos()) <= 64) {
             physical = client.player.currentScreenHandler;
+            physicalPos = pending;
         }
         pending = null;
     }
@@ -46,6 +49,7 @@ public final class ChestSessions {
 
     public static boolean physical(ScreenHandler handler) { return handler == physical; }
     public static boolean ready(ScreenHandler handler) { return handler == ready; }
+    public static BlockPos position(ScreenHandler handler) { return handler==physical?physicalPos:null; }
 
     /** A command menu cannot consume an earlier container interaction. */
     public static void command() { pending = null; }

@@ -77,6 +77,8 @@ public final class ConfigManager {
         root.add("friends", friends);
         root.addProperty("config", current);
         root.add("panels", dev.maro.gui.PanelsView.save());
+        root.addProperty("spatialMenu", true);
+        root.addProperty("lookRevision", 5);
         root.addProperty("version", CLIENT_VERSION);
         write(CLIENT_FILE, root);
     }
@@ -86,6 +88,7 @@ public final class ConfigManager {
         if (root == null) return;
         if (root.has("settings") && root.get("settings").isJsonObject()) {
             JsonObject settings = root.getAsJsonObject("settings");
+            if(!settings.has("Frosted Glass")&&settings.has("Background Blur"))settings.add("Frosted Glass",settings.get("Background Blur"));
             int version = root.has("version") ? root.get("version").getAsInt() : 1;
             for (SettingSection section : ClientSettings.ALL) {
                 // files from before the redesign keep their behaviour settings but get the new look
@@ -103,6 +106,12 @@ public final class ConfigManager {
                 ClientSettings.shadow.reset();
                 ClientSettings.contourLines.reset();
             }
+            // The old Spatial style now uses the Panel layout with floating controls.
+            JsonElement style = settings.get("Menu Style");
+            if (style != null && style.isJsonPrimitive() && style.getAsString().equals("Spatial")) {
+                ClientSettings.menuStyle.set("Panel");
+                ClientSettings.spatialMenu.set(true);
+            }
         }
         if (root.has("friends") && root.get("friends").isJsonArray()) {
             FriendManager.clear();
@@ -114,6 +123,33 @@ public final class ConfigManager {
         }
         if (root.has("version") && root.get("version").getAsInt() >= 5)
             dev.maro.gui.PanelsView.load(root.get("panels"));
+        // Adopt the floating window once, retaining an existing Screen GUI setup.
+        if (!root.has("spatialMenu") && !ClientSettings.screenGui.get()) ClientSettings.spatialMenu.set(true);
+        // Once: the plainer look, sentence case in Rubik without glows, two-tone gradients or
+        // contour lines (each can be turned back on under Settings and Theme).
+        if (!root.has("lookRevision") || root.get("lookRevision").getAsInt() < 2) {
+            ClientSettings.capsText.set(false);
+            ClientSettings.gradient.set(false);
+            ClientSettings.glow.set(false);
+            ClientSettings.contourLines.set(false);
+            ClientSettings.customFont.set(true);
+            ClientSettings.fontFace.set("Rubik");
+        }
+        if (!root.has("lookRevision") || root.get("lookRevision").getAsInt() < 3) {
+            ClientSettings.capsText.set(true);
+            ClientSettings.customFont.set(true);
+            ClientSettings.fontFace.set("Rubik");
+        }
+        // Compact the previous default once. Keep deliberate custom size choices.
+        if ((!root.has("lookRevision") || root.get("lookRevision").getAsInt() < 4)
+                && ClientSettings.guiSize.getFloat() == 85) ClientSettings.guiSize.set(75d);
+        // Adopt the requested open, bold typeface once; later font choices remain saved.
+        if (!root.has("lookRevision") || root.get("lookRevision").getAsInt() < 5) {
+            ClientSettings.fontFace.set("Sora");
+            ClientSettings.customFont.set(true);
+            ClientSettings.capsText.set(true);
+        }
+
     }
 
     // ---- module configs -----------------------------------------------------------------
@@ -144,6 +180,10 @@ public final class ConfigManager {
         JsonObject root = read(CONFIG_DIR.resolve(name + ".json"));
         if (root == null) return false;
         JsonObject modules = root.has("modules") && root.get("modules").isJsonObject() ? root.getAsJsonObject("modules") : new JsonObject();
+        try { dev.maro.textures.GameplayTextureMigration.apply(modules); }
+        catch(RuntimeException e) { Maro.LOGGER.warn("Could not migrate legacy texture modules in config {}",name,e); }
+        try { dev.maro.render.pickaxe.PickaxeMigration.apply(modules); }
+        catch(RuntimeException e) { Maro.LOGGER.warn("Could not migrate legacy pickaxe settings in config {}",name,e); }
         for (Module m : ModuleManager.all()) {
             if (!modules.has(m.getName()) || !modules.get(m.getName()).isJsonObject()) {
                 // Never saved in this config: as it comes (on, for one that starts on).

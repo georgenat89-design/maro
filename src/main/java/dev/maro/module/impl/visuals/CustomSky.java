@@ -7,6 +7,7 @@ import dev.maro.module.Category;
 import dev.maro.module.Module;
 import dev.maro.render.sky.CustomSkyRenderer;
 import dev.maro.render.sky.SkyImage;
+import dev.maro.render.sky.ResourcePackSky;
 import dev.maro.runtime.renderer.Texture;
 import dev.maro.setting.BooleanSetting;
 import dev.maro.setting.ButtonSetting;
@@ -34,11 +35,11 @@ public class CustomSky extends Module {
     /** Order matches sky() in custom_sky.fsh; the last is your own picture. */
     public static final String[] SKIES = {"Neon Waves", "Aurora", "Nebula", "Synthwave", "Golden Hour", "Cotton Candy",
             "Blood Moon", "Starry Night", "Matrix", "Inferno", "Frozen", "Deep Ocean", "Black Hole", "Prism", "Thunderstorm",
-            "Image"};
+            "Caustics", "Image"};
     private static final int PICTURE = SKIES.length - 1;
     /** Each sky's colour just above the horizon, which far-away land fades into when Match Fog is on. */
     private static final int[] HORIZONS = {0x23093C, 0x092728, 0x170C1D, 0xF95D72, 0xFC955A, 0xFBBFDF,
-            0x590808, 0x181F42, 0x020B05, 0x831E03, 0xD7EBFF, 0x07304B, 0x0A050C, 0x9A92A6, 0x1C1F29, 0x10141C};
+            0x590808, 0x181F42, 0x020B05, 0x831E03, 0xD7EBFF, 0x07304B, 0x0A050C, 0x9A92A6, 0x1C1F29, 0x2C2E30, 0x10141C};
     private static final double FADE_SECONDS = 1.5;
 
     private static CustomSky instance;
@@ -234,6 +235,7 @@ public class CustomSky extends Module {
         return switch (fit) {
             case PANORAMA -> "360° panorama";
             case CUBE -> "skybox cross";
+            case ATLAS -> "3×2 skybox atlas";
             case WRAP -> "wrapped round";
         };
     }
@@ -275,7 +277,7 @@ public class CustomSky extends Module {
 
     /** Whether to paint the custom sky over the overworld-style sky. */
     public static boolean active() {
-        return on();
+        return on() || ResourcePackSky.active();
     }
 
     /** Whether to paint the custom sky over the End's sky. */
@@ -284,25 +286,28 @@ public class CustomSky extends Module {
     }
 
     public static boolean keepsSunAndMoon() {
+        if (ResourcePackSky.active()) return false;
         return instance != null && instance.sunMoon.get();
     }
 
     public static boolean hidesClouds() {
-        return on() && !instance.clouds.get();
+        return ResourcePackSky.active() || on() && !instance.clouds.get();
     }
 
     /** Whether the sky showing now is your picture. */
     public static boolean showsPicture() {
-        return on() && instance.shown == PICTURE;
+        return ResourcePackSky.active() || on() && instance.shown == PICTURE;
     }
 
     /** Your picture on the GPU, or null if there is none. */
     public static Texture pictureTexture() {
+        if (ResourcePackSky.active()) return ResourcePackSky.image().texture();
         return instance == null ? null : instance.image.texture();
     }
 
     /** Whether the picture repeats round the horizon (a panorama) rather than stopping at its edges. */
     public static boolean pictureWraps() {
+        if (ResourcePackSky.active()) return ResourcePackSky.image().image().fit() == SkyImage.Fit.PANORAMA;
         return instance != null && instance.currentFit() == SkyImage.Fit.PANORAMA;
     }
 
@@ -316,6 +321,10 @@ public class CustomSky extends Module {
      * sky was actually drawn on the last frame, so water, lava, blindness and the Nether keep theirs.
      */
     public static Vector4f fogColor(Vector4f original) {
+        if (ResourcePackSky.active() && CustomSkyRenderer.drewLastFrame()) {
+            int c = ResourcePackSky.image().image().horizon();
+            return new Vector4f((c >> 16 & 255) / 255f, (c >> 8 & 255) / 255f, (c & 255) / 255f, original.w);
+        }
         if (!on() || !instance.matchFog.get() || !CustomSkyRenderer.drewLastFrame()) return null;
         float fade = instance.fadeLeft();
         int now = instance.horizon(instance.shown), before = instance.horizon(instance.previous);
@@ -332,7 +341,17 @@ public class CustomSky extends Module {
     }
 
     /** The SkyData values after the matrix: Params, View, ImageParams, ImageTop and ImageBottom. */
+    public float[] previewUniformValues(float pixelAngle,double seconds) {
+        SkyImage.Decoded info=image.image();double aspect=info!=null?info.width()/(double)info.height():2;
+        double[] wrap=wrapLayout(aspect);double clock=seconds*speed.get()/100.0;
+        int top=info!=null?info.top():0,bottom=info!=null?info.bottom():0;
+        return new float[]{(float)clock,sky.index(),sky.index(),0,brightness.getFloat()/100f,pixelAngle,currentFit().ordinal(),(float)wrap[0],
+                (float)Math.toRadians((turn.get()+clock*spin.get())%360),(float)Math.toRadians(wrap[1]),mirror.get()?1:0,0,
+                (top>>16&255)/255f,(top>>8&255)/255f,(top&255)/255f,0,(bottom>>16&255)/255f,(bottom>>8&255)/255f,(bottom&255)/255f,0};
+    }
+    public boolean previewWraps(){return currentFit()==SkyImage.Fit.PANORAMA;}
     public static float[] uniformValues(float pixelAngle) {
+        if (ResourcePackSky.active()) return ResourcePackSky.uniforms(PICTURE, pixelAngle);
         CustomSky m = instance;
         long now = System.nanoTime();
         if (m.lastFrame != 0) {
@@ -358,6 +377,7 @@ public class CustomSky extends Module {
 
     /** The graphics driver would not compile the sky shader; the game's own sky stays. */
     public static void shaderFailed() {
+        ResourcePackSky.release();
         Maro.LOGGER.error("Custom Sky: the graphics driver could not compile the custom_sky shader (its errors are logged above)");
         if (instance == null || !instance.isEnabled()) return;
         Notifications.push(instance.getName(), "Your graphics driver could not build the sky - see the log. Turned off.", Notifications.Type.ERROR);
@@ -365,6 +385,7 @@ public class CustomSky extends Module {
     }
 
     public static void renderFailed(RuntimeException e) {
+        ResourcePackSky.release();
         Maro.LOGGER.error("Custom Sky could not render", e);
         if (instance == null) return;
         Notifications.push(instance.getName(), "Rendering failed - see the log. Turned off.", Notifications.Type.ERROR);

@@ -17,25 +17,35 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Text helpers. Uses the bundled Inter TTF (assets/maro/font) when "Custom Font" is enabled,
- * otherwise the vanilla font. Supports fractional positions, scaling and global alpha.
+ * Text helpers. Uses a bundled TTF (assets/maro/font: Sora, Rubik, or Inter) when "Custom Font" is
+ * enabled, otherwise the vanilla font. Supports fractional positions, scaling and global alpha.
  */
 public final class Fonts {
     /**
-     * Inter SemiBold / ExtraBold, each defined once per oversample factor (1x..6x). The variant whose
-     * oversample matches the real pixel size of the text is picked at draw time, so glyphs are
-     * rasterised 1:1 with the screen instead of being resampled, which keeps them sharp.
+     * Each family's text and bold weights (Sora SemiBold / Bold, Rubik Medium / Bold,
+     * Inter SemiBold / ExtraBold), each
+     * defined once per oversample factor (1x..6x). The variant whose oversample matches the real
+     * pixel size of the text is picked at draw time, so glyphs are rasterised 1:1 with the screen
+     * instead of being resampled, which keeps them sharp.
      */
     private static final int MAX_OVERSAMPLE = 6;
-    private static final Style[] REGULAR = new Style[MAX_OVERSAMPLE + 1];
-    private static final Style[] BOLD = new Style[MAX_OVERSAMPLE + 1];
+    private static final String[][] FAMILIES = {{"rubik_medium", "rubik_bold"}, {"inter_semibold", "inter_extrabold"}, {"sora_semibold", "sora_bold"}};
+    private static final Style[][] REGULAR = new Style[FAMILIES.length][MAX_OVERSAMPLE + 1];
+    private static final Style[][] BOLD = new Style[FAMILIES.length][MAX_OVERSAMPLE + 1];
     private static final Style VANILLA_BOLD = Style.EMPTY.withBold(true);
 
     static {
-        for (int i = 1; i <= MAX_OVERSAMPLE; i++) {
-            REGULAR[i] = Style.EMPTY.withFont(new StyleSpriteSource.Font(Identifier.of(Maro.MOD_ID, "inter_semibold_x" + i)));
-            BOLD[i] = Style.EMPTY.withFont(new StyleSpriteSource.Font(Identifier.of(Maro.MOD_ID, "inter_extrabold_x" + i)));
+        for (int f = 0; f < FAMILIES.length; f++) {
+            for (int i = 1; i <= MAX_OVERSAMPLE; i++) {
+                REGULAR[f][i] = Style.EMPTY.withFont(new StyleSpriteSource.Font(Identifier.of(Maro.MOD_ID, FAMILIES[f][0] + "_x" + i)));
+                BOLD[f][i] = Style.EMPTY.withFont(new StyleSpriteSource.Font(Identifier.of(Maro.MOD_ID, FAMILIES[f][1] + "_x" + i)));
+            }
         }
+    }
+
+    /** The chosen family: 0 Rubik, 1 Inter, 2 Sora. */
+    private static int family() {
+        return ClientSettings.fontFace.is("Sora") ? 2 : ClientSettings.fontFace.is("Inter") ? 1 : 0;
     }
 
     private Fonts() {
@@ -52,18 +62,19 @@ public final class Fonts {
     }
 
     // ---- caps style -------------------------------------------------------------------
-    // "Caps" draws every label in ExtraBold uppercase, slightly smaller, with a little letter
-    // spacing. Text the user typed is drawn in raw mode so it keeps its real case.
+    // Caps changes presentation only. Stored names, commands, paths and editable values retain their original text.
 
-    private static final float CAPS_SCALE = 0.82f;
-    private static final float CAPS_TRACKING = 0.5f;
     private static int rawDepth;
+    private static int menuDepth;
     private static float measureScale = 1;
+
+    public static void beginMenu() { menuDepth++; }
+    public static void endMenu() { menuDepth = Math.max(0, menuDepth - 1); }
 
     /** Plain width helpers use the same glyph atlas as the enclosing menu transform. */
     public static void setMeasureScale(float scale) { measureScale = scale; }
 
-    /** Draw/measure text exactly as given (no caps transform) until {@link #endRaw()}. */
+    /** Legacy scope retained for existing callers; typography and casing now stay consistent across panels. */
     public static void beginRaw() {
         rawDepth++;
     }
@@ -73,7 +84,7 @@ public final class Fonts {
     }
 
     private static boolean caps() {
-        return rawDepth == 0 && ClientSettings.capsText.get();
+        return ClientSettings.capsText.get();
     }
 
     private static String transform(String s) {
@@ -81,7 +92,7 @@ public final class Fonts {
     }
 
     private static float eff(float scale) {
-        return caps() ? Math.max(0.56f, scale * CAPS_SCALE) : scale;
+        return scale * (menuDepth > 0 ? ClientSettings.menuTextSize.getFloat() / 100f : 1f);
     }
 
     private static boolean weight(boolean bold) {
@@ -102,48 +113,27 @@ public final class Fonts {
     private static Text styled(String s, boolean bold, float scale) {
         if (ClientSettings.customFont.get()) {
             int o = oversample(scale);
-            return Text.literal(s).setStyle(bold ? BOLD[o] : REGULAR[o]);
+            return Text.literal(s).setStyle(bold ? BOLD[family()][o] : REGULAR[family()][o]);
         }
         return bold ? Text.literal(s).setStyle(VANILLA_BOLD) : Text.literal(s);
     }
 
-    private static float rawWidth(String s, boolean bold, float scale) {
-        return tr().getTextHandler().getWidth(styled(s, bold, scale * measureScale)) * scale;
-    }
-
     public static float width(String s, boolean bold, float scale) {
         if (s == null || s.isEmpty()) return 0;
-        String t = transform(s);
-        boolean b = weight(bold);
-        float es = eff(scale);
-        if (!caps()) return rawWidth(t, b, es);
-        float w = 0;
-        for (int i = 0; i < t.length(); i++) w += rawWidth(String.valueOf(t.charAt(i)), b, es);
-        return w + CAPS_TRACKING * es * (t.length() - 1);
+        if (ClientSettings.customFont.get()) return SmoothHudText.width(transform(s), weight(bold), eff(scale) * .875f, measureScale);
+        return tr().getTextHandler().getWidth(styled(transform(s), weight(bold), eff(scale) * measureScale)) * eff(scale);
     }
-
-    public static float width(String s) {
-        return width(s, false, 1f);
-    }
-
-    /** Measure the same glyph atlas used when drawing inside the current HUD transform. */
+    public static float width(String s) { return width(s, false, 1); }
     public static float width(DrawContext ctx, String s, boolean bold, float scale) {
         if (s == null || s.isEmpty()) return 0;
-        String t = transform(s);
-        boolean b = weight(bold);
-        float es = eff(scale);
-        var matrix = ctx.getMatrices();
-        float atlasScale = es * (float) Math.hypot(matrix.m00(), matrix.m01());
-        if (!caps()) return tr().getTextHandler().getWidth(styled(t, b, atlasScale)) * es;
-        float w = 0;
-        for (int i = 0; i < t.length(); i++)
-            w += tr().getTextHandler().getWidth(styled(String.valueOf(t.charAt(i)), b, atlasScale)) * es;
-        return w + CAPS_TRACKING * es * (t.length() - 1);
+        if (ClientSettings.customFont.get()) return SmoothHudText.width(ctx, transform(s), weight(bold), eff(scale) * .875f);
+        float matrix = (float)Math.hypot(ctx.getMatrices().m00(), ctx.getMatrices().m01());
+        return tr().getTextHandler().getWidth(styled(transform(s), weight(bold), eff(scale) * matrix)) * eff(scale);
     }
 
     /** Visual height of capital letters, used for vertical centring. */
     public static float height(float scale) {
-        return 7f * eff(scale);
+        return 7f * eff(scale) * (ClientSettings.customFont.get() ? SmoothHudText.heightRatio() : 1f);
     }
 
     public static void draw(DrawContext ctx, String s, float x, float y, int color, boolean bold, float scale) {
@@ -151,19 +141,11 @@ public final class Fonts {
         int c = ColorUtil.mulAlpha(color, Render2D.getAlpha());
         // the vanilla renderer treats alpha < 4 as opaque, so skip near-invisible text entirely
         if (ColorUtil.alpha(c) < 8) return;
-        String t = transform(s);
-        boolean b = weight(bold);
-        float es = eff(scale);
-        if (!caps()) {
-            drawRun(ctx, t, x, y, c, b, es);
+        if (ClientSettings.customFont.get()) {
+            SmoothHudText.draw(ctx, transform(s), x, y, color, weight(bold), eff(scale) * .875f);
             return;
         }
-        float cx = x;
-        for (int i = 0; i < t.length(); i++) {
-            String ch = String.valueOf(t.charAt(i));
-            if (t.charAt(i) != ' ') drawRun(ctx, ch, cx, y, c, b, es);
-            cx += rawWidth(ch, b, es) + CAPS_TRACKING * es;
-        }
+        drawRun(ctx, transform(s), x, y, c, weight(bold), eff(scale));
     }
 
     private static void drawRun(DrawContext ctx, String s, float x, float y, int c, boolean bold, float scale) {
@@ -193,37 +175,76 @@ public final class Fonts {
     }
 
     public static void drawCentered(DrawContext ctx, String s, float cx, float cy, int color, boolean bold, float scale) {
-        draw(ctx, s, cx - width(s, bold, scale) / 2f, cy - height(scale) / 2f, color, bold, scale);
+        draw(ctx, s, cx - width(ctx, s, bold, scale) / 2f, cy - height(scale) / 2f, color, bold, scale);
     }
 
     public static void drawRight(DrawContext ctx, String s, float right, float cy, int color, boolean bold, float scale) {
-        draw(ctx, s, right - width(s, bold, scale), cy - height(scale) / 2f, color, bold, scale);
+        draw(ctx, s, right - width(ctx, s, bold, scale), cy - height(scale) / 2f, color, bold, scale);
     }
 
+    /** A centered top-aligned native-screen label, fitted using the same font as its drawing. */
+    public static void centeredTop(DrawContext ctx, String s, float cx, float top, float room, int color) {
+        float scale = .9f;
+        String fitted = trim(ctx, s, room, false, scale);
+        draw(ctx, fitted, cx - width(ctx, fitted, false, scale) / 2, top, color, false, scale);
+    }
+    public static String trim(DrawContext ctx, String s, float room, boolean bold, float scale) {
+        if (ClientSettings.customFont.get()) return SmoothHudText.trim(ctx, s, room, weight(bold), eff(scale) * .875f);
+        return trim(s, room, bold, scale);
+    }
+    /** Input clipping returns original text and never adds an ellipsis or changes stored characters. */
+    public static String prefix(String s, float room, boolean reverse) {
+        int index = reverse ? s.length() : 0;
+        if (reverse) {
+            while (index > 0) {
+                int next = s.offsetByCodePoints(index, -1);
+                if (width(s.substring(next), false, 1) > room) break;
+                index = next;
+            }
+            return s.substring(index);
+        }
+        while (index < s.length()) {
+            int next = s.offsetByCodePoints(index, 1);
+            if (width(s.substring(0, next), false, 1) > room) break;
+            index = next;
+        }
+        return s.substring(0, index);
+    }
     /** Cuts the string with an ellipsis so it fits in {@code maxWidth}. */
     public static String trim(String s, float maxWidth, boolean bold, float scale) {
         if (width(s, bold, scale) <= maxWidth) return s;
         String dots = "\u2026";
         float dw = width(dots, bold, scale);
+        if (dw > maxWidth) return "";
         int end = s.length();
-        while (end > 0 && width(s.substring(0, end), bold, scale) + dw > maxWidth) end--;
-        return s.substring(0, end).trim() + dots;
+        while (end > 0 && width(s.substring(0, end), bold, scale) + dw > maxWidth) end = s.offsetByCodePoints(end, -1);
+        return s.substring(0, end).stripTrailing() + dots;
     }
 
     /** Word-wraps text into lines no wider than {@code maxWidth}. */
     public static List<String> wrap(String s, float maxWidth, boolean bold, float scale) {
         List<String> lines = new ArrayList<>();
-        StringBuilder line = new StringBuilder();
-        for (String word : s.split(" ")) {
-            String test = line.isEmpty() ? word : line + " " + word;
-            if (width(test, bold, scale) > maxWidth && !line.isEmpty()) {
-                lines.add(line.toString());
-                line = new StringBuilder(word);
-            } else {
-                line = new StringBuilder(test);
+        if (s == null || s.isEmpty() || maxWidth <= 0) return lines;
+        for (String paragraph : s.split("\\R", -1)) {
+            String line = "";
+            for (String word : paragraph.split(" +")) {
+                String joined = line.isEmpty() ? word : line + " " + word;
+                if (width(joined, bold, scale) <= maxWidth) { line = joined; continue; }
+                if (!line.isEmpty()) { lines.add(line); line = ""; }
+                while (!word.isEmpty() && width(word, bold, scale) > maxWidth) {
+                    int end = 0;
+                    while (end < word.length()) {
+                        int next = word.offsetByCodePoints(end, 1);
+                        if (width(word.substring(0, next), bold, scale) > maxWidth) break;
+                        end = next;
+                    }
+                    if (end == 0) end = word.offsetByCodePoints(0,1);
+                    lines.add(word.substring(0,end)); word = word.substring(end);
+                }
+                line = word;
             }
+            lines.add(line);
         }
-        if (!line.isEmpty()) lines.add(line.toString());
         return lines;
     }
 }

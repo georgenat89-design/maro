@@ -4,6 +4,7 @@ import dev.maro.gui.render.Fonts;
 import dev.maro.gui.render.Render2D;
 import dev.maro.gui.theme.Theme;
 import dev.maro.module.impl.visuals.BetterTextures;
+import dev.maro.module.impl.visuals.TexturePacks;
 import dev.maro.textures.Modrinth;
 import dev.maro.textures.PackIcons;
 import dev.maro.util.ColorUtil;
@@ -65,7 +66,7 @@ public final class BetterTexturesScreen extends Screen {
     private float px, py, pw, ph;
 
     public BetterTexturesScreen(Screen parent, BetterTextures module) {
-        super(Text.literal("Better Textures"));
+        super(Text.literal("Gameplay Textures · Modrinth"));
         this.parent = parent;
         this.module = module;
     }
@@ -179,13 +180,18 @@ public final class BetterTexturesScreen extends Screen {
     }
 
     private void header(DrawContext ctx, int mx, int my) {
-        Fonts.drawV(ctx, "Better Textures", px + 16, py + 19, Theme.TEXT, true, 1.05f);
+        Fonts.drawV(ctx, "Gameplay Textures · Modrinth", px + 16, py + 19, Theme.TEXT, true, 1.05f);
         Fonts.drawV(ctx, "Any Modrinth resource pack, in one click", px + 16, py + 33, Theme.TEXT_MUTED, false, 0.6f);
 
         float bw = 62, bh = 20, by = py + 12;
         float cx = px + pw - 16 - bw;
         button(ctx, "Close", cx, by, bw, bh, true, mx, my, this::close);
         button(ctx, "Refresh", cx - 6 - bw, by, bw, bh, false, mx, my, () -> runSearch(false));
+        button(ctx, "My Packs", cx - 2 * (6 + bw) - 8, by, bw + 8, bh, false, mx, my, () -> {
+            if (client == null) return;
+            if (parent instanceof TexturePacksScreen) client.setScreen(parent);
+            else client.setScreen(new TexturePacksScreen(this, TexturePacks.get()));
+        });
     }
 
     private void button(DrawContext ctx, String label, float x, float y, float w, float h, boolean accent, int mx, int my, Runnable action) {

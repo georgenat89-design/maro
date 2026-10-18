@@ -1,0 +1,11 @@
+Model Information:
+* title:	LeBron James
+* source:	https://sketchfab.com/3d-models/lebron-james-7c750ecf2a9d432c9dd3310a73aed7d3
+* author:	Looney Tunes (https://sketchfab.com/LooneyTunes1929)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "LeBron James" (https://sketchfab.com/3d-models/lebron-james-7c750ecf2a9d432c9dd3310a73aed7d3) by Looney Tunes (https://sketchfab.com/LooneyTunes1929) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

@@ -23,7 +23,6 @@ import org.joml.FrustumIntersection;
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
 import org.lwjgl.BufferUtils;
-import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -45,8 +44,10 @@ public final class BlockEspRenderer {
 
     /** Tracers in one draw; matches MAX_TRACERS in block_esp_tracers.fsh. More are drawn in further batches. */
     private static final int BATCH = 128;
-    /** The most tracers in a frame. */
+    /** The most tracers per module in a frame. */
     public static final int MAX_TRACERS = 2000;
+    // Block and Storage ESP each retain their full configured budget when enabled together.
+    private static final int FRAME_TRACERS = MAX_TRACERS * 2;
 
     private static final RenderPipeline TRACERS = RenderPipeline.builder()
         .withLocation(Identifier.of(Maro.MOD_ID, "pipeline/block_esp_tracers"))
@@ -109,9 +110,14 @@ public final class BlockEspRenderer {
     private static boolean haveMatrices;
 
     /** This frame's tracers: target in NDC (off screen for blocks behind you), colour, weight. */
-    private static final float[] targets = new float[MAX_TRACERS * 2];
-    private static final int[] colors = new int[MAX_TRACERS];
-    private static final float[] weights = new float[MAX_TRACERS];
+    private static final float[] targets = new float[FRAME_TRACERS * 2];
+    private static final int[] colors = new int[FRAME_TRACERS];
+    private static final float[] weights = new float[FRAME_TRACERS];
+    private static final float[][] tracerLines = new float[FRAME_TRACERS][4];
+    private static final Vector4f projected = new Vector4f();
+    private static final ByteBuffer tracerData = BufferUtils.createByteBuffer(TRACER_BYTES);
+    private static final ByteBuffer glowData = BufferUtils.createByteBuffer(16);
+    private static final java.util.IdentityHashMap<EspStyle, Float> frameSeconds = new java.util.IdentityHashMap<>();
     private static int count;
 
     private static SimpleFramebuffer glow, halfA, halfB;
@@ -121,7 +127,7 @@ public final class BlockEspRenderer {
     /** How many batches tracerUniforms has room for, two slices each (the bloom pass and the frame). */
     private static int tracerBatches;
     /** The module that queued each tracer, so each is drawn in its own module's style. */
-    private static final EspStyle[] owners = new EspStyle[MAX_TRACERS];
+    private static final EspStyle[] owners = new EspStyle[FRAME_TRACERS];
     /** The modules that drew into the glow target this frame. */
     private static final java.util.List<EspStyle> glowing = new java.util.ArrayList<>();
 
@@ -130,9 +136,11 @@ public final class BlockEspRenderer {
 
     /** Start of world rendering: forget last frame's tracers and remember the matrices. */
     public static void beginFrame(Matrix4f positionMatrix, Matrix4f projectionMatrix) {
+        dev.maro.render.character.CharacterLabelAnchors.beginFrame();
         count = 0;
         glowDrawn = false;
         glowing.clear();
+        frameSeconds.clear();
         viewProjection.set(projectionMatrix).mul(positionMatrix);
         frustum.set(viewProjection);
         haveMatrices = true;
@@ -189,26 +197,11 @@ public final class BlockEspRenderer {
 
     /** Queues a tracer to the point {@code (x, y, z)}. */
     public static void addTracer(EspStyle owner, double x, double y, double z, Vec3d camera, int color, float weight) {
-        if (!haveMatrices || count >= MAX_TRACERS) return;
-        Vector4f p = new Vector4f((float) (x - camera.x), (float) (y - camera.y), (float) (z - camera.z), 1f);
+        if (!haveMatrices || count >= FRAME_TRACERS) return;
+        Vector4f p = projected.set((float) (x - camera.x), (float) (y - camera.y), (float) (z - camera.z), 1f);
         viewProjection.transform(p);
-        float nx, ny;
-        if (p.w > 0.05f) {
-            nx = p.x / p.w;
-            ny = p.y / p.w;
-        } else {
-            // Behind the camera: point off the screen edge on the side it is on.
-            float len = (float) Math.hypot(p.x, p.y);
-            nx = len < 1e-4f ? 0f : p.x / len * 3f;
-            ny = len < 1e-4f ? -3f : p.y / len * 3f;
-        }
-        float far = Math.max(Math.abs(nx), Math.abs(ny));
-        if (far > 3f) {
-            nx *= 3f / far;
-            ny *= 3f / far;
-        }
-        targets[count * 2] = nx;
-        targets[count * 2 + 1] = ny;
+        if (!TracerGeometry.project(p.x, p.y, p.w, owner.tracersFromBottom(), targets, count * 2)) return;
+        frameSeconds.computeIfAbsent(owner, EspStyle::seconds);
         colors[count] = color;
         owners[count] = owner;
         weights[count++] = weight;
@@ -293,12 +286,15 @@ public final class BlockEspRenderer {
     private static float[][] lines(EspStyle style, int[] members, int width, int height) {
         float halfW = width / 2f, halfH = height / 2f;
         float startX = halfW, startY = style.tracersFromBottom() ? 0f : halfH;
-        float[][] lines = new float[members.length][];
         for (int k = 0; k < members.length; k++) {
             int i = members[k];
-            lines[k] = new float[] {startX, startY, (targets[i * 2] + 1) * halfW, (targets[i * 2 + 1] + 1) * halfH};
+            float[] line = tracerLines[k];
+            line[0] = startX;
+            line[1] = startY;
+            line[2] = (targets[i * 2] + 1) * halfW;
+            line[3] = (targets[i * 2 + 1] + 1) * halfH;
         }
-        return lines;
+        return tracerLines;
     }
 
     private static void drawTracers(Framebuffer target, EspStyle m, int[] members, int batchBase, boolean coreOnly) {
@@ -314,29 +310,25 @@ public final class BlockEspRenderer {
             for (int i = 0; i < k; i++) writeTracerQuad(i, lines[first + i], width, target.textureWidth, height);
 
             GpuBufferSlice data = tracerUniforms.slice((long) ((batchBase + batch) * 2 + (coreOnly ? 1 : 0)) * TRACER_STRIDE, TRACER_BYTES);
-            ByteBuffer bytes = MemoryUtil.memCalloc(TRACER_BYTES);
-            try {
-                bytes.putFloat(0, k);
-                bytes.putFloat(4, width);
-                bytes.putFloat(8, m.tracerHalo());
-                bytes.putFloat(12, m.seconds());
-                bytes.putFloat(16, m.tracerPackets() ? 1f : 0f);
-                bytes.putFloat(20, m.packetSpeed());
-                bytes.putFloat(24, 14f * height / 1080f);
-                bytes.putFloat(28, coreOnly ? 1f : 0f);
-                for (int i = 0; i < k; i++) {
-                    for (int c = 0; c < 4; c++) bytes.putFloat(LINES_AT + i * 16 + c * 4, lines[first + i][c]);
-                    int at = members[first + i];
-                    int color = colors[at];
-                    bytes.putFloat(COLORS_AT + i * 16, (color >> 16 & 0xFF) / 255f);
-                    bytes.putFloat(COLORS_AT + i * 16 + 4, (color >> 8 & 0xFF) / 255f);
-                    bytes.putFloat(COLORS_AT + i * 16 + 8, (color & 0xFF) / 255f);
-                    bytes.putFloat(COLORS_AT + i * 16 + 12, weights[at] * (color >>> 24) / 255f);
-                }
-                RenderSystem.getDevice().createCommandEncoder().writeToBuffer(data, bytes);
-            } finally {
-                MemoryUtil.memFree(bytes);
+            ByteBuffer bytes = tracerData;
+            bytes.putFloat(0, k);
+            bytes.putFloat(4, width);
+            bytes.putFloat(8, m.tracerHalo());
+            bytes.putFloat(12, frameSeconds.get(m));
+            bytes.putFloat(16, m.tracerPackets() ? 1f : 0f);
+            bytes.putFloat(20, m.packetSpeed());
+            bytes.putFloat(24, 14f * height / 1080f);
+            bytes.putFloat(28, coreOnly ? 1f : 0f);
+            for (int i = 0; i < k; i++) {
+                for (int c = 0; c < 4; c++) bytes.putFloat(LINES_AT + i * 16 + c * 4, lines[first + i][c]);
+                int at = members[first + i];
+                int color = colors[at];
+                bytes.putFloat(COLORS_AT + i * 16, (color >> 16 & 0xFF) / 255f);
+                bytes.putFloat(COLORS_AT + i * 16 + 4, (color >> 8 & 0xFF) / 255f);
+                bytes.putFloat(COLORS_AT + i * 16 + 8, (color & 0xFF) / 255f);
+                bytes.putFloat(COLORS_AT + i * 16 + 12, weights[at] * (color >>> 24) / 255f);
             }
+            RenderSystem.getDevice().createCommandEncoder().writeToBuffer(data, bytes);
 
             GpuBuffer vertices = VertexFormats.POSITION.uploadImmediateVertexBuffer(TRACER_VERTICES);
             GpuBuffer indices = VertexFormats.POSITION.uploadImmediateIndexBuffer(TRACER_INDICES);
@@ -356,32 +348,9 @@ public final class BlockEspRenderer {
 
     /** A quad round tracer {@code i}, wide enough for its glow and the dot at its end. */
     private static void writeTracerQuad(int i, float[] line, float width, int screenWidth, int screenHeight) {
-        float dx = line[2] - line[0], dy = line[3] - line[1];
-        float length = (float) Math.hypot(dx, dy);
-        float[] corners;
-        if (length < 1f) {
-            corners = new float[8];
-        } else {
-            float sigma = width * 1.4f + 1.5f;
-            float pad = Math.max(sigma * 3f, width * 3.75f + 2f) + 2f;
-            float ux = dx / length, uy = dy / length;
-            float nx = -uy * pad, ny = ux * pad, ex = ux * pad, ey = uy * pad;
-            corners = new float[] {
-                line[0] - ex + nx, line[1] - ey + ny,
-                line[0] - ex - nx, line[1] - ey - ny,
-                line[2] + ex - nx, line[3] + ey - ny,
-                line[2] + ex + nx, line[3] + ey + ny};
-            for (int k = 0; k < 8; k += 2) {
-                corners[k] = corners[k] / screenWidth * 2f - 1f;
-                corners[k + 1] = corners[k + 1] / screenHeight * 2f - 1f;
-            }
-        }
-        for (int v = 0; v < 4; v++) {
-            int at = (i * 4 + v) * 3 * Float.BYTES;
-            TRACER_VERTICES.putFloat(at, corners[v * 2]);
-            TRACER_VERTICES.putFloat(at + Float.BYTES, corners[v * 2 + 1]);
-            TRACER_VERTICES.putFloat(at + 2 * Float.BYTES, i + 1);
-        }
+        float sigma = width * 1.4f + 1.5f;
+        float pad = Math.max(sigma * 3f, width * 3.75f + 2f) + 2f;
+        TracerGeometry.writeQuad(TRACER_VERTICES, i, line, pad, screenWidth, screenHeight, i + 1);
     }
 
     /** Blurs the glow target at half size, twice and wider the second time, and adds it onto the frame. */
@@ -405,16 +374,12 @@ public final class BlockEspRenderer {
     private static void glowPass(int slot, RenderPipeline pipeline, Framebuffer source, Framebuffer target,
                                  float stepX, float stepY, float mode, float strength) {
         GpuBufferSlice data = glowUniforms.slice((long) slot * GLOW_STRIDE, 16);
-        ByteBuffer bytes = MemoryUtil.memCalloc(16);
-        try {
-            bytes.putFloat(0, stepX);
-            bytes.putFloat(4, stepY);
-            bytes.putFloat(8, mode);
-            bytes.putFloat(12, strength);
-            RenderSystem.getDevice().createCommandEncoder().writeToBuffer(data, bytes);
-        } finally {
-            MemoryUtil.memFree(bytes);
-        }
+        ByteBuffer bytes = glowData;
+        bytes.putFloat(0, stepX);
+        bytes.putFloat(4, stepY);
+        bytes.putFloat(8, mode);
+        bytes.putFloat(12, strength);
+        RenderSystem.getDevice().createCommandEncoder().writeToBuffer(data, bytes);
         GpuBuffer vertices = VertexFormats.POSITION.uploadImmediateVertexBuffer(SCREEN_VERTICES);
         GpuBuffer indices = VertexFormats.POSITION.uploadImmediateIndexBuffer(SCREEN_INDICES);
         RenderPass pass = RenderSystem.getDevice().createCommandEncoder()

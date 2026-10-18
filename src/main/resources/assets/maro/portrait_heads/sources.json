@@ -1,0 +1,193 @@
+{
+  "arnold": {
+    "title": "Arnold Schwarzenegger",
+    "source_page": "https://en.wikipedia.org/wiki/Arnold_Schwarzenegger",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e3/Arnold_Schwarzenegger_-_Austrian_World_Summit_2026_BHO-2906.jpg/1280px-Arnold_Schwarzenegger_-_Austrian_World_Summit_2026_BHO-2906.jpg?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail",
+    "file": "Arnold_Schwarzenegger_-_Austrian_World_Summit_2026_BHO-2906.jpg",
+    "license": "CC BY-SA 4.0",
+    "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+    "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Dromedar61\" title=\"User:Dromedar61\">Bernhard Holub</a>",
+    "attribution": null,
+    "file_page": "https://commons.wikimedia.org/wiki/File:Arnold_Schwarzenegger_-_Austrian_World_Summit_2026_BHO-2906.jpg"
+  },
+  "david_laid": {
+    "title": "David Laid",
+    "source_page": "https://en.wikipedia.org/wiki/David_Laid",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6b/David_Laid_thirst_tweets_video_for_Gymshark_2021_03_%28cropped%29.jpg/1280px-David_Laid_thirst_tweets_video_for_Gymshark_2021_03_%28cropped%29.jpg?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail",
+    "file": "David_Laid_thirst_tweets_video_for_Gymshark_2021_03_(cropped).jpg",
+    "license": "CC BY 3.0",
+    "license_url": "https://creativecommons.org/licenses/by/3.0",
+    "artist": "Gymshark",
+    "attribution": null,
+    "file_page": "https://commons.wikimedia.org/wiki/File:David_Laid_thirst_tweets_video_for_Gymshark_2021_03_(cropped).jpg"
+  },
+  "lebron": {
+    "title": "LeBron James",
+    "source_page": "https://www.nba.com/player/2544",
+    "url": "https://cdn.nba.com/headshots/nba/latest/1040x760/2544.png",
+    "file": "2544.png",
+    "artist": "NBA",
+    "license": "NBA headshot; rights retained by source"
+  },
+  "ishowspeed": {
+    "title": "IShowSpeed",
+    "source_page": "https://en.wikipedia.org/wiki/IShowSpeed",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/ea/IShowSpeed_at_Chinatown_%28Portrait%29_04.jpg/1280px-IShowSpeed_at_Chinatown_%28Portrait%29_04.jpg?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail",
+    "file": "IShowSpeed_at_Chinatown_(Portrait)_04.jpg",
+    "license": "CC BY-SA 2.0",
+    "license_url": "https://creativecommons.org/licenses/by-sa/2.0",
+    "artist": "Chin Yu Chu",
+    "attribution": null,
+    "file_page": "https://commons.wikimedia.org/wiki/File:IShowSpeed_at_Chinatown_(Portrait)_04.jpg"
+  },
+  "kai_cenat": {
+    "title": "Kai Cenat",
+    "source_page": "https://en.wikipedia.org/wiki/Kai_Cenat",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/7/79/Kai_Cenat_July_2025.jpg?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail_unscaled",
+    "file": "Kai_Cenat_July_2025.jpg",
+    "license": "CC BY 3.0",
+    "license_url": "https://creativecommons.org/licenses/by/3.0",
+    "artist": "<a rel=\"nofollow\" class=\"external text\" href=\"https://www.youtube.com/@ImDavisssLive\">ImDavisss Live</a>",
+    "attribution": "<a rel=\"nofollow\" class=\"external text\" href=\"https://www.youtube.com/@ImDavisssLive\">ImDavisss Live</a>",
+    "file_page": "https://commons.wikimedia.org/wiki/File:Kai_Cenat_July_2025.jpg"
+  },
+  "jeffrey_epstein": {
+    "title": "Jeffrey Epstein",
+    "source_page": "https://en.wikipedia.org/wiki/Jeffrey_Epstein",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/5/59/Jeffrey_Epstein_mug_shot_%28cropped%29.jpg?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail_unscaled",
+    "file": "Jeffrey_Epstein_mug_shot_(cropped).jpg",
+    "license": "Public domain",
+    "license_url": null,
+    "artist": "Palm Beach County Sheriff's Department",
+    "attribution": null,
+    "file_page": "https://commons.wikimedia.org/wiki/File:Jeffrey_Epstein_mug_shot_(cropped).jpg"
+  },
+  "p_diddy": {
+    "title": "Sean Combs",
+    "source_page": "https://en.wikipedia.org/wiki/Sean_Combs",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5f/Sean_Combs_Cannes_2012_%283x4_cropped_2%29.jpg/1280px-Sean_Combs_Cannes_2012_%283x4_cropped_2%29.jpg?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail",
+    "file": "Sean_Combs_Cannes_2012_(3x4_cropped_2).jpg",
+    "license": "CC BY-SA 4.0",
+    "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+    "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Nicolas_Richoffer\" title=\"User:Nicolas Richoffer\">Nicolas Richoffer</a>",
+    "attribution": null,
+    "file_page": "https://commons.wikimedia.org/wiki/File:Sean_Combs_Cannes_2012_(3x4_cropped_2).jpg"
+  },
+  "michael_jordan": {
+    "title": "Michael Jordan",
+    "source_page": "https://www.nba.com/player/893",
+    "url": "https://cdn.nba.com/headshots/nba/latest/1040x760/893.png",
+    "file": "893.png",
+    "artist": "NBA",
+    "license": "NBA headshot; rights retained by source"
+  },
+  "kobe_bryant": {
+    "title": "Kobe Bryant",
+    "source_page": "https://www.nba.com/player/977",
+    "url": "https://cdn.nba.com/headshots/nba/latest/1040x760/977.png",
+    "file": "977.png",
+    "artist": "NBA",
+    "license": "NBA headshot; rights retained by source"
+  },
+  "shaquille_oneal": {
+    "title": "Shaquille O'Neal",
+    "source_page": "https://www.nba.com/player/406",
+    "url": "https://cdn.nba.com/headshots/nba/latest/1040x760/406.png",
+    "file": "406.png",
+    "artist": "NBA",
+    "license": "NBA headshot; rights retained by source"
+  },
+  "stephen_curry": {
+    "title": "Stephen Curry",
+    "source_page": "https://www.nba.com/player/201939",
+    "url": "https://cdn.nba.com/headshots/nba/latest/1040x760/201939.png",
+    "file": "201939.png",
+    "artist": "NBA",
+    "license": "NBA headshot; rights retained by source"
+  },
+  "kevin_durant": {
+    "title": "Kevin Durant",
+    "source_page": "https://www.nba.com/player/201142",
+    "url": "https://cdn.nba.com/headshots/nba/latest/1040x760/201142.png",
+    "file": "201142.png",
+    "artist": "NBA",
+    "license": "NBA headshot; rights retained by source"
+  },
+  "lionel_messi": {
+    "title": "Lionel Messi",
+    "source_page": "https://en.wikipedia.org/wiki/Lionel_Messi",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c8/Leo_Messi_Argentina_v_Egypt_7_July_2026-1.jpg/1280px-Leo_Messi_Argentina_v_Egypt_7_July_2026-1.jpg?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail",
+    "file": "Leo_Messi_Argentina_v_Egypt_7_July_2026-1.jpg",
+    "license": "CC BY-SA 4.0",
+    "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+    "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Berlination\" title=\"User:Berlination\">Bryan Berlin</a>",
+    "attribution": "Bryan Berlin\u00a0/\u00a0WikiPortraits",
+    "file_page": "https://commons.wikimedia.org/wiki/File:Leo_Messi_Argentina_v_Egypt_7_July_2026-1.jpg"
+  },
+  "cristiano_ronaldo": {
+    "title": "Cristiano Ronaldo",
+    "source_page": "https://en.wikipedia.org/wiki/Cristiano_Ronaldo",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/26/Cristiano_Ronaldo_Croatia_v_Portugal_2_July_2026-075_%28cropped%29.jpg/1280px-Cristiano_Ronaldo_Croatia_v_Portugal_2_July_2026-075_%28cropped%29.jpg?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail",
+    "file": "Cristiano_Ronaldo_Croatia_v_Portugal_2_July_2026-075_(cropped).jpg",
+    "license": "CC BY-SA 4.0",
+    "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+    "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Berlination\" title=\"User:Berlination\">Bryan Berlin</a>",
+    "attribution": "Bryan Berlin\u00a0/\u00a0WikiPortraits",
+    "file_page": "https://commons.wikimedia.org/wiki/File:Cristiano_Ronaldo_Croatia_v_Portugal_2_July_2026-075_(cropped).jpg"
+  },
+  "mike_tyson": {
+    "title": "Mike Tyson",
+    "source_page": "https://en.wikipedia.org/wiki/Mike_Tyson",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/e/ee/Mike_Tyson_Photo_Op_GalaxyCon_Austin_2023.jpg?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail_unscaled",
+    "file": "Mike_Tyson_Photo_Op_GalaxyCon_Austin_2023.jpg",
+    "license": "CC BY 2.0",
+    "license_url": "https://creativecommons.org/licenses/by/2.0",
+    "artist": "Super Festivals",
+    "attribution": null,
+    "file_page": "https://commons.wikimedia.org/wiki/File:Mike_Tyson_Photo_Op_GalaxyCon_Austin_2023.jpg"
+  },
+  "bruce_lee": {
+    "title": "Bruce Lee",
+    "source_page": "https://en.wikipedia.org/wiki/Bruce_Lee",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1e/Bruce_Lee_as_Chen_Zhen_%284x5_cropped%29.jpg/1280px-Bruce_Lee_as_Chen_Zhen_%284x5_cropped%29.jpg?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail",
+    "file": "Bruce_Lee_as_Chen_Zhen_(4x5_cropped).jpg",
+    "license": "Public domain",
+    "license_url": null,
+    "artist": "National General Pictures",
+    "attribution": null,
+    "file_page": "https://commons.wikimedia.org/wiki/File:Bruce_Lee_as_Chen_Zhen_(4x5_cropped).jpg"
+  },
+  "the_rock": {
+    "title": "Dwayne Johnson",
+    "source_page": "https://en.wikipedia.org/wiki/Dwayne_Johnson",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7e/Dwayne_Johnson-1764_%284x5_cropped_with_moderate_headroom%29.jpg/1280px-Dwayne_Johnson-1764_%284x5_cropped_with_moderate_headroom%29.jpg?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail",
+    "file": "Dwayne_Johnson-1764_(4x5_cropped_with_moderate_headroom).jpg",
+    "license": "CC BY-SA 4.0",
+    "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+    "artist": "<bdi><a href=\"https://www.wikidata.org/wiki/Q640\" class=\"extiw\" title=\"d:Q640\"><span title=\"German photographer; former vice chair of Wikimedia Deutschland\">Harald Krichel</span></a></bdi>",
+    "attribution": "Harald Krichel\u00a0/\u00a0WikiPortraits",
+    "file_page": "https://commons.wikimedia.org/wiki/File:Dwayne_Johnson-1764_(4x5_cropped_with_moderate_headroom).jpg"
+  },
+  "john_cena": {
+    "title": "John Cena",
+    "source_page": "https://en.wikipedia.org/wiki/John_Cena",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2e/John_Cena_by_Gage_Skidmore.jpg/1280px-John_Cena_by_Gage_Skidmore.jpg?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail",
+    "file": "John_Cena_by_Gage_Skidmore.jpg",
+    "license": "CC BY-SA 3.0",
+    "license_url": "https://creativecommons.org/licenses/by-sa/3.0",
+    "artist": "<a rel=\"nofollow\" class=\"external text\" href=\"https://flickr.com/gageskidmore\">Gage Skidmore</a>",
+    "attribution": "Gage Skidmore",
+    "file_page": "https://commons.wikimedia.org/wiki/File:John_Cena_by_Gage_Skidmore.jpg"
+  },
+  "hitler_historical": {
+    "title": "Adolf Hitler",
+    "source_page": "https://en.wikipedia.org/wiki/Adolf_Hitler",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/0c/Hitler_portrait_crop_%28cropped%29%282%29.jpg/1280px-Hitler_portrait_crop_%28cropped%29%282%29.jpg?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail",
+    "file": "Hitler_portrait_crop_(cropped)(2).jpg",
+    "license": "CC BY-SA 3.0 de",
+    "license_url": "https://creativecommons.org/licenses/by-sa/3.0/de/deed.en",
+    "artist": "<bdi><a href=\"https://en.wikipedia.org/wiki/en:Heinrich_Hoffmann_(photographer)\" class=\"extiw\" title=\"w:en:Heinrich Hoffmann (photographer)\"><span title=\"German photographer, personal photographer of Adolf Hitler (1885-1957)\">Heinrich Hoffmann</span></a></bdi>",
+    "attribution": "Bundesarchiv, Bild 183-H1216-0500-002 / CC-BY-SA",
+    "file_page": "https://commons.wikimedia.org/wiki/File:Hitler_portrait_crop_(cropped)(2).jpg"
+  }
+}

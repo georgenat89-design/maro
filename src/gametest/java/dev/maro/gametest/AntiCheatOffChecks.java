@@ -39,7 +39,7 @@ public final class AntiCheatOffChecks {
         var flight = ModuleManager.get(Flight.class);
         var mine = ModuleManager.get(SpeedMine.class);
         var delay = ModuleManager.get(BreakDelay.class);
-        var util = ModuleManager.get(TridentUtil.class);
+        require(ModuleManager.getByName("Trident Util")==null,"Removed Trident Util was still registered");
         var modules = List.of(fly, clip, flight, mine, delay);
         for (var m : modules) require(m.getCategory() == Category.ANTI_CHEAT_OFF && !m.persistEnabled(), "AC module category/persistence: " + m.getName());
         var initial = ctx.computeOnClient(c -> c.player.getEntityPos());
@@ -153,34 +153,13 @@ public final class AntiCheatOffChecks {
             ctx.getInput().releaseMouse(0);
             ctx.runOnClient(c -> mine.setEnabled(false));
 
-            world.getServer().runCommand("gamemode creative @a");
-            world.getServer().runCommand("clear @a");
-            world.getServer().runCommand("give @a minecraft:trident[minecraft:enchantments={\"minecraft:riptide\":3}]");
-            ctx.waitTicks(5);
-            ctx.runOnClient(c -> { util.setEnabled(true); ModuleManager.get(AutoTrident.class).setEnabled(true); });
-            ctx.getInput().holdMouse(1);
-            record(ctx); ctx.waitTicks(20);
-            require(sent.stream().noneMatch(p -> p instanceof PlayerInteractItemC2SPacket), "Dry Auto Trident spammed rejected use packets");
-            ctx.getInput().releaseMouse(1);
-            ctx.runOnClient(c -> ModuleManager.get(AutoTrident.class).setEnabled(false));
-            require(ctx.computeOnClient(c -> TridentUtil.minChargeTicks(10,c.player)==10), "Server Timing shortened native charge");
-            ctx.runOnClient(c -> {
-                ((BooleanSetting)setting(util,"Server Timing")).set(false);
-                require(TridentUtil.minChargeTicks(10,c.player)==1 && TridentUtil.allowOutOfWater(c.player), "Anubis utility options not applied");
-                TridentUtil.attempted(); TridentUtil.serverCorrection();
-                require(!TridentUtil.ready(), "Server correction did not pause trident retries");
-            });
-            ctx.waitTicks(21);
-            require(ctx.computeOnClient(c -> TridentUtil.ready()), "Trident backoff did not recover");
-            System.out.println("AC OFF: prompt/cancel/reopen, both boat hooks and wall traversal, Flight restoration, mining modes/cooldown, dry-use packet guard and correction recovery passed");
+            System.out.println("AC OFF: prompt/cancel/reopen, both boat hooks and wall traversal, Flight restoration, mining modes/cooldown, correction recovery passed");
         } finally {
             watched = null;
             ctx.getInput().releaseMouse(0);
             ctx.getInput().releaseMouse(1);
             ctx.runOnClient(c -> {
                 for (var m : modules) { m.setEnabled(false); m.getSettings().forEach(Setting::reset); }
-                util.setEnabled(false); util.getSettings().forEach(Setting::reset);
-                ModuleManager.get(AutoTrident.class).setEnabled(false);
                 c.options.useKey.setPressed(false); c.options.jumpKey.setPressed(false); c.setScreen(null);
                 ClientSettings.menuStyle.set(initialMenu);
             });

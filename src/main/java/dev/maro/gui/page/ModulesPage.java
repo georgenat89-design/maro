@@ -3,15 +3,19 @@ package dev.maro.gui.page;
 import dev.maro.gui.ClickGuiScreen;
 import dev.maro.gui.render.Fonts;
 import dev.maro.gui.render.Icons;
+import dev.maro.gui.render.ModuleIcons;
+import dev.maro.gui.render.BootAssets;
 import dev.maro.gui.render.Render2D;
 import dev.maro.gui.theme.Theme;
 import dev.maro.gui.widget.Anims;
 import dev.maro.gui.widget.Scroll;
 import dev.maro.gui.widget.SettingsList;
+import dev.maro.gui.widget.ModuleSectionHeaders;
 import dev.maro.gui.widget.Widgets;
 import dev.maro.module.Category;
 import dev.maro.module.Module;
 import dev.maro.module.ModuleManager;
+import dev.maro.module.ModuleSections;
 import dev.maro.setting.ActionSetting;
 import dev.maro.setting.BooleanSetting;
 import dev.maro.setting.ButtonSetting;
@@ -32,12 +36,25 @@ import java.util.Map;
 /** Module grid for a category (or search results when {@code category == null}) plus a per-module settings view. */
 public class ModulesPage extends Page {
     private static final float CARD_H = 40f;
-    private static final float GAP = 5f;
+    private static final float GAP = 8f;
+    private int gridPage, gridPages=1,requestedPage=-1;
+    private float gridStride;
+    private int gridCellsPerPage;
+    private long gridFlipAt;
+    private int gridFlipDirection;
+    private final Map<Integer,float[]> paginationPlaces=new HashMap<>();
+    public float[] paginationPlace(int direction){return paginationPlaces.get(direction);}
+    public float gridScrollOffset(){return scroll.get();}
+    public int gridPage(){return gridPage;}
+    public int gridPages(){return gridPages;}
+    public void changeGridPage(int delta){int next=Math.clamp(gridPage+delta,0,gridPages-1);if(next==gridPage)return;gridFlipDirection=Integer.signum(delta);gridFlipAt=System.nanoTime();gridPage=next;requestedPage=gridPage;}
+    public float listWidth(float width){return open==null?width:width*.43f;}
 
     private final Category category;
     private final Animation view = new Animation(13f, 0f);
     private final Scroll settingsScroll = new Scroll();
     private final SettingsList settingsList = new SettingsList();
+    public SettingsList settingsControls(){return settingsList;}
     private final Map<Module, List<SettingSection>> sections = new HashMap<>();
     private Module open;
     private Module shown;
@@ -51,6 +68,10 @@ public class ModulesPage extends Page {
     private boolean snapTabs;
     private SettingSection resetArmed;
     private long resetArmedAt;
+    private boolean expandedInspector;
+
+    public static float panelListWidth(float width) { return width; }
+    public boolean inspectorExpanded() { return expandedInspector; }
 
     public ModulesPage(ClickGuiScreen gui, Category category) {
         super(gui);
@@ -59,8 +80,18 @@ public class ModulesPage extends Page {
 
     private List<Module> modules() {
         List<Module> list = category == null ? ModuleManager.search(gui.getSearch().getText()) : ModuleManager.byCategory(category);
-        return gui.antiCheatSectionUnlocked() ? list : list.stream().filter(m -> m.getCategory() != Category.ANTI_CHEAT_OFF).toList();
+        if(ClickGuiScreen.cardPanelStyle()&&gui.cardPanel().hudOnly()&&gui.getSearch().getText().isEmpty())list=ModuleManager.all().stream().filter(m->!m.hiddenInGui()).sorted(java.util.Comparator.comparing(Module::getDisplayName,String.CASE_INSENSITIVE_ORDER)).toList();
+        return list.stream().filter(m->gui.antiCheatSectionUnlocked()||m.getCategory()!=Category.ANTI_CHEAT_OFF)
+            .filter(m->!ClickGuiScreen.cardPanelStyle()||gui.cardPanel().matches(m))
+            .sorted(java.util.Comparator.comparing(Module::getDisplayName,String.CASE_INSENSITIVE_ORDER)).toList();
     }
+    public void resetGridScroll(){scroll.reset();gridPage=0;requestedPage=0;}
+    public int visibleModuleCount(){return modules().size();}
+    public List<Module> visibleModules(){return modules();}
+    private final Map<Module,float[]> panelCardPlaces=new HashMap<>();
+    public float[] panelCardPlace(Module module){return panelCardPlaces.get(module);}
+    private final Map<ModuleSections.Section,float[]> sectionPlaces=new HashMap<>();
+    public float[] sectionPlace(ModuleSections.Section section){return sectionPlaces.get(section);}
 
     public void openSettings(Module m) {
         if(m instanceof dev.maro.module.impl.player.AutoBuilder builder){
@@ -75,6 +106,12 @@ public class ModulesPage extends Page {
     }
 
     public void openOptions(Module m) {
+        gui.cardPanel().previewSelection(m);
+        if(ClickGuiScreen.cardPanelStyle()){
+            expandedInspector=true;
+            if(dev.maro.gui.VisualPreview.supports(m))gui.cardPanel().expandPreview(m);
+        }
+        settingsList.resetPage();
         open = m;
         section = null;
         shownSection = null;
@@ -84,15 +121,22 @@ public class ModulesPage extends Page {
         homeSince = System.currentTimeMillis();
         Sounds.click();
     }
+    public boolean showingSettings(Module module){return open==module;}
+    public boolean showingGrid(){return ClickGuiScreen.cardPanelStyle()?!expandedInspector:open==null;}
+    public void showGrid(){expandedInspector=false;open=null;shown=null;section=null;shownSection=null;view.snap(0);sectionView.snap(0);scroll.reset();gui.cardPanel().hidePreview();}
 
     @Override
     public void onOpen() {
         super.onOpen();
-        if (category == null) open = null;
+        showGrid();
     }
 
     @Override
     public boolean onEscape() {
+        if (ClickGuiScreen.cardPanelStyle()) {
+            if(open!=null){showGrid();return true;}
+            return false;
+        }
         if (open == null) return false;
         back();
         return true;
@@ -100,20 +144,23 @@ public class ModulesPage extends Page {
 
     @Override
     public void onScroll(double amount) {
-        if (open == null) scroll.scroll(amount);
-        else if (section == null && usesCards(visibleSections(open))) homeScroll.scroll(amount);
-        else settingsScroll.scroll(amount);
+        if (open == null) { if(ClickGuiScreen.cardPanelStyle())scroll.scroll(amount);else if(amount!=0)changeGridPage(amount<0?1:-1); }
+        // Settings use explicit pages; wheel input cannot hide controls.
     }
 
     @Override
     public boolean typeToSearch() {
-        return open == null;
+        return ClickGuiScreen.cardPanelStyle() || open == null;
     }
 
     @Override
     public void render(DrawContext ctx, float x, float y, float w, float h) {
         if (category == Category.ANTI_CHEAT_OFF && !gui.antiCheatSectionUnlocked()) {
             gui.renderAntiCheatPrompt(ctx, x, y, w, h);
+            return;
+        }
+        if (ClickGuiScreen.cardPanelStyle()) {
+            renderWorkspace(ctx,x,y,w,h);
             return;
         }
         float v = view.update(open != null ? 1f : 0f);
@@ -136,37 +183,153 @@ public class ModulesPage extends Page {
 
     // ---- grid ---------------------------------------------------------------------------
 
+    /** Panel keeps the list in place while its independently scrolling inspector changes. */
+    private void renderWorkspace(DrawContext ctx,float x,float y,float w,float h) {
+        float listW=listWidth(w),ix=expandedInspector?x:x+listW+12,iw=expandedInspector?w:w-listW-12;
+        if (!expandedInspector) {
+            float header=gui.cardPanel().moduleHeaderHeight();
+            gui.scrollHit(x,y+header,listW,h-header,scroll::scroll);
+            renderGrid(ctx,x,y+header,listW,h-header);
+        } else { panelCardPlaces.clear(); sectionPlaces.clear(); }
+        if(open==null)return;
+        Render2D.roundRect(ctx,ix,y,iw,h,6,0x58242B2F);
+        Render2D.roundOutline(ctx,ix,y,iw,h,6,Render2D.px(),0x284B555F);
+        shown=open;
+        var m=open;
+        ModuleIcons.of(m).draw(ctx,ix+16,y+17,12,Theme.TEXT_DIM,0);
+        Fonts.drawV(ctx,Fonts.trim(m.getDisplayName(),iw-190,true,.84f),ix+31,y+17,Theme.TEXT,true,.84f);
+        float ex=ix+iw-21,tx=ex-39;
+        Icons.LAYOUT.draw(ctx,ex,y+17,8,gui.hovered(ex-9,y+8,18,18)?Theme.TEXT:Theme.TEXT_MUTED,0);
+        gui.hit(ex-9,y+8,18,18,(button,mx,my)->{if(button==0)showGrid();});
+        if(gui.hovered(ex-9,y+8,18,18))gui.tooltip("Back to modules");
+        Widgets.toggle(ctx,tx,y+13,22,11,Anims.of(m,"inspectorOn",m.isEnabled()),0);
+        gui.hit(tx-3,y+8,28,20,(button,mx,my)->{if(button==0){m.toggle();Sounds.toggle(m.isEnabled());}});
+        Widgets.bindChip(gui,ctx,m.getBind(),ix+iw-115,y+17,.9f);
+        gui.moduleConfigsButton(ctx,m,ix+iw-32,y+28,20);
+        Icons.SETTINGS.draw(ctx,ix+iw-46,y+38,8,Theme.TEXT_MUTED,0);
+        gui.hit(ix+iw-56,y+28,20,20,(button,mx,my)->{if(button==0)openSettings(m);});
+        if(gui.hovered(ix+iw-56,y+28,20,20))gui.tooltip("Open full settings editor");
+        if(gui.hovered(ix+10,y+5,iw-100,23))gui.tooltip(m.getDescription());
+        if(dev.maro.gui.VisualPreview.supports(m)&&!gui.cardPanel().previewExpanded())
+            Widgets.button(gui,ctx,"show-preview",ix+iw-212,y+7,92,18,"Show preview",Widgets.Style.SECONDARY,Icons.PLAY,()->gui.cardPanel().expandPreview(m));
+        float tabsY=y+28;
+        var visible=visibleSections(m);
+        if(section!=null&&!visible.contains(section))section=null;
+        SettingSection active=section!=null?section:visible.isEmpty()?null:visible.getFirst();
+        if(active!=null)tabs(ctx,visible,active,ix+10,tabsY,iw-115);
+        float bodyY=tabsY+(active==null?0:31),bodyH=Math.max(96,y+h-8-bodyY);
+        gui.pushClip(ix+5,bodyY,iw-10,bodyH);
+        settingsList.renderPaged(gui,ctx,ix+10,bodyY,iw-20,bodyH,active==null?List.of():List.of(active),false);
+        gui.popClip();
+        if(active!=null){
+            boolean armed=resetArmed==active&&System.currentTimeMillis()-resetArmedAt<2500;
+            Widgets.button(gui,ctx,active,ix+iw-85,y+29,30,18,"",armed?Widgets.Style.DANGER:Widgets.Style.GHOST,Icons.REFRESH,()->{
+                if(resetArmed==active&&System.currentTimeMillis()-resetArmedAt<2500){
+                    for(var setting:active.getSettings())if(setting.isVisible()&&!(setting instanceof ButtonSetting)&&!(setting instanceof ActionSetting))setting.reset();
+                    resetArmed=null;
+                }else{resetArmed=active;resetArmedAt=System.currentTimeMillis();}
+            });
+        }
+    }
+
     private void renderGrid(DrawContext ctx, float x, float y, float w, float h) {
         List<Module> mods = modules();
+        panelCardPlaces.clear();
+        sectionPlaces.clear();
         float top = y;
-        if (category == null) {
+        boolean panel=ClickGuiScreen.cardPanelStyle();
+        if (category == null&&!panel) {
             String q = gui.getSearch().getText();
             String label = mods.size() + (mods.size() == 1 ? " result" : " results") + " for ";
             Fonts.draw(ctx, label, x + 2, y + 2, Theme.TEXT_MUTED, false, 0.78f);
             Fonts.draw(ctx, "\"" + q + "\"", x + 2 + Fonts.width(label, false, 0.78f), y + 2, Theme.accent(), false, 0.78f);
             top += 14;
         }
-        if (mods.isEmpty()) {
+        if (mods.isEmpty()) { gridPage=0;gridPages=1;scroll.reset();requestedPage=-1;
             empty(ctx, x, top, w, h - (top - y));
             return;
         }
 
-        int cols = w >= 330 ? 2 : 1;
-        float cw = (w - 6 - GAP * (cols - 1)) / cols;
-        int rows = (mods.size() + cols - 1) / cols;
-        float viewH = h - (top - y);
-        scroll.setBounds(rows * (CARD_H + GAP) - GAP + 2, viewH);
-        float off = scroll.update();
-
-        gui.pushClip(x - 6, top, w + 12, viewH);
-        for (int i = 0; i < mods.size(); i++) {
-            float cx = x + (i % cols) * (cw + GAP);
-            float cy = top + 1 + (i / cols) * (CARD_H + GAP) - off;
-            if (!gui.isVisible(cy - 6, CARD_H + 12)) continue;
-            card(ctx, mods.get(i), cx, cy, cw, CARD_H, intro(i));
+        int cols = w >= (panel ? 280 : 300) ? 2 : 1;
+        float textRatio=dev.maro.config.ClientSettings.menuTextSize.getFloat()/90f;
+        float gap=panel?4:GAP,cardH=panel?26*Math.max(.9f,textRatio):CARD_H;
+        float cw=(w-gap*(cols-1))/cols;
+        float viewH=h-(top-y),footer=panel?0:28;
+        int rows=Math.max(1,(int)((viewH-footer+gap)/(cardH+gap)));
+        if(panel)rows=Math.min(8,rows);
+        int perPage=rows*cols;
+        gridPages=Math.max(1,(mods.size()+perPage-1)/perPage);
+        gridPage=Math.clamp(gridPage,0,gridPages-1);
+        float offset=0,viewport=viewH-footer;
+        int start=gridPage*perPage,end=Math.min(mods.size(),start+perPage);
+        if(panel){
+            float stride=Math.max(1,Math.min(viewH,rows*(cardH+gap)));
+            float anchor=gridStride>0&&gridCellsPerPage>0?scroll.getTarget()/gridStride*gridCellsPerPage/perPage*stride:gridPage*stride;
+            scroll.setBounds(gridPages*stride,stride);
+            if(requestedPage>=0){scroll.jumpTo(requestedPage*stride);requestedPage=-1;}
+            else if(gridStride!=stride||gridCellsPerPage!=perPage)scroll.scrollTo(anchor);
+            gridStride=stride;gridCellsPerPage=perPage;offset=scroll.update(gui.hasPointerDrag());viewport=stride;
+            gridPage=Math.clamp(Math.round(scroll.getTarget()/stride),0,gridPages-1);
+            start=Math.max(0,(int)(offset/stride))*perPage;end=Math.min(mods.size(),start+perPage*2);
+        }
+        gui.pushClip(x,top,w,Math.max(1,viewport));
+        float flip=panel?1-Math.clamp((System.nanoTime()-gridFlipAt)/220_000_000f,0,1):0;
+        for(int i=start;i<end;i++){
+            int local=panel?i%perPage:i-start;
+            float cx=x+(local%cols)*(cw+gap)+gridFlipDirection*18*flip*flip,cy=top+(local/cols)*(cardH+gap)+(panel?(i/perPage)*gridStride-offset:0);
+            if(cy+cardH<top||cy>=top+viewport)continue;
+            if(panel)panelCard(ctx,mods.get(i),cx,cy,cw,cardH,1-.25f*flip);
+            else card(ctx,mods.get(i),cx,cy,cw,cardH,1);
         }
         gui.popClip();
-        scroll.drawBar(gui, ctx, x + w - 2, top, viewH);
+        if(!panel)renderPagination(ctx,x+w-100,y+h-24);
+    }
+
+    public void renderPagination(DrawContext ctx,float x,float y){
+        paginationPlaces.clear();
+        for(int direction:new int[]{-1,1}){
+            float bx=x+(direction<0?0:72);boolean available=direction<0?gridPage>0:gridPage<gridPages-1;
+            Render2D.roundRect(ctx,bx,y,24,20,5,available?0x553D4A59:0x223D4A59);
+            Fonts.drawCentered(ctx,direction<0?"<":">",bx+12,y+10,available?Theme.TEXT:Theme.TEXT_MUTED,false,.8f);
+            if(available)gui.hit(bx,y,24,20,(button,mx,my)->{if(button==0)changeGridPage(direction);});
+            paginationPlaces.put(direction,new float[]{bx+12,y+10});
+            if(gui.hovered(bx,y,24,20))gui.tooltip(direction<0?"Previous page · Page Up":"Next page · Page Down");
+        }
+        Fonts.drawCentered(ctx,(gridPage+1)+" / "+gridPages,x+48,y+10,Theme.TEXT_DIM,false,.65f);
+    }
+
+    private void panelCard(DrawContext ctx,Module module,float x,float y,float w,float h,float intro){
+        float alpha=Render2D.getAlpha();Render2D.setAlpha(alpha*intro);y+=(1-intro)*7;
+        boolean over=gui.hovered(x,y,w,h),selected=open==module;
+        float hover=Anims.of(module,"panelHover",over),on=Anims.of(module,"panelOn",module.isEnabled());
+        Render2D.roundRect(ctx,x,y,w,h,4,selected?0xB74A545A:ColorUtil.lerp(0x392C3338,0x8D3B454C,hover));
+        if(selected)Render2D.roundRect(ctx,x+1,y+4,1.5f,h-8,.75f,Theme.TEXT_DIM);
+        ModuleIcons.of(module).draw(ctx,x+14,y+h/2,12,selected?Theme.TEXT:Theme.TEXT_MUTED,0);
+        String label=module.getDisplayName();float font=10.3f*dev.maro.config.ClientSettings.menuTextSize.getFloat()/90f;
+        while(label.length()>1&&BootAssets.labelWidth(label,font,false)>w-82)label=label.substring(0,label.length()-1);
+        if(!label.equals(module.getDisplayName()))label=label.substring(0,Math.max(1,label.length()-1))+"…";
+        BootAssets.label(ctx,label,x+31,y+(h-font*.73f)/2,font,selected?Theme.TEXT:Theme.TEXT_DIM,false);
+        if(over)gui.tooltip(module.getDisplayName()+" · "+module.getDescription());
+        gui.hit(x,y,w,h,(button,mx,my)->{
+            if(button==0)openOptions(module);
+            else if(button==1){module.toggle();Sounds.toggle(module.isEnabled());}
+            else if(button==2)gui.listening=module.getBind();
+        });
+        float tx=x+w-27,ty=y+h/2-4.5f;
+        Render2D.roundRect(ctx,tx,ty,18,9,4.5f,ColorUtil.lerp(0xFF242D36,0xFF7C868F,on));
+        Render2D.circle(ctx,tx+4.5f+9*on,ty+4.5f,3.1f,ColorUtil.lerp(Theme.KNOB_OFF,Theme.TEXT,on));
+        gui.hit(tx-3,ty-4,22,16,(button,mx,my)->{if(button==0||button==1){module.toggle();Sounds.toggle(module.isEnabled());}});
+        float starX=x+w-42,starY=y+h/2;
+        boolean starred=dev.maro.config.ModuleFavorites.contains(module);
+        for(int i=0;i<10;i++){
+            double a=-Math.PI/2+i*Math.PI/5,b=-Math.PI/2+(i+1)*Math.PI/5;
+            float r=i%2==0?5:2.3f,r2=i%2==0?2.3f:5;
+            Render2D.line(ctx,starX+(float)Math.cos(a)*r,starY+(float)Math.sin(a)*r,starX+(float)Math.cos(b)*r2,starY+(float)Math.sin(b)*r2,.8f,starred?0xFF60A5FA:Theme.TEXT_MUTED);
+        }
+        gui.hit(starX-7,starY-9,14,18,(button,mx,my)->{if(button==0)dev.maro.config.ModuleFavorites.toggle(module);else if(button==1){module.toggle();Sounds.toggle(module.isEnabled());}});
+        if(gui.hovered(starX-7,starY-9,14,18))gui.tooltip(starred?"Remove favorite":"Add favorite");
+        panelCardPlaces.put(module,new float[]{x+w*.4f,y+h/2,tx+9,ty+4.5f,starX,starY});
+        Render2D.setAlpha(alpha);
     }
 
     private void card(DrawContext ctx, Module m, float x, float y, float w, float h, float intro) {
@@ -180,35 +343,38 @@ public class ModulesPage extends Page {
         float r = Theme.radius();
 
         Render2D.roundRect(ctx, x, y, w, h, r, ColorUtil.lerp(Theme.CARD, Theme.CARD_HOVER, hv));
-        Render2D.roundOutline(ctx, x, y, w, h, r, Render2D.px(), ColorUtil.lerp(Theme.BORDER, Theme.accent(0x45), on));
+        // On: a flat tint of the accent and a short bar of it down the left edge.
+        if (on > 0.01f) Render2D.roundRect(ctx, x, y, w, h, r, Theme.accent(Math.round(0x1E * on)));
+        Render2D.roundOutline(ctx, x, y, w, h, r, 1f, ColorUtil.lerp(ColorUtil.lerp(Theme.BORDER, 0xFF34323F, hv), Theme.accent(0x58), on));
+        if (on > 0.01f) Render2D.roundRect(ctx, x + 1.5f, y + 8, 2f, h - 16, 1f, Theme.accent(Math.round(0xFF * on)));
 
         float nx = x + 11;
         float toggleX = x + w - 32;
         boolean hasSettings = !m.getSettings().isEmpty();
         float dotsX = toggleX - 13;
 
-        // whole card: left = toggle, right = settings, middle = bind
+        // The complete row follows the same settings/toggle actions in both layouts.
         gui.hit(x, y, w, h, (button, mx, my) -> {
             if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
-                m.toggle();
-                Sounds.toggle(m.isEnabled());
-            } else if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
                 openSettings(m);
+            } else if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+                m.toggle();Sounds.toggle(m.isEnabled());
             } else if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
                 gui.listening = m.getBind();
             }
         });
 
-        // keybind chip, right-aligned next to the controls
-        String bindLabel = gui.listening == m.getBind() ? "Press a key" : m.getBind().getKeyName();
-        float chipW = Fonts.width(bindLabel, false, 0.72f) + 9;
+        // keybind chip, right-aligned next to the controls: only with a key bound, or to bind one on hover
         float chipRight = hasSettings ? dotsX - 9 : toggleX - 7;
-        float chipX = chipRight - chipW;
-        Widgets.bindChip(gui, ctx, m.getBind(), chipX, y + h / 2f, 1f);
+        float chipX = chipRight;
+        if (m.getBind().isBound() || gui.listening == m.getBind() || hovered) {
+            chipX = chipRight - Widgets.bindChipWidth(gui, m.getBind());
+            Widgets.bindChip(gui, ctx, m.getBind(), chipX, y + h / 2f, 1f);
+        }
 
         // name + description
         float textMax = chipX - nx - 8;
-        String name = Fonts.trim(m.getName(), textMax - (m.isExperimental() ? 12 : 0), false, 0.95f);
+        String name = Fonts.trim(m.getDisplayName(), textMax - (m.isExperimental() ? 12 : 0), false, 0.95f);
         Fonts.draw(ctx, name, nx, y + 9f, ColorUtil.lerp(ColorUtil.lerp(Theme.TEXT_DIM, Theme.TEXT, hv), 0xFFFFFFFF, on), false, 0.95f);
         if (m.isExperimental()) {
             float wx = nx + Fonts.width(name, false, 0.95f) + 7;
@@ -227,11 +393,12 @@ public class ModulesPage extends Page {
             float dhv = Anims.of(m, "dots", dh);
             if (dhv > 0.01f) Render2D.roundRect(ctx, dotsX - 7, dy - 7, 14, 14, 4, ColorUtil.withAlpha(0xFF2A2938, Math.round(0xFF * dhv)));
             Icons.DOTS.draw(ctx, dotsX, dy, 8f, ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT, Math.max(dhv, hv * 0.5f)), dhv);
-            gui.hit(dotsX - 7, dy - 7, 14, 14, (button, mx, my) -> openSettings(m));
-            if (dh) gui.tooltip("Settings (or right-click the card)");
+            gui.hit(dotsX - 7, dy - 7, 14, 14, (button, mx, my) -> { if(button==0)openSettings(m);else if(button==1){m.toggle();Sounds.toggle(m.isEnabled());} });
+            if (dh) gui.tooltip("Open settings");
         }
 
         Widgets.toggle(ctx, toggleX, y + h / 2f - 5.5f, 22, 11, on, hv);
+        gui.hit(toggleX-3,y+h/2-10,28,20,(button,mx,my)->{if(button==0||button==1){m.toggle();Sounds.toggle(m.isEnabled());}});
         Render2D.setAlpha(prev);
     }
 
@@ -244,8 +411,10 @@ public class ModulesPage extends Page {
         Icons.Icon icon = category == null ? Icons.SEARCH : category.getIcon();
         icon.draw(ctx, cx, cy + bob, 15, Theme.accent(), 0);
         boolean search = category == null;
-        Fonts.drawCentered(ctx, search ? "No results" : "No modules yet", cx, cy + 32, Theme.TEXT, true, 0.95f);
-        Fonts.drawCentered(ctx, search ? "Try a different search term" : "Register modules in ModuleManager#init()", cx, cy + 43, Theme.TEXT_MUTED, false, 0.75f);
+        boolean filtered=ClickGuiScreen.cardPanelStyle()&&gui.cardPanel().hasFilters();
+        Fonts.drawCentered(ctx, filtered ? "No matching modules" : search ? "No results" : "No modules in this category", cx, cy + 32, Theme.TEXT, true, 0.95f);
+        Fonts.drawCentered(ctx, filtered ? "Your filters hide the modules here" : search ? "Try a different search term" : "Choose another category from the menu", cx, cy + 43, Theme.TEXT_MUTED, false, 0.75f);
+        if(filtered)Widgets.button(gui,ctx,this,cx-44,cy+58,88,23,"Clear filters",Widgets.Style.SECONDARY,null,()->gui.cardPanel().clearFilters());
     }
 
     // ---- settings view ------------------------------------------------------------------
@@ -256,7 +425,7 @@ public class ModulesPage extends Page {
 
     private static final float HEADER_H = 34f;
     private static final float SECTION_CARD_H = 48f;
-    private static final float TAB_H = 18f;
+    private static final float TAB_H = 24f;
     /** Modules with more settings than this, spread over two or more categories, get cards. */
     private static final int CARD_THRESHOLD = 6;
 
@@ -274,6 +443,7 @@ public class ModulesPage extends Page {
         if (section == null) snapTabs = true;
         section = s;
         settingsScroll.reset();
+        settingsList.resetPage();
         resetArmed = null;
         Sounds.click();
     }
@@ -323,6 +493,11 @@ public class ModulesPage extends Page {
         header(ctx, m, x, y, w);
 
         float ly = y + HEADER_H + 7, lh = h - HEADER_H - 7;
+        if(dev.maro.gui.VisualPreview.supports(m) && w >= 330 && lh >= 130){
+            float previewW=Math.min(148,w*.32f);
+            gui.visualPreview().draw(ctx,m,x,ly,previewW,lh);
+            x+=previewW+12;w-=previewW+12;
+        }
         if (visible.isEmpty()) {
             Fonts.drawCentered(ctx, "Nothing to set up", x + w / 2f, ly + 30, Theme.TEXT_DIM, false, 0.9f);
             Fonts.drawCentered(ctx, "This module just works when it is on", x + w / 2f, ly + 42, Theme.TEXT_MUTED, false, 0.72f);
@@ -370,14 +545,15 @@ public class ModulesPage extends Page {
         });
         String bindLabel = gui.listening == m.getBind() ? "Press a key" : m.getBind().getKeyName();
         float chipW = Fonts.width(bindLabel, false, 0.72f) + 9;
-        float chipX = tx - 10 - chipW;
+        gui.moduleConfigsButton(ctx,m,tx-30,y+1+hh/2f-10,20f);
+        float chipX = tx - 40 - chipW;
         Widgets.bindChip(gui, ctx, m.getBind(), chipX, y + 1 + hh / 2f, 1f);
         Fonts.drawRight(ctx, "KEY", chipX - 5, y + 1 + hh / 2f, Theme.TEXT_MUTED, true, 0.6f);
 
         // name, with the open category after it, and the description below
         float nx = x + 36, maxW = chipX - 26 - nx;
-        float nameW = Fonts.width(m.getName(), true, 1.05f);
-        Fonts.draw(ctx, Fonts.trim(m.getName(), maxW, true, 1.05f), nx, y + 8.5f, Theme.TEXT, true, 1.05f);
+        float nameW = Fonts.width(m.getDisplayName(), true, 1.05f);
+        Fonts.draw(ctx, Fonts.trim(m.getDisplayName(), maxW, true, 1.05f), nx, y + 8.5f, Theme.TEXT, true, 1.05f);
         float sv = sectionView.get();
         if (shownSection != null && sv > 0.01f && nameW + 30 < maxW) {
             float prev = Render2D.getAlpha();
@@ -391,12 +567,9 @@ public class ModulesPage extends Page {
     }
 
     private void settingsList(DrawContext ctx, List<SettingSection> list, boolean labels, float x, float y, float w, float h) {
-        float off = settingsScroll.update();
         gui.pushClip(x - 6, y, w + 12, h);
-        float content = settingsList.render(gui, ctx, x, y - off, w - 6, list, labels);
+        settingsList.renderPaged(gui, ctx, x, y, w - 6, h,list,labels);
         gui.popClip();
-        settingsScroll.setBounds(content + 2, h);
-        settingsScroll.drawBar(gui, ctx, x + w - 2, y, h);
     }
 
     // ---- category cards -----------------------------------------------------------------
@@ -407,7 +580,7 @@ public class ModulesPage extends Page {
         int rows = (visible.size() + cols - 1) / cols;
         float hintH = 16;
         homeScroll.setBounds(rows * (SECTION_CARD_H + GAP) - GAP + 2 + hintH, h);
-        float off = homeScroll.update();
+        float off = homeScroll.update(gui.hasPointerDrag());
 
         gui.pushClip(x - 6, y, w + 12, h);
         for (int i = 0; i < visible.size(); i++) {
@@ -424,7 +597,7 @@ public class ModulesPage extends Page {
 
     private void sectionCard(DrawContext ctx, SettingSection s, int index, float x, float y, float w, float h) {
         float t = (System.currentTimeMillis() - homeSince) / 1000f - Math.min(index, 12) * 0.035f;
-        float intro = dev.maro.util.Easing.outCubic(Math.max(0f, Math.min(1f, t / 0.28f)));
+        float intro = homeScroll.isMoving()?1:dev.maro.util.Easing.outCubic(Math.max(0f, Math.min(1f, t / 0.28f)));
         float prev = Render2D.getAlpha();
         Render2D.setAlpha(prev * intro);
         y += (1 - intro) * 8f;
@@ -531,7 +704,7 @@ public class ModulesPage extends Page {
 
     /** One chip per category, the open one lit, or a pager when they do not fit. */
     private void tabs(DrawContext ctx, List<SettingSection> visible, SettingSection current, float x, float y, float maxW) {
-        float scale = 0.74f, pad = 12, gap = 3;
+        float scale = 0.82f, pad = 16, gap = 4;
         float[] widths = new float[visible.size()];
         float total = -gap;
         for (int i = 0; i < visible.size(); i++) {

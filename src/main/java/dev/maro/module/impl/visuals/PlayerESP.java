@@ -200,6 +200,10 @@ public class PlayerESP extends Module {
         return tracers.get();
     }
 
+    public boolean silhouettesOn() {
+        return fill.get() || outline.get() || glow.get();
+    }
+
     public boolean tracersFromBottom() {
         return tracerStart.is("Bottom");
     }
@@ -214,11 +218,16 @@ public class PlayerESP extends Module {
 
     /** ARGB for this player's tracer; alpha carries the opacity. Unused in Rainbow mode. */
     public int tracerColor(Entity entity) {
+        return tracerColor(entity, mc.player != null ? mc.player.distanceTo(entity) : 0);
+    }
+
+    /** Distance is sampled from the same interpolated positions as the rendered line. */
+    public int tracerColor(Entity entity, double distance) {
         int rgb;
         if (tracerColor.is("Custom")) {
             rgb = tracerCustom.get();
         } else if (tracerColor.is("Distance") && mc.player != null) {
-            float near = Math.max(0f, Math.min(1f, mc.player.distanceTo(entity) / 64f));
+            float near = (float) Math.max(0, Math.min(1, distance / 64));
             rgb = ColorUtil.hsv(near / 3f, 0.85f, 1f);
         } else {
             rgb = playerColor(entity);

@@ -1,0 +1,15 @@
+{
+  "source_archive_sha256": "2d41435ca42780ad670f562b5c7067bed46f2645c6da03ab476d50e9dfcd958b",
+  "glb_sha256": "8db13eab4b5ccacd583209ac707638d5d3369dde548036101492a6a23d65c725",
+  "attribution": {
+    "author": "aung (https://sketchfab.com/aung)",
+    "license": "CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)",
+    "source": "https://sketchfab.com/3d-models/minion-df28a0618d3040f29c646f5e1dbddb8a",
+    "title": "Minion"
+  },
+  "changes": "Embedded local buffers/textures; legacy diffuse material colors mapped to metallic-roughness where needed.",
+  "anc_sha256": "63478d42f4d2201dbcbdc077e43c97397234ac224289bd1c1b68e467165433e3",
+  "source_vertices": 124510,
+  "source_triangles": 239456,
+  "runtime_changes": "Original mesh, yellow body, denim, goggles, gloves and shoes; geometric arm/leg segmentation, palm grip anchors and offline 7500/15000/30000 triangle budgets with a bounded texture atlas."
+}

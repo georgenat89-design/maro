@@ -70,7 +70,7 @@ public class SocialsPage extends Page {
         }
 
         float top = y + 26, viewH = h - 26;
-        float off = scroll.update();
+        float off = scroll.update(gui.hasPointerDrag());
         gui.pushClip(x - 6, top, w + 12, viewH);
         float cy = top - off;
         List<String> friends = FriendManager.list();

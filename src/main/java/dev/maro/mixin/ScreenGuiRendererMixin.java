@@ -12,6 +12,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(GuiRenderer.class)
 public abstract class ScreenGuiRendererMixin {
+    @Inject(method = "enableScissor", at = @At("HEAD"), cancellable = true)
+    private void maro$highResolutionClip(net.minecraft.client.gui.ScreenRect area, com.mojang.blaze3d.systems.RenderPass pass, CallbackInfo ci) {
+        if (ScreenGuiSurface.scissor(area, pass) || dev.maro.gui.spatial.SpatialCanvas.scissor(area, pass)) ci.cancel();
+    }
     @ModifyExpressionValue(method = "renderPreparedDraws", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/MinecraftClient;getFramebuffer()Lnet/minecraft/client/gl/Framebuffer;"))
     private Framebuffer maro$menuTarget(Framebuffer original) { return ScreenGuiSurface.targetOr(original); }
 

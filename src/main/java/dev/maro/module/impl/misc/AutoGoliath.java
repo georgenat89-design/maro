@@ -1,5 +1,7 @@
 package dev.maro.module.impl.misc;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import dev.maro.gui.hud.GoliathPickerScreen;
 import dev.maro.gui.notification.Notifications;
 import dev.maro.gui.render.Fonts;
@@ -21,12 +23,14 @@ import net.minecraft.world.World;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.LinkedHashSet;
 
 /**
- * Auto Goliath: random-teleports until you land in the goliath you picked, "East 2" say. On Donut a
+ * Auto Goliath: random-teleports until you land in any selected goliath. On Donut a
  * second /rtp into the region you are already in keeps you on the same goliath, so to be sent to
  * another one it goes out to a different region and back: /rtp eu central, /rtp east, check, and
- * again, picking a different region to bounce through each time. Pick the goliath here or on the map.
+ * again, picking a different region to bounce through each time. The map supports multiple choices;
+ * choices in other regions can be tried directly without an extra bounce.
  */
 public class AutoGoliath extends Module {
     /** The regions /rtp knows, and their place on the region map. */
@@ -34,10 +38,10 @@ public class AutoGoliath extends Module {
     private static final RegionGrid.Locale[] LOCALES = {RegionGrid.Locale.NaEast, RegionGrid.Locale.NaWest, RegionGrid.Locale.EuCentral,
             RegionGrid.Locale.EuWest, RegionGrid.Locale.Oceania, RegionGrid.Locale.Asia};
 
-    private final ModeSetting region = add(new ModeSetting("Region", "The region of the goliath you want", "East", REGIONS));
-    private final NumberSetting goliath = add(new NumberSetting("Goliath", "Its number, as on the region map", 1, 1, 60, 1));
+    private final ModeSetting region = add(new ModeSetting("Region", "Set a single destination region; use Pick On Map for multiple selections", "East", REGIONS));
+    private final NumberSetting goliath = add(new NumberSetting("Goliath", "Set a single destination number; use Pick On Map for multiple selections", 1, 1, 60, 1));
     private final NumberSetting delay = add(new NumberSetting("Delay", "Seconds between one /rtp and the next", 6, 2, 60, 1).suffix("s"));
-    private final ButtonSetting map = add(new ButtonSetting("Pick On Map", "Choose the goliath on the region map", "Open",
+    private final ButtonSetting map = add(new ButtonSetting("Pick On Map", "Select one or more goliaths; stop on arrival in any selected tile", "Open",
             () -> mc.setScreen(new GoliathPickerScreen(mc.currentScreen, this))));
 
     private final List<SettingSection> sections = List.of(SettingSection.of("Target", region, goliath, delay, map));
@@ -51,9 +55,27 @@ public class AutoGoliath extends Module {
     private String landed = "";
     private int attempts;
     private final List<Integer> bounces = new ArrayList<>();
+    public record Target(int region, int number) {
+        public String name() { return REGIONS[region] + " " + number; }
+    }
+    private final LinkedHashSet<Target> additionalTargets = new LinkedHashSet<>();
+    private boolean applyingSelection;
+    private int targetCursor;
 
     public AutoGoliath() {
-        super("Auto Goliath", "Random-teleports between regions until you land in the goliath you picked", Category.MISC);
+        super("Auto Goliath", "Random-teleports until you land in any of your selected goliaths", Category.MISC);
+        region.onChange(value -> {
+            if (!applyingSelection) {
+                additionalTargets.clear();
+                goliath.set((double) Math.min(goliathNumber(), count(regionIndex())));
+            }
+        });
+        goliath.onChange(value -> {
+            if (!applyingSelection) {
+                additionalTargets.clear();
+                if (value > count(regionIndex())) goliath.set((double) count(regionIndex()));
+            }
+        });
     }
 
     @Override
@@ -73,8 +95,78 @@ public class AutoGoliath extends Module {
 
     /** Picks the goliath to land in; for the map and tests. */
     public void pick(int regionIndex, int number) {
-        region.set(REGIONS[regionIndex]);
-        goliath.set((double) Math.max(1, Math.min(count(regionIndex), number)));
+        if (regionIndex < 0 || regionIndex >= REGIONS.length) return;
+        applySelection(List.of(new Target(regionIndex, Math.max(1, Math.min(count(regionIndex), number)))));
+    }
+
+    /** Clicking a selected tile removes it; at least one destination always remains. */
+    public void togglePick(int regionIndex, int number) {
+        if (regionIndex < 0 || regionIndex >= REGIONS.length || number < 1 || number > count(regionIndex)) return;
+        var targets = new LinkedHashSet<>(selectedTargets());
+        Target target = new Target(regionIndex, number);
+        if (targets.contains(target)) {
+            if (targets.size() == 1) return;
+            targets.remove(target);
+        } else targets.add(target);
+        applySelection(new ArrayList<>(targets));
+    }
+
+    public boolean isPicked(int regionIndex, int number) {
+        return regionIndex == regionIndex() && number == goliathNumber()
+                || additionalTargets.contains(new Target(regionIndex, number));
+    }
+
+    public List<Target> selectedTargets() {
+        var targets = new LinkedHashSet<Target>();
+        targets.add(new Target(regionIndex(), Math.min(goliathNumber(), count(regionIndex()))));
+        targets.addAll(additionalTargets);
+        return List.copyOf(targets);
+    }
+
+    private void applySelection(List<Target> targets) {
+        applyingSelection = true;
+        try {
+            Target first = targets.getFirst();
+            region.set(REGIONS[first.region()]);
+            goliath.set((double) first.number());
+            additionalTargets.clear();
+            additionalTargets.addAll(targets.subList(1, targets.size()));
+            bounces.clear();
+            targetCursor = 0;
+        } finally { applyingSelection = false; }
+    }
+
+    @Override
+    public JsonObject saveExtra() {
+        JsonObject data = super.saveExtra();
+        JsonArray targets = new JsonArray();
+        for (Target target : selectedTargets()) {
+            JsonObject item = new JsonObject();
+            item.addProperty("region", REGIONS[target.region()]);
+            item.addProperty("number", target.number());
+            targets.add(item);
+        }
+        data.add("targets", targets);
+        return data;
+    }
+
+    @Override
+    public void loadExtra(JsonObject data) {
+        super.loadExtra(data);
+        additionalTargets.clear();
+        if (!data.has("targets") || !data.get("targets").isJsonArray()) return;
+        var targets = new LinkedHashSet<Target>();
+        for (var element : data.getAsJsonArray("targets")) {
+            try {
+                JsonObject item = element.getAsJsonObject();
+                for (int r = 0; r < REGIONS.length; r++) {
+                    if (!REGIONS[r].equals(item.get("region").getAsString())) continue;
+                    int number = item.get("number").getAsInt();
+                    if (number >= 1 && number <= count(r)) targets.add(new Target(r, number));
+                }
+            } catch (RuntimeException ignored) { /* Ignore invalid destinations in an older or edited config. */ }
+        }
+        if (!targets.isEmpty()) applySelection(new ArrayList<>(targets));
     }
 
     public static RegionGrid.Locale locale(int regionIndex) {
@@ -102,7 +194,7 @@ public class AutoGoliath extends Module {
     }
 
     private boolean onTarget(RegionGrid.Shard shard) {
-        return shard != null && shard.locale() == LOCALES[regionIndex()] && shard.number() == goliathNumber();
+        return shard != null && isPicked(regionOf(shard.locale()), shard.number());
     }
 
     public static String name(RegionGrid.Shard shard) {
@@ -118,11 +210,12 @@ public class AutoGoliath extends Module {
         attempts = 0;
         landed = "";
         bounces.clear();
+        targetCursor = 0;
         if (goliathNumber() > count(regionIndex())) {
             goliath.set((double) count(regionIndex()));
         }
         if (inGame() && onTarget(here())) {
-            Notifications.push("Auto Goliath", "You are already in " + REGIONS[regionIndex()] + " " + goliathNumber(), Notifications.Type.SUCCESS);
+            Notifications.push("Auto Goliath", "You are already in " + name(here()), Notifications.Type.SUCCESS);
             setEnabled(false);
         }
     }
@@ -171,9 +264,12 @@ public class AutoGoliath extends Module {
      * it is out to another region first, a different one each time.
      */
     private String nextCommand() {
-        int target = regionIndex();
         RegionGrid.Shard shard = here();
-        boolean inTarget = shard != null && shard.locale() == LOCALES[target];
+        int current = shard == null ? -1 : regionOf(shard.locale());
+        List<Integer> regions = selectedTargets().stream().map(Target::region).distinct().toList();
+        int target = regions.get(Math.floorMod(targetCursor++, regions.size()));
+        if (regions.size() > 1 && target == current) target = regions.get(Math.floorMod(targetCursor++, regions.size()));
+        boolean inTarget = target == current;
         int to = target;
         if (inTarget) {
             if (bounces.isEmpty()) {
@@ -192,7 +288,8 @@ public class AutoGoliath extends Module {
 
     /** What it is doing, for the bar at the top. */
     public String status() {
-        String target = REGIONS[regionIndex()] + " " + goliathNumber();
+        List<Target> targets = selectedTargets();
+        String target = targets.getFirst().name() + (targets.size() > 1 ? " + " + (targets.size() - 1) + " more" : "");
         String last = landed.isEmpty() ? "" : "  ·  last: " + landed;
         return switch (phase) {
             case SEND, TELEPORTING -> "/" + lastCommand + "  →  " + target + last;

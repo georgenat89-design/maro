@@ -1,0 +1,11 @@
+{
+  "source_archive_sha256": "cf6bdda3b3eeeca6b62648ee1504168e0d47abc17734967ceab8cb11c1f4357e",
+  "glb_sha256": "93700abd0c1557c71dd2e1c37e83387bfe2eb0543cd1ab28ec8827ec100746d8",
+  "attribution": {
+    "author": "rogerreyes582 (https://sketchfab.com/rogerreyes582)",
+    "license": "CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)",
+    "source": "https://sketchfab.com/3d-models/slender-fortress-undead-furher-adolf-hitler-036f0e7b0204483589e7d7b1fa835677",
+    "title": "Slender Fortress - Undead Furher (Adolf Hitler)"
+  },
+  "changes": "Embedded local buffers/textures; legacy diffuse material colors mapped to metallic-roughness where needed."
+}

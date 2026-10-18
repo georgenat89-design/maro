@@ -77,6 +77,11 @@ public final class Theme {
         return ColorUtil.withAlpha(accent(), alpha);
     }
 
+    /** Category headings and icons follow the same live transition as the GUI controls. */
+    public static int title(dev.maro.module.Category category) {
+        return accent();
+    }
+
     /** Second gradient stop. Equal to {@link #accent()} when gradients are off. */
     public static int accent2() {
         if (!ClientSettings.gradient.get()) return accent();

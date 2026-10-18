@@ -120,6 +120,17 @@ public class BetterLooks extends Module {
         instance = this;
     }
 
+    @Override public boolean isEnabled() {
+        TexturePacks owner = TexturePacks.get();
+        return owner != null && owner.isEnabled() && owner.appearance.get();
+    }
+    public void toggleAppearance() {
+        TexturePacks owner = TexturePacks.get();
+        if (owner == null) return;
+        if (!owner.isEnabled()) { owner.appearance.set(true); owner.setEnabled(true); }
+        else owner.appearance.set(!owner.appearance.get());
+    }
+
     private BooleanSetting toggle(String name, String description) {
         return add(new BooleanSetting(name, description, false));
     }

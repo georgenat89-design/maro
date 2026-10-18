@@ -19,10 +19,24 @@ import org.lwjgl.glfw.GLFW;
  * throws, the game crashes and the build fails. Screenshots of every page are uploaded.
  */
 public class MaroClientGameTest implements FabricClientGameTest {
+    // Fabric's world builder inspects the literal currentScreen. Its setup runs outside
+    // the home host; embedded native creation is exercised separately by HomeNavigationChecks.
+    private static TestSingleplayerContext createWorld(ClientGameTestContext context) {
+        context.setScreen(() -> null);
+        return context.worldBuilder().create();
+    }
     @Override
     public void runTest(ClientGameTestContext context) {
+        if(Boolean.getBoolean("maro.gametest.baseCounterOnly")||Boolean.getBoolean("maro.gametest.baseEspOnly")){context.getInput().resizeWindow(1280,720);try(TestSingleplayerContext world=createWorld(context)){world.getClientWorld().waitForChunksRender();if(Boolean.getBoolean("maro.gametest.baseCounterOnly"))BaseCounterChecks.run(context,world);else BaseEspChecks.run(context,world);}RenderFaultChecks.assertClean();return;}
+        if(Boolean.getBoolean("maro.gametest.menuWorkspaceOnly")){context.getInput().resizeWindow(1280,720);try(TestSingleplayerContext world=createWorld(context)){world.getClientWorld().waitForChunksRender();MenuWorkspaceChecks.run(context);}RenderFaultChecks.assertClean();return;}
+        if(Boolean.getBoolean("maro.gametest.expandedPreviewsOnly")){context.getInput().resizeWindow(1280,720);try(TestSingleplayerContext world=createWorld(context)){world.getClientWorld().waitForChunksRender();ExpandedPreviewChecks.run(context);}RenderFaultChecks.assertClean();return;}
+        if(Boolean.getBoolean("maro.gametest.menuBrandingOnly")){context.getInput().resizeWindow(1280,720);HomeNavigationChecks.run(context);MenuBrandingChecks.run(context);RenderFaultChecks.assertClean();return;}
+        if(Boolean.getBoolean("maro.gametest.rightClickSettingsOnly")){context.getInput().resizeWindow(1280,720);RightClickSettingsChecks.run(context);RenderFaultChecks.assertClean();return;}
+        if(Boolean.getBoolean("maro.gametest.menuSceneOnly")){context.getInput().resizeWindow(1280,720);context.runOnClient(c->{ModuleManager.all().forEach(m->m.setEnabled(false));c.setScreen(new net.minecraft.client.gui.screen.TitleScreen());});HomeNavigationChecks.run(context);MenuSceneChecks.run(context);MenuBrandingChecks.run(context);RightClickSettingsChecks.run(context);if(Boolean.getBoolean("maro.gametest.designRowsOnly"))try(TestSingleplayerContext world=createWorld(context)){world.getClientWorld().waitForChunksRender();PreviewRoutingChecks.run(context);VisualPreviewChecks.run(context,world);CleanDesignChecks.run(context);ModuleScrollChecks.fullscreenAndSwipeChecks(context);}RenderFaultChecks.assertClean();return;}
+        if(Boolean.getBoolean("maro.gametest.cleanDesignOnly")){ context.getInput().resizeWindow(1280,720); try(TestSingleplayerContext world=createWorld(context)){world.getClientWorld().waitForChunksRender();CleanDesignChecks.run(context);}return;}
         MiningCadenceChecks.run();
         ClientPerformanceChecks.run();
+        dev.maro.gui.spotify.PhoneVideoQualityChecks.run();
         context.getInput().resizeWindow(1280, 720);
         context.runOnClient(client -> {
             if (ModuleManager.getByName("Example") == null) ModuleManager.register(new ExampleModule());
@@ -30,11 +44,190 @@ public class MaroClientGameTest implements FabricClientGameTest {
             ModuleManager.all().forEach(module -> module.setEnabled(false));
         });
 
+        if (Boolean.getBoolean("maro.gametest.communityConfigsOnly")) {CommunityConfigsChecks.run(context);RenderFaultChecks.assertClean();if(!Boolean.getBoolean("maro.gametest.pickaxesOnly")&&!Boolean.getBoolean("maro.gametest.streamproofOnly")&&!Boolean.getBoolean("maro.gametest.livePrivacyOnly"))return;}
+        if (Boolean.getBoolean("maro.gametest.pickaxesOnly")||Boolean.getBoolean("maro.gametest.streamproofOnly")||Boolean.getBoolean("maro.gametest.livePrivacyOnly")) {
+            try(TestSingleplayerContext world=createWorld(context)){
+                world.getClientWorld().waitForChunksRender();context.setScreen(()->null);context.waitTicks(5);
+                if(Boolean.getBoolean("maro.gametest.pickaxesOnly"))CustomPickaxeChecks.run(context,world);
+                if(Boolean.getBoolean("maro.gametest.livePrivacyOnly")){SpotifyPlaylistsChecks.run(context);LivePrivacyChecks.run(context);}
+                if(Boolean.getBoolean("maro.gametest.streamproofOnly")||Boolean.getBoolean("maro.gametest.livePrivacyOnly"))StreamproofChecks.run(context,world);
+                RenderFaultChecks.assertClean();
+            }return;
+        }
+        if(Boolean.getBoolean("maro.gametest.homeReturnOnly")){
+            HomeNavigationChecks.run(context);
+            String worldName;
+            try(TestSingleplayerContext world=createWorld(context)){
+                world.getClientWorld().waitForChunksRender();context.setScreen(()->null);context.waitTicks(5);
+                worldName=world.getWorldSave().getSaveDirectory().getFileName().toString();
+                PanelGuiChecks.run(context);ModuleScrollChecks.run(context);GuiPauseChecks.run(context);
+            }
+            HomeReturnChecks.run(context,worldName);RenderFaultChecks.assertClean();return;
+        }
+        if(Boolean.getBoolean("maro.gametest.chunkPulseOnly")){
+            StartupChecks.run(context);
+            try(TestSingleplayerContext world=createWorld(context)){
+                world.getClientWorld().waitForChunksRender();context.setScreen(()->null);context.waitTicks(5);
+                ChunkPulseChecks.run(context,world);DroppedItemTagChecks.run(context);TracerChecks.geometry();PosedNameTagChecks.run(context);CharacterGripChecks.run(context,world);SharedItemGripChecks.run(context,world);RenderFaultChecks.assertClean();
+            }return;
+        }
+        if(Boolean.getBoolean("maro.gametest.freeCamModelOnly")){
+            try(TestSingleplayerContext world=createWorld(context)){
+                world.getClientWorld().waitForChunksRender();context.setScreen(()->null);context.waitTicks(5);
+                FreeCamFovChecks.run(context);FreeCamCharacterChecks.run(context,world);RenderFaultChecks.assertClean();
+            }return;
+        }
+        if(Boolean.getBoolean("maro.gametest.visualPreviewOnly")){
+            try(TestSingleplayerContext world=createWorld(context)){
+                world.getClientWorld().waitForChunksRender();context.setScreen(()->null);context.waitTicks(5);
+                ModuleSectionChecks.run(context);PanelGuiChecks.run(context);VisualPreviewChecks.run(context,world);ModuleScrollChecks.run(context);ModuleScrollChecks.fullscreenAndSwipeChecks(context);RenderFaultChecks.assertClean();
+            }return;
+        }
+        if(Boolean.getBoolean("maro.gametest.suppliedPairOnly")){
+            try(TestSingleplayerContext world=createWorld(context)){
+                world.getClientWorld().waitForChunksRender();context.setScreen(()->null);context.waitTicks(5);
+                SuppliedModelChecks.run(context,world);PosedNameTagChecks.run(context);FreeCamCharacterChecks.run(context,world);CharacterGripChecks.run(context,world);CharacterMotionChecks.run(context,world);RenderFaultChecks.assertClean();
+            }return;
+        }
+        if(Boolean.getBoolean("maro.gametest.freeCamFovOnly")||Boolean.getBoolean("maro.gametest.panelChestOnly")){
+            try(TestSingleplayerContext world=createWorld(context)){
+                world.getClientWorld().waitForChunksRender();context.setScreen(()->null);context.waitTicks(5);
+                FreeCamFovChecks.run(context);
+                if(Boolean.getBoolean("maro.gametest.panelChestOnly")){PanelGuiChecks.run(context);FrostedGlassChecks.run(context);MenuBlurChecks.run(context);ModuleScrollChecks.run(context);GuiMotionChecks.run(context);GuiPauseChecks.run(context);SpatialGuiChecks.run(context);}
+                RenderFaultChecks.assertClean();
+            }return;
+        }
+        if(Boolean.getBoolean("maro.gametest.armorPolishOnly")){
+            try(TestSingleplayerContext world=createWorld(context)){
+                world.getClientWorld().waitForChunksRender();context.setScreen(()->null);context.waitTicks(5);
+                ArmorHudChecks.run(context,world);ModelNametagChecks.run(context);SuppliedModelChecks.run(context,world);CharacterGripChecks.run(context,world);CharacterMotionChecks.run(context,world);RenderFaultChecks.assertClean();
+            }return;
+        }
+        if(Boolean.getBoolean("maro.gametest.skeletonHandsOnly")){
+            try(TestSingleplayerContext world=createWorld(context)){
+                world.getClientWorld().waitForChunksRender();context.setScreen(()->null);context.waitTicks(5);
+                SkeletonHandChecks.run(context,world);CharacterGripChecks.run(context,world);RenderFaultChecks.assertClean();
+            }return;
+        }
+        if(Boolean.getBoolean("maro.gametest.characterGripOnly")){
+            try(TestSingleplayerContext world=createWorld(context)){
+                world.getClientWorld().waitForChunksRender();context.setScreen(()->null);context.waitTicks(5);
+                SuppliedModelChecks.run(context,world);CharacterGripChecks.run(context,world);CharacterMotionChecks.run(context,world);ModuleScrollChecks.run(context);GuiPauseChecks.run(context);RenderFaultChecks.assertClean();
+            }return;
+        }
+        if(Boolean.getBoolean("maro.gametest.spongeBobOnly")){
+            try(TestSingleplayerContext world=createWorld(context)){
+                world.getClientWorld().waitForChunksRender();context.setScreen(()->null);context.waitTicks(5);
+                SuppliedModelChecks.run(context,world);ModuleScrollChecks.run(context);RenderFaultChecks.assertClean();
+            }return;
+        }
+        if (Boolean.getBoolean("maro.gametest.menuPolishOnly")) {
+            try(TestSingleplayerContext world=createWorld(context)){
+                world.getClientWorld().waitForChunksRender();context.setScreen(()->null);context.waitTicks(5);
+                ModuleScrollChecks.run(context);
+                for(int scale:new int[]{2,4}){
+                    context.runOnClient(c->{c.options.getGuiScale().setValue(scale);c.onResolutionChanged();c.setScreen(new dev.maro.gui.hud.GameplayTexturesScreen(null,dev.maro.module.impl.visuals.TexturePacks.get()));});
+                    context.waitTicks(5);context.takeScreenshot("maro-gameplay-sidebar-library-bottom-"+scale);
+                }
+                RenderFaultChecks.assertClean();
+            }return;
+        }
+        if (Boolean.getBoolean("maro.gametest.phoneUpdateOnly")) {
+            try(TestSingleplayerContext world=createWorld(context)){
+                world.getClientWorld().waitForChunksRender();context.setScreen(()->null);context.waitTicks(5);
+                PhoneUpdateChecks.run(context);RenderFaultChecks.assertClean();
+            }return;
+        }
+        if (Boolean.getBoolean("maro.gametest.radarDroppersOnly")) {
+            try(TestSingleplayerContext world=createWorld(context)){
+                world.getClientWorld().waitForChunksRender();context.setScreen(()->null);context.waitTicks(5);
+                RadarChecks.run(context);DropperChecks.run(context,world);RenderFaultChecks.assertClean();
+            }return;
+        }
+
+        if (Boolean.getBoolean("maro.gametest.knifePreviewOnly")) {
+            dev.maro.accounts.RefreshTokenChecks.run(context);
+            try (TestSingleplayerContext world=createWorld(context)) {
+                world.getClientWorld().waitForChunksRender();context.setScreen(()->null);context.waitTicks(5);
+                ItemInspectionChecks.run(context,world);WeaponStyleChecks.run(context,world);
+                KnifePreviewChecks.run(context,world);RenderFaultChecks.assertClean();
+            }
+            return;
+        }
+        if (Boolean.getBoolean("maro.gametest.itemInspectionOnly")) {InspectionMotionChecks.run();StartupChecks.run(context);dev.maro.accounts.AccountChecks.run(context);dev.maro.accounts.RefreshTokenChecks.run(context);}
+
+        if (Boolean.getBoolean("maro.gametest.itemInspectionOnly")) {
+            try (TestSingleplayerContext singleplayer = createWorld(context)) {
+                singleplayer.getClientWorld().waitForChunksRender(); context.setScreen(() -> null); context.waitTicks(5);
+                PanelsEntryChecks.run(context);
+                HudReadabilityChecks.run(context);
+                SpotifyLyricsChecks.run(context);
+                ItemInspectionChecks.run(context, singleplayer);
+                WeaponStyleChecks.run(context,singleplayer);
+                SpotifyPhoneChecks.run(context);
+                PhonePolishChecks.run(context,singleplayer);
+                KnifePreviewChecks.run(context,singleplayer);
+                RenderFaultChecks.assertClean();
+            }
+            // Flight/equip fixtures must not leak into native crosshair picking checks.
+            if (Boolean.getBoolean("maro.gametest.typographyTourOnly")) {
+                try (TestSingleplayerContext singleplayer = createWorld(context)) {
+                    singleplayer.getClientWorld().waitForChunksRender(); context.setScreen(() -> null); context.waitTicks(12);
+                    TypographyChecks.run(context, singleplayer);
+                }
+            }
+            return;
+        }
+
+        if (Boolean.getBoolean("maro.gametest.accountsOnly")) {
+            StartupChecks.run(context);
+            dev.maro.accounts.AccountChecks.run(context);
+            dev.maro.accounts.RefreshTokenChecks.run(context);
+            try (TestSingleplayerContext singleplayer = createWorld(context)) {
+                singleplayer.getClientWorld().waitForChunksRender();
+                dev.maro.accounts.AccountChecks.inWorld(context);
+                MenuBlurChecks.run(context);
+                ScreenGuiChecks.run(context);
+                SpatialGuiChecks.run(context);
+            }
+            return;
+        }
+
+        if (Boolean.getBoolean("maro.gametest.menuBlurOnly")) {
+            try (TestSingleplayerContext singleplayer = createWorld(context)) {
+                singleplayer.getClientWorld().waitForChunksRender();
+                MenuBlurChecks.run(context);
+            }
+            return;
+        }
+
+        if (Boolean.getBoolean("maro.gametest.typographyOnly")) {
+            StartupChecks.run(context);
+            try (TestSingleplayerContext singleplayer = createWorld(context)) {
+                singleplayer.getClientWorld().waitForChunksRender();
+                context.setScreen(() -> null);
+                context.waitTicks(12);
+                TypographyChecks.run(context, singleplayer);
+            }
+            return;
+        }
+        if (Boolean.getBoolean("maro.gametest.startupOnly")) {
+            StartupChecks.run(context);
+            try (TestSingleplayerContext singleplayer = createWorld(context)) {
+                singleplayer.getClientWorld().waitForChunksRender();
+                StartupChecks.worldTransition(context);
+                GuiMotionChecks.run(context);
+                context.takeScreenshot("maro-startup-entered-world");
+                RenderFaultChecks.assertClean();
+            }
+            StartupChecks.dedicatedServer(context);
+            return;
+        }
         if(Boolean.getBoolean("maro.gametest.builderGrimOnly")){BuilderGrimChecks.run(context);return;}
         if (Boolean.getBoolean("maro.gametest.renderCompatOnly")) {
             int passes = Boolean.getBoolean("maro.gametest.renderCompatProfileOnly") ? 3 : 1;
             for (int pass = 0; pass < passes; pass++) {
-                try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
+                try (TestSingleplayerContext singleplayer = createWorld(context)) {
                     // Companion chunk scanners keep scheduling rebuilds after the world is ready.
                     context.waitTicks(40);
                     context.setScreen(() -> null);
@@ -45,16 +238,110 @@ public class MaroClientGameTest implements FabricClientGameTest {
             }
             return;
         }
-        try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
+        try (TestSingleplayerContext singleplayer = createWorld(context)) {
             singleplayer.getClientWorld().waitForChunksRender();
 
             // make sure nothing (pause menu, toasts...) is in the way before testing the keybind
             context.setScreen(() -> null);
             context.waitTicks(5);
+            if (Boolean.getBoolean("maro.gametest.spawnerGoliathOnly")) {
+                SpawnerNotifierChecks.run(context, singleplayer);
+                AutoGoliathChecks.run(context, singleplayer);
+                RenderFaultChecks.assertClean();
+                return;
+            }
+            if(Boolean.getBoolean("maro.gametest.gameplayUpdateOnly")) {
+                GameplayTexturesChecks.run(context);
+                TexturePacksChecks.run(context);
+                PhonePolishChecks.run(context,singleplayer);
+                JumpCircleChecks.run(context,singleplayer);
+                RenderFaultChecks.assertClean();return;
+            }
+            if (Boolean.getBoolean("maro.gametest.presentationUpdateOnly")) {
+                FakePayChecks.run(context);
+                SpatialGuiChecks.run(context);
+                ScreenGuiChecks.run(context);
+                TridentBoostChecks.run(context, singleplayer);
+                var sky = ModuleManager.get(dev.maro.module.impl.visuals.CustomSky.class);
+                var mode = (dev.maro.setting.ModeSetting) sky.getSettings().stream().filter(s -> s.getName().equals("Sky")).findFirst().orElseThrow();
+                String saved = mode.get();
+                try {
+                    context.runOnClient(c -> { mode.set("Caustics"); sky.setEnabled(true); });
+                    context.waitTicks(8);
+                    context.takeScreenshot("maro-build-690-caustics");
+                } finally {
+                    context.runOnClient(c -> { sky.setEnabled(false); mode.set(saved); });
+                }
+                RenderFaultChecks.assertClean();
+                return;
+            }
+            if (Boolean.getBoolean("maro.gametest.spatialGuiOnly")) {
+                SpatialGuiChecks.run(context);
+                ScreenGuiChecks.run(context);
+                RenderFaultChecks.assertClean();
+                return;
+            }
+            if (Boolean.getBoolean("maro.gametest.acrobaticsOnly")) {
+                AcrobaticsChecks.run(context, singleplayer);
+                RenderFaultChecks.assertClean();
+                return;
+            }
+            if (Boolean.getBoolean("maro.gametest.textureStylesOnly")) {
+                PacksMcChecks.run(context);
+                RenderFaultChecks.assertClean();
+                return;
+            }
+            if (Boolean.getBoolean("maro.gametest.texturePacksOnly")) {
+                GameplayTexturesChecks.run(context);
+                TexturePacksChecks.run(context);
+                PacksMcChecks.run(context);
+                if (Boolean.getBoolean("maro.gametest.fakePayOnly")) FakePayChecks.run(context);
+                if (Boolean.getBoolean("maro.gametest.staffOnly")) StaffNotifierChecks.run(context);
+                RenderFaultChecks.assertClean();
+                return;
+            }
+            if (Boolean.getBoolean("maro.gametest.installedPacksOnly")) {
+                TexturePacksChecks.run(context);
+                RenderFaultChecks.assertClean();
+                return;
+            }
+            if (Boolean.getBoolean("maro.gametest.fakePayOnly")) {
+                FakePayChecks.run(context);
+                RenderFaultChecks.assertClean();
+                return;
+            }
+            if (Boolean.getBoolean("maro.gametest.autoReplenishOnly")) {
+                AutoReplenishChecks.run(context,singleplayer);
+                RenderFaultChecks.assertClean();
+                return;
+            }
+            if (Boolean.getBoolean("maro.gametest.tridentBoostOnly")) {
+                TridentBoostChecks.run(context,singleplayer);
+                RenderFaultChecks.assertClean();
+                return;
+            }
+            if (Boolean.getBoolean("maro.gametest.featurePortsOnly")) {
+                FeaturePortsChecks.run(context, singleplayer);
+                RenderFaultChecks.assertClean();
+                return;
+            }
+            if (Boolean.getBoolean("maro.gametest.jumpCircleOnly")) {
+                JumpCircleChecks.run(context, singleplayer);
+                RenderFaultChecks.assertClean();
+                return;
+            }
+            if (Boolean.getBoolean("maro.gametest.tracersOnly")) {
+                TracerChecks.run(context, singleplayer);
+                PlayerEspChecks.run(context, singleplayer);
+                BlockEspChecks.run(context, singleplayer);
+                RenderFaultChecks.assertClean();
+                return;
+            }
             if (Boolean.getBoolean("maro.gametest.keyboardStrokesOnly")) {
                 KeyboardStrokesChecks.run(context);
                 ScreenGuiChecks.run(context);
                 AcrobaticsChecks.run(context, singleplayer);
+                RenderFaultChecks.assertClean();
                 return;
             }
             if (Boolean.getBoolean("maro.gametest.screenGuiOnly")) {
@@ -67,12 +354,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 return;
             }
             if (Boolean.getBoolean("maro.gametest.acOffOnly")) {
-                AutoTridentChecks.run(context, singleplayer);
                 AntiCheatOffChecks.run(context, singleplayer);
-                return;
-            }
-            if (Boolean.getBoolean("maro.gametest.autoTridentOnly")) {
-                AutoTridentChecks.run(context, singleplayer);
                 return;
             }
             if (Boolean.getBoolean("maro.gametest.airFallOnly")) {
@@ -115,12 +397,27 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 SpotifyLyricsChecks.run(context);
                 SpotifyVolumeChecks.run(context);
                 SpotifyPhoneChecks.run(context);
+                SpotifyPlaylistsChecks.run(context);
+                return;
+            }
+            if (Boolean.getBoolean("maro.gametest.phoneTikTokOnly") && !Boolean.getBoolean("maro.gametest.spotifyPhoneOnly")) {
+                PhoneTikTokChecks.run(context);
+                RenderFaultChecks.assertClean();
                 return;
             }
             if (Boolean.getBoolean("maro.gametest.spotifyPhoneOnly")) {
                 SpotifyPhoneChecks.run(context);
+                PhonePolishChecks.run(context, singleplayer);
+                PhoneWorldActionsChecks.run(context,singleplayer);
                 PhoneSharingChecks.run(context);
+                PhoneUpdateChecks.run(context);
+                if(Boolean.getBoolean("maro.gametest.phoneTikTokOnly"))PhoneTikTokChecks.run(context);
+                RenderFaultChecks.assertClean();
                 return;
+            }
+            if (Boolean.getBoolean("maro.gametest.phoneActionsOnly")) {
+                SpotifyPhoneChecks.run(context);PhonePolishChecks.run(context,singleplayer);
+                PhoneWorldActionsChecks.run(context,singleplayer);RenderFaultChecks.assertClean();return;
             }
             if (Boolean.getBoolean("maro.gametest.hudOnly")) {
                 StaffNotifierChecks.run(context);
@@ -152,10 +449,10 @@ public class MaroClientGameTest implements FabricClientGameTest {
             SpotifyVolumeChecks.run(context);
             SpotifyPhoneChecks.run(context);
             PhoneSharingChecks.run(context);
+            SpotifyPlaylistsChecks.run(context);
             checkSlowSwing(context);
             checkKeySounds(context);
             checkRegionMap(context);
-            AutoTridentChecks.run(context, singleplayer);
             AntiCheatOffChecks.run(context, singleplayer);
             AutoToolChecks.run(context, singleplayer);
             CrosshairChecks.run(context);
@@ -163,6 +460,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             SkinAccessoriesChecks.run(context);
             PetChecks.run(context, singleplayer);
             PlayerEspChecks.run(context, singleplayer);
+            JumpCircleChecks.run(context, singleplayer);
             BaseEspChecks.run(context, singleplayer);
             BlockEspChecks.run(context, singleplayer);
             SpawnerNotifierChecks.run(context, singleplayer);
@@ -171,7 +469,6 @@ public class MaroClientGameTest implements FabricClientGameTest {
             NametagsChecks.run(context);
             ChestTransferChecks.run(context, singleplayer);
             TrajectoriesChecks.run(context, singleplayer);
-            HandShaderChecks.run(context);
             GeekedChecks.run(context, singleplayer);
             OrderDropperChecks.run(context, singleplayer);
             CoordsFlyChecks.run(context, singleplayer);
@@ -181,6 +478,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             VehiclesChecks.run(context, singleplayer);
             AcrobaticsChecks.run(context, singleplayer);
             KeyboardStrokesChecks.run(context);
+            FakePayChecks.run(context);
             FakeBlockChecks.run(context, singleplayer);
             BetterLooksChecks.run(context);
             SkyChecks.run(context, singleplayer);
@@ -189,6 +487,8 @@ public class MaroClientGameTest implements FabricClientGameTest {
             EmoteChecks.run(context, singleplayer);
             CoordSnapperChecks.run(context);
             BetterTexturesChecks.run(context);
+            TexturePacksChecks.run(context);
+            SpatialGuiChecks.run(context);
             DiscordPresenceChecks.run(context);
             StaffNotifierChecks.run(context);
             HudReadabilityChecks.run(context);
@@ -390,8 +690,8 @@ public class MaroClientGameTest implements FabricClientGameTest {
         long failures = context.computeOnClient(client -> dev.maro.runtime.MeteorClient.EVENT_BUS.failureCount());
         context.runOnClient(client -> {
             if (dev.maro.runtime.systems.modules.Modules.get().getAll().stream()
-                    .filter(m -> m.getClass().getPackageName().equals("dev.maro.nathan.modules")).count() != 20)
-                throw new AssertionError("Expected all 20 current Nathan modules");
+                    .filter(m -> m.getClass().getPackageName().equals("dev.maro.nathan.modules")).count() != 19)
+                throw new AssertionError("Expected all 19 current Nathan modules");
             for (var module : dev.maro.runtime.systems.modules.Modules.get().getAll()) {
                 if (module.getSettings().isEmpty()) throw new AssertionError("No settings for " + module.name);
                 module.setEnabled(false);

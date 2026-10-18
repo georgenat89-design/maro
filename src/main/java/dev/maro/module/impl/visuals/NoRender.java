@@ -88,7 +88,8 @@ public class NoRender extends Module {
         BetterLooks looks = BetterLooks.get();
         if (!isEnabled() || looks == null) return;
         for (Part part : Part.values()) if (parts[part.ordinal()].get()) looks.hide(part);
-        looks.setEnabled(true);
+        TexturePacks owner = TexturePacks.get();
+        if (owner != null) { owner.appearance.set(true); owner.setEnabled(true); }
         setEnabled(false);
     }
 

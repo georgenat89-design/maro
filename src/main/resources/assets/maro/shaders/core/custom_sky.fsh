@@ -598,32 +598,66 @@ vec3 thunderstorm(vec3 d, float t) {
     return col;
 }
 
+// One layer of caustic light: thin bright lines that wander and meet, as sunlight on a pool floor.
+// Tiles every 1.0 in uv.
+float causticLayer(vec2 uv, float time) {
+    vec2 p = mod(uv * TAU, TAU) - 250.0;
+    vec2 i = p;
+    float c = 1.0;
+    const float inten = 0.005;
+    for (int n = 0; n < 5; n++) {
+        float tt = time * (1.0 - 3.5 / float(n + 1));
+        i = p + vec2(cos(tt - i.x) + sin(tt + i.y), sin(tt - i.y) + cos(tt + i.x));
+        c += 1.0 / length(vec2(p.x / (sin(i.x + tt) / inten), p.y / (cos(i.y + tt) / inten)));
+    }
+    c /= 5.0;
+    c = 1.17 - pow(c, 1.4);
+    return pow(abs(c), 8.0);
+}
+
+// 15: Caustics - white light rippling over a dark grey dome, as if the sky were under water.
+vec3 caustics(vec3 d, float t) {
+    float h = d.y;
+    // Laid on a dome above you, so the lines stretch out towards the horizon.
+    vec2 uv = d.xz / (abs(h) + 0.42) * 0.42;
+    float time = t * 0.32 + 23.0;
+    float light = causticLayer(uv, time) * 0.75 + causticLayer(uv * 1.63 + vec2(0.37, 0.71), time * 0.83) * 0.4;
+    light = clamp(light, 0.0, 1.6);
+    vec3 col = mix(vec3(0.2, 0.205, 0.215), vec3(0.135, 0.14, 0.15), smoothstep(0.0, 0.8, h));
+    col += vec3(0.92, 0.94, 0.97) * light * (0.55 + 0.45 * smoothstep(-0.05, 0.25, h));
+    col = mix(col, vec3(0.11, 0.115, 0.12), sstep(0.0, -0.3, h));
+    return col;
+}
+
 // ---- your own picture ------------------------------------------------------------------------
 
 // A skybox laid out as a horizontal cross, four faces across the middle (left, front, right, back,
 // front facing south) with the top above the front and the bottom below it.
 vec3 cubeCross(vec3 d) {
+    bool atlas = int(View.z + 0.5) == 3;
     vec3 a = abs(d);
     vec3 c, r, t;
     vec2 cell;
     if (a.y >= a.x && a.y >= a.z) {
         if (d.y > 0.0) { c = UP; r = vec3(-1.0, 0.0, 0.0); t = vec3(0.0, 0.0, -1.0); cell = vec2(1.0, 0.0); }
-        else { c = -UP; r = vec3(-1.0, 0.0, 0.0); t = vec3(0.0, 0.0, 1.0); cell = vec2(1.0, 2.0); }
+        else { c = -UP; r = vec3(-1.0, 0.0, 0.0); t = vec3(0.0, 0.0, 1.0); cell = atlas ? vec2(0.0, 0.0) : vec2(1.0, 2.0); }
     } else if (a.z >= a.x) {
-        if (d.z > 0.0) { c = vec3(0.0, 0.0, 1.0); r = vec3(-1.0, 0.0, 0.0); t = UP; cell = vec2(1.0, 1.0); }
-        else { c = vec3(0.0, 0.0, -1.0); r = vec3(1.0, 0.0, 0.0); t = UP; cell = vec2(3.0, 1.0); }
+        if (d.z > 0.0) { c = vec3(0.0, 0.0, 1.0); r = vec3(-1.0, 0.0, 0.0); t = UP; cell = atlas ? vec2(2.0, 0.0) : vec2(1.0, 1.0); }
+        else { c = vec3(0.0, 0.0, -1.0); r = vec3(1.0, 0.0, 0.0); t = UP; cell = atlas ? vec2(1.0, 1.0) : vec2(3.0, 1.0); }
     } else {
-        if (d.x > 0.0) { c = vec3(1.0, 0.0, 0.0); r = vec3(0.0, 0.0, 1.0); t = UP; cell = vec2(0.0, 1.0); }
-        else { c = vec3(-1.0, 0.0, 0.0); r = vec3(0.0, 0.0, -1.0); t = UP; cell = vec2(2.0, 1.0); }
+        if (d.x > 0.0) { c = vec3(1.0, 0.0, 0.0); r = vec3(0.0, 0.0, 1.0); t = UP; cell = atlas ? vec2(2.0, 1.0) : vec2(0.0, 1.0); }
+        else { c = vec3(-1.0, 0.0, 0.0); r = vec3(0.0, 0.0, -1.0); t = UP; cell = atlas ? vec2(0.0, 1.0) : vec2(2.0, 1.0); }
     }
     vec2 f = vec2(dot(d, r), dot(d, t)) / dot(d, c);       // -1 to 1 across the face
     vec2 uv = vec2(f.x, -f.y) * 0.5 + 0.5;                  // 0 to 1 from its top left
-    vec2 facePixels = vec2(textureSize(u_Sky, 0)) / vec2(4.0, 3.0);
+    if (atlas && a.y >= a.x && a.y >= a.z) uv = 1.0 - uv;
+    vec2 grid = atlas ? vec2(3.0, 2.0) : vec2(4.0, 3.0);
+    vec2 facePixels = vec2(textureSize(u_Sky, 0)) / grid;
     uv = clamp(uv, 0.5 / facePixels, 1.0 - 0.5 / facePixels);  // never bleed into the next face
-    return textureLod(u_Sky, (cell + uv) / vec2(4.0, 3.0), 0.0).rgb;
+    return textureLod(u_Sky, (cell + uv) / grid, 0.0).rgb;
 }
 
-// 15: the player's picture.
+// 16: the player's picture.
 vec3 imageSky(vec3 d) {
     float c = cos(ImageParams.x), s = sin(ImageParams.x);
     d = vec3(c * d.x - s * d.z, d.y, s * d.x + c * d.z);
@@ -632,7 +666,7 @@ vec3 imageSky(vec3 d) {
     float around = 0.5 + atan(-d.x, d.z) / TAU;
     float elevation = asin(clamp(d.y, -1.0, 1.0));
     if (fit == 0) return textureLod(u_Sky, vec2(around, 0.5 - elevation / PI), 0.0).rgb;
-    if (fit == 2) return cubeCross(d);
+    if (fit == 2 || fit == 3) return cubeCross(d);
     // Wrapped: copies side by side round the horizon, from a little below the horizon up; beyond
     // them the picture's own edge colours. Mirroring every other copy makes neighbours meet
     // seamlessly but flips any writing, so it is only done when asked for.
@@ -663,6 +697,7 @@ vec3 sky(int index, vec3 d, float t) {
         case 12: return blackHole(d, t);
         case 13: return prism(d, t);
         case 14: return thunderstorm(d, t);
+        case 15: return caustics(d, t);
         default: return imageSky(d);
     }
 }

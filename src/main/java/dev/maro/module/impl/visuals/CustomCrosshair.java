@@ -174,6 +174,12 @@ public final class CustomCrosshair extends Module {
         }
     }
 
+    public void renderPreview(DrawContext ctx,float x,float y){
+        var matrices=ctx.getMatrices();matrices.pushMatrix();
+        try{matrices.translate(x,y);matrices.rotate(spinAngle());drawCrosshair(ctx,0,0);}
+        finally{matrices.popMatrix();}
+    }
+
     /** How far round the crosshair has turned, in radians, clockwise on screen: 0 unless Spin is on. */
     public float spinAngle() {
         if (!spin.get()) return 0;
@@ -205,6 +211,7 @@ public final class CustomCrosshair extends Module {
 
     /** The typed text, centred on the screen centre, with the outline round it when that is on. */
     private void drawText(DrawContext ctx, String s, float x, float y, float height, int tint) {
+        s = dev.maro.gui.render.SmoothHudText.display(s);
         if (s.isBlank()) return;
         float ow = outline.get() ? outlineWidth.getFloat() : 0;
         float oldAlpha = Render2D.getAlpha();

@@ -29,13 +29,25 @@ public class SettingsPage extends Page {
 
     @Override
     public void render(DrawContext ctx, float x, float y, float w, float h) {
-        float off = scroll.update();
         float lw = w - 6;
+        if(h<210){
+            float button=Math.min(98,(lw-18)/4);
+            Widgets.button(gui,ctx,"save-compact",x,y,button,22,"Save now",Widgets.Style.PRIMARY,Icons.CHECK,ConfigManager::saveAll);
+            Widgets.button(gui,ctx,"center-compact",x+button+6,y,button,22,"Center",Widgets.Style.SECONDARY,Icons.REFRESH,ClickGuiScreen::resetPosition);
+            Widgets.button(gui,ctx,"accounts-compact",x+2*(button+6),y,button,22,"Accounts",Widgets.Style.SECONDARY,Icons.PLAYER,
+                ()->net.minecraft.client.MinecraftClient.getInstance().setScreen(new dev.maro.gui.accounts.AccountsScreen(gui)));
+            Widgets.button(gui,ctx,"reset-compact",x+3*(button+6),y,button,22,System.currentTimeMillis()-resetConfirm<3000?"Confirm reset":"Reset settings",Widgets.Style.DANGER,null,()->{
+                if(System.currentTimeMillis()-resetConfirm<3000){for(var section:ClientSettings.ALL)section.getSettings().forEach(Setting::reset);resetConfirm=0;}
+                else resetConfirm=System.currentTimeMillis();
+            });
+            list.renderPaged(gui,ctx,x,y+32,lw,h-32,ClientSettings.GENERAL_PAGE,false);
+            return;
+        }
         gui.pushClip(x - 6, y, w + 12, h);
-        float cy = y + 1 - off;
+        float cy = y + 1;
 
         float r = Theme.radius();
-        float ch = 56;
+        float ch = 64;
         Render2D.roundRect(ctx, x, cy, lw, ch, r, Theme.CARD);
         Render2D.roundGradientH(ctx, x, cy, lw, ch, r, Theme.accent(0x1C), Theme.accent2(0x00));
         Render2D.roundOutline(ctx, x, cy, lw, ch, r, 1f, Theme.BORDER);
@@ -61,11 +73,11 @@ public class SettingsPage extends Page {
                 resetConfirm = System.currentTimeMillis();
             }
         });
+        Widgets.button(gui,ctx,"accounts",x+lw-78,cy+7,70,18,"Accounts",Widgets.Style.SECONDARY,Icons.PLAYER,
+                () -> net.minecraft.client.MinecraftClient.getInstance().setScreen(new dev.maro.gui.accounts.AccountsScreen(gui)));
         cy += ch + 8;
 
-        float content = list.render(gui, ctx, x, cy, lw, ClientSettings.GENERAL_PAGE);
+        list.renderPaged(gui, ctx, x, cy, lw,h-73,ClientSettings.GENERAL_PAGE,true);
         gui.popClip();
-        scroll.setBounds(ch + 8 + content + 4, h);
-        scroll.drawBar(gui, ctx, x + w - 2, y, h);
     }
 }

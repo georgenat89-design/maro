@@ -88,9 +88,18 @@ public final class Widgets {
     }
 
     /** Key chip ("RShift", "None", "...") that starts listening for a new bind when clicked. Returns width. */
+    /** What a keybind chip says: the key, "Bind" with none, or "Press a key" while waiting for one. */
+    private static String bindLabel(ClickGuiScreen gui, KeybindSetting bind) {
+        return gui.listening == bind ? "Press a key" : bind.isBound() ? bind.getKeyName() : "Bind";
+    }
+
+    public static float bindChipWidth(ClickGuiScreen gui, KeybindSetting bind) {
+        return Fonts.width(bindLabel(gui, bind), false, 0.72f) + 9;
+    }
+
     public static float bindChip(ClickGuiScreen gui, DrawContext ctx, KeybindSetting bind, float x, float cy, float scale) {
         boolean listening = gui.listening == bind;
-        String label = listening ? "Press a key" : bind.getKeyName();
+        String label = bindLabel(gui, bind);
         float h = 11f * scale;
         float w = Fonts.width(label, false, 0.72f) + 9;
         float y = cy - h / 2f;
@@ -129,7 +138,7 @@ public final class Widgets {
     }
 
     public static void sectionLabel(DrawContext ctx, String text, float x, float y, float w) {
-        Fonts.draw(ctx, text.toUpperCase(), x, y, Theme.TEXT_MUTED, true, 0.68f);
+        Fonts.draw(ctx, text.toUpperCase(), x, y, Theme.title(null), true, 0.68f);
         float tw = Fonts.width(text.toUpperCase(), true, 0.68f);
         Render2D.rectGradient(ctx, x + tw + 6, y + 2.2f, Math.max(0, w - tw - 6), Render2D.px(),
                 ColorUtil.withAlpha(Theme.BORDER, 0xFF), ColorUtil.withAlpha(Theme.BORDER, 0), ColorUtil.withAlpha(Theme.BORDER, 0), ColorUtil.withAlpha(Theme.BORDER, 0xFF));
