@@ -31,7 +31,6 @@ final class KeyboardStrokesChecks {
         KeyboardStrokes module = ModuleManager.get(KeyboardStrokes.class);
         require(module != null, "Keyboard Strokes was not registered");
         require(ModuleManager.getByName("Keystrokes") == null, "The old Keystrokes module should be removed");
-        String layout = ClientSettings.menuStyle.get();
         boolean floating = ClientSettings.screenGui.get();
         try {
             context.runOnClient(c -> {
@@ -61,10 +60,9 @@ final class KeyboardStrokesChecks {
                 context.getInput().releaseKey(o -> o.forwardKey);
                 context.getInput().releaseKey(o -> o.jumpKey);
             }
-            for (String style : new String[] {"Panels", "Window"}) {
+            for (String style : new String[] {"Window"}) {
                 for (boolean screenGui : new boolean[] {false}) {
                     context.runOnClient(c -> {
-                        ClientSettings.menuStyle.set(style);
                         ClientSettings.screenGui.set(screenGui);
                         c.setScreen(new ClickGuiScreen());
                         var gui = (ClickGuiScreen) c.currentScreen;
@@ -74,14 +72,12 @@ final class KeyboardStrokesChecks {
                     context.waitTicks(12);
                     context.runOnClient(c -> {
                         var gui = (ClickGuiScreen) c.currentScreen;
-                        if (style.equals("Panels")) {
-                            var row = gui.panelPlace(module);
-                            require(row != null, "Keyboard Strokes missing from Panels search");
-                            var point = gui.screenPose().project(row[0], row[1]);
-                            var click = new Click(point[0], point[1], new MouseInput(1, 0));
-                            gui.mouseClicked(click, false); gui.mouseReleased(click);
-                        } else gui.openModuleSettings(module);
-                        require(c.currentScreen instanceof KeyboardStrokesScreen, "Right-click should open the key chooser");
+                        var card = gui.modulePlace(module);
+                        require(card != null, "Keyboard Strokes missing from the search");
+                        var point = gui.screenPose().project(card[0], card[1]);
+                        var click = new Click(point[0], point[1], new MouseInput(0, 0));
+                        gui.mouseClicked(click, false); gui.mouseReleased(click);
+                        require(c.currentScreen instanceof KeyboardStrokesScreen, "Left-click should open the key chooser");
                     });
                     context.waitTicks(8);
                     require(!context.computeOnClient(c -> ScreenGuiSurface.hasResources()), "Opening chooser leaked the menu surface");
@@ -133,7 +129,7 @@ final class KeyboardStrokesChecks {
         } finally {
             context.runOnClient(c -> {
                 c.setScreen(null);
-                ClientSettings.menuStyle.set(layout); ClientSettings.screenGui.set(floating);
+                ClientSettings.screenGui.set(floating);
                 module.setEnabled(false);
                 module.getSettings().forEach(Setting::reset);
             });

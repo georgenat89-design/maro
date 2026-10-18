@@ -23,6 +23,11 @@ public final class Scroll {
         target = Math.max(0f, Math.min(max, target - (float) amount * 30f));
     }
 
+    /** Eases to {@code offset} (clamped to the content), e.g. to bring a section to the top. */
+    public void scrollTo(float offset) {
+        target = Math.max(0f, Math.min(max, offset));
+    }
+
     /** Advances the animation; call once per frame before layout. */
     public float update() {
         value = anim.update(target);

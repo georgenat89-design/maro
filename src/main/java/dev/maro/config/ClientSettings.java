@@ -19,9 +19,7 @@ public final class ClientSettings {
 
     public static final SettingSection INTERFACE = new SettingSection("Interface");
     public static final KeybindSetting guiBind = INTERFACE.add(new KeybindSetting("Menu Keybind", "Key that opens this menu", GLFW.GLFW_KEY_RIGHT_SHIFT));
-    public static final ModeSetting menuStyle = INTERFACE.add(new ModeSetting("Menu Style",
-            "Panels shows every category side by side, Window is one window with a tab per category", "Panels", "Panels", "Window"));
-    public static final NumberSetting guiSize = INTERFACE.add(new NumberSetting("GUI Size", "Size of both menu layouts", 85, 50, 100, 5).suffix("%"));
+    public static final NumberSetting guiSize = INTERFACE.add(new NumberSetting("GUI Size", "Size of the menu", 85, 50, 100, 5).suffix("%"));
     public static final BooleanSetting screenGui = INTERFACE.add(new BooleanSetting("Screen GUI", "Place the menu in the world. Walk and look normally; aim your crosshair and click to configure it", false));
     public static final NumberSetting screenDistance = INTERFACE.add(new NumberSetting("Screen Distance", "How far in front of you the menu appears when opened", 3, 1.5, 6, .25).suffix("m").visible(screenGui::get));
     public static final BooleanSetting customFont = INTERFACE.add(new BooleanSetting("Custom Font", "Use the Inter font instead of the Minecraft font", true));

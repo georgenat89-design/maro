@@ -211,7 +211,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             }
             settle(context);
             context.takeScreenshot("maro-01-open");
-            PanelChecks.run(context);
+            MenuChecks.run(context);
 
             String[] pages = {"combat", "movement", "player", "visuals", "misc", "anti-cheat-off", "settings", "configs", "theme", "socials"};
             for (int i = 0; i < pages.length; i++) {
@@ -229,7 +229,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
             settle(context);
             context.takeScreenshot("maro-module-settings");
 
-            // Bigger modules open on a card per category; a card opens just that category.
+            // Bigger modules show a card per section; a section can be opened by name.
             context.runOnClient(client -> ((ClickGuiScreen) client.currentScreen)
                     .openModuleSettings(ModuleManager.get(dev.maro.module.impl.visuals.Compass.class)));
             settle(context);
@@ -238,17 +238,21 @@ public class MaroClientGameTest implements FabricClientGameTest {
                     .openModuleSettings(ModuleManager.get(dev.maro.module.impl.visuals.Compass.class), "Look"));
             settle(context);
             context.takeScreenshot("maro-settings-category");
-            context.getInput().pressKey(GLFW.GLFW_KEY_ESCAPE); // back to the categories
+            // A module that changes how players look previews your character.
+            context.runOnClient(client -> ((ClickGuiScreen) client.currentScreen)
+                    .openModuleSettings(ModuleManager.get(dev.maro.module.impl.visuals.PlayerESP.class)));
             settle(context);
-            context.takeScreenshot("maro-settings-back");
+            context.takeScreenshot("maro-settings-preview");
 
-            context.getInput().pressKey(GLFW.GLFW_KEY_ESCAPE); // back to the grid
+            context.getInput().pressKey(GLFW.GLFW_KEY_ESCAPE); // closes the settings panel
             settle(context);
+            if (!context.computeOnClient(client -> client.currentScreen instanceof ClickGuiScreen gui && gui.settingsModule() == null))
+                throw new AssertionError("Escape did not close the settings panel");
             context.getInput().typeChars("exa");
             settle(context);
             context.takeScreenshot("maro-search");
 
-            // Escape clears the search, unfocuses it, goes back to the panels, then closes the menu
+            // Escape clears the search, unfocuses it, then closes the menu
             for (int i = 0; i < 6 && context.computeOnClient(client -> client.currentScreen instanceof ClickGuiScreen); i++) {
                 context.getInput().pressKey(GLFW.GLFW_KEY_ESCAPE);
                 settle(context);

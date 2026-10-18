@@ -1,0 +1,14 @@
+-proc:none
+-Xmaxerrs
+2000
+-d
+/tmp/claude-0/-home-user-maro/69745905-2fbf-5091-a8ca-101b31c8c2d3/scratchpad/jc
+-sourcepath
+src/main/java
+src/main/java/dev/maro/gui/ClickGuiScreen.java
+src/main/java/dev/maro/gui/SettingsPanel.java
+src/main/java/dev/maro/gui/page/ModulesPage.java
+src/main/java/dev/maro/gui/widget/SettingsList.java
+src/main/java/dev/maro/gui/ModuleIcons.java
+src/main/java/dev/maro/gui/Favorites.java
+src/main/java/dev/maro/gui/render/Glyphs.java

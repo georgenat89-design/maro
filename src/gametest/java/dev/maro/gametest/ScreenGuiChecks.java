@@ -54,7 +54,6 @@ final class ScreenGuiChecks {
                 ClientSettings.backgroundDim.set(false);
                 ClientSettings.backgroundBlur.set(false);
                 ClientSettings.screenDistance.set(4d);
-                ClientSettings.menuStyle.set("Panels");
                 ClientSettings.screenGui.set(true);
                 ConfigManager.saveClient();
                 ClientSettings.screenGui.set(false);
@@ -62,82 +61,74 @@ final class ScreenGuiChecks {
                 ConfigManager.loadClient();
                 require(ClientSettings.screenGui.get() && ClientSettings.screenDistance.getInt() == 4, "Screen GUI settings did not persist");
             });
-            for (String layout : new String[] {"Panels", "Window"}) {
-                for (boolean floating : new boolean[] {false}) {
-                    context.runOnClient(c -> {
-                        ClientSettings.menuStyle.set(layout);
-                        ClientSettings.screenGui.set(floating);
-                        ClientSettings.customFont.set(true);
-                        ClickGuiScreen.resetPosition();
-                        c.setScreen(new ClickGuiScreen());
-                        var gui = (ClickGuiScreen) c.currentScreen;
-                        if (layout.equals("Window")) gui.openPage(Category.VISUALS.ordinal());
-                        gui.mouseMoved(gui.width * .85, gui.height * .22);
-                    });
-                    context.waitTicks(22);
-                    int frames = context.computeOnClient(c -> ScreenGuiSurface.drawnFrames());
-                    require(context.computeOnClient(c -> ClientSettings.screenGui.get()) == floating, "Screen GUI fell back after a rendering error");
-                    require(context.computeOnClient(c -> ScreenGuiSurface.hasResources()) == floating, "Screen GUI allocation state differs from setting");
-                    if (floating) require(frames > 0, "No perspective GPU frames drawn");
-                    context.takeScreenshot("maro-screen-gui-" + layout.toLowerCase() + (floating ? "-floating" : "-flat"));
-                    context.runOnClient(c -> {
-                        var gui = (ClickGuiScreen) c.currentScreen;
-                        for (int x = 0; x <= gui.width; x += 17) for (int y = 0; y <= gui.height; y += 19) {
-                            double[] projected = gui.screenPose().project(x, y);
-                            double[] picked = gui.screenPose().unproject(projected[0], projected[1]);
-                            require(Math.abs(picked[0] - x) < .01 && Math.abs(picked[1] - y) < .01, "Projective picking drift");
-                        }
-                        if (layout.equals("Panels")) {
-                            float[] row = gui.panelPlace(example);
-                            require(row != null, "Example row missing");
-                            double[] point = gui.screenPose().project(row[0], row[1]);
-                            boolean before = example.isEnabled();
-                            Click click = new Click(point[0], point[1], new MouseInput(0, 0));
-                            gui.mouseClicked(click, false); gui.mouseReleased(click);
-                            require(example.isEnabled() != before, "Projected row click missed");
-                            Click right = new Click(point[0], point[1], new MouseInput(1, 0));
-                            gui.mouseClicked(right, false); gui.mouseReleased(right);
-                            require(gui.panelSettingsModule() == example, "Projected settings click missed");
-                        } else gui.openModuleSettings(example);
-                    });
-                    context.waitTicks(12);
-                    context.takeScreenshot("maro-screen-gui-" + layout.toLowerCase() + (floating ? "-floating-settings" : "-flat-settings"));
-                    var dropdownModule = layout.equals("Window") ? ModuleManager.getByName("Custom Sky") : example;
-                    if (layout.equals("Window")) {
-                        context.runOnClient(c -> ((ClickGuiScreen) c.currentScreen).openModuleSettings(dropdownModule, "Sky"));
-                        context.waitTicks(12);
+            for (boolean floating : new boolean[] {false}) {
+                context.runOnClient(c -> {
+                    ClientSettings.screenGui.set(floating);
+                    ClientSettings.customFont.set(true);
+                    ClickGuiScreen.resetPosition();
+                    c.setScreen(new ClickGuiScreen());
+                    var gui = (ClickGuiScreen) c.currentScreen;
+                    gui.openPage(example.getCategory().ordinal());
+                    gui.mouseMoved(gui.width * .85, gui.height * .22);
+                });
+                context.waitTicks(22);
+                int frames = context.computeOnClient(c -> ScreenGuiSurface.drawnFrames());
+                require(context.computeOnClient(c -> ClientSettings.screenGui.get()) == floating, "Screen GUI fell back after a rendering error");
+                require(context.computeOnClient(c -> ScreenGuiSurface.hasResources()) == floating, "Screen GUI allocation state differs from setting");
+                if (floating) require(frames > 0, "No perspective GPU frames drawn");
+                context.takeScreenshot("maro-screen-gui-window" + (floating ? "-floating" : "-flat"));
+                context.runOnClient(c -> {
+                    var gui = (ClickGuiScreen) c.currentScreen;
+                    for (int x = 0; x <= gui.width; x += 17) for (int y = 0; y <= gui.height; y += 19) {
+                        double[] projected = gui.screenPose().project(x, y);
+                        double[] picked = gui.screenPose().unproject(projected[0], projected[1]);
+                        require(Math.abs(picked[0] - x) < .01 && Math.abs(picked[1] - y) < .01, "Projective picking drift");
                     }
-                    String dropdownName = layout.equals("Window") ? "Sky" : "Mode";
-                    var mode = (dev.maro.setting.ModeSetting) dropdownModule.getSettings().stream().filter(s -> s.getName().equals(dropdownName)).findFirst().orElseThrow();
-                    context.runOnClient(c -> dev.maro.gui.widget.Dropdown.toggle(mode));
-                    context.waitTicks(6);
-                    require(context.computeOnClient(c -> dev.maro.gui.widget.Dropdown.isOpen(mode)), "Settings dropdown lost its projected anchor");
-                    context.takeScreenshot("maro-screen-gui-" + layout.toLowerCase() + (floating ? "-floating-dropdown" : "-flat-dropdown"));
-                    context.runOnClient(c -> dev.maro.gui.widget.Dropdown.close());
-                    context.runOnClient(c -> ClientSettings.customFont.set(false));
-                    context.waitTicks(5);
-                    context.takeScreenshot("maro-screen-gui-" + layout.toLowerCase() + (floating ? "-floating-vanilla-font" : "-flat-vanilla-font"));
-                    if (layout.equals("Window")) {
-                        context.runOnClient(c -> {
-                            var gui = (ClickGuiScreen) c.currentScreen;
-                            double[] point = gui.screenPose().project(66, gui.menuHeight() - 36.5);
-                            Click click = new Click(point[0], point[1], new MouseInput(0, 0));
-                            gui.mouseClicked(click, false); gui.mouseReleased(click);
-                        });
-                        context.waitTicks(5);
-                        require(context.computeOnClient(c -> ClientSettings.screenGui.get()) != floating, "Sidebar Screen GUI shortcut missed");
-                        require(context.computeOnClient(c -> ScreenGuiSurface.hasResources()) != floating, "Live Screen GUI toggle did not change allocation state");
-                    }
-                    context.runOnClient(c -> c.setScreen(null));
-                    context.waitTicks(2);
-                    require(!context.computeOnClient(c -> ScreenGuiSurface.hasResources()), "Closing the menu leaked GPU resources");
-                    System.out.println("[screen-gui-proof] " + layout + " floating=" + floating + " render/picking/fonts/close passed");
-                }
+                    float[] card = gui.modulePlace(example);
+                    require(card != null, "Example card missing");
+                    double[] point = gui.screenPose().project(card[0], card[1]);
+                    boolean before = example.isEnabled();
+                    Click right = new Click(point[0], point[1], new MouseInput(1, 0));
+                    gui.mouseClicked(right, false); gui.mouseReleased(right);
+                    require(example.isEnabled() != before, "Projected card right click missed");
+                    Click left = new Click(point[0], point[1], new MouseInput(0, 0));
+                    gui.mouseClicked(left, false); gui.mouseReleased(left);
+                    require(gui.settingsModule() == example, "Projected settings click missed");
+                });
+                context.waitTicks(12);
+                context.takeScreenshot("maro-screen-gui-window" + (floating ? "-floating-settings" : "-flat-settings"));
+                var dropdownModule = ModuleManager.getByName("Custom Sky");
+                context.runOnClient(c -> ((ClickGuiScreen) c.currentScreen).openModuleSettings(dropdownModule, "Sky"));
+                context.waitTicks(12);
+                var mode = (dev.maro.setting.ModeSetting) dropdownModule.getSettings().stream().filter(s -> s.getName().equals("Sky")).findFirst().orElseThrow();
+                context.runOnClient(c -> dev.maro.gui.widget.Dropdown.toggle(mode));
+                context.waitTicks(6);
+                require(context.computeOnClient(c -> dev.maro.gui.widget.Dropdown.isOpen(mode)), "Settings dropdown lost its projected anchor");
+                context.takeScreenshot("maro-screen-gui-window" + (floating ? "-floating-dropdown" : "-flat-dropdown"));
+                context.runOnClient(c -> dev.maro.gui.widget.Dropdown.close());
+                context.runOnClient(c -> ClientSettings.customFont.set(false));
+                context.waitTicks(5);
+                context.takeScreenshot("maro-screen-gui-window" + (floating ? "-floating-vanilla-font" : "-flat-vanilla-font"));
+                context.runOnClient(c -> {
+                    var gui = (ClickGuiScreen) c.currentScreen;
+                    float[] at = gui.placeOf(ClickGuiScreen.SCREEN_GUI_SWITCH);
+                    require(at != null, "Sidebar Screen GUI switch missing");
+                    double[] point = gui.screenPose().project(at[0], at[1]);
+                    Click click = new Click(point[0], point[1], new MouseInput(0, 0));
+                    gui.mouseClicked(click, false); gui.mouseReleased(click);
+                });
+                context.waitTicks(5);
+                require(context.computeOnClient(c -> ClientSettings.screenGui.get()) != floating, "Sidebar Screen GUI shortcut missed");
+                require(context.computeOnClient(c -> ScreenGuiSurface.hasResources()) != floating, "Live Screen GUI toggle did not change allocation state");
+                context.runOnClient(c -> c.setScreen(null));
+                context.waitTicks(2);
+                require(!context.computeOnClient(c -> ScreenGuiSurface.hasResources()), "Closing the menu leaked GPU resources");
+                System.out.println("[screen-gui-proof] window floating=" + floating + " render/picking/fonts/close passed");
             }
             WorldScreenGuiChecks.run(context);
             context.getInput().resizeWindow(854, 480);
             context.runOnClient(c -> {
-                ClientSettings.menuStyle.set("Window"); ClientSettings.screenGui.set(true); ClientSettings.customFont.set(true);
+                ClientSettings.screenGui.set(true); ClientSettings.customFont.set(true);
                 c.setScreen(new ClickGuiScreen());
                 ((ClickGuiScreen) c.currentScreen).openPage(Category.VISUALS.ordinal());
             });
@@ -147,7 +138,7 @@ final class ScreenGuiChecks {
             context.waitTicks(10);
             context.takeScreenshot("maro-screen-gui-resized");
 
-            System.out.println("[screen-gui-lifecycle-proof] settings persistence, both layouts, inverse picking, world placement and crosshair control, resize and resource cleanup passed");
+            System.out.println("[screen-gui-lifecycle-proof] settings persistence, the window, inverse picking, world placement and crosshair control, resize and resource cleanup passed");
         } finally {
             context.runOnClient(c -> {
                 c.setScreen(null);

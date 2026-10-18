@@ -17,6 +17,7 @@
 - Poppins font: SIL Open Font License in `LICENSES/OFL-1.1-Poppins.txt`.
 - Barlow Condensed font: SIL Open Font License in `LICENSES/BarlowCondensed-OFL.txt`.
 - Inter font: original Maro notice in `src/main/resources/INTER_LICENSE.txt`.
+- Lucide icons 1.59.0 (https://lucide.dev): the menu's module and interface icons, a 104-icon subset of `lucide-static`'s `lucide.ttf` in `assets/maro/font/lucide.ttf`. ISC License, with the MIT notice for the icons derived from Feather, retained in `LICENSES/ISC-Lucide.txt`.
 - SnakeYAML 2.7: Apache License 2.0, bundled as a nested dependency with its original license notices. Used with safe loading to read LRCLIB word timestamps.
 
 The local `dev.maro.runtime` package implements the module APIs on Fabric and Maro. It does not bundle Meteor Client or Orbit binaries. The `nameeprotect` resource namespace is retained so existing Nathan shaders, textures, and fonts resolve correctly.

@@ -24,18 +24,9 @@ final class WorldScreenGuiChecks {
         context.waitTicks(4);
     }
     private static double[] row(ClickGuiScreen gui, dev.maro.module.Module module) {
-        if (gui.showingPanels()) { var p = gui.panelPlace(module); return new double[] {p[0], p[1]}; }
-        try {
-            var field = ClickGuiScreen.class.getDeclaredField("hits"); field.setAccessible(true);
-            for (var hit : (java.util.List<?>) field.get(gui)) {
-                var type = hit.getClass(); var h = type.getDeclaredMethod("h"); h.setAccessible(true);
-                if (Math.abs((float) h.invoke(hit) - 40) > .01) continue;
-                var x = type.getDeclaredMethod("x"); var y = type.getDeclaredMethod("y");
-                x.setAccessible(true); y.setAccessible(true);
-                return new double[] {(float) x.invoke(hit) + 20, (float) y.invoke(hit) + 20};
-            }
-        } catch (ReflectiveOperationException e) { throw new AssertionError(e); }
-        throw new AssertionError("No module card was drawn");
+        float[] place = gui.modulePlace(module);
+        if (place == null) throw new AssertionError("No module card was drawn");
+        return new double[] {place[0], place[1]};
     }
     private static Vec3d settingPoint(ClickGuiScreen gui, Object setting, double fraction) {
         try {
@@ -62,9 +53,9 @@ final class WorldScreenGuiChecks {
         boolean on = example.isEnabled();
         var savedSettings = example.getSettings().stream().map(dev.maro.setting.Setting::toJson).toList();
         try {
-            for (String layout : new String[] {"Panels", "Window"}) {
+            for (String layout : new String[] {"Window"}) {
                 context.runOnClient(c -> {
-                    ClientSettings.menuStyle.set(layout); ClientSettings.screenGui.set(true); ClientSettings.screenDistance.set(3d);
+                    ClientSettings.screenGui.set(true); ClientSettings.screenDistance.set(3d);
                     ClientSettings.customFont.set(true); c.options.setPerspective(net.minecraft.client.option.Perspective.FIRST_PERSON);
                     c.player.setYaw(0); c.player.setPitch(0);
                     c.setScreen(new ClickGuiScreen()); gui(c).getSearch().setText("Example");
@@ -93,12 +84,13 @@ final class WorldScreenGuiChecks {
                 var target = context.computeOnClient(c -> { var p = row(gui(c), example); return gui(c).screenPose().worldPoint(p[0], p[1]); });
                 aim(context, target);
                 boolean before = context.computeOnClient(c -> example.isEnabled());
-                context.getInput().pressMouse(GLFW.GLFW_MOUSE_BUTTON_LEFT);
-                require(context.computeOnClient(c -> example.isEnabled()) != before, "Native crosshair click missed module in " + layout);
-                context.runOnClient(c -> require(!c.options.attackKey.isPressed() && !c.options.useKey.isPressed(), "World GUI clicks leaked mining or item use"));
                 context.getInput().pressMouse(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
+                require(context.computeOnClient(c -> example.isEnabled()) != before, "Native crosshair right click missed module in " + layout);
+                context.runOnClient(c -> require(!c.options.attackKey.isPressed() && !c.options.useKey.isPressed(), "World GUI clicks leaked mining or item use"));
+                context.getInput().pressMouse(GLFW.GLFW_MOUSE_BUTTON_LEFT);
                 context.waitTicks(8);
-                require(context.computeOnClient(c -> c.currentScreen instanceof ClickGuiScreen), "Crosshair settings click closed the world menu");
+                require(context.computeOnClient(c -> c.currentScreen instanceof ClickGuiScreen && gui(c).settingsModule() == example),
+                        "Crosshair left click did not open the settings in the world menu");
                 var flag = (dev.maro.setting.BooleanSetting) example.getSettings().get(0);
                 var amount = (dev.maro.setting.NumberSetting) example.getSettings().get(1);
                 aim(context, context.computeOnClient(c -> settingPoint(gui(c), flag, .75)));

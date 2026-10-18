@@ -1,6 +1,5 @@
 package dev.maro.gametest;
 
-import dev.maro.config.ClientSettings;
 import dev.maro.gui.ClickGuiScreen;
 import dev.maro.module.Category;
 import dev.maro.module.Module;
@@ -45,16 +44,17 @@ public final class AntiCheatOffChecks {
         var initial = ctx.computeOnClient(c -> c.player.getEntityPos());
         var initialMode = world.getServer().computeOnServer(s -> s.getPlayerManager().getPlayerList().getFirst().interactionManager.getGameMode());
         var initialAngles = ctx.computeOnClient(c -> new float[]{c.player.getYaw(), c.player.getPitch()});
-        var initialMenu = ClientSettings.menuStyle.get();
         try {
-            ctx.runOnClient(c -> { ClientSettings.menuStyle.set("Panels"); c.setScreen(new ClickGuiScreen()); });
+            ctx.runOnClient(c -> { c.setScreen(new ClickGuiScreen()); ((ClickGuiScreen)c.currentScreen).getSearch().setText("boat"); });
             ctx.waitTicks(12);
-            require(ctx.computeOnClient(c -> ((ClickGuiScreen)c.currentScreen).panelPlace(fly) == null), "Locked panel exposed boat controls");
+            require(ctx.computeOnClient(c -> ((ClickGuiScreen)c.currentScreen).modulePlace(fly) == null), "Locked section exposed boat controls in search");
+            ctx.runOnClient(c -> ((ClickGuiScreen)c.currentScreen).getSearch().clear());
             ctx.runOnClient(c -> ((ClickGuiScreen)c.currentScreen).openPage(Category.ANTI_CHEAT_OFF.ordinal()));
             ctx.waitTicks(12); ctx.takeScreenshot("maro-ac-off-entry");
             ctx.runOnClient(c -> { var gui = (ClickGuiScreen)c.currentScreen; var at = gui.antiCheatCancelPlace(); gui.clickAt(at[0], at[1], 0); });
             ctx.waitTicks(12);
-            require(ctx.computeOnClient(c -> ((ClickGuiScreen)c.currentScreen).showingPanels() && !((ClickGuiScreen)c.currentScreen).antiCheatSectionUnlocked()), "Cancel entered AC section");
+            require(ctx.computeOnClient(c -> ((ClickGuiScreen)c.currentScreen).selectedPage() != Category.ANTI_CHEAT_OFF.ordinal()
+                    && !((ClickGuiScreen)c.currentScreen).antiCheatSectionUnlocked()), "Cancel entered AC section");
             ctx.runOnClient(c -> ((ClickGuiScreen)c.currentScreen).openPage(Category.ANTI_CHEAT_OFF.ordinal()));
             ctx.waitTicks(12);
             ctx.runOnClient(c -> { var gui = (ClickGuiScreen)c.currentScreen; var at = gui.antiCheatEnterPlace(); gui.clickAt(at[0], at[1], 0); });
@@ -182,7 +182,6 @@ public final class AntiCheatOffChecks {
                 util.setEnabled(false); util.getSettings().forEach(Setting::reset);
                 ModuleManager.get(AutoTrident.class).setEnabled(false);
                 c.options.useKey.setPressed(false); c.options.jumpKey.setPressed(false); c.setScreen(null);
-                ClientSettings.menuStyle.set(initialMenu);
             });
             world.getServer().runCommand("gamemode " + initialMode.getId() + " @a");
             world.getServer().runCommand("tp @a " + initial.x + " " + initial.y + " " + initial.z + " " + initialAngles[0] + " " + initialAngles[1]);

@@ -1,0 +1,13 @@
+-proc:none
+-Xmaxerrs
+1000000
+-d
+/tmp/claude-0/-home-user-maro/69745905-2fbf-5091-a8ca-101b31c8c2d3/scratchpad/jc
+-sourcepath
+src/main/java:src/gametest/java
+src/gametest/java/dev/maro/gametest/MenuChecks.java
+src/gametest/java/dev/maro/gametest/ScreenGuiChecks.java
+src/gametest/java/dev/maro/gametest/WorldScreenGuiChecks.java
+src/gametest/java/dev/maro/gametest/KeyboardStrokesChecks.java
+src/gametest/java/dev/maro/gametest/AntiCheatOffChecks.java
+src/gametest/java/dev/maro/gametest/MaroClientGameTest.java
