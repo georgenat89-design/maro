@@ -4,6 +4,7 @@ package dev.maro.render.character.gltf;
 import com.google.gson.JsonElement;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -25,6 +26,10 @@ final class Skeleton {
     private static final List<String> HAND = List.of("hand", "wrist");
     private static final List<String> THIGH = List.of("thigh", "upleg", "upperleg", "legupper");
     private static final List<String> SHIN = List.of("calf", "shin", "knee", "lowerleg", "leglower", "loleg");
+    private static final List<String> CLAVICLE = List.of("clavicle", "shoulder", "collar", "clav");
+    private static final List<String> FOOT = List.of("foot", "ankle");
+    private static final List<String> TOE = List.of("toe", "ball");
+    private static final List<String> HIPS = List.of("hips", "pelvis", "hip", "lowertorso");
     int head = -1;
     final int[] upperArm = new int[]{-1, -1};
     final int[] forearm = new int[]{-1, -1};
@@ -111,6 +116,182 @@ final class Skeleton {
             s.shin[sd] = knee;
         }
         return s;
+    }
+
+    /**
+     * Finds every shared bone, hips to toes, among a file's nodes from their names and how they
+     * hang together: Mixamo ("mixamorig:LeftForeArm"), Unreal ("lowerarm_l"), Valve
+     * ("Bip01_L_Forearm"), Blender/Rigify ("DEF-forearm.L"), VRM/Unity ("LowerArm.L") and Roblox
+     * ("LeftLowerArm") rigs alike. The spine is found as the chain between the hips and the head;
+     * the chest is where the arms hang from it. Returns the node for each
+     * {@link dev.maro.render.character.skin.Human} bone, or -1. Only nodes marked usable (a skin's
+     * joints, when the file has any) can play a bone, so a mesh node named "head" does not.
+     */
+    static int[] roles(String[] names, int[] parent, float[] x, boolean[] usable) {
+        int n = names.length;
+        String[] core = new String[n];
+        int[] side = new int[n];
+        int[] depth = new int[n];
+        for (int i = 0; i < n; ++i) {
+            side[i] = -1;
+            StringBuilder b = new StringBuilder();
+            for (String w : words(names[i])) {
+                if (LEFT_WORDS.contains(w)) {
+                    side[i] = 1;
+                    continue;
+                }
+                if (RIGHT_WORDS.contains(w)) {
+                    side[i] = 0;
+                    continue;
+                }
+                if (NOISE.contains(w)) continue;
+                b.append(w);
+            }
+            core[i] = b.toString().replaceAll("\\d+$", "");
+            int d = 0;
+            for (int q = parent[i]; q >= 0 && d <= n; q = parent[q]) ++d;
+            depth[i] = d;
+        }
+        // Sides from position where the names do not say (facing +z, the right is -x).
+        for (int i = 0; i < n; ++i) if (side[i] < 0) side[i] = x[i] < 0 ? 0 : 1;
+        int[] role = new int[dev.maro.render.character.skin.Human.COUNT];
+        Arrays.fill(role, -1);
+        java.util.function.BiPredicate<Integer, Integer> under = (node, anc) -> {
+            for (int q = node, steps = 0; q >= 0 && steps <= n; q = parent[q], ++steps) if (q == anc) return true;
+            return false;
+        };
+        java.util.function.Function<IntPredicate, Integer> shallowest = test -> {
+            int best = -1;
+            for (int i = 0; i < n; ++i) {
+                if (!usable[i] || !test.test(i)) continue;
+                if (best < 0 || depth[i] < depth[best]) best = i;
+            }
+            return best;
+        };
+        java.util.function.BiPredicate<Integer, List<String>> is = (node, words) -> {
+            for (String w : words) if (core[node].contains(w)) return true;
+            return false;
+        };
+        java.util.function.IntUnaryOperator child = node -> {
+            int best = -1, bestSize = -1;
+            for (int c = 0; c < n; ++c) {
+                if (parent[c] != node || !usable[c]) continue;
+                int size = 0;
+                for (int k = 0; k < n; ++k) if (under.test(k, c)) ++size;
+                if (size > bestSize) {
+                    best = c;
+                    bestSize = size;
+                }
+            }
+            return best;
+        };
+        int head = shallowest.apply(i -> core[i].startsWith("head") && !core[i].contains("end") && !core[i].contains("top"));
+        int[][] arm = new int[2][4], leg = new int[2][4];
+        for (int sd = 0; sd < 2; ++sd) {
+            final int s2 = sd;
+            final int named = shallowest.apply(i -> side[i] == s2 && is.test(i, FOREARM));
+            int fore = named;
+            int upper = shallowest.apply(i -> side[i] == s2 && (is.test(i, UPPER_ARM) || core[i].equals("arm"))
+                    && (named < 0 || under.test(named, i) && i != named));
+            if (upper < 0 && fore >= 0) upper = parent[fore];
+            if (fore < 0 && upper >= 0) fore = child.applyAsInt(upper);
+            int hand = -1;
+            if (fore >= 0) {
+                final int f = fore;
+                hand = shallowest.apply(i -> i != f && under.test(i, f) && is.test(i, HAND));
+                if (hand < 0) hand = child.applyAsInt(fore);
+            }
+            int clav = -1;
+            if (upper >= 0) {
+                for (int q = parent[upper]; q >= 0; q = parent[q]) {
+                    if (is.test(q, CLAVICLE) && side[q] == sd) {
+                        clav = q;
+                        break;
+                    }
+                    if (core[q].contains("spine") || core[q].contains("chest") || core[q].contains("neck")) break;
+                }
+            }
+            arm[sd][0] = clav;
+            arm[sd][1] = upper;
+            arm[sd][2] = fore;
+            arm[sd][3] = hand;
+            final int knee = shallowest.apply(i -> side[i] == s2 && is.test(i, SHIN));
+            int shin = knee;
+            int thigh = shallowest.apply(i -> side[i] == s2 && (is.test(i, THIGH) || core[i].equals("leg"))
+                    && (knee < 0 || under.test(knee, i) && i != knee));
+            if (shin < 0 && thigh >= 0) {
+                final int h = thigh;
+                shin = shallowest.apply(i -> i != h && under.test(i, h) && core[i].equals("leg"));
+                if (shin < 0) shin = child.applyAsInt(thigh);
+            }
+            if (thigh < 0 && shin >= 0) thigh = parent[shin];
+            int foot = -1, toe = -1;
+            if (shin >= 0) {
+                final int k = shin;
+                foot = shallowest.apply(i -> i != k && under.test(i, k) && is.test(i, FOOT));
+                if (foot < 0) foot = child.applyAsInt(shin);
+            }
+            if (foot >= 0) {
+                final int f = foot;
+                toe = shallowest.apply(i -> i != f && under.test(i, f) && is.test(i, TOE) && !core[i].endsWith("end"));
+                if (toe < 0) {
+                    int c = child.applyAsInt(foot);
+                    if (c >= 0 && !core[c].endsWith("end")) toe = c;
+                }
+            }
+            leg[sd][0] = thigh;
+            leg[sd][1] = shin;
+            leg[sd][2] = foot;
+            leg[sd][3] = toe;
+        }
+        // The hips: where the legs meet, else whatever is named so.
+        int hips = -1;
+        if (leg[0][0] >= 0 && leg[1][0] >= 0) {
+            for (int q = parent[leg[0][0]]; q >= 0; q = parent[q]) {
+                if (under.test(leg[1][0], q)) {
+                    hips = q;
+                    break;
+                }
+            }
+        }
+        if (hips < 0) hips = shallowest.apply(i -> is.test(i, HIPS));
+        // The spine: the chain from the hips up to the head; the chest is where the arms hang from it.
+        List<Integer> chain = new ArrayList<>();
+        if (head >= 0) {
+            for (int q = parent[head]; q >= 0 && q != hips; q = parent[q]) chain.add(0, q);
+            if (hips >= 0 && !under.test(head, hips)) chain.clear();
+        }
+        int chest = -1;
+        int armTop0 = arm[0][0] >= 0 ? arm[0][0] : arm[0][1], armTop1 = arm[1][0] >= 0 ? arm[1][0] : arm[1][1];
+        for (int i = chain.size() - 1; i >= 0; --i) {
+            int q = chain.get(i);
+            if ((armTop0 < 0 || under.test(armTop0, q)) && (armTop1 < 0 || under.test(armTop1, q))) {
+                chest = q;
+                break;
+            }
+        }
+        int spine = chain.isEmpty() ? -1 : chain.get(0);
+        if (chest < 0 && !chain.isEmpty()) chest = chain.get(chain.size() - 1);
+        int neck = -1;
+        if (chest >= 0) {
+            int at = chain.indexOf(chest);
+            if (at >= 0 && at + 1 < chain.size()) neck = chain.get(at + 1);
+        }
+        if (spine == chest && chain.size() > 1 && chain.get(0) != chest) spine = chain.get(0);
+        role[dev.maro.render.character.skin.Human.HIPS.ordinal()] = hips;
+        role[dev.maro.render.character.skin.Human.SPINE.ordinal()] = spine;
+        role[dev.maro.render.character.skin.Human.CHEST.ordinal()] = chest;
+        role[dev.maro.render.character.skin.Human.NECK.ordinal()] = neck;
+        role[dev.maro.render.character.skin.Human.HEAD.ordinal()] = head;
+        String[] armBones = {"SHOULDER", "UPPER_ARM", "FOREARM", "HAND"}, legBones = {"THIGH", "SHIN", "FOOT", "TOE"};
+        for (int sd = 0; sd < 2; ++sd) {
+            String prefix = sd == 0 ? "RIGHT_" : "LEFT_";
+            for (int k = 0; k < 4; ++k) {
+                role[dev.maro.render.character.skin.Human.valueOf(prefix + armBones[k]).ordinal()] = arm[sd][k];
+                role[dev.maro.render.character.skin.Human.valueOf(prefix + legBones[k]).ordinal()] = leg[sd][k];
+            }
+        }
+        return role;
     }
 
     private boolean is(int node, List<String> words) {

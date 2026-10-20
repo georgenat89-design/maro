@@ -45,6 +45,33 @@ final class PosedMesh {
         Arrays.fill(this.parent, -1);
     }
 
+    /** Bare geometry for the mesh reducer: no file or nodes behind it. */
+    private PosedMesh(float[] pos, float[] uv, int[] material, int[] tris) {
+        this.file = null;
+        this.globals = new float[0][];
+        this.parent = new int[0];
+        this.pos = pos;
+        this.uv = uv;
+        this.material = material;
+        this.tris = tris;
+        this.vertices = pos.length / 3;
+        this.triangles = tris.length / 3;
+        this.nrm = new float[pos.length];
+        this.color = new int[this.vertices];
+        this.influence = new int[this.vertices * 4];
+        this.weight = new float[this.vertices * 4];
+    }
+
+    static PosedMesh of(float[] pos, float[] uv, int[] material, int[] tris) {
+        return new PosedMesh(pos, uv, material, tris);
+    }
+
+    /** A point in this mesh's normalised space (see {@link #normalise}) back in the file's world space. */
+    float[] unnormalise(float[] p) {
+        float x = p[0] / this.scale - this.shiftX, y = p[1] / this.scale - this.shiftY, z = p[2] / this.scale - this.shiftZ;
+        return this.flipped ? new float[]{-x, y, -z} : new float[]{x, y, z};
+    }
+
     static PosedMesh pose(GltfFile file, Map<Integer, Float> turns) throws IOException {
         PosedMesh m = new PosedMesh(file);
         for (int n = 0; n < file.nodes(); ++n) {
