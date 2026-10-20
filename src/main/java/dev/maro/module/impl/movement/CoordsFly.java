@@ -647,7 +647,8 @@ public class CoordsFly extends Module implements HudElement {
         if (arrived) {
             Render2D.circle(ctx, 0, 0, 5, pointer);
         } else {
-            Render2D.shadow(ctx, -4, -13, 8, 8, 4, 5, ColorUtil.withAlpha(pointer, 0x90));
+            // A solid glow under the head: a hollow one shows a dark gap beside its edges.
+            Render2D.radialGlow(ctx, 0, -8.5f, 10, ColorUtil.withAlpha(pointer, 0x70));
             Render2D.polygon(ctx, 0, -6, DIAL_ARROW, pointer);
             Render2D.circle(ctx, 0, 10, 2.2f, ColorUtil.withAlpha(pointer, 0xA0));
         }
@@ -758,7 +759,7 @@ public class CoordsFly extends Module implements HudElement {
         m.pushMatrix();
         m.translate(ex, ey);
         m.rotate((float) rel);
-        Render2D.shadow(ctx, -6, -9, 12, 12, 6, 6, ColorUtil.withAlpha(color, 0x80));
+        Render2D.radialGlow(ctx, 0, -3, 12, ColorUtil.withAlpha(color, 0x70));
         Render2D.polygon(ctx, 0, -3, EDGE_ARROW, color);
         m.popMatrix();
         Fonts.beginRaw();

@@ -106,6 +106,7 @@ final class PreviewSharpnessChecks {
         context.runOnClient(c -> ((ClickGuiScreen) c.currentScreen).openModuleOptions(module));
         // The pointer off the menu, so no tooltip covers the card.
         context.getInput().setCursorPos(0, 0);
+        context.runOnClient(c -> c.currentScreen.mouseMoved(0, 0));
         context.waitTicks(24);
         double[] rect = context.computeOnClient(c -> {
             var gui = (ClickGuiScreen) c.currentScreen;
