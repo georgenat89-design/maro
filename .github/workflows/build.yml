@@ -72,9 +72,13 @@ jobs:
         run: |
           shopt -s globstar nullglob
           for f in **/screenshots/*.png; do
-            convert "$f" -resize 960x540 -quality 72 /tmp/preview.jpg
             echo "PREVIEW_BEGIN $(basename "$f")"
-            base64 -w 0 /tmp/preview.jpg; echo
+            # Sharpness crops are printed pixel for pixel; full screenshots are shrunk.
+            case "$(basename "$f")" in
+              crop_*) base64 -w 0 "$f" ;;
+              *) convert "$f" -resize 960x540 -quality 72 /tmp/preview.jpg && base64 -w 0 /tmp/preview.jpg ;;
+            esac
+            echo
             echo "PREVIEW_END"
           done
 
