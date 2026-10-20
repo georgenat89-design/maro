@@ -8,6 +8,7 @@ import dev.maro.module.Module;
 import dev.maro.module.impl.visuals.*;
 import dev.maro.render.character.CharacterHolder;
 import dev.maro.util.Animation;
+import dev.maro.util.ColorUtil;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.ScreenRect;
@@ -95,6 +96,12 @@ public final class VisualPreview {
     public void drawCompact(DrawContext ctx, Module target, float x, float y, float w, float h) {
         draw(ctx,target,x,y,w,h,true);
     }
+    /** The card's one padding, on every side and between its rows. */
+    private static final float PAD = 11, GAP = 8, HEAD = 12, BUTTON = 20, TYPE = .6f;
+    private static boolean drawingHud;
+    /** Whether a HUD is being drawn into a preview, not onto the screen. */
+    public static boolean drawingHud() { return drawingHud; }
+
     private void draw(DrawContext ctx, Module target, float x, float y, float w, float h,boolean compact) {
         if (!supports(target) || w < 80 || h < 90) return;
         if(active!=target){active=target;stop();previewFrame=System.nanoTime();}
@@ -103,102 +110,146 @@ public final class VisualPreview {
         module = target;
         bounds = new float[]{x,y,w,h};
         opacity = Render2D.getAlpha();
+        // The card on whole pixels, so its edges and everything laid out from them are sharp.
+        float[] from=Render2D.snap(ctx,x,y),to=Render2D.snap(ctx,x+w,y+h);
+        x=from[0];y=from[1];w=to[0]-from[0];h=to[1]-from[1];
         Render2D.roundGradientV(ctx,x,y,w,h,7,0xE515202D,0xE60A101B);
-        Render2D.roundOutline(ctx,x,y,w,h,7,Render2D.px(),Theme.accent(0x40));
-        Render2D.circle(ctx,x+11,y+13,2,Theme.GREEN);
-        String heading=switch(kind){case ASPECT,FOV->"CAMERA COMPARISON";case FULLBRIGHT->"BEFORE / AFTER";case BLOCKS,BASE,SPAWNER,SPOTIFY,TRAJECTORY->"EXAMPLE PREVIEW";case RING->"JUMP PREVIEW";case HUD->"HUD PREVIEW";default->animated?"LIVE PREVIEW":"APPEARANCE";};
-        Fonts.drawV(ctx,heading,x+18,y+13,Theme.TEXT_DIM,true,.59f);
-        if(!compact)Fonts.drawV(ctx,target.isEnabled()?"On":"Preview only",x+9,y+28,Theme.TEXT_MUTED,false,.55f);
-        else Fonts.drawRight(ctx,target.isEnabled()?"On":"Preview only",x+w-8,y+13,Theme.TEXT_MUTED,false,.5f);
-        float top = y+(compact?23:39), bottom = y+h-26;
+        Render2D.roundOutline(ctx,x,y,w,h,7,Render2D.px(ctx),Theme.accent(0x40));
+
+        // One header row: the status dot and title on the left, the state as a pill on the right.
+        float hy=y+PAD+HEAD/2;
+        String heading=switch(kind){case ASPECT,FOV->"Camera comparison";case FULLBRIGHT->"Before / after";case BLOCKS,BASE,SPAWNER,SPOTIFY,TRAJECTORY->"Example preview";case RING->"Jump preview";case HUD->"HUD preview";default->animated?"Live preview":"Appearance";};
+        String state=target.isEnabled()?"On":"Preview only";
+        int stateColor=target.isEnabled()?Theme.GREEN:Theme.accent();
+        float pillW=Fonts.width(ctx,state,false,TYPE)+12,pillX=x+w-PAD-pillW;
+        Render2D.roundRect(ctx,pillX,hy-HEAD/2,pillW,HEAD,HEAD/2,ColorUtil.withAlpha(stateColor,0x26));
+        Fonts.drawCentered(ctx,state,pillX+pillW/2,hy,target.isEnabled()?Theme.GREEN:Theme.TEXT_DIM,false,TYPE);
+        Render2D.circle(ctx,x+PAD+2.5f,hy,2.5f,stateColor);
+        Fonts.drawV(ctx,Fonts.trim(ctx,heading,pillX-6-(x+PAD+9),true,TYPE),x+PAD+9,hy,Theme.TEXT_DIM,true,TYPE);
+
+        // The footer: buttons for what plays or turns, otherwise a note, on the bottom padding.
         boolean character=kind==Kind.PLAYER||kind==Kind.PET||kind==Kind.EMOTE||kind==Kind.SPIN||kind==Kind.RING;
         boolean characterControls=character&&(!compact||h>=140);
-        if(characterControls&&animated)bottom-=22;
+        boolean note=!animated&&!characterControls&&!compact;
+        float footer=(animated?BUTTON:0)+(characterControls?BUTTON+(animated?4:0):0)+(note?9:0);
+        float left=x+PAD,width=w-PAD*2,top=y+PAD+HEAD+GAP,bottom=y+h-PAD-(footer>0?footer+GAP:0);
         gui.hit(x,y,w,h,(button,mx,my)->{});
         if(kind==Kind.EMOTE&&(!compact||h>=140)){
             var all=dev.maro.render.emote.Emote.values();
-            button(ctx,"‹",x+6,top,22,()->selectEmote(all[Math.floorMod(selectedEmote.ordinal()-1,all.length)]));
-            button(ctx,"›",x+w-28,top,22,()->selectEmote(all[(selectedEmote.ordinal()+1)%all.length]));
-            Fonts.drawCentered(ctx,selectedEmote.label(),x+w/2,top+9,Theme.TEXT_DIM,false,.7f);top+=22;
+            button(ctx,"‹",left,top,22,()->selectEmote(all[Math.floorMod(selectedEmote.ordinal()-1,all.length)]));
+            button(ctx,"›",left+width-22,top,22,()->selectEmote(all[(selectedEmote.ordinal()+1)%all.length]));
+            Fonts.drawCentered(ctx,selectedEmote.label(),left+width/2,top+BUTTON/2,Theme.TEXT_DIM,false,.7f);top+=BUTTON+GAP;
         }
         var mc = MinecraftClient.getInstance();
-        gui.hit(x+3,top,w-6,bottom-top,(button,mx,my)->{
+        gui.hit(left,top,width,bottom-top,(button,mx,my)->{
             if(button==0&&character){float initial=angle;gui.startDrag(this,(nx,ny)->angle=initial+(float)(nx-mx)*.9f);}
         });
         if(character)gui.scrollHit(x,y,w,h,amount->zoom=Math.clamp(zoom+(float)amount*.08f,.65f,1.45f));
-        gui.pushClip(x+2,top,w-4,Math.max(1,bottom-top));
+        float ch=Math.max(1,bottom-top);
+        gui.pushClip(x+2,top-4,w-4,ch+8);
         try {
             if(kind==Kind.SKY||kind==Kind.GEEKED){
-                PreviewShaders.draw(ctx,target,x+7,top+3,w-14,bottom-top-6,seconds,liveWorld);
-            }else if(kind==Kind.XP){EffectSamples.xp(ctx,target,x+8,top,w-16,bottom-top,seconds);
-            }else if(target instanceof FakeBlock fake){EffectSamples.blocks(ctx,fake,x+8,top,w-16,bottom-top);
-            }else if(kind==Kind.FULLBRIGHT){EffectSamples.fullbright(ctx,target,x+8,top,w-16,bottom-top);
-            }else if(kind==Kind.BASE){EffectSamples.base(ctx,target,x+8,top,w-16,bottom-top);
-            }else if(kind==Kind.SPAWNER){EffectSamples.spawner(ctx,target,x+8,top,w-16,bottom-top);
-            }else if(kind==Kind.SPOTIFY){EffectSamples.spotify(ctx,target,x+8,top,w-16,bottom-top,seconds);
-            }else if(kind==Kind.TRAJECTORY){EffectSamples.trajectory(ctx,target,x+8,top,w-16,bottom-top,seconds);
+                PreviewShaders.draw(ctx,target,left,top,width,ch,seconds,liveWorld);
+            }else if(kind==Kind.XP){EffectSamples.xp(ctx,target,left,top,width,ch,seconds);
+            }else if(target instanceof FakeBlock fake){EffectSamples.blocks(ctx,fake,left,top,width,ch);
+            }else if(kind==Kind.FULLBRIGHT){EffectSamples.fullbright(ctx,target,left,top,width,ch);
+            }else if(kind==Kind.BASE){EffectSamples.base(ctx,target,left,top,width,ch);
+            }else if(kind==Kind.SPAWNER){EffectSamples.spawner(ctx,target,left,top,width,ch);
+            }else if(kind==Kind.SPOTIFY){EffectSamples.spotify(ctx,target,left,top,width,ch,seconds);
+            }else if(kind==Kind.TRAJECTORY){EffectSamples.trajectory(ctx,target,left,top,width,ch,seconds);
             }else if(kind==Kind.ASPECT||kind==Kind.FOV){
-                CameraPreview.draw(ctx,target,x+7,top+3,w-14,bottom-top-6);
+                CameraPreview.draw(ctx,target,left,top,width,ch);
             }else if(target instanceof CustomTotem totem){
-                drawTotem(ctx,totem,x+7,top+3,w-14,bottom-top-6);
+                drawTotem(ctx,totem,left,top,width,ch);
             }else if(target instanceof BlockESP blocks){
-                SubjectPreview.blocks(ctx,blocks,x+7,top+3,w-14,bottom-top-6);
+                SubjectPreview.blocks(ctx,blocks,left,top,width,ch);
             }else if(target instanceof JumpCircle ring){
                 double life=EffectSamples.number(ring,"Lifetime",1),cycle=.8+life+.55;
                 double phase=seconds%cycle;
                 jumpRingAge=playing?(EffectSamples.mode(ring,"Trigger","Jump").equals("Land")?phase-.8:phase):life*.22;
-                float body=bottom-top,ground=top+body*.74f;
+                float body=ch,ground=top+body*.74f;
                 jumpLift=playing&&phase<.8?(float)Math.sin(phase/.8*Math.PI)*body*.16f:0;
                 float ringH=body*.60f;
-                SubjectPreview.ring(ctx,ring,x+7,ground-ringH*.54f,w-14,ringH,jumpRingAge);
-                if(playing&&EffectSamples.mode(ring,"Trigger","Jump").equals("Both"))SubjectPreview.ring(ctx,ring,x+7,ground-ringH*.54f,w-14,ringH,phase-.8);
-                if(mc.player!=null)drawPlayer(ctx,target,x+5,top,w-10,body*.75f,ground-jumpLift);
+                SubjectPreview.ring(ctx,ring,left,ground-ringH*.54f,width,ringH,jumpRingAge);
+                if(playing&&EffectSamples.mode(ring,"Trigger","Jump").equals("Both"))SubjectPreview.ring(ctx,ring,left,ground-ringH*.54f,width,ringH,phase-.8);
+                if(mc.player!=null)drawPlayer(ctx,target,left,top,width,body*.75f,ground-jumpLift);
             }else if(target instanceof CustomCrosshair crosshair){
-                crosshair.renderPreview(ctx,x+w/2,(top+bottom)/2);
-            }else if(mc.player==null) {
-                Fonts.drawCentered(ctx,"Join a world",x+w/2,(top+bottom)/2-6,Theme.TEXT_DIM,false,.68f);
-                Fonts.drawCentered(ctx,"to preview yourself",x+w/2,(top+bottom)/2+7,Theme.TEXT_MUTED,false,.56f);
-            } else if(target instanceof HudElement hud) {
-                float sw=Math.max(1,hud.hudWidth()),sh=Math.max(1,hud.hudHeight());
-                float size=Math.min(4,Math.min((w-24)/sw,(bottom-top-16)/sh));
+                // At its real size: one GUI unit is as many pixels as in game, so it is as sharp.
+                float[] centre=Render2D.snap(ctx,left+width/2,top+ch/2);
+                float real=(float)(mc.getWindow().getScaleFactor()/Render2D.device(ctx));
                 ctx.getMatrices().pushMatrix();
-                try {
-                    ctx.getMatrices().translate(x+(w-sw*size)/2,top+(bottom-top-sh*size)/2);
-                    ctx.getMatrices().scale(size,size);
-                    ctx.getMatrices().translate(-hud.hudLeft(),-hud.hudTop());
-                    if(target instanceof Radar radar)radar.renderPreview(ctx);else target.onRender2D(ctx,mc.getRenderTickCounter().getTickProgress(false));
-                } finally {ctx.getMatrices().popMatrix();}
+                try{ctx.getMatrices().translate(centre[0],centre[1]);ctx.getMatrices().scale(real,real);crosshair.renderPreview(ctx,0,0);}
+                finally{ctx.getMatrices().popMatrix();}
+            }else if(mc.player==null) {
+                Fonts.drawCentered(ctx,"Join a world",left+width/2,top+ch/2-6,Theme.TEXT_DIM,false,.68f);
+                Fonts.drawCentered(ctx,"to preview yourself",left+width/2,top+ch/2+7,Theme.TEXT_MUTED,false,.56f);
+            } else if(target instanceof HudElement hud) {
+                drawHud(ctx,target,hud,left,top,width,ch);
             } else if(target instanceof Pet pet){
-                drawPet(ctx,pet,x+3,top,w-6,bottom-top);
+                drawPet(ctx,pet,left,top,width,ch);
             } else if(kind==Kind.ITEM){
-                dev.maro.anubis.inspect.ItemSubjectPreview.draw(ctx,target,x+5,top,w-10,bottom-top,seconds,playing);
+                dev.maro.anubis.inspect.ItemSubjectPreview.draw(ctx,target,left,top,width,ch,seconds,playing);
             } else {
                 boolean tags=target instanceof Nametags;
-                drawPlayer(ctx,target,x+3,top+(tags?38:0),w-6,bottom-top-(tags?38:0));
-                if(tags)((Nametags)target).renderPreview(ctx,x+w/2,top+38,w-12);
+                drawPlayer(ctx,target,left,top+(tags?38:0),width,ch-(tags?38:0));
+                if(tags)((Nametags)target).renderPreview(ctx,left+width/2,top+38,width);
             }
         } finally {gui.popClip();}
+        float fy=y+h-PAD-footer;
         if(characterControls){
-            float bw=(w-18)/3,by=y+h-(animated?46:24);
-            button(ctx,"Front",x+5,by,bw,()->angle=0);
-            button(ctx,"Back",x+9+bw,by,bw,()->angle=180);
-            button(ctx,"Reset",x+13+bw*2,by,bw,()->{angle=-22;zoom=1;});
-            if(gui.hovered(x,top,w,bottom-top))gui.tooltip("Drag to rotate · scroll to zoom");
-        }else if(!animated){
-            Fonts.drawCentered(ctx,"Updates as you edit",x+w/2,y+h-15,Theme.TEXT_MUTED,false,.62f);
+            float bw=(width-8)/3;
+            button(ctx,"Front",left,fy,bw,()->angle=0);
+            button(ctx,"Back",left+bw+4,fy,bw,()->angle=180);
+            button(ctx,"Reset",left+(bw+4)*2,fy,bw,()->{angle=-22;zoom=1;});
+            fy+=BUTTON+4;
+            if(gui.hovered(x,top,w,ch))gui.tooltip("Drag to rotate · scroll to zoom");
+        }else if(note){
+            Fonts.drawCentered(ctx,"Updates as you edit",x+w/2,fy+4.5f,Theme.TEXT_MUTED,false,TYPE);
         }
         if(animated){
-            float bw=kind==Kind.GEEKED?(w-16)/2:w-12;
-            button(ctx,playing?"■ Stop":"▶ Play",x+6,y+h-24,bw,()->{if(playing)stop();else play();});playPlace=new float[]{x+6+bw/2,y+h-15};
-            if(kind==Kind.GEEKED)button(ctx,liveWorld?"Live world":"Scene sample",x+10+bw,y+h-24,bw,()->liveWorld=!liveWorld);
+            float bw=kind==Kind.GEEKED?(width-4)/2:width;
+            button(ctx,playing?"■ Stop":"▶ Play",left,fy,bw,()->{if(playing)stop();else play();});playPlace=new float[]{left+bw/2,fy+BUTTON/2};
+            if(kind==Kind.GEEKED)button(ctx,liveWorld?"Live world":"Scene sample",left+bw+4,fy,bw,()->liveWorld=!liveWorld);
+        }
+    }
+
+    /**
+     * A HUD as it is in game, centred. It is scaled so each of its own units is a whole or half
+     * number of pixels and placed on a whole pixel, so its edges and text land on the pixel grid.
+     */
+    private void drawHud(DrawContext ctx,Module target,HudElement hud,float x,float y,float w,float h){
+        var mc=MinecraftClient.getInstance();
+        float sw=Math.max(1,hud.hudWidth()),sh=Math.max(1,hud.hudHeight());
+        float fit=Math.min(4,Math.min(w/sw,h/sh));
+        double unit=Render2D.device(ctx)*Math.max(.05f,hud.hudScale());
+        double pixels=fit*unit;
+        float size=pixels>=1?(float)(Math.floor(pixels*2)/2/unit):fit;
+        float[] at=Render2D.snap(ctx,x+(w-sw*size)/2,y+(h-sh*size)/2);
+        var matrices=ctx.getMatrices();
+        matrices.pushMatrix();
+        float measure=Fonts.measureScale();
+        int menu=Fonts.pauseMenu();
+        drawingHud=true;
+        try {
+            matrices.translate(at[0],at[1]);
+            matrices.scale(size,size);
+            // Text measured without a context uses the same atlas it is drawn with, as on the HUD.
+            Fonts.setMeasureScale((float)Math.hypot(matrices.m00(),matrices.m01()));
+            matrices.translate(-hud.hudLeft(),-hud.hudTop());
+            if(target instanceof Radar radar)radar.renderPreview(ctx);else target.onRender2D(ctx,mc.getRenderTickCounter().getTickProgress(false));
+        } finally {
+            drawingHud=false;
+            Fonts.resumeMenu(menu);
+            Fonts.setMeasureScale(measure);
+            matrices.popMatrix();
         }
     }
 
     private void button(DrawContext ctx,String label,float x,float y,float w,Runnable action) {
-        boolean over=gui.hovered(x,y,w,18);
-        Render2D.roundRect(ctx,x,y,w,20,4,over?Theme.accent(0x40):0x1C9BAEC4);
-        Fonts.drawCentered(ctx,label,x+w/2,y+10,over?Theme.TEXT:Theme.TEXT_DIM,false,.7f);
-        gui.hit(x,y,w,20,(button,mx,my)->{if(button==0)action.run();});
+        boolean over=gui.hovered(x,y,w,BUTTON);
+        Render2D.roundRect(ctx,x,y,w,BUTTON,4,over?Theme.accent(0x40):0x1C9BAEC4);
+        Fonts.drawCentered(ctx,label,x+w/2,y+BUTTON/2,over?Theme.TEXT:Theme.TEXT_DIM,false,.7f);
+        gui.hit(x,y,w,BUTTON,(button,mx,my)->{if(button==0)action.run();});
     }
 
     private void drawPlayer(DrawContext ctx,Module target,float x,float y,float w,float h) {
@@ -266,11 +317,13 @@ public final class VisualPreview {
         ctx.addEntity(state,size*matrixScale,new Vector3f(0,state.height/2,0),new Quaternionf().rotateZ((float)Math.PI).rotateX(.08f),new Quaternionf().rotateX(.08f),area.getLeft(),area.getTop(),area.getRight(),area.getBottom());lastSubject=state;
     }
     private void drawTotem(DrawContext ctx,CustomTotem module,float x,float y,float w,float h){
-        var texture=module.previewTexture();float side=Math.min(w,h)*.83f;
+        // Totem art is 16 pixels across: a whole number of screen pixels each, from a whole pixel.
+        var texture=module.previewTexture();float side=Render2D.snapSize(ctx,Math.min(w,h)*.83f,16);
+        float[] at=Render2D.snap(ctx,x+(w-side)/2,y+(h-side)/2);float left=at[0],top=at[1];
         if(texture==null){
-            ctx.getMatrices().pushMatrix();try{float scale=side/16;ctx.getMatrices().translate(x+(w-side)/2,y+(h-side)/2);ctx.getMatrices().scale(scale,scale);ctx.drawItem(new net.minecraft.item.ItemStack(net.minecraft.item.Items.TOTEM_OF_UNDYING),0,0);}finally{ctx.getMatrices().popMatrix();}return;
+            ctx.getMatrices().pushMatrix();try{float scale=side/16;ctx.getMatrices().translate(left,top);ctx.getMatrices().scale(scale,scale);ctx.drawItem(new net.minecraft.item.ItemStack(net.minecraft.item.Items.TOTEM_OF_UNDYING),0,0);}finally{ctx.getMatrices().popMatrix();}return;
         }
-        float left=x+(w-side)/2,top=y+(h-side)/2;var pose=new org.joml.Matrix3x2f(ctx.getMatrices());
+        var pose=new org.joml.Matrix3x2f(ctx.getMatrices());
         var bounds=new ScreenRect(Math.round(left),Math.round(top),Math.max(1,Math.round(side)),Math.max(1,Math.round(side))).transformEachVertex(pose);
         var clip=Render2D.getScissor();var visible=clip==null?bounds:bounds.intersection(clip);if(visible==null)return;
         ((dev.maro.mixin.DrawContextAccessor)ctx).maro$getState().addSimpleElement(new dev.maro.runtime.renderer.GuiMeshState(pose,new float[]{left,top,0,0,left,top+side,0,1,left+side,top+side,1,1,left+side,top,1,0},new int[]{-1,-1,-1,-1},net.minecraft.client.gl.RenderPipelines.GUI_TEXTURED,net.minecraft.client.texture.TextureSetup.of(texture.getGlTextureView(),texture.getSampler()),visible,clip));

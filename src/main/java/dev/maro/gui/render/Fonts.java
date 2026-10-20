@@ -55,10 +55,36 @@ public final class Fonts {
         return MinecraftClient.getInstance().textRenderer;
     }
 
-    /** Oversample whose glyph pixels map 1:1 to screen pixels for text drawn at {@code scale}. */
+    /**
+     * Oversample whose glyph pixels map 1:1 to screen pixels for text drawn at {@code scale}: the
+     * nearest one, or the next larger when the nearest would be stretched by more than 5%.
+     */
     private static int oversample(float scale) {
         double px = MinecraftClient.getInstance().getWindow().getScaleFactor() * scale;
-        return (int) Math.max(1, Math.min(MAX_OVERSAMPLE, Math.ceil(px - 0.15)));
+        long o = Math.round(px);
+        if (o < px * 0.95) o++;
+        return (int) Math.max(1, Math.min(MAX_OVERSAMPLE, o));
+    }
+
+    /**
+     * The Minecraft font is a bitmap: at a fractional number of screen pixels per font pixel some
+     * strokes come out a pixel wider than others. Round to whole screen pixels per font pixel (at
+     * least one); text so small that this would blow it up keeps its size.
+     */
+    private static float pixelScale(float scale, double device) {
+        double texel = scale * device;
+        if (texel < 0.75 || !(device > 0)) return scale;
+        return (float) (Math.max(1, Math.round(texel)) / device);
+    }
+
+    /** Screen pixels per local unit for text measured without a DrawContext: the enclosing menu's. */
+    private static double measureDevice() {
+        return MinecraftClient.getInstance().getWindow().getScaleFactor() * measureScale;
+    }
+
+    private static double device(DrawContext ctx) {
+        var m = ctx.getMatrices();
+        return MinecraftClient.getInstance().getWindow().getScaleFactor() * Math.hypot(m.m00(), m.m01());
     }
 
     // ---- caps style -------------------------------------------------------------------
@@ -71,8 +97,13 @@ public final class Fonts {
     public static void beginMenu() { menuDepth++; }
     public static void endMenu() { menuDepth = Math.max(0, menuDepth - 1); }
 
+    /** Leaves the menu's text size for a HUD drawn inside the menu, as it is in game; returns what to resume. */
+    public static int pauseMenu() { int depth = menuDepth; menuDepth = 0; return depth; }
+    public static void resumeMenu(int depth) { menuDepth = depth; }
+
     /** Plain width helpers use the same glyph atlas as the enclosing menu transform. */
     public static void setMeasureScale(float scale) { measureScale = scale; }
+    public static float measureScale() { return measureScale; }
 
     /** Legacy scope retained for existing callers; typography and casing now stay consistent across panels. */
     public static void beginRaw() {
@@ -121,19 +152,26 @@ public final class Fonts {
     public static float width(String s, boolean bold, float scale) {
         if (s == null || s.isEmpty()) return 0;
         if (ClientSettings.customFont.get()) return SmoothHudText.width(transform(s), weight(bold), eff(scale) * .875f, measureScale);
-        return tr().getTextHandler().getWidth(styled(transform(s), weight(bold), eff(scale) * measureScale)) * eff(scale);
+        return tr().getTextHandler().getWidth(styled(transform(s), weight(bold), eff(scale) * measureScale)) * pixelScale(eff(scale), measureDevice());
     }
     public static float width(String s) { return width(s, false, 1); }
     public static float width(DrawContext ctx, String s, boolean bold, float scale) {
         if (s == null || s.isEmpty()) return 0;
         if (ClientSettings.customFont.get()) return SmoothHudText.width(ctx, transform(s), weight(bold), eff(scale) * .875f);
         float matrix = (float)Math.hypot(ctx.getMatrices().m00(), ctx.getMatrices().m01());
-        return tr().getTextHandler().getWidth(styled(transform(s), weight(bold), eff(scale) * matrix)) * eff(scale);
+        return tr().getTextHandler().getWidth(styled(transform(s), weight(bold), eff(scale) * matrix)) * pixelScale(eff(scale), device(ctx));
     }
 
     /** Visual height of capital letters, used for vertical centring. */
     public static float height(float scale) {
-        return 7f * eff(scale) * (ClientSettings.customFont.get() ? SmoothHudText.heightRatio() : 1f);
+        if (ClientSettings.customFont.get()) return 7f * eff(scale) * SmoothHudText.heightRatio();
+        return 7f * pixelScale(eff(scale), measureDevice());
+    }
+
+    /** Visual height of capital letters as drawn under {@code ctx}'s matrix. */
+    public static float height(DrawContext ctx, float scale) {
+        if (ClientSettings.customFont.get()) return height(scale);
+        return 7f * pixelScale(eff(scale), device(ctx));
     }
 
     public static void draw(DrawContext ctx, String s, float x, float y, int color, boolean bold, float scale) {
@@ -158,6 +196,7 @@ public final class Fonts {
             x = (Math.round((x * ms.m00() + ms.m20()) / p) * p - ms.m20()) / ms.m00();
             y = (Math.round((y * ms.m11() + ms.m21()) / p) * p - ms.m21()) / ms.m11();
         }
+        scale = pixelScale(scale, device(ctx));
         ms.pushMatrix();
         ms.translate(x, y);
         if (scale != 1f) ms.scale(scale, scale);
@@ -171,15 +210,15 @@ public final class Fonts {
 
     /** Draws with the text vertically centred on {@code cy}. */
     public static void drawV(DrawContext ctx, String s, float x, float cy, int color, boolean bold, float scale) {
-        draw(ctx, s, x, cy - height(scale) / 2f, color, bold, scale);
+        draw(ctx, s, x, cy - height(ctx, scale) / 2f, color, bold, scale);
     }
 
     public static void drawCentered(DrawContext ctx, String s, float cx, float cy, int color, boolean bold, float scale) {
-        draw(ctx, s, cx - width(ctx, s, bold, scale) / 2f, cy - height(scale) / 2f, color, bold, scale);
+        draw(ctx, s, cx - width(ctx, s, bold, scale) / 2f, cy - height(ctx, scale) / 2f, color, bold, scale);
     }
 
     public static void drawRight(DrawContext ctx, String s, float right, float cy, int color, boolean bold, float scale) {
-        draw(ctx, s, right - width(ctx, s, bold, scale), cy - height(scale) / 2f, color, bold, scale);
+        draw(ctx, s, right - width(ctx, s, bold, scale), cy - height(ctx, scale) / 2f, color, bold, scale);
     }
 
     /** A centered top-aligned native-screen label, fitted using the same font as its drawing. */

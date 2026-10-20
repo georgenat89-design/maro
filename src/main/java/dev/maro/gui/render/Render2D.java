@@ -9,6 +9,8 @@ import net.minecraft.client.gui.ScreenRect;
 /**
  * Vector shape renderer. Everything is built from triangles with a one-physical-pixel
  * alpha fringe, which gives smooth anti-aliased edges at any GUI scale without shaders.
+ * The fringe follows the current matrix, so shapes stay as sharp inside a scaled HUD or
+ * a preview as they are drawn flat.
  * <p>
  * Coordinates are regular (scaled) GUI units and may be fractional. A global alpha
  * multiplier ({@link #setAlpha(float)}) lets whole screens fade in and out.
@@ -83,6 +85,53 @@ public final class Render2D {
         return (float) (1.0 / MinecraftClient.getInstance().getWindow().getScaleFactor());
     }
 
+    /** Physical pixels (of the screen, or of the off-screen surface being drawn) per local unit under the current matrix. */
+    public static double device(DrawContext ctx) {
+        var m = ctx.getMatrices();
+        double scale = Math.sqrt(Math.abs(m.m00() * m.m11() - m.m01() * m.m10()));
+        return MinecraftClient.getInstance().getWindow().getScaleFactor() * ScreenGuiSurface.textScale(ctx) * (scale > 1e-6 ? scale : 1);
+    }
+
+    /** Size of one physical pixel in the current local units: what px() is once the matrix is taken into account. */
+    public static float px(DrawContext ctx) {
+        return (float) (1.0 / device(ctx));
+    }
+
+    /** A thickness in local units rounded to whole physical pixels, at least one. */
+    public static float snapThickness(DrawContext ctx, float thickness) {
+        float f = px(ctx);
+        return Math.max(1, Math.round(thickness / f)) * f;
+    }
+
+    /** A hairline about {@code width} local units wide: whole physical pixels, at least one. */
+    public static float hairline(DrawContext ctx, float width) {
+        float f = px(ctx);
+        return Math.max(1, (int) Math.floor(width / f + 0.25f)) * f;
+    }
+
+    /**
+     * The largest size up to {@code size} that is a whole multiple of {@code step} physical pixels, in
+     * local units: 16-pixel item and block art drawn at it scales by a whole number. Smaller sizes
+     * are left as they are.
+     */
+    public static float snapSize(DrawContext ctx, float size, int step) {
+        double pixels = size * device(ctx);
+        if (pixels < step) return size;
+        return (float) (Math.floor(pixels / step) * step / device(ctx));
+    }
+
+    /**
+     * Moves a local point onto the physical pixel grid, so whatever is drawn from it starts on a
+     * pixel boundary. Matrices that rotate or skew leave it as it is.
+     */
+    public static float[] snap(DrawContext ctx, float x, float y) {
+        var m = ctx.getMatrices();
+        if (m.m01() != 0 || m.m10() != 0 || m.m00() == 0 || m.m11() == 0) return new float[] {x, y};
+        double unit = MinecraftClient.getInstance().getWindow().getScaleFactor() * ScreenGuiSurface.textScale(ctx);
+        double sx = Math.round((x * m.m00() + m.m20()) * unit) / unit, sy = Math.round((y * m.m11() + m.m21()) * unit) / unit;
+        return new float[] {(float) ((sx - m.m20()) / m.m00()), (float) ((sy - m.m21()) / m.m11())};
+    }
+
     private static int col(int c) {
         return alpha >= 1f ? c : ColorUtil.mulAlpha(c, alpha);
     }
@@ -108,8 +157,8 @@ public final class Render2D {
         return c & 0x00FFFFFF;
     }
 
-    private static int segments(float r) {
-        return Math.max(3, Math.min(MAX_SEG, (int) Math.ceil(Math.sqrt(r / px()) * 3.4)));
+    private static int segments(float r, float f) {
+        return Math.max(3, Math.min(MAX_SEG, (int) Math.ceil(Math.sqrt(r / f) * 3.4)));
     }
 
     /** Writes a clockwise rounded-rect outline into {@code out} as (x, y, nx, ny) tuples. */
@@ -168,8 +217,8 @@ public final class Render2D {
         if (w <= 0 || h <= 0) return;
         r = Math.max(0f, Math.min(r, Math.min(w, h) / 2f));
         boolean uniform = tl == tr && tr == br && br == bl;
-        int n = roundPath(OUTER, x, y, w, h, r, segments(r));
-        float f = px();
+        float f = px(ctx);
+        int n = roundPath(OUTER, x, y, w, h, r, segments(r, f));
         float cx = x + w / 2f, cy = y + h / 2f;
         int cc = col(uniform ? tl : bilerp(cx, cy, x, y, w, h, tl, tr, br, bl));
 
@@ -202,11 +251,11 @@ public final class Render2D {
         if (w <= 0 || h <= 0 || t <= 0) return;
         r = Math.max(0f, Math.min(r, Math.min(w, h) / 2f));
         t = Math.min(t, Math.min(w, h) / 2f);
-        int seg = segments(r);
+        float f = px(ctx);
+        int seg = segments(r, f);
         int n = roundPath(OUTER, x, y, w, h, r, seg);
         roundPath(INNER, x + t, y + t, w - 2 * t, h - 2 * t, Math.max(0f, r - t), seg);
         boolean uniform = tl == tr && tr == br && br == bl;
-        float f = px();
 
         ShapeRenderState.Builder b = begin(ctx, n * 12);
         for (int i = 0; i < n; i++) {
@@ -227,7 +276,7 @@ public final class Render2D {
     public static void shadow(DrawContext ctx, float x, float y, float w, float h, float r, float size, int color) {
         if (w <= 0 || h <= 0 || size <= 0 || ColorUtil.alpha(color) == 0) return;
         r = Math.max(0f, Math.min(r, Math.min(w, h) / 2f));
-        int n = roundPath(OUTER, x, y, w, h, r, Math.max(segments(r + size), 6));
+        int n = roundPath(OUTER, x, y, w, h, r, Math.max(segments(r + size, px(ctx)), 6));
         int c0 = col(color);
         int c1 = ColorUtil.mulAlpha(c0, 0.35f);
         float mid = size * 0.35f;
@@ -277,7 +326,7 @@ public final class Render2D {
     public static void arc(DrawContext ctx, float cx, float cy, float radius, float thickness, float startDeg, float sweepDeg, int c1, int c2) {
         if (radius <= 0 || thickness <= 0 || sweepDeg == 0) return;
         float rOut = radius, rIn = Math.max(0f, radius - thickness);
-        float f = px();
+        float f = px(ctx);
         int seg = Math.max(12, (int) Math.ceil(Math.abs(sweepDeg) / 360f * Math.max(32, radius / f * 2f)));
         seg = Math.min(seg, 256);
         float start = (float) Math.toRadians(startDeg), sweep = (float) Math.toRadians(sweepDeg);
@@ -307,7 +356,7 @@ public final class Render2D {
         float dx = x2 - x1, dy = y2 - y1;
         float len = (float) Math.sqrt(dx * dx + dy * dy);
         if (len < 1e-4f || thickness <= 0) return;
-        float nx = -dy / len, ny = dx / len, h = thickness / 2f, f = px();
+        float nx = -dy / len, ny = dx / len, h = thickness / 2f, f = px(ctx);
         int c = col(color), z = clear(c);
 
         ShapeRenderState.Builder b = begin(ctx, 108);
@@ -317,6 +366,51 @@ public final class Render2D {
         float base = (float) Math.atan2(ny, nx);
         cap(b, x1, y1, h, f, base, c, z);
         cap(b, x2, y2, h, f, base + (float) Math.PI, c, z);
+        end(b);
+    }
+
+    /** Anti-aliased filled polygon, {@code x0, y0, x1, y1, ...} in order; it must be convex. */
+    public static void polygon(DrawContext ctx, float[] points, int color) {
+        int n = points.length / 2;
+        float cx = 0, cy = 0;
+        for (int i = 0; i < n; i++) {
+            cx += points[i * 2];
+            cy += points[i * 2 + 1];
+        }
+        polygon(ctx, cx / Math.max(1, n), cy / Math.max(1, n), points, color);
+    }
+
+    /**
+     * Anti-aliased filled polygon fanned from {@code cx, cy}, a point that sees every corner (an
+     * arrow's head, say), so one outline with clean joins replaces overlapping strokes.
+     */
+    public static void polygon(DrawContext ctx, float cx, float cy, float[] points, int color) {
+        int n = points.length / 2;
+        if (n < 3) return;
+        float area = 0;
+        for (int i = 0; i < n; i++) {
+            int j = (i + 1) % n;
+            area += points[i * 2] * points[j * 2 + 1] - points[j * 2] * points[i * 2 + 1];
+        }
+        if (Math.abs(area) < 1e-6f) return;
+        float out = area > 0 ? 1 : -1, f = px(ctx);
+        int c = col(color), z = clear(c);
+        ShapeRenderState.Builder b = begin(ctx, n * 12);
+        for (int i = 0; i < n; i++) {
+            int j = (i + 1) % n, k = (i + 2) % n;
+            float ax = points[i * 2], ay = points[i * 2 + 1], bx = points[j * 2], by = points[j * 2 + 1];
+            float dx = bx - ax, dy = by - ay, len = (float) Math.sqrt(dx * dx + dy * dy);
+            if (len < 1e-6f) continue;
+            float nx = dy / len * out, ny = -dx / len * out;
+            quad(b, cx, cy, c, ax, ay, c, bx, by, c, bx, by, c);
+            quad(b, ax, ay, c, bx, by, c, bx + nx * f, by + ny * f, z, ax + nx * f, ay + ny * f, z);
+            // Round an outer corner between this edge's fringe and the next one's.
+            float ex = points[k * 2] - bx, ey = points[k * 2 + 1] - by, el = (float) Math.sqrt(ex * ex + ey * ey);
+            if (el >= 1e-6f && (dx * ey - dy * ex) * out > 0) {
+                float mx = ey / el * out, my = -ex / el * out;
+                quad(b, bx, by, c, bx + nx * f, by + ny * f, z, bx + mx * f, by + my * f, z, bx, by, c);
+            }
+        }
         end(b);
     }
 

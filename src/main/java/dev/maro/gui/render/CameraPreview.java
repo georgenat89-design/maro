@@ -21,14 +21,15 @@ public final class CameraPreview {
     }
     public static float stretchScale(StretchRes m){var window=MinecraftClient.getInstance().getWindow();return ((float)window.getFramebufferWidth()/Math.max(1,window.getFramebufferHeight()))/m.targetAspect();}
     public static void draw(DrawContext ctx,Module module,float x,float y,float w,float h){
-        boolean stretch=module instanceof StretchRes;float gap=6,half=(w-gap)/2,caption=13;
+        boolean stretch=module instanceof StretchRes;float gap=8,half=(w-gap)/2,caption=14;
         float base=MinecraftClient.getInstance().options.getFov().getValue();
         panel(ctx,x,y,half,h-caption,base,1);
         panel(ctx,x+half+gap,y,half,h-caption,stretch?base:configuredFov(module),stretch?stretchScale((StretchRes)module):1);
         String right=stretch?String.format(java.util.Locale.ROOT,"Stretch %.2fx",stretchScale((StretchRes)module)):String.format(java.util.Locale.ROOT,"FOV %.0f°",configuredFov(module));
-        MenuTypography.label(ctx,"Normal",x+3,y+h-8,8,0xFFAFBECE,false);
-        float font=Math.min(8,(half-6)/Math.max(1,MenuTypography.labelWidth(right,1,false)));
-        MenuTypography.label(ctx,right,x+half+gap+3,y+h-8,font,0xFFB9DCFF,false);
+        // Each caption centred under its picture, on one line with the other.
+        float line=y+h-4;
+        Fonts.drawCentered(ctx,Fonts.trim(ctx,"Normal",half-4,false,.62f),x+half/2,line,0xFFAFBECE,false,.62f);
+        Fonts.drawCentered(ctx,Fonts.trim(ctx,right,half-4,false,.62f),x+half+gap+half/2,line,0xFFB9DCFF,false,.62f);
     }
     private static float[] project(float x,float y,float z,float cx,float cy,float focal,float stretch){return new float[]{cx+x/z*focal*stretch,cy-(y-1.2f)/z*focal};}
     private static void quad(ShapeRenderState.Builder batch,float[][] p,int a,int b,int c,int d,int color){batch.quad(p[a][0],p[a][1],color,p[b][0],p[b][1],color,p[c][0],p[c][1],color,p[d][0],p[d][1],color);}
@@ -55,6 +56,6 @@ public final class CameraPreview {
         }
         var state=batch.build(Render2D.getScissor());if(state!=null)((DrawContextAccessor)ctx).maro$getState().addSimpleElement(state);
         }finally{Render2D.setScissor(previousClip);ctx.disableScissor();}
-        Render2D.roundOutline(ctx,x,y,w,h,3,.65f,0x6A51708F);
+        Render2D.roundOutline(ctx,x,y,w,h,3,Render2D.px(ctx),0x6A51708F);
     }
 }

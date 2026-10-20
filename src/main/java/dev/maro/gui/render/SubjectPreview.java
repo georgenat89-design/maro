@@ -21,9 +21,10 @@ public final class SubjectPreview {
     public static void blocks(DrawContext ctx,BlockESP module,float x,float y,float w,float h){
         var blocks=module.pickedBlocks();
         if(blocks.isEmpty()){Fonts.drawCentered(ctx,"Choose blocks to preview",x+w/2,y+h/2,Theme.TEXT_MUTED,false,.6f);return;}
-        int count=Math.min(3,blocks.size());float cell=w/count,side=Math.min(42,Math.min(cell-12,h-24));
+        int count=Math.min(3,blocks.size());float cell=w/count,side=Render2D.snapSize(ctx,Math.min(42,Math.min(cell-12,h-24)),16);
         for(int i=0;i<count;i++){
-            var block=blocks.get(i);float left=x+cell*i+(cell-side)/2,top=y+(h-side)/2-4;
+            // Each block and its name as one group, centred, the block on whole pixels.
+            var block=blocks.get(i);float[] at=Render2D.snap(ctx,x+cell*i+(cell-side)/2,y+(h-side-14)/2);float left=at[0],top=at[1];
             int tint=mode(module,"Color").equals("One Color")?color(module,"ESP Color"):module.colorOf(block);
             if(!mode(module,"Style").equals("Outline"))Render2D.roundRect(ctx,left-2,top-2,side+4,side+4,3,ColorUtil.withAlpha(tint,(int)Math.round(number(module,"Fill Opacity")*2.55)));
             ctx.getMatrices().pushMatrix();try{ctx.getMatrices().translate(left,top);ctx.getMatrices().scale(side/16,side/16);ctx.drawItem(new ItemStack(block),0,0);}finally{ctx.getMatrices().popMatrix();}

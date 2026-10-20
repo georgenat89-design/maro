@@ -173,7 +173,7 @@ public class InventoryHud extends Module implements HudElement {
         float top = hudTop();
         int w = panelWidth();
         int h = panelHeight();
-        float hair = Math.max(Render2D.px() / s, 0.5f);
+        float hair = Render2D.hairline(ctx, 0.5f * s) / s;
 
         List<Slot> layout = new ArrayList<>();
         int cy = PAD;

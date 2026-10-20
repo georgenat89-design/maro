@@ -413,7 +413,7 @@ public class KeyboardStrokes extends Module implements HudElement {
     public void draw(DrawContext ctx, float left, float top, float s, boolean live) {
         List<Cell> cells = cells();
         if (cells.isEmpty()) return;
-        float hair = Math.max(Render2D.px() / s, 0.5f);
+        float hair = Render2D.hairline(ctx, 0.5f * s) / s;
         float strength = opacity.getFloat() / 100f;
         Matrix3x2fStack matrices = ctx.getMatrices();
         matrices.pushMatrix();

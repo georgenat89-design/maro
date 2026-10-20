@@ -216,7 +216,7 @@ public class ArmorHud extends Module implements HudElement {
         if(mask==0)return;
         float s = hudScale();
         int w = panelWidth(mask), h = panelHeight(mask);
-        float hair = Math.max(Render2D.px() / s, 0.5f);
+        float hair = Render2D.hairline(ctx, 0.5f * s) / s;
         float strength = opacity.getFloat() / 100f;
 
         Matrix3x2fStack matrices = ctx.getMatrices();

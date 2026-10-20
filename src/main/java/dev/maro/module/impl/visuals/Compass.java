@@ -302,7 +302,7 @@ public class Compass extends Module implements HudElement {
 
     private void strip(DrawContext ctx, float s) {
         float w = width.getFloat();
-        float hair = Math.max(Render2D.px() / s, 0.5f);
+        float hair = Render2D.hairline(ctx, 0.5f);
         float fov = view.getFloat();
         float mid = w / 2f;
         float r = STRIP_H / 2f;
@@ -381,7 +381,7 @@ public class Compass extends Module implements HudElement {
 
     private void dial(DrawContext ctx, float s) {
         float c = DIAL_R + DIAL_PAD;
-        float hair = Math.max(Render2D.px() / s, 0.5f);
+        float hair = Render2D.hairline(ctx, 0.5f);
         int accent = Theme.accent();
 
         // A dark disc with a lighter middle, a fine rim, and the accent glowing round the top.

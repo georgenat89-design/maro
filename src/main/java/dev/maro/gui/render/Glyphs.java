@@ -39,9 +39,14 @@ public final class Glyphs {
         Matrix3x2fStack ms = ctx.getMatrices();
         float k = size / EM;
         double px = MinecraftClient.getInstance().getWindow().getScaleFactor() * k * Math.hypot(ms.m00(), ms.m01());
-        int oversample = (int) Math.max(1, Math.min(MAX_OVERSAMPLE, Math.ceil(px - 0.15)));
+        // The copy nearest the real size, or the next larger when that one would be stretched.
+        long nearest = Math.round(px);
+        if (nearest < px * 0.95) nearest++;
+        int oversample = (int) Math.max(1, Math.min(MAX_OVERSAMPLE, nearest));
+        // The icon's box from a whole pixel, so its strokes fall on the pixel grid.
+        float[] at = Render2D.snap(ctx, cx - size / 2f, cy - size / 2f);
         ms.pushMatrix();
-        ms.translate(cx - size / 2f, cy - size / 2f);
+        ms.translate(at[0], at[1]);
         ms.scale(k, k);
         // Lucide's em box sits wholly above the baseline; start the line so the box fills 0..EM.
         ctx.drawText(MinecraftClient.getInstance().textRenderer, Text.literal(glyph).setStyle(STYLES[oversample]),

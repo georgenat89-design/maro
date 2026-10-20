@@ -54,6 +54,10 @@ public class CoordsFly extends Module implements HudElement {
     private static final Pattern NUMBER = Pattern.compile("-?\\d+(?:\\.\\d+)?k?");
     private static final int MARGIN = 4;
     private static final float CARD_W = 184;
+    /** The dial's arrow pointing up, one outline: a head on a shaft. Every corner is seen from (0, -6). */
+    private static final float[] DIAL_ARROW = {0, -13.5f, 6.6f, -4.6f, 1.35f, -4.6f, 1.35f, 9.5f, -1.35f, 9.5f, -1.35f, -4.6f, -6.6f, -4.6f};
+    /** The edge-of-screen arrow pointing up: a notched head. Every corner is seen from (0, -3). */
+    private static final float[] EDGE_ARROW = {0, -9, 6.5f, 2, 0, -1.6f, -6.5f, 2};
     /** How far away the beam and marker are drawn at most: further targets are drawn this far along the way. */
     private static final double DRAW_RANGE = 220;
 
@@ -591,7 +595,8 @@ public class CoordsFly extends Module implements HudElement {
     public void onRender2D(DrawContext ctx, float tickDelta) {
         if (!inGame() || mc.options.hudHidden) return;
         Target t = target();
-        if (t != null && marker.get()) screenMarker(ctx, t);
+        // The marker belongs to the screen, not the card: a preview of the card leaves it out.
+        if (t != null && marker.get() && !dev.maro.gui.VisualPreview.drawingHud()) screenMarker(ctx, t);
         float s = hudScale();
         Matrix3x2fStack m = ctx.getMatrices();
         m.pushMatrix();
@@ -608,7 +613,7 @@ public class CoordsFly extends Module implements HudElement {
 
     private void card(DrawContext ctx, Target t, float s) {
         float w = CARD_W, h = cardHeight(), r = 9;
-        float hair = Math.max(Render2D.px() / s, 0.5f);
+        float hair = Render2D.hairline(ctx, 0.5f);
         int accent = Theme.accent();
         Render2D.shadow(ctx, 0, 2, w, h, r, 10, alpha(0xC0000000));
         Render2D.roundRect(ctx, 0, 0, w, h, r, alpha(0xF2181C27), alpha(0xF2181C27), alpha(0xF20A0C12), alpha(0xF20A0C12));
@@ -632,7 +637,7 @@ public class CoordsFly extends Module implements HudElement {
         float cx = 24, cy = 24, dr = 17;
         Render2D.shadow(ctx, cx - dr, cy - dr + 1, dr * 2, dr * 2, dr, 6, alpha(0x90000000));
         Render2D.circle(ctx, cx, cy, dr, alpha(0xF20A0C12));
-        Render2D.ring(ctx, cx, cy, dr, hair * 1.3f, 0x2EFFFFFF);
+        Render2D.ring(ctx, cx, cy, dr, Render2D.snapThickness(ctx, hair * 1.3f), 0x2EFFFFFF);
         Render2D.arc(ctx, cx, cy, dr + 0.4f, 1.6f, (float) (rel - 50 - 90), 50, ColorUtil.withAlpha(pointer, 0), ColorUtil.withAlpha(pointer, 0xE0));
         Render2D.arc(ctx, cx, cy, dr + 0.4f, 1.6f, (float) (rel - 90), 50, ColorUtil.withAlpha(pointer, 0xE0), ColorUtil.withAlpha(pointer, 0));
         Matrix3x2fStack m = ctx.getMatrices();
@@ -643,54 +648,62 @@ public class CoordsFly extends Module implements HudElement {
             Render2D.circle(ctx, 0, 0, 5, pointer);
         } else {
             Render2D.shadow(ctx, -4, -13, 8, 8, 4, 5, ColorUtil.withAlpha(pointer, 0x90));
-            Render2D.line(ctx, 0, 10, 0, -11.5f, 2.6f, pointer);
-            Render2D.line(ctx, 0, -12.5f, -6.5f, -5, 2.6f, pointer);
-            Render2D.line(ctx, 0, -12.5f, 6.5f, -5, 2.6f, pointer);
+            Render2D.polygon(ctx, 0, -6, DIAL_ARROW, pointer);
             Render2D.circle(ctx, 0, 10, 2.2f, ColorUtil.withAlpha(pointer, 0xA0));
         }
         m.popMatrix();
 
         // Distance, big; underneath it in km and m and the compass direction; then which way to turn.
+        // The three lines sit as one block centred on the dial.
         float tx = 50;
+        boolean hinted = turnHint.get();
+        float bigH = Fonts.height(ctx, 1.15f), subH = Fonts.height(ctx, 0.6f), hintH = Fonts.height(ctx, 0.62f);
+        float ty = cy - (bigH + 8 + subH + (hinted ? 6.4f + hintH : 0)) / 2f;
         String big = arrived ? "You're there" : distanceShown(dist);
-        Fonts.draw(ctx, big, tx, 7, arrived ? Theme.GREEN : 0xFFF4F6FA, true, 1.15f);
+        Fonts.draw(ctx, big, tx, ty, arrived ? Theme.GREEN : 0xFFF4F6FA, true, 1.15f);
+        ty += bigH + 8;
         String bearing = POINTS16[(int) Math.round(bearing(t) / 22.5) % 16] + " " + Math.round(bearing(t)) % 360 + "°";
         String sub = (units.is("Blocks") ? distanceText(dist) : kmAndM(dist)) + "  ·  " + bearing;
-        Fonts.draw(ctx, sub, tx, 22, 0xFF9AA1B0, false, 0.6f);
-        if (turnHint.get()) {
+        Fonts.draw(ctx, sub, tx, ty, 0xFF9AA1B0, false, 0.6f);
+        ty += subH + 6.4f;
+        if (hinted) {
             String hint = arrived ? "Within " + arriveWithin.getInt() + " m of the coords" : turnText(rel);
-            Fonts.draw(ctx, hint, tx, 32, aligned || arrived ? Theme.GREEN : accent, true, 0.62f);
+            Fonts.draw(ctx, hint, tx, ty, aligned || arrived ? Theme.GREEN : accent, true, 0.62f);
         }
 
         float yy = 46;
         if (progress.get()) {
+            // The bar, with how much of the way is done at its right end on its centreline.
             double done = startDistance <= 0 ? 0 : MathHelper.clamp(1 - dist / startDistance, 0, 1);
-            float bw = w - 20;
+            float bw = w - 20 - Fonts.width(ctx, "100%", false, 0.55f) - 6;
             Render2D.roundRect(ctx, 10, yy, bw, 3, 1.5f, 0x30FFFFFF);
             if (done > 0) {
                 float fw = (float) Math.max(3, bw * done);
                 Render2D.roundGradientH(ctx, 10, yy, fw, 3, 1.5f, Theme.accent(), Theme.accent2());
                 Render2D.shadow(ctx, 10 + fw - 3, yy - 1.5f, 6, 6, 3, 4, Theme.accent2(0x90));
             }
-            Fonts.drawRight(ctx, Math.round(done * 100) + "%", w - 10, yy - 5, 0xFF7D8494, false, 0.5f);
+            Fonts.drawRight(ctx, Math.round(done * 100) + "%", w - 10, yy + 1.5f, 0xFF7D8494, false, 0.55f);
             yy += 9;
         }
         if (showCoords.get()) {
-            Fonts.draw(ctx, coordsText(t), 10, yy, 0xFFDCE0E8, true, 0.6f);
+            float base = yy + Fonts.height(ctx, 0.6f);
+            onBase(ctx, coordsText(t), 10, base, 0xFFDCE0E8, true, 0.6f);
             if (t.hasY()) {
                 long dy = Math.round(t.y() - mc.player.getY());
                 String climb = dy == 0 ? "level" : (dy > 0 ? "up " : "down ") + Math.abs(dy) + " m";
-                Fonts.drawRight(ctx, climb, w - 10, yy + Fonts.height(0.56f) / 2f, dy >= 0 ? 0xFF8FD3FF : 0xFFFFC27A, true, 0.56f);
+                onBase(ctx, climb, w - 10 - Fonts.width(ctx, climb, true, 0.56f), base, dy >= 0 ? 0xFF8FD3FF : 0xFFFFC27A, true, 0.56f);
             }
             yy += 11;
         }
         if (speedEta.get()) {
+            // Speed, km/h and the ETA on one baseline.
             String sp = Math.round(speed) + " m/s";
-            String eta = arrived ? "here" : closing > 0.5 ? eta(dist / closing) : "--";
-            Fonts.draw(ctx, sp, 10, yy, 0xFFDCE0E8, true, 0.6f);
-            float sw = Fonts.width(sp, true, 0.6f);
-            Fonts.draw(ctx, "  ·  " + Math.round(speed * 3.6) + " km/h", 10 + sw, yy, 0xFF7D8494, false, 0.6f);
-            Fonts.drawRight(ctx, "ETA " + eta, w - 10, yy + Fonts.height(0.6f) / 2f, closing > 0.5 || arrived ? accent : 0xFF7D8494, true, 0.6f);
+            String kmh = "  ·  " + Math.round(speed * 3.6) + " km/h";
+            String eta = "ETA " + (arrived ? "here" : closing > 0.5 ? eta(dist / closing) : "--");
+            float base = yy + Fonts.height(ctx, 0.6f);
+            onBase(ctx, sp, 10, base, 0xFFDCE0E8, true, 0.6f);
+            onBase(ctx, kmh, 10 + Fonts.width(ctx, sp, true, 0.6f), base, 0xFF7D8494, false, 0.6f);
+            onBase(ctx, eta, w - 10 - Fonts.width(ctx, eta, true, 0.6f), base, closing > 0.5 || arrived ? accent : 0xFF7D8494, true, 0.6f);
             yy += 11;
         }
         if (otherWorld.get()) {
@@ -699,6 +712,11 @@ public class CoordsFly extends Module implements HudElement {
                 Fonts.draw(ctx, other, 10, yy, 0xFF7D8494, false, 0.56f);
             }
         }
+    }
+
+    /** Text with its capitals standing on {@code base}, so different sizes in one row line up. */
+    private static void onBase(DrawContext ctx, String s, float x, float base, int color, boolean bold, float size) {
+        Fonts.draw(ctx, s, x, base - Fonts.height(ctx, size), color, bold, size);
     }
 
     /** The diamond on the spot itself, or an arrow at the screen's edge pointing round to it. */
@@ -741,8 +759,7 @@ public class CoordsFly extends Module implements HudElement {
         m.translate(ex, ey);
         m.rotate((float) rel);
         Render2D.shadow(ctx, -6, -9, 12, 12, 6, 6, ColorUtil.withAlpha(color, 0x80));
-        Render2D.line(ctx, 0, -8, -6, 0, 2.4f, color);
-        Render2D.line(ctx, 0, -8, 6, 0, 2.4f, color);
+        Render2D.polygon(ctx, 0, -3, EDGE_ARROW, color);
         m.popMatrix();
         Fonts.beginRaw();
         try {
