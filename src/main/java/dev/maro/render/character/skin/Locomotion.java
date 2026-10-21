@@ -100,7 +100,7 @@ public final class Locomotion {
             .shift(0.00f, 0.01f, 0, 0).shift(0.30f, 0.004f, 0, 0).shift(0.42f, -0.004f, 0.03f, 0)
             .shift(0.50f, -0.01f, 0, 0).shift(0.80f, -0.004f, 0, 0).shift(0.92f, 0.004f, 0.03f, 0)
             // Off the ground between steps: the feet are free there, not held to the floor.
-            .ground(0.00f, 1).ground(0.30f, 1).ground(0.42f, 0.35f).ground(0.50f, 1).ground(0.80f, 1).ground(0.92f, 0.35f)
+            .ground(0.00f, 1).ground(0.30f, 1).ground(0.42f, 0.65f).ground(0.50f, 1).ground(0.80f, 1).ground(0.92f, 0.65f)
             .build();
 
     /** Crouched still: hips and knees bent, the trunk forward over the feet, eyes up. */

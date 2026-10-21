@@ -95,24 +95,28 @@ final class CharacterSkinChecks {
         return new ImageDecoder.Picture(size[0], size[1], argb);
     }
 
-    /** A movement state: how to set the input at a time, and whether the feet must stay on the floor. */
-    private record State(String name, boolean grounded, BiConsumer<MotionInput, Float> setup) {
+    /**
+     * A movement state: how to set the input at a time, and how far the lowest point of the body
+     * may be from the floor (a fraction of the height; negative: not checked). A sprint leaves the
+     * ground for a moment between strides.
+     */
+    private record State(String name, float floor, BiConsumer<MotionInput, Float> setup) {
     }
 
     private static final State[] STATES = {
-            new State("idle", true, (m, t) -> { }),
-            new State("walk", true, (m, t) -> m.speed = 4.3f),
-            new State("sprint", true, (m, t) -> { m.speed = 5.6f; m.sprinting = true; }),
-            new State("back", true, (m, t) -> { m.speed = 3f; m.forward = -3f; }),
-            new State("crouch", true, (m, t) -> m.sneaking = true),
-            new State("creep", true, (m, t) -> { m.sneaking = true; m.speed = 1.3f; }),
-            new State("jump", false, (m, t) -> { m.grounded = t < 0.3f; m.vertical = t < 0.3f ? 0 : 4.2f - (t - 0.3f) * 20; }),
-            new State("land", false, (m, t) -> { m.grounded = t < 0.2f || t > 1.0f; m.vertical = t < 0.2f || t > 1.0f ? 0 : -12; }),
-            new State("swim", false, (m, t) -> { m.swimming = true; m.inWater = true; m.speed = 2.5f; }),
-            new State("ride", false, (m, t) -> m.riding = true),
-            new State("sleep", false, (m, t) -> m.sleeping = true),
-            new State("glide", false, (m, t) -> m.gliding = true),
-            new State("attack", true, (m, t) -> { m.rightArm[0] = -2f; m.rightArmWeight = 1; m.rightElbow = 12; m.bodyTwist = 0.3f; m.headYaw = 30; m.headPitch = 20; }),
+            new State("idle", 0.03f, (m, t) -> { }),
+            new State("walk", 0.03f, (m, t) -> m.speed = 4.3f),
+            new State("sprint", 0.07f, (m, t) -> { m.speed = 5.6f; m.sprinting = true; }),
+            new State("back", 0.03f, (m, t) -> { m.speed = 3f; m.forward = -3f; }),
+            new State("crouch", 0.03f, (m, t) -> m.sneaking = true),
+            new State("creep", 0.03f, (m, t) -> { m.sneaking = true; m.speed = 1.3f; }),
+            new State("jump", -1, (m, t) -> { m.grounded = t < 0.3f; m.vertical = t < 0.3f ? 0 : 4.2f - (t - 0.3f) * 20; }),
+            new State("land", -1, (m, t) -> { m.grounded = t < 0.2f || t > 1.0f; m.vertical = t < 0.2f || t > 1.0f ? 0 : -12; }),
+            new State("swim", -1, (m, t) -> { m.swimming = true; m.inWater = true; m.speed = 2.5f; }),
+            new State("ride", -1, (m, t) -> m.riding = true),
+            new State("sleep", -1, (m, t) -> m.sleeping = true),
+            new State("glide", -1, (m, t) -> m.gliding = true),
+            new State("attack", 0.03f, (m, t) -> { m.rightArm[0] = -2f; m.rightArmWeight = 1; m.rightElbow = 12; m.bodyTwist = 0.3f; m.headYaw = 30; m.headPitch = 20; }),
     };
 
     private static String exercise(String name, SkinnedCharacter c) {
@@ -137,7 +141,11 @@ final class CharacterSkinChecks {
                     skinNanos += System.nanoTime() - t0;
                     frames++;
                     float low = check(name + " " + s.name + " at " + t, lv, buf, height);
-                    if (s.grounded && t > 0.5f && c.rig.has(Human.LEFT_FOOT)) worstFloat = Math.max(worstFloat, low);
+                    if (s.floor >= 0 && t > 0.5f && c.rig.has(Human.LEFT_FOOT)) {
+                        // On the ground the lowest point of the body stays on the floor: no floating, no sinking.
+                        require(low < height * s.floor, name + " " + s.name + ": the feet are " + low + " units off the floor at " + t + "s");
+                        if (s.floor < 0.05f) worstFloat = Math.max(worstFloat, low);
+                    }
                 }
             }
         }
@@ -159,8 +167,6 @@ final class CharacterSkinChecks {
                 check(name + " " + e.label() + " at " + t, lv, buf, height);
             }
         }
-        // A grounded state keeps the lowest point of the body on the floor: no floating, no sinking.
-        require(worstFloat < height * 0.06f, name + ": standing feet drift " + worstFloat + " units off the floor");
         SkinLevel high = c.level(2);
         return String.format(Locale.ROOT, "%s: %d bones, %d/%d/%d triangles, %d materials, %d clips, skinning %.3f ms a level, feet within %.2f",
                 name, c.rig.nodes, c.levels[0].triangles(), c.levels[1].triangles(), high.triangles(), c.materials.length, c.clips.length,
