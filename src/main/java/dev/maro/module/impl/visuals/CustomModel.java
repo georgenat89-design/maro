@@ -96,6 +96,7 @@ public final class CustomModel extends Module {
     public static void extract(Entity entity, PlayerEntityRenderState state) {
         CharacterHolder holder = (CharacterHolder) state;
         holder.maro$setCharacter(null); holder.maro$setSeat(0);
+        motion(entity, state, holder.maro$motion());
         CustomModel m = instance;
         if (m == null || state.spectator || mc.player == null) return;
         boolean preview = mc.currentScreen instanceof CustomModelScreen screen && screen.isPreviewing();
@@ -119,6 +120,22 @@ public final class CustomModel extends Module {
             state.nameLabelPos=state.nameLabelPos.add(0,renderedHeight-standingHeight,0);
         }
     }
+    /** How the entity moved over its last tick, along and across the way its body faces. */
+    private static void motion(Entity entity, PlayerEntityRenderState state, float[] m) {
+        double dx = entity.getX() - entity.lastX, dy = entity.getY() - entity.lastY, dz = entity.getZ() - entity.lastZ;
+        if (entity.hasVehicle()) dx = dy = dz = 0;
+        double yaw = Math.toRadians(state.bodyYaw);
+        double fx = -Math.sin(yaw), fz = Math.cos(yaw);
+        m[0] = (float) (Math.sqrt(dx * dx + dz * dz) * 20);
+        m[1] = (float) (dy * 20);
+        m[2] = (float) ((dx * fx + dz * fz) * 20);
+        m[3] = (float) ((dx * fz - dz * fx) * 20);
+        m[4] = entity.isOnGround() || entity.hasVehicle() ? 1 : 0;
+        m[5] = 1;
+        m[6] = entity.isSprinting() ? 1 : 0;
+        m[7] = entity.isTouchingWater() ? 1 : 0;
+    }
+
     /** Uses the same cached character and target selection as the replacement renderer. */
     public static float visualHeight(PlayerEntity player){
         CustomModel m=instance;
@@ -134,7 +151,8 @@ public final class CustomModel extends Module {
     public static float seat(EntityRenderState state) { return state instanceof CharacterHolder holder ? holder.maro$seat() : 0; }
     public static boolean hidesModel(EntityRenderState state) { return worn(state) != null; }
     public static boolean hidesLayer(FeatureRenderer<?, ?> layer, EntityRenderState state) {
-        if (worn(state) == null || layer instanceof CharacterLayer) return false;
+        WornCharacter worn = worn(state);
+        if (worn == null || layer instanceof CharacterLayer || worn.projected) return false;
         // Incompatible player equipment/cosmetics stay out of replacement geometry.
         return !(layer instanceof HeldItemFeatureRenderer) || instance == null || !instance.heldItems.get();
     }

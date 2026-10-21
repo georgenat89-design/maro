@@ -82,6 +82,7 @@ public final class CharacterMotion {
 
     public static void clear() {
         STATES.clear();
+        SkinnedRenderer.clear();
     }
 
     @Environment(value=EnvType.CLIENT)

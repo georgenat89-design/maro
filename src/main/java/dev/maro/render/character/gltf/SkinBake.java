@@ -57,6 +57,7 @@ public final class SkinBake {
         Scene s = new Scene(file);
         s.collect();
         if (s.triangles() == 0) throw new IOException("it has no triangles");
+        s.weldNormals();
         int[] role = Skeleton.roles(s.names(), s.parentArray(), s.xs(), s.usable());
         boolean rigged = s.skinned && s.humanoid(role);
         if (!rigged) {
@@ -435,6 +436,60 @@ public final class SkinBake {
                     nrm.data[i * 3 + 2] = s[2] / l;
                 }
             }
+        }
+
+        /**
+         * Vertices in the same place (split for UVs or between primitives) share one normal where
+         * their normals are close, so seams do not show in the lighting; real creases (normals far
+         * apart) stay sharp.
+         */
+        void weldNormals() {
+            int verts = vertices();
+            float[] p = pos.data, n = nrm.data;
+            float lo = Float.POSITIVE_INFINITY, hi = Float.NEGATIVE_INFINITY;
+            for (int i = 0; i < verts * 3; i++) {
+                lo = Math.min(lo, p[i]);
+                hi = Math.max(hi, p[i]);
+            }
+            float cell = Math.max(1e-9f, (hi - lo) * 2e-6f);
+            HashMap<Long, int[]> first = new HashMap<>(verts * 2);
+            int[] next = new int[verts];
+            Arrays.fill(next, -1);
+            int[] head = new int[verts];
+            for (int v = 0; v < verts; v++) {
+                long key = (Math.round(p[v * 3] / cell) * 73856093L) ^ (Math.round(p[v * 3 + 1] / cell) * 19349663L) ^ (Math.round(p[v * 3 + 2] / cell) * 83492791L);
+                int[] h = first.get(key);
+                if (h == null) {
+                    first.put(key, new int[]{v});
+                    head[v] = v;
+                } else {
+                    // Chain onto the group.
+                    next[v] = next[h[0]];
+                    next[h[0]] = v;
+                    head[v] = h[0];
+                }
+            }
+            float[] out = n.clone();
+            float close = (float) Math.cos(Math.toRadians(55));
+            for (int v = 0; v < verts; v++) {
+                int g = head[v];
+                if (next[g] < 0 && g == v) continue;
+                float x = 0, y = 0, z = 0;
+                for (int u = g; u >= 0; u = next[u]) {
+                    float d = n[v * 3] * n[u * 3] + n[v * 3 + 1] * n[u * 3 + 1] + n[v * 3 + 2] * n[u * 3 + 2];
+                    if (d < close) continue;
+                    x += n[u * 3];
+                    y += n[u * 3 + 1];
+                    z += n[u * 3 + 2];
+                }
+                float l = (float) Math.sqrt(x * x + y * y + z * z);
+                if (l > 1e-6f) {
+                    out[v * 3] = x / l;
+                    out[v * 3 + 1] = y / l;
+                    out[v * 3 + 2] = z / l;
+                }
+            }
+            System.arraycopy(out, 0, n, 0, verts * 3);
         }
 
         /** A humanoid the file's skeleton can drive: arms, legs, head and their vertices weighted to them. */

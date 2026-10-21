@@ -8,7 +8,7 @@
     "title": "Donald Trump Running"
   },
   "changes": "Embedded local buffers/textures; legacy diffuse material colors mapped to metallic-roughness where needed. Repaired inverted per-object body scale and inward normals from the supplied FBX export; source rig and running animation retained.",
-  "anc_sha256": "3d3e981cb5ad4d9be66d6e10737149693bd7d2d8bab886c287f1bd5babea3344",
-  "runtime_changes": "Restored the supplied FBX export body units and outward normals to match its original hair and bind positions; centered/scaled to 30 model units and baked at three detail levels; source textures/materials and rig preserved.",
+  "anc_sha256": "8c7e146b9196677a949a4e0e8599b45e2600779078dafce00c4db8659ebced56",
+  "runtime_changes": "Skinned bake (.anc version 5): full skeleton with up to four joint weights per vertex (fitted to the shape when the file has no usable rig), every material's own texture, three levels of detail, feet at floor level; animated by the shared humanoid clips and Maro's emotes.",
   "portable_animation": "Source running animation retained; runtime follows shared Minecraft movement renderer."
 }

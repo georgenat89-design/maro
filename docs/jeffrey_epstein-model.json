@@ -8,6 +8,6 @@
     "title": "Jeffrey Epstein"
   },
   "changes": "Embedded local buffers/textures; legacy diffuse material colors mapped to metallic-roughness where needed.",
-  "anc_sha256": "846cf8385ed0e2e6483d36c318184b81b20b3ed339203bb1adb0a969093cc002",
-  "runtime_changes": "Centered/scaled to 30 model units and baked at three detail levels; source textures/materials preserved; Minecraft movement and held-item poses use Maro character limbs."
+  "anc_sha256": "5105571b52b0d3b1d221b477f0214e77ec0faee25241859c70961c1f22411c6f",
+  "runtime_changes": "Skinned bake (.anc version 5): full skeleton with up to four joint weights per vertex (fitted to the shape when the file has no usable rig), every material's own texture, three levels of detail, feet at floor level; animated by the shared humanoid clips and Maro's emotes."
 }

@@ -8,6 +8,6 @@
     "title": "Michael Jackson (The Way You Make Me Feel)"
   },
   "changes": "Embedded local buffers/textures; legacy diffuse material colors mapped to metallic-roughness where needed.",
-  "anc_sha256": "5cef61d600198a6c62157724c65cb5c8f849f82c38fa91edbee8c3a3218e95bb",
-  "runtime_changes": "Centered/scaled to 30 model units and baked at three detail levels; source textures/materials preserved; Minecraft movement and held-item poses use Maro character limbs."
+  "anc_sha256": "10e7f953f14d57a215a93b6353df5defafea5b951b3b9426038f16fa6ef7b899",
+  "runtime_changes": "Skinned bake (.anc version 5): full skeleton with up to four joint weights per vertex (fitted to the shape when the file has no usable rig), every material's own texture, three levels of detail, feet at floor level; animated by the shared humanoid clips and Maro's emotes."
 }

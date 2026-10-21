@@ -223,6 +223,10 @@ public final class EmoteWheelScreen extends Screen {
         float t = emote.loops() ? time : time % (emote.length() + 0.8f);
         float blend = emote.loops() ? 1f : Math.min(1f, Math.min(t / 0.18f, Math.max(0f, (emote.length() + 0.6f - t) / 0.28f)));
         ((EmoteRenderState) state).maro$setEmote(emote, Math.min(t, emote.length()), blend);
+        // Each slot animates on its own, standing still, in a character or the bendable default skin.
+        state.id = -5000 - slot;
+        ((dev.maro.render.character.CharacterHolder) state).maro$setMotion(0, 0, true);
+        dev.maro.render.character.DefaultSkins.wear(state);
         int half = Math.round(size / 2f);
         int x1 = Math.round(x) - half, y1 = Math.round(y) - half;
         ctx.addEntity(state, size * 0.4f, new Vector3f(0, state.height / 2 + 0.05f, 0),

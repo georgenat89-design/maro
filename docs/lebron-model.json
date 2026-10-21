@@ -8,5 +8,6 @@
     "title": "LeBron James"
   },
   "changes": "Embedded local buffers/textures. LeBron unattached basketball omitted from wearable character.",
-  "anc_sha256": "ecc4c35e0564e42bef447d20effa324c646a94e720f67b0bee38e4f912f93083"
+  "anc_sha256": "214ceae2830b33a8fe171c05fb20d96e7bd9a4d5c31498df69aa9c34b9bdb043",
+  "runtime_changes": "Skinned bake (.anc version 5): full skeleton with up to four joint weights per vertex (fitted to the shape when the file has no usable rig), every material's own texture, three levels of detail, feet at floor level; animated by the shared humanoid clips and Maro's emotes."
 }

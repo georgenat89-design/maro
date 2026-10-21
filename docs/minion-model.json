@@ -8,8 +8,8 @@
     "title": "Minion"
   },
   "changes": "Embedded local buffers/textures; legacy diffuse material colors mapped to metallic-roughness where needed.",
-  "anc_sha256": "63478d42f4d2201dbcbdc077e43c97397234ac224289bd1c1b68e467165433e3",
+  "anc_sha256": "9fe6fdb0f14eea0857656bf86c6d45907a61be394213c22c327ef673e8e83bc3",
   "source_vertices": 124510,
   "source_triangles": 239456,
-  "runtime_changes": "Original mesh, yellow body, denim, goggles, gloves and shoes; geometric arm/leg segmentation, palm grip anchors and offline 7500/15000/30000 triangle budgets with a bounded texture atlas."
+  "runtime_changes": "Skinned bake (.anc version 5): full skeleton with up to four joint weights per vertex (fitted to the shape when the file has no usable rig), every material's own texture, three levels of detail, feet at floor level; animated by the shared humanoid clips and Maro's emotes."
 }

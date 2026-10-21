@@ -404,6 +404,25 @@ final class AutoRig {
             boolean hanging = tip[1] < top[1];
             // A hanging arm turns at the shoulder, a little above the armpit where the cut starts.
             float[] shoulder = {top[0], hanging ? Math.min(top[1] + H * 0.03f, shoulderY) : top[1], top[2]};
+            float ex = tip[0] - top[0], ey = tip[1] - top[1], ez = tip[2] - top[2];
+            float el = (float) Math.sqrt(ex * ex + ey * ey + ez * ez);
+            if (Math.abs(ey) < el * 0.9f) {
+                // Held out (a T- or A-pose): the cut only finds the arm where it clears the body, part way along
+                // it. Follow the arm's line back in to the side of the chest for the real shoulder, and give the
+                // stretch inside back to the arm.
+                float half = halfWidth(hipY + (top[1] - hipY) * 0.3f, hipY + (top[1] - hipY) * 0.55f);
+                float sx = (side == 0 ? -1 : 1) * half * 0.85f;
+                if (half > 0 && Math.abs(top[0]) > Math.abs(sx) && Math.abs(ex) > 1e-4f) {
+                    float u = (sx - top[0]) / -ex;
+                    if (u > 0 && u < 2) {
+                        float[] inner = {sx, top[1] - ey * u, top[2] - ez * u};
+                        float radius = radius(label, top, tip);
+                        claim(label, side, inner, top, radius * 1.5f, sx);
+                        shoulder = inner;
+                        top = inner;
+                    }
+                }
+            }
             float dx = tip[0] - shoulder[0], dy = tip[1] - shoulder[1], dz = tip[2] - shoulder[2];
             float length = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
             float[] dir = {dx / length, dy / length, dz / length};
@@ -417,6 +436,48 @@ final class AutoRig {
             at[UPPER + side * 3] = shoulder;
             at[FORE + side * 3] = slab(label, shoulder, dir, length, elbowT[side], 0.03f);
             at[HAND + side * 3] = slab(label, shoulder, dir, length, wristT[side], 0.03f);
+        }
+
+        /** Half the body's width (arms aside) between two heights. */
+        private float halfWidth(float y0, float y1) {
+            float best = 0;
+            for (int v = 0; v < verts; v++) {
+                if (part[v] != CharacterBake.BODY) continue;
+                float y = p[v * 3 + 1];
+                if (y >= y0 && y <= y1) best = Math.max(best, Math.abs(p[v * 3]));
+            }
+            return best;
+        }
+
+        /** How thick an arm is: its vertices' mean distance from the line through it. */
+        private float radius(int label, float[] a, float[] b) {
+            float dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2], l2 = dx * dx + dy * dy + dz * dz;
+            double sum = 0;
+            int n = 0;
+            for (int v = 0; v < verts; v++) {
+                if (part[v] != label) continue;
+                float px = p[v * 3] - a[0], py = p[v * 3 + 1] - a[1], pz = p[v * 3 + 2] - a[2];
+                float t = (px * dx + py * dy + pz * dz) / l2;
+                float qx = px - dx * t, qy = py - dy * t, qz = pz - dz * t;
+                sum += Math.sqrt(qx * qx + qy * qy + qz * qz);
+                n++;
+            }
+            return n == 0 ? H * 0.03f : (float) (sum / n);
+        }
+
+        /** Body vertices outside the shoulder along the arm's line, within reach of it, become arm. */
+        private void claim(int label, int side, float[] a, float[] b, float reach, float sx) {
+            float dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2], l2 = dx * dx + dy * dy + dz * dz;
+            if (l2 < 1e-8f) return;
+            for (int v = 0; v < verts; v++) {
+                if (part[v] != CharacterBake.BODY) continue;
+                float x = p[v * 3];
+                if (side == 0 ? x > sx : x < sx) continue;
+                float px = x - a[0], py = p[v * 3 + 1] - a[1], pz = p[v * 3 + 2] - a[2];
+                float t = Math.max(0, Math.min(1, (px * dx + py * dy + pz * dz) / l2));
+                float qx = px - dx * t, qy = py - dy * t, qz = pz - dz * t;
+                if (qx * qx + qy * qy + qz * qz <= reach * reach) part[v] = label;
+            }
         }
 
         private void fitLeg(int side, float[] top) {

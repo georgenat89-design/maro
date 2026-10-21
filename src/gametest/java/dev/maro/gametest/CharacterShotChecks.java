@@ -164,6 +164,7 @@ final class CharacterShotChecks {
                     motion(state, 0, 0, true);
                     float t = emote.loops() ? 0.42f * emote.length() : 0.55f * emote.length();
                     ((EmoteRenderState) state).maro$setEmote(emote, t, 1f);
+                    dev.maro.render.character.DefaultSkins.wear(state);
                 }
                 int col = i < 4 ? i : i - 4, row = i < 4 ? 0 : 1;
                 float left = col * cellW + (row == 1 ? cellW / 2f : 0), top = 24 + row * cellH;

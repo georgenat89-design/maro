@@ -185,6 +185,7 @@ tasks.register('runProductionClientGameTest', net.fabricmc.loom.task.prod.Client
       jvmArgs.add("-Dmaro.gametest.builderEntryOnly=" + providers.gradleProperty("builderEntryTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.menuOnly=" + providers.gradleProperty("menuTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.characterOnly=" + providers.gradleProperty("characterTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.projectDir=" + project.projectDir.absolutePath)
     jvmArgs.addAll([
             "-Dfabric.client.gametest",
             "-Dfabric.client.gametest.disableNetworkSynchronizer=true",

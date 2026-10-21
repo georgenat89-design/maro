@@ -7,5 +7,7 @@
     "source": "https://sketchfab.com/3d-models/slender-fortress-undead-furher-adolf-hitler-036f0e7b0204483589e7d7b1fa835677",
     "title": "Slender Fortress - Undead Furher (Adolf Hitler)"
   },
-  "changes": "Embedded local buffers/textures; legacy diffuse material colors mapped to metallic-roughness where needed."
+  "changes": "Embedded local buffers/textures; legacy diffuse material colors mapped to metallic-roughness where needed.",
+  "anc_sha256": "8684dba448a86e47fc84f223e33aba9dfba2499f94defe9e136ef75d54832bf9",
+  "runtime_changes": "Skinned bake (.anc version 5): full skeleton with up to four joint weights per vertex (fitted to the shape when the file has no usable rig), every material's own texture, three levels of detail, feet at floor level; animated by the shared humanoid clips and Maro's emotes."
 }

@@ -8,8 +8,8 @@
     "title": "Verity\u2122 | Verity\u2122"
   },
   "changes": "Embedded local buffers/textures; legacy diffuse material colors mapped to metallic-roughness where needed.",
-  "anc_sha256": "97a736d8280adc59661aa6940954324f57596bdaf2203824a0e7c9cf9893e7dc",
+  "anc_sha256": "f976190802710f387468409717a6fdca461c18bf45ecb130307f26b5b69fb1bf",
   "source_vertices": 418,
   "source_triangles": 768,
-  "runtime_changes": "Original single-piece body, original two source materials and 768 triangles at each detail level; no fabricated humanoid limbs. Non-humanoid fallback imports now assign geometry to the body rather than a missing head pivot."
+  "runtime_changes": "Skinned bake (.anc version 5): full skeleton with up to four joint weights per vertex (fitted to the shape when the file has no usable rig), every material's own texture, three levels of detail, feet at floor level; animated by the shared humanoid clips and Maro's emotes."
 }

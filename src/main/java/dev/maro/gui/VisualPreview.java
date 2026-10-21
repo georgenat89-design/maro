@@ -275,6 +275,9 @@ public final class VisualPreview {
             ((CharacterHolder)state).maro$setCharacter(custom.ready(custom.selected(false)));
             preparedCharacters=true;
         }
+        // Previews stand still unless they show movement; an emote bends the default skin too.
+        ((CharacterHolder)state).maro$setMotion(kind(target)==Kind.PLAYER&&playing?4.3f:0,0,true);
+        dev.maro.render.character.DefaultSkins.wear(state);
         var worn=CustomModel.worn(state);
         float modelHeight=worn==null?1.9f:worn.model.maxY*worn.model.scale*CustomModel.sizeFactor()/16;
         float size=Math.min((w-14)/2.2f,(h-18)/Math.max(2.1f,modelHeight+.3f))*zoomMotion.update(zoom);

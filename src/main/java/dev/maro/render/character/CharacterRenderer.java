@@ -44,6 +44,10 @@ final class CharacterRenderer {
     }
 
     static void submit(WornCharacter worn, PlayerEntityModel pm, MatrixStack stack, OrderedRenderCommandQueue collector, int light, PlayerEntityRenderState state) {
+        if (worn.skinned()) {
+            SkinnedRenderer.submit(worn, pm, stack, collector, light, state);
+            return;
+        }
         CharacterModel model = worn.model;
         PartMesh[] parts = model.parts;
         boolean ghost = state.invisible;
@@ -103,6 +107,9 @@ final class CharacterRenderer {
         if (worn == null) {
             return false;
         }
+        if (worn.skinned()) {
+            return SkinnedRenderer.firstPersonHand(worn, stack, collector, light, arm, arm == pm.rightArm);
+        }
         CharacterModel model = worn.model;
         Bone bone = arm == pm.rightArm ? Bone.RIGHT_ARM : Bone.LEFT_ARM;
         PartMesh main = model.part(bone);
@@ -150,6 +157,9 @@ final class CharacterRenderer {
         WornCharacter worn = CustomModel.worn((EntityRenderState)state);
         if (worn == null) {
             return false;
+        }
+        if (worn.skinned()) {
+            return SkinnedRenderer.translateToHand(worn, pm, state, arm, stack);
         }
         CharacterModel model = worn.model;
         Bone bone = arm == Arm.RIGHT ? Bone.RIGHT_ARM : Bone.LEFT_ARM;

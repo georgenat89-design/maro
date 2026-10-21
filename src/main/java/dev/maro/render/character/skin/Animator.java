@@ -197,7 +197,8 @@ public final class Animator {
      * any leg was moved.
      */
     private boolean plant(MotionInput in, float dt) {
-        boolean ground = group == Group.GROUND || group == Group.CROUCH || group == Group.LAND;
+        // An emote moves the feet itself (spins, kicks, lunges).
+        boolean ground = (group == Group.GROUND || group == Group.CROUCH || group == Group.LAND) && lastEmoteBlend < 0.01f;
         float units = 1 / Math.max(1e-5f, in.unit);
         float fwd = in.forward, side = in.strafe;
         if (fwd == 0 && side == 0) fwd = in.speed;

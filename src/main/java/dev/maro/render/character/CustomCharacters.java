@@ -19,6 +19,7 @@ import java.util.Set;
 import dev.maro.module.impl.visuals.CustomModel;
 import dev.maro.render.character.gltf.CharacterBake;
 import dev.maro.render.character.gltf.ImageDecoder;
+import dev.maro.render.character.gltf.SkinBake;
 import dev.maro.render.character.kit.BakedDesign;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -61,7 +62,7 @@ public final class CustomCharacters {
             String name = file.getFileName().toString();
             name = name.substring(0, name.length() - 4);
             try {
-                String stamp = name + Files.size(file) + Files.getLastModifiedTime(file, new LinkOption[0]).toMillis() + "3";
+                String stamp = name + Files.size(file) + Files.getLastModifiedTime(file, new LinkOption[0]).toMillis() + "5";
                 String id = "custom_" + CustomCharacters.slug(name) + "_" + Integer.toHexString(stamp.hashCode());
                 ids.add(id);
                 out.add(new BakedDesign(id, name, () -> CustomCharacters.open(file, id)));
@@ -103,25 +104,35 @@ public final class CustomCharacters {
         String name = file.getFileName().toString();
         CustomModel.baking(name);
         long start = System.nanoTime();
-        CharacterBake.Result result = CharacterBake.bake(Files.readAllBytes(file), new CharacterBake.Options(), CustomCharacters::decode);
-        LOGGER.info("[Maro] Baked custom character {} in {} ms, moving {}", new Object[]{name, (System.nanoTime() - start) / 1000000L, result.limbs()});
-        if (result.limbs().size() < 3) {
-            CustomModel.notice(name, result.limbs());
+        byte[] glb = Files.readAllBytes(file);
+        byte[] data = null;
+        try {
+            // Skinned first: the file's skeleton and weights (or a fitted one) and its own clips.
+            data = SkinBake.bake(glb, new CharacterBake.Options(), CustomCharacters::decode);
+            if (data != null) LOGGER.info("[Maro] Baked custom character {} (skinned) in {} ms", name, (System.nanoTime() - start) / 1000000L);
+        } catch (IOException | RuntimeException e) {
+            LOGGER.warn("[Maro] Skinned bake of {} failed, using rigid parts: {}", name, e.toString());
+        }
+        if (data == null) {
+            CharacterBake.Result result = CharacterBake.bake(glb, new CharacterBake.Options(), CustomCharacters::decode);
+            LOGGER.info("[Maro] Baked custom character {} in {} ms, moving {}", new Object[]{name, (System.nanoTime() - start) / 1000000L, result.limbs()});
+            if (result.limbs().size() < 3) {
+                CustomModel.notice(name, result.limbs());
+            }
+            data = result.data();
         }
         Files.createDirectories(CustomCharacters.cache(), new FileAttribute[0]);
         Path temp = CustomCharacters.cache().resolve(id + ".tmp");
-        Files.write(temp, result.data(), new OpenOption[0]);
+        Files.write(temp, data, new OpenOption[0]);
         Files.move(temp, baked, StandardCopyOption.REPLACE_EXISTING);
-        return new ByteArrayInputStream(result.data());
+        return new ByteArrayInputStream(data);
     }
 
+    /** PNG or JPEG (the game's own reader takes PNG only). */
     private static ImageDecoder.Picture decode(byte[] data) throws IOException {
-        try (var image = net.minecraft.client.texture.NativeImage.read(data)) {
-            int w = image.getWidth(), h = image.getHeight();
-            if (w > MAX_TEXTURE || h > MAX_TEXTURE) throw new IOException("texture exceeds 8192 pixels");
-            int[] pixels = new int[w * h];
-            for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) pixels[y*w+x] = image.getColorArgb(x,y);
-            return new ImageDecoder.Picture(w,h,pixels);
-        }
+        int[] size = new int[2];
+        int[] pixels = dev.maro.render.character.kit.SkinImages.decode(data, size);
+        if (size[0] > MAX_TEXTURE || size[1] > MAX_TEXTURE) throw new IOException("texture exceeds 8192 pixels");
+        return new ImageDecoder.Picture(size[0], size[1], pixels);
     }
 }

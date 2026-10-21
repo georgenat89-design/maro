@@ -24,7 +24,9 @@ public final class CustomModelScreen extends Screen {
     private final CustomModel module;
     private boolean other, previewing, dragging;
     private float angle=-20, scroll, scrollTarget, x,y,w,h,pw;
-    private long frame;
+    private long frame, playStart;
+    private boolean playing;
+    private dev.maro.render.emote.Emote previewEmote=dev.maro.render.emote.Emote.WAVE;
     private final List<Hit> hits=new ArrayList<>();
     private record Hit(float x,float y,float w,float h,Runnable action) {
         boolean contains(double mx,double my) { return mx>=x && mx<x+w && my>=y && my<y+h; }
@@ -55,6 +57,10 @@ public final class CustomModelScreen extends Screen {
             button(ctx,"Done",x+w-60,y+8,48,20,false,this::close,mx,my);
             Render2D.roundRect(ctx,x+12,y+39,pw-12,h-77,9,0xFF101725,0xFF101725,0xFF22334C,0xFF22334C);
             drawPreview(ctx);
+            // Idle by default; Play runs the chosen emote on the preview (it never touches the real player).
+            float half=(pw-30)/2;
+            button(ctx,previewEmote.label(),x+18,y+44,half,18,false,()->{previewEmote=dev.maro.render.emote.Emote.values()[(previewEmote.ordinal()+1)%dev.maro.render.emote.Emote.values().length];playStart=System.nanoTime();},mx,my);
+            button(ctx,playing?"Stop":"Play",x+24+half,y+44,half,18,playing,()->{playing=!playing;playStart=System.nanoTime();},mx,my);
             Fonts.drawCentered(ctx,previewChoice(),x+pw/2+6,y+h-64,Theme.TEXT,true,Math.min(.8f,(pw-20)/Math.max(1,Fonts.width(ctx,previewChoice(),true,1))));
             button(ctx,"-",x+18,y+h-57,22,18,false,()->module.resize(-1),mx,my);
             button(ctx,"Size "+module.sizeLabel(),x+44,y+h-57,pw-76,18,false,module::resetSize,mx,my);
@@ -107,6 +113,18 @@ public final class CustomModelScreen extends Screen {
         state.light=LightmapTextureManager.MAX_LIGHT_COORDINATE; state.shadowPieces.clear(); state.outlineColor=0;
         state.bodyYaw=180+angle; state.relativeHeadYaw=0; state.pitch=0;
         state.width/=state.baseScale; state.height/=state.baseScale; state.baseScale=1;
+        state.age=(float)(System.nanoTime()%1_000_000_000_000L/1e9*20);
+        ((dev.maro.render.character.CharacterHolder)state).maro$setMotion(0,0,true);
+        if(state instanceof dev.maro.render.emote.EmoteRenderState emote){
+            float t=(System.nanoTime()-playStart)/1e9f;
+            var e=previewEmote;
+            if(playing&&!e.loops()&&t>e.length()+0.6f)playing=false;
+            if(playing){
+                float blend=e.loops()?Math.min(1,t/.18f):Math.min(1,Math.min(t/.18f,Math.max(0,(e.length()+.3f-t)/.28f)));
+                emote.maro$setEmote(e,e.loops()?t:Math.min(t,e.length()),blend);
+            } else emote.maro$setEmote(null,0,0);
+            dev.maro.render.character.DefaultSkins.wear(state);
+        }
         var worn=CustomModel.worn(state);
         float modelHeight=worn==null?2.0f:worn.model.maxY*worn.model.scale*CustomModel.sizeFactor()/16;
         float size=Math.min((pw-30)/2.5f,(h-112)/(Math.max(2,modelHeight)+.3f));

@@ -8,7 +8,7 @@
     "title": "skeleton"
   },
   "changes": "Embedded local buffers/textures; legacy diffuse material colors mapped to metallic-roughness where needed.",
-  "anc_sha256": "fd6836f019b2ce79317a7cb14ffc7b0b880ee7d2d13275d79a04025fbfc8069f",
-  "runtime_changes": "Centered/scaled to 30 model units; three detail levels. Offline anatomical shell repair replaces the shape-based arm ownership: 20 complete upper-arm, forearm, wrist and finger shells; ribs and pelvis remain on the torso. Shoulder/elbow pivots follow the real arm bones and grip anchors sit in the palm. Original geometry, material colors and source GLB preserved. All 2,682 source arm/hand triangles are retained at every detail level to preserve thin fingers.",
+  "anc_sha256": "b3c19e31191ed695e88f7539f9293ef06e76ac403e1e51bf0c9ce53b5dc1a15a",
+  "runtime_changes": "Skinned bake (.anc version 5): full skeleton with up to four joint weights per vertex (fitted to the shape when the file has no usable rig), every material's own texture, three levels of detail, feet at floor level; animated by the shared humanoid clips and Maro's emotes.",
   "bake_tool": "tools/BakeSkeleton.java (requires the original GLB SHA-256 above; shares the production CharacterBake reduction/atlas writer)"
 }

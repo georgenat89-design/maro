@@ -15,6 +15,7 @@
     512
   ],
   "changes": "Z-up to Y-up, centered and scaled to 1.875m; arms lowered 80 degrees; whole-component limb rig and walk animation; repeated UVs retained. Face/body geometry preserved.",
-  "anc_sha256": "b2c3cad87472df308a08c43f630d385b06c13f42d81a9588aee24787cd6145b5",
-  "glb_sha256": "a255d742734edec5e58605582695b03c77fa099e68208018e5625f4c0859c7fa"
+  "anc_sha256": "7652dc64eef9e3629292f59bac905fd93d9e37ec5ae45d0976561169bda40adb",
+  "glb_sha256": "a255d742734edec5e58605582695b03c77fa099e68208018e5625f4c0859c7fa",
+  "runtime_changes": "Skinned bake (.anc version 5): full skeleton with up to four joint weights per vertex (fitted to the shape when the file has no usable rig), every material's own texture, three levels of detail, feet at floor level; animated by the shared humanoid clips and Maro's emotes."
 }

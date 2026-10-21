@@ -32,14 +32,19 @@ extends LivingEntityRenderer<T, PlayerEntityRenderState, PlayerEntityModel> {
         super(context, model, shadowRadius);
     }
 
+    @org.spongepowered.asm.mixin.Unique
+    private boolean maro$slim;
+
     @Inject(method={"<init>"}, at={@At(value="TAIL")})
     private void maro$addCharacterLayer(EntityRendererFactory.Context context, boolean slim, CallbackInfo ci) {
+        this.maro$slim = slim;
         this.addFeature((FeatureRenderer)new CharacterLayer((FeatureRendererContext)this));
     }
 
     @Inject(method={"updateRenderState(Lnet/minecraft/entity/PlayerLikeEntity;Lnet/minecraft/client/render/entity/state/PlayerEntityRenderState;F)V"}, at={@At(value="TAIL")})
     private void maro$extractCharacter(PlayerLikeEntity entity, PlayerEntityRenderState state, float partialTick, CallbackInfo ci) {
         CustomModel.extract((Entity)entity, (PlayerEntityRenderState)state);
+        ((dev.maro.render.character.CharacterHolder)state).maro$setSkin(this.getTexture(state), this.maro$slim);
     }
 
     @Inject(method={"renderArm"}, at={@At(value="HEAD")}, cancellable=true)

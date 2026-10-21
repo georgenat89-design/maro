@@ -36,4 +36,20 @@ extends AbstractTexture {
         }
         this.sampler = RenderSystem.getSamplerCache().get(FilterMode.LINEAR, true);
     }
+
+    /** Uploads a mip chain prepared off the render thread, then frees it. */
+    CharacterTexture(String label, NativeImage[] levels) {
+        GpuDevice device = RenderSystem.getDevice();
+        int width = levels[0].getWidth(), height = levels[0].getHeight();
+        this.glTexture = device.createTexture(() -> label, 5, TextureFormat.RGBA8, width, height, 1, levels.length);
+        this.glTextureView = device.createTextureView(this.glTexture);
+        CommandEncoder encoder = device.createCommandEncoder();
+        for (int level = 0; level < levels.length; ++level) {
+            NativeImage image = levels[level];
+            encoder.writeToTexture(this.glTexture, image, level, 0, 0, 0, image.getWidth(), image.getHeight(), 0, 0);
+            image.close();
+            levels[level] = null;
+        }
+        this.sampler = RenderSystem.getSamplerCache().get(FilterMode.LINEAR, true);
+    }
 }

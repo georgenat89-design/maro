@@ -25,6 +25,9 @@ public final class BakedModel {
         try (DataInputStream in = new DataInputStream(new BufferedInputStream(design.open()))) {
         int version;
         int n = version = in.readInt() == 1095648072 ? in.readInt() : -1;
+        if (version == dev.maro.render.character.skin.SkinFormat.VERSION) {
+            return BakedModel.skinned(design, detail, in, start);
+        }
         if (version != 3 && version != 4) {
             throw new IllegalStateException(design.id() + ": not a version 3 baked character");
         }
@@ -95,6 +98,16 @@ public final class BakedModel {
         } catch (IOException e) {
             throw new UncheckedIOException(design.name() + ": " + e.getMessage(), e);
         }
+    }
+
+    /** A skinned (version 5) character: the rig, weights and levels as baked, its textures decoded here. */
+    private static CharacterModel skinned(BakedDesign design, Detail detail, DataInputStream in, long start) throws IOException {
+        dev.maro.render.character.skin.SkinnedCharacter c = dev.maro.render.character.skin.SkinFormat.read(in);
+        // Standing straight the character is exactly its rig's height (feet at 0), for name tags and framing.
+        float maxY = c.rig.height;
+        var images = SkinImages.prepare(c);
+        long millis = (System.nanoTime() - start) / 1000000L;
+        return new CharacterModel(design.id(), design.name(), detail, c, images, maxY, millis);
     }
 
     private static int[] pixels(byte[] packed, int width, int height) throws IOException {

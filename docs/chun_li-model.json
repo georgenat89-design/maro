@@ -8,5 +8,6 @@
     "title": "Chun Li"
   },
   "changes": "Embedded local buffers/textures. LeBron unattached basketball omitted from wearable character.",
-  "anc_sha256": "2b132f8eeaff8f64be983b3b0e3d4d4102e5db5cf3f6039e94775f74b465932c"
+  "anc_sha256": "0b8adfb6e2fbfcc4edeae29f86247e057ca34f66f89f959dbf59f8087f6a369f",
+  "runtime_changes": "Skinned bake (.anc version 5): full skeleton with up to four joint weights per vertex (fitted to the shape when the file has no usable rig), every material's own texture, three levels of detail, feet at floor level; animated by the shared humanoid clips and Maro's emotes."
 }

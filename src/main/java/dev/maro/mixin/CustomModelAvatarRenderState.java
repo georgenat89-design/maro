@@ -17,6 +17,29 @@ implements CharacterHolder {
     private WornCharacter maro$character;
     @Unique
     private float maro$seat;
+    @Unique
+    private final float[] maro$motion = new float[8];
+    @Unique
+    private net.minecraft.util.Identifier maro$skin;
+    @Unique
+    private boolean maro$slim;
+
+    public net.minecraft.util.Identifier maro$skin() {
+        return this.maro$skin;
+    }
+
+    public boolean maro$slim() {
+        return this.maro$slim;
+    }
+
+    public void maro$setSkin(net.minecraft.util.Identifier skin, boolean slim) {
+        this.maro$skin = skin;
+        this.maro$slim = slim;
+    }
+
+    public float[] maro$motion() {
+        return this.maro$motion;
+    }
 
     public WornCharacter maro$character() {
         return this.maro$character;

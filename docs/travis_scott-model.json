@@ -8,11 +8,11 @@
     "title": "Travis Scott"
   },
   "changes": "Embedded local buffers/textures; legacy diffuse material colors mapped to metallic-roughness where needed.",
-  "anc_sha256": "568cec1da13c13a042b66eee70ac15db80c6142f6fafa239a7d08f43cc5b4878",
+  "anc_sha256": "c294dbb5264702035ef86a92fd6e0e80c9373f367d446b1d801f55d296c86908",
   "source_vertices": 21178,
   "source_triangles": 34379,
   "source_joints": 275,
-  "runtime_changes": "Original body/head/accessory base-color textures and source skeleton; centered/scaled to the shared character rig, lowered arms, source hand grip anchors, offline 7500/15000/30000 triangle budgets and bounded texture atlas. Source animation retained in the portable GLB; in-game movement uses the shared renderer.",
+  "runtime_changes": "Skinned bake (.anc version 5): full skeleton with up to four joint weights per vertex (fitted to the shape when the file has no usable rig), every material's own texture, three levels of detail, feet at floor level; animated by the shared humanoid clips and Maro's emotes.",
   "runtime_triangles": {
     "Low": 9569,
     "Medium": 14997,

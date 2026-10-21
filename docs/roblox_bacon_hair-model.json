@@ -8,8 +8,8 @@
     "title": "Roblox-Bacon-Hair"
   },
   "changes": "Embedded local buffers/textures; legacy diffuse material colors mapped to metallic-roughness where needed.",
-  "anc_sha256": "8007ce0cf83d898336db095e7b4d2e10fcb6dafd98f4a2abc96538c448d6ae1a",
+  "anc_sha256": "9a6a50851e5c07795d7f1e6f756e5f43f8198e6394bbb4f2d7699815eb457358",
   "source_vertices": 3820,
   "source_triangles": 3856,
-  "runtime_changes": "Centered and scaled to 30 model units; supplied Mixamo skeleton identifies head, shoulders, elbows, hands, hips and knees; lowered arms, original texture/materials, palm grip anchors and three prebaked detail levels. Runtime asset contains no GLB parsing."
+  "runtime_changes": "Skinned bake (.anc version 5): full skeleton with up to four joint weights per vertex (fitted to the shape when the file has no usable rig), every material's own texture, three levels of detail, feet at floor level; animated by the shared humanoid clips and Maro's emotes."
 }

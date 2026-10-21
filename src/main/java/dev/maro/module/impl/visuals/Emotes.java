@@ -146,6 +146,7 @@ public class Emotes extends Module {
         if (m != null && m.isEnabled() && m.playing != null && entity == mc.player) {
             float time = m.time();
             emote.maro$setEmote(m.playing, m.playing.loops() ? time : Math.min(time, m.playing.length()), m.blend());
+            dev.maro.render.character.DefaultSkins.wear(state);
         } else {
             emote.maro$setEmote(null, 0, 0);
         }

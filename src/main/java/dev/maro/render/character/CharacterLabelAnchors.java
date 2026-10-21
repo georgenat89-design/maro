@@ -43,6 +43,22 @@ public final class CharacterLabelAnchors {
         float gap=player.getHeight()<1?.12f:.25f;
         if(Float.isFinite(x+z+top))POINTS.put(player.getId(),camera.add(x/8,top+gap,z/8));
     }
+    /** Skinned characters: the head's top and the chest's middle, in the coordinates {@code pose} takes to the camera. */
+    static void recordPoints(PlayerEntityRenderState state,Matrix4f pose,float hx,float hy,float hz,float bx,float by,float bz){
+        if(!(((EntityRenderStateAccess)state).maro$getEntity() instanceof PlayerEntity player)||state.id!=player.getId())return;
+        var camera=MinecraftClient.getInstance().gameRenderer.getCamera().getCameraPos();
+        var tags=Nametags.get();
+        if(tags!=null&&tags.isEnabled()){
+            POINT.set(hx,hy,hz);pose.transformPosition(POINT);
+            float gap=player.getHeight()<1?.12f:.25f;
+            if(Float.isFinite(POINT.x+POINT.y+POINT.z))POINTS.put(player.getId(),camera.add(POINT.x,POINT.y+gap,POINT.z));
+        }
+        var esp=dev.maro.module.ModuleManager.get(dev.maro.module.impl.visuals.PlayerESP.class);
+        if(esp!=null&&esp.isEnabled()&&esp.tracersOn()){
+            POINT.set(bx,by,bz);pose.transformPosition(POINT);
+            if(Float.isFinite(POINT.x+POINT.y+POINT.z))BODIES.put(player.getId(),camera.add(POINT.x,POINT.y,POINT.z));
+        }
+    }
     private static float[] bounds(PartMesh part){
         float[] b={Float.POSITIVE_INFINITY,Float.POSITIVE_INFINITY,Float.POSITIVE_INFINITY,
             Float.NEGATIVE_INFINITY,Float.NEGATIVE_INFINITY,Float.NEGATIVE_INFINITY};

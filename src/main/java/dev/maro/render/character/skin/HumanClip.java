@@ -19,6 +19,8 @@ public final class HumanClip {
     /** Key times and values per bone; null for a bone the clip leaves at rest. */
     private final float[][] times = new float[Human.COUNT][], values = new float[Human.COUNT][];
     private float[] shiftTimes, shiftValues, groundTimes, groundValues;
+    /** A steady turn of the whole body, degrees a second to the right (a spin that never unwinds). */
+    private float spin;
     /** Whether keys are fractions of a cycle (scaled by the play rate) rather than seconds. */
     public final boolean cyclic;
 
@@ -56,6 +58,53 @@ public final class HumanClip {
             spline(groundTimes, groundValues, 1, at, span, v);
             out.grounded = Math.max(0, Math.min(1, v[0]));
         }
+        if (spin != 0) {
+            float turn = (float) Math.toRadians(spin * (cyclic ? at * length : at)) % (float) (Math.PI * 2);
+            float[] q = SPIN.get();
+            SkinMath.axisAngleQ(0, 1, 0, -turn, q, 0);
+            int o = Human.HIPS.ordinal() * 4;
+            SkinMath.mulQ(q, 0, out.rot, o, out.rot, o);
+        }
+    }
+
+    private static final ThreadLocal<float[]> SPIN = ThreadLocal.withInitial(() -> new float[4]);
+
+    /**
+     * The clip's raw angles at {@code t}: pitch, yaw and roll (degrees) per bone, NaN for a bone it
+     * leaves alone; and the body's sway left, lift, sway forward (leg lengths), how grounded it is
+     * and its spin so far (degrees). For drawing the clip on a model of six rigid parts.
+     */
+    public void angles(float t, float[] bones, float[] body) {
+        float at = cyclic ? t / length : t;
+        float span = cyclic ? 1 : length;
+        if (loop) {
+            at %= span;
+            if (at < 0) at += span;
+        } else {
+            at = Math.max(0, Math.min(span, at));
+        }
+        float[] v = SCRATCH.get();
+        for (int b = 0; b < Human.COUNT; b++) {
+            if (times[b] == null) {
+                bones[b * 3] = bones[b * 3 + 1] = bones[b * 3 + 2] = Float.NaN;
+                continue;
+            }
+            spline(times[b], values[b], 3, at, span, v);
+            System.arraycopy(v, 0, bones, b * 3, 3);
+        }
+        body[0] = body[1] = body[2] = 0;
+        body[3] = 1;
+        if (shiftTimes != null) {
+            spline(shiftTimes, shiftValues, 3, at, span, v);
+            body[0] = v[0];
+            body[1] = v[1];
+            body[2] = v[2];
+        }
+        if (groundTimes != null) {
+            spline(groundTimes, groundValues, 1, at, span, v);
+            body[3] = Math.max(0, Math.min(1, v[0]));
+        }
+        body[4] = spin == 0 ? 0 : spin * (cyclic ? at * length : at) % 360;
     }
 
     private static final ThreadLocal<float[]> SCRATCH = ThreadLocal.withInitial(() -> new float[4]);
@@ -192,6 +241,12 @@ public final class HumanClip {
                 float t = clip.loop ? span * i / n : (n == 1 ? 0 : span * i / (n - 1));
                 shift(t, values[i * 3], values[i * 3 + 1], values[i * 3 + 2]);
             }
+            return this;
+        }
+
+        /** A steady turn of the whole body, degrees a second to the right. */
+        public Builder spin(float degreesPerSecond) {
+            clip.spin = degreesPerSecond;
             return this;
         }
 
