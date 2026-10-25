@@ -14,7 +14,7 @@ import java.util.List;
 public final class SkinAccessories extends Module {
     public static final String[] PRESETS = {"Dragon", "Angel", "Demon", "Fox", "Cat", "Bunny", "Cyber", "Royal", "Forest", "Butterfly", "Astral", "Adventurer"};
     private final ModeSetting preset = add(new ModeSetting("Preset", "Apply a complete look, then customize any part", "Dragon", PRESETS).onChange(this::applyPreset));
-    private final ButtonSetting preview = add(new ButtonSetting("3D Preview", "Rotate your character and try themed looks", "Open",
+    private final ButtonSetting preview = add(new ButtonSetting("Asset Browser", "Browse and configure cosmetic assets", "Open",
         () -> mc.setScreen(new SkinAccessoriesScreen(mc.currentScreen, this))));
     private final ModeSetting target = add(new ModeSetting("Players", "Who wears the accessories on your screen", "Self", "Self", "Everyone"));
     private final ModeSetting head = add(new ModeSetting("Head", "Horns, animal ears, or headwear", "Dragon Horns", "None", "Dragon Horns", "Devil Horns", "Cat Ears", "Fox Ears", "Bunny Ears", "Antlers", "Crown", "Headphones"));
@@ -62,7 +62,7 @@ public final class SkinAccessories extends Module {
     public SkinAccessories() { super("Cosmetics", "Hats, wings, horns, tails, halos, and skins for your swords, pickaxes, shovels and tridents. Visible in your client.", Category.VISUALS); instance = this; }
     @Override public net.minecraft.client.gui.screen.Screen panel(net.minecraft.client.gui.screen.Screen parent) { return new SkinAccessoriesScreen(parent, this); }
     @Override public List<SettingSection> getSettingSections() {
-        return List.of(section("Looks & Preview", preset, preview, target), section("Items", sword, pickaxe, shovel, trident, itemSize),
+        return List.of(section("Looks & Assets", preset, preview, target), section("Items", sword, pickaxe, shovel, trident, itemSize),
             section("3D Pickaxes",pickaxeShine,pickaxeOutline,pickaxeOutlineColor,pickaxeOutlineWidth,pickaxeFirst,pickaxeSwing,pickaxeThird,pickaxeIcons,pickaxeSounds,pickaxeVolume),
             section("Accessories", head, wings, tail, halo, shoulders, back),
             section("Fit", headSize, wingSize, wingSpread, tailLength, haloHeight), section("Palette", primary, accent, haloColor, rainbow, glow),
@@ -88,13 +88,19 @@ public final class SkinAccessories extends Module {
     public int accentColor() { return rainbow.get() ? rainbowColor(0) : accent.get(); }
     public int haloColor() { return rainbow.get() ? rainbowColor(0.12f) : haloColor.get(); }
     private int rainbowColor(float offset) { return Color.HSBtoRGB((float)((System.nanoTime() - animationOrigin) / 1e9 / 16 + offset) % 1, 0.55f, 1); }
+    public int accentColor(PlayerEntityRenderState state){
+        var preview=dev.maro.gui.render.PlayerPreviewData.of(state);
+        return preview!=null&&rainbow.get()?Color.HSBtoRGB((float)(preview.maro$previewSeconds()/16)%1,.55f,1):accentColor();
+    }
+    public int haloColor(PlayerEntityRenderState state){
+        var preview=dev.maro.gui.render.PlayerPreviewData.of(state);
+        return preview!=null&&rainbow.get()?Color.HSBtoRGB((float)(preview.maro$previewSeconds()/16+.12)%1,.55f,1):haloColor();
+    }
     public boolean wants(PlayerEntityRenderState state) {
         if (mc.player == null || state.invisible || state.spectator) return false;
-        if(state.id==dev.maro.gui.VisualPreview.ENTITY_ID && mc.currentScreen instanceof dev.maro.gui.ClickGuiScreen gui)
-            return isEnabled() || gui.visualPreview().module()==this;
-        boolean previewing = mc.currentScreen instanceof SkinAccessoriesScreen;
-        if (!isEnabled() && !previewing) return false;
-        if (previewing) return state.id == mc.player.getId();
+        var portrait=dev.maro.gui.render.PlayerPreviewData.of(state);
+        if(portrait!=null) return isEnabled() || portrait.maro$previewModule()==this;
+        if (!isEnabled()) return false;
         if (mc.options.getPerspective().isFirstPerson() && mc.getCameraEntity() != null && mc.getCameraEntity().getId() == state.id) return false;
         return target.is("Everyone") || state.id == mc.player.getId();
     }
@@ -135,9 +141,12 @@ public final class SkinAccessories extends Module {
     }
 
     public float phase(PlayerEntityRenderState s) {
+        var preview=dev.maro.gui.render.PlayerPreviewData.of(s);
+        if(preview!=null)return motion.get()?(float)(preview.maro$previewSeconds()*speed.getFloat()*(.9f+(movement.get()?effort(s):.6f)*3.4f)):0;
         return motion.get() ? flap(s).phase : 0;
     }
     public float motionAmount(PlayerEntityRenderState s) {
+        if(dev.maro.gui.render.PlayerPreviewData.of(s)!=null)return motion.get()?strength.getFloat()*(movement.get()?effort(s):1):0;
         return motion.get() ? strength.getFloat() * (movement.get() ? flap(s).intensity : 1) : 0;
     }
 
@@ -155,7 +164,7 @@ public final class SkinAccessories extends Module {
     /** The skin to draw an item with, for your own items while Cosmetics is on (or previewing), else null. */
     public static CosmeticItems.Skin skinFor(net.minecraft.item.ItemStack stack) {
         SkinAccessories m = instance;
-        if (m == null || stack.isEmpty() || !(m.isEnabled() || mc.currentScreen instanceof SkinAccessoriesScreen)) return null;
+        if (m == null || stack.isEmpty() || !(m.isEnabled() || dev.maro.gui.render.PlayerPreviewState.extracting(m))) return null;
         if (stack.isIn(net.minecraft.registry.tag.ItemTags.SWORDS)) return CosmeticItems.byName(CosmeticItems.Kind.SWORD, m.sword.get());
         if (stack.isIn(net.minecraft.registry.tag.ItemTags.PICKAXES)) return CosmeticItems.byName(CosmeticItems.Kind.PICKAXE, m.pickaxe.get());
         if (stack.isIn(net.minecraft.registry.tag.ItemTags.SHOVELS)) return CosmeticItems.byName(CosmeticItems.Kind.SHOVEL, m.shovel.get());

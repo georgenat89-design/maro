@@ -23,4 +23,7 @@ public interface GameRendererSpatialAccessor {
 
     @Invoker("getFov")
     float maro$fov(Camera camera, float tickProgress, boolean changingFov);
+
+    @Invoker("renderHand")
+    void maro$renderPlacementHands(float tickProgress,boolean sleeping,org.joml.Matrix4f view);
 }

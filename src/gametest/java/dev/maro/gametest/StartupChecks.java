@@ -146,7 +146,7 @@ final class StartupChecks {
                             .map(e -> (ClickableWidget)e).findFirst().orElseThrow();
                         double pixels = c.getWindow().getScaleFactor();
                         return new int[]{(int)((button.getX()+8)*pixels),(int)(button.getY()*pixels),
-                            (int)((button.getRight()-28)*pixels),(int)((button.getY()+button.getHeight()/2)*pixels)};
+                            (int)((button.getRight()-28)*pixels),(int)(button.getBottom()*pixels)};
                     });
                     var image = javax.imageio.ImageIO.read(titleShot.toFile());
                     int top=image.getHeight(),bottom=-1;
@@ -155,7 +155,13 @@ final class StartupChecks {
                         if ((rgb>>16&255)>210 && (rgb>>8&255)>210 && (rgb&255)>210) { top=Math.min(top,y); bottom=Math.max(bottom,y); }
                     }
                     int inkHeight=bottom-top+1;
-                    require(inkHeight>=11&&inkHeight<=24,"Menu label is unreadable or overflows its row: "+inkHeight);
+                    // The current home buttons have one centered label, rather than a title
+                    // and hint stacked in two halves. Measure the full row and its ink center.
+                    int rowHeight=area[3]-area[1];
+                    require(inkHeight>=Math.max(8,rowHeight*.2f)&&inkHeight<=rowHeight*.65f,
+                            "Menu label is unreadable or overflows its row: "+inkHeight);
+                    require(Math.abs((top+bottom+1)/2f-(area[1]+area[3])/2f)<=2,
+                            "Menu label is not centered in its button");
                 } catch (java.io.IOException error) { throw new AssertionError(error); }
             }
             // Native-size font coverage must stay crisp at common and fractional canvas scales.

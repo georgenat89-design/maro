@@ -68,7 +68,7 @@ settings, keybinds and configuration. Meteor is optional.
   Scanning runs incrementally on the client thread, with a time budget and an
   operation cap. Updates are coalesced by chunk; dimension changes clear state.
 - **Trident Util** was removed, including its dry-use and charge overrides.
-  Auto Trident has also been removed; manual Trident Boost remains available.
+  Auto Trident, Trident Boost and Air Stuck have also been removed.
 
 ## Validation
 

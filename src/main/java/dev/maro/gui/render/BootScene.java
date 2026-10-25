@@ -13,6 +13,7 @@ public final class BootScene {
     public static void emblem(DrawContext ctx,float x,float y,float size,float fill,float time){BootAssets.mark(ctx,x-size/2,y-size/2,size,WHITE);}
     public static void loading(DrawContext ctx,int w,int h,float fill,String status,float alpha){loading(ctx,w,h,fill,status,alpha,true);}
     public static void loading(DrawContext ctx,int w,int h,float fill,String status,float alpha,boolean fillMark){
+        if(dev.maro.render.capture.CapturePass.active())return;
         float old=Render2D.getAlpha();Render2D.setAlpha(alpha);var m=ctx.getMatrices();m.pushMatrix();
         try{
             background(ctx,w,h,time());

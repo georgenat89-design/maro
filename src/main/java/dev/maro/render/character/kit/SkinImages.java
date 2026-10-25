@@ -21,11 +21,22 @@ import org.lwjgl.system.MemoryUtil;
 @Environment(value=EnvType.CLIENT)
 public final class SkinImages {
     private static final int MAX_LEVELS = 9;
+    private static final int[] TO_LINEAR = new int[256], TO_SRGB = new int[65536];
+    static {
+        for (int i = 0; i < TO_LINEAR.length; i++) {
+            double s = i / 255.0;
+            TO_LINEAR[i] = (int)Math.round((s <= .04045 ? s / 12.92 : Math.pow((s + .055) / 1.055, 2.4)) * 65535);
+        }
+        for (int i = 0; i < TO_SRGB.length; i++) {
+            double linear = i / 65535.0;
+            TO_SRGB[i] = (int)Math.round((linear <= .0031308 ? linear * 12.92 : 1.055 * Math.pow(linear, 1 / 2.4) - .055) * 255);
+        }
+    }
 
     private SkinImages() {
     }
 
-    /** Every image's mip chain; an image that cannot be read becomes a 1x1 white one. */
+    /** Every image's mip chain; a failed image rejects the model instead of rendering a white body. */
     public static NativeImage[][] prepare(SkinnedCharacter c) {
         NativeImage[][] out = new NativeImage[c.images.length][];
         try {
@@ -41,8 +52,7 @@ public final class SkinImages {
                         h = size[1];
                     }
                 } catch (IOException | RuntimeException e) {
-                    argb = new int[]{-1};
-                    w = h = 1;
+                    throw new IllegalStateException("Could not decode character texture " + i + " (" + w + "x" + h + ")", e);
                 }
                 out[i] = mips(argb, w, h);
             }
@@ -137,9 +147,9 @@ public final class SkinImages {
                         int p = px[Math.min(h - 1, y * 2 + dy) * w + Math.min(w - 1, x * 2 + dx)];
                         int pa = p >>> 24;
                         a += pa;
-                        r += (p >> 16 & 0xFF) * pa;
-                        g += (p >> 8 & 0xFF) * pa;
-                        b += (p & 0xFF) * pa;
+                        r += TO_LINEAR[p >> 16 & 0xFF] * pa;
+                        g += TO_LINEAR[p >> 8 & 0xFF] * pa;
+                        b += TO_LINEAR[p & 0xFF] * pa;
                     }
                 }
                 if (a == 0) {
@@ -148,7 +158,8 @@ public final class SkinImages {
                     out[y * nw + x] = p0 & 0xFFFFFF;
                     continue;
                 }
-                out[y * nw + x] = (a + 2) / 4 << 24 | r / a << 16 | g / a << 8 | b / a;
+                out[y * nw + x] = (a + 2) / 4 << 24 | TO_SRGB[(r + a / 2) / a] << 16
+                        | TO_SRGB[(g + a / 2) / a] << 8 | TO_SRGB[(b + a / 2) / a];
             }
         }
         return out;

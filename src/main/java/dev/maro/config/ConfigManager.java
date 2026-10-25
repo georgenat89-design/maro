@@ -77,7 +77,7 @@ public final class ConfigManager {
         root.add("friends", friends);
         root.addProperty("config", current);
         root.addProperty("spatialMenu", true);
-        root.addProperty("lookRevision", 5);
+        root.addProperty("lookRevision", 6);
         root.addProperty("version", CLIENT_VERSION);
         write(CLIENT_FILE, root);
     }
@@ -143,6 +143,21 @@ public final class ConfigManager {
             ClientSettings.customFont.set(true);
             ClientSettings.capsText.set(true);
         }
+        // The requested reference design is adopted once. Later personal theme choices persist.
+        if (!root.has("lookRevision") || root.get("lookRevision").getAsInt() < 6) {
+            if (ClientSettings.guiSize.getInt() == 75) ClientSettings.guiSize.set(97d);
+            ClientSettings.fontFace.set("Inter");
+            ClientSettings.customFont.set(true);
+            ClientSettings.capsText.set(false);
+            ClientSettings.menuTextSize.reset();
+            ClientSettings.accent.reset();
+            ClientSettings.background.reset();
+            ClientSettings.opacity.set(100d);
+            ClientSettings.radius.set(10d);
+            ClientSettings.gradient.set(false);
+            ClientSettings.glow.set(false);
+            ClientSettings.contourLines.set(false);
+        }
 
     }
 
@@ -155,7 +170,7 @@ public final class ConfigManager {
         JsonObject modules = new JsonObject();
         for (Module m : ModuleManager.all()) {
             JsonObject o = new JsonObject();
-            o.addProperty("enabled", m.persistEnabled() && m.isEnabled());
+            o.addProperty("enabled", m.persistEnabled() && dev.maro.render.capture.StreamproofScenePolicy.configuredEnabled(m, m.isEnabled()));
             o.add("bind", m.getBind().toJson());
             JsonObject settings = new JsonObject();
             writeSettings(settings, m.getSettings());
@@ -189,6 +204,7 @@ public final class ConfigManager {
                 if (o.has("settings") && o.get("settings").isJsonObject()) readSettings(o.getAsJsonObject("settings"), m.getSettings());
                 if (o.has("bind")) m.getBind().fromJson(o.get("bind"));
                 if (o.has("extra") && o.get("extra").isJsonObject()) m.loadExtra(o.getAsJsonObject("extra"));
+                else if (m instanceof dev.maro.module.impl.visuals.ViewModel) m.loadExtra(new JsonObject());
                 if (o.has("enabled")) m.setEnabled(m.persistEnabled() && o.get("enabled").getAsBoolean());
             } catch (Exception e) {
                 Maro.LOGGER.warn("Failed to load module {} from config {}", m.getName(), name, e);

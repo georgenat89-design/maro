@@ -57,7 +57,7 @@ final class SharedItemGripChecks {
                 context.runOnClient(c->model.select(false,name));
                 for(int i=0;i<300&&!context.computeOnClient(c->model.ready(name)!=null);i++)context.waitTicks(1);
                 require(context.computeOnClient(c->model.ready(name)!=null),"Model unavailable: "+name);
-                context.runOnClient(c->((CustomModelScreen)c.currentScreen).showAngle(90));
+                context.runOnClient(c->UnifiedPreviewTestView.angle(c,90));
                 context.waitTicks(2);context.takeScreenshot("maro-item-grip-totem-"+name.toLowerCase().replace(' ','-'));
             }
             context.runOnClient(c->model.select(false,"SpongeBob"));

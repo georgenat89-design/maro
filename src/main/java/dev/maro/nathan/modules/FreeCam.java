@@ -52,6 +52,9 @@ import dev.maro.nathan.NameeProtectAddon;
  */
 public class FreeCam extends Module {
     private static FreeCam instance;
+    private static final double DEFAULT_SPEED = 96;
+    private static final double MAX_SPEED = 4096;
+    private static final double DEFAULT_SMOOTHING = 0.88;
 
     private final SettingGroup sgMain = settings.getDefaultGroup();
     private final SettingGroup sgMovement = settings.createGroup("Movement");
@@ -60,9 +63,9 @@ public class FreeCam extends Module {
     private final Setting<Double> speed = sgMovement.add(new DoubleSetting.Builder()
         .name("speed")
         .description("How fast the camera flies, in blocks a second.")
-        .defaultValue(16)
-        .range(0.5, 200)
-        .sliderRange(1, 64)
+        .defaultValue(DEFAULT_SPEED)
+        .range(0.5, MAX_SPEED)
+        .sliderRange(1, 1024)
         .decimalPlaces(2)
         .build()
     );
@@ -89,7 +92,7 @@ public class FreeCam extends Module {
     private final Setting<Double> smoothing = sgCamera.add(new DoubleSetting.Builder()
         .name("smoothing")
         .description("How much the camera glides into and out of a move. 0 starts and stops dead; nearer 1 is a longer, softer glide.")
-        .defaultValue(0.98)
+        .defaultValue(DEFAULT_SMOOTHING)
         .range(0, 0.995)
         .sliderRange(0, 0.99)
         .decimalPlaces(2)
@@ -151,6 +154,7 @@ public class FreeCam extends Module {
     private float yaw;
     private float pitch;
     private long lastAt;
+    private final double[] cameraFrame = new double[5];
 
     /** The world it was turned on in, so that a change of world turns it off. */
     private ClientWorld level;
@@ -168,6 +172,23 @@ public class FreeCam extends Module {
 
         // Only until a saved binding is loaded over it: cleared, it stays cleared.
         keybind.set(true, GLFW.GLFW_KEY_RIGHT_BRACKET, 0);
+    }
+
+    @Override
+    public com.google.gson.JsonObject saveExtra() {
+        var data = super.saveExtra();
+        data.addProperty("movementVersion", 2);
+        return data;
+    }
+
+    @Override
+    public void loadExtra(com.google.gson.JsonObject data) {
+        super.loadExtra(data);
+        // Upgrade only the old default pair; retain deliberately customized movement.
+        if (!data.has("movementVersion") && speed.get() == 16 && smoothing.get() == 0.98) {
+            speed.set(DEFAULT_SPEED);
+            smoothing.set(DEFAULT_SMOOTHING);
+        }
     }
 
     @Override
@@ -212,6 +233,8 @@ public class FreeCam extends Module {
     public void onDeactivate() {
         started = false;
         level = null;
+        velocityX = velocityY = velocityZ = 0;
+        lastAt = 0;
 
         if (ownRenderDistance != null && mc.options != null) {
             mc.options.getViewDistance().setValue(ownRenderDistance);
@@ -290,7 +313,7 @@ public class FreeCam extends Module {
 
         if (!scrollSpeed.get()) return;
 
-        speed.set(Math.max(0.5, Math.min(200, speed.get() * Math.pow(1 + scrollStep.get(), event.value))));
+        speed.set(Math.max(0.5, Math.min(MAX_SPEED, speed.get() * Math.pow(1 + scrollStep.get(), event.value))));
     }
 
     // ------------------------------------------------------ for the mixins
@@ -358,7 +381,7 @@ public class FreeCam extends Module {
             started = true;
         }
 
-        double seconds = Math.min((now - lastAt) / 1.0e9, 0.1);
+        double seconds = Math.max(0, Math.min((now - lastAt) / 1.0e9, 0.1));
 
         lastAt = now;
 
@@ -370,6 +393,19 @@ public class FreeCam extends Module {
         double across = flying ? axis(mc.options.rightKey.isPressed(), mc.options.leftKey.isPressed()) : 0;
         double up = flying ? axis(mc.options.jumpKey.isPressed(), mc.options.sneakKey.isPressed()) : 0;
 
+        move(seconds, ahead, across, up, flying && mc.options.sprintKey.isPressed());
+        cameraFrame[0] = x;
+        cameraFrame[1] = y;
+        cameraFrame[2] = z;
+        cameraFrame[3] = yaw;
+        cameraFrame[4] = pitch;
+        return cameraFrame;
+    }
+
+    /** Integrates the same acceleration curve at every frame rate, without allocating per frame. */
+    private void move(double seconds, double ahead, double across, double up, boolean sprinting) {
+        if (seconds <= 0) return;
+
         // Along the ground the way the camera faces, and straight up and down:
         // looking at your feet and pressing forward does not dig you in.
         double facing = Math.toRadians(yaw);
@@ -377,34 +413,22 @@ public class FreeCam extends Module {
         double wishZ = Math.cos(facing) * ahead - Math.sin(facing) * across;
         double length = Math.sqrt(wishX * wishX + up * up + wishZ * wishZ);
 
-        if (length > 0) {
-            double pace = speed.get() * (flying && mc.options.sprintKey.isPressed() ? sprintMultiplier.get() : 1) / length;
-
-            // Into a move the glide is a third as long as out of one: a camera
-            // that takes a second to get going feels broken, one that takes a
-            // second to settle feels smooth. Both are by the clock.
-            double kept = Math.pow(smoothing.get(), seconds * 180);
-
-            velocityX = wishX * pace + (velocityX - wishX * pace) * kept;
-            velocityY = up * pace + (velocityY - up * pace) * kept;
-            velocityZ = wishZ * pace + (velocityZ - wishZ * pace) * kept;
-        } else if (holdPosition.get()) {
-            velocityX = 0;
-            velocityY = 0;
-            velocityZ = 0;
-        } else {
-            double kept = Math.pow(smoothing.get(), seconds * 60);
-
-            velocityX *= kept;
-            velocityY *= kept;
-            velocityZ *= kept;
+        if (length == 0 && holdPosition.get()) {
+            velocityX = velocityY = velocityZ = 0;
+            return;
         }
-
-        x += velocityX * seconds;
-        y += velocityY * seconds;
-        z += velocityZ * seconds;
-
-        return new double[] {x, y, z, yaw, pitch};
+        double pace = length == 0 ? 0 : speed.get() * (sprinting ? sprintMultiplier.get() : 1) / length;
+        double targetX = wishX * pace, targetY = up * pace, targetZ = wishZ * pace;
+        double smooth = smoothing.get();
+        double decay = smooth == 0 ? 0 : -Math.log(smooth) * (length > 0 ? 180 : 60);
+        double kept = smooth == 0 ? 0 : Math.exp(-decay * seconds);
+        double glide = smooth == 0 ? 0 : -Math.expm1(-decay * seconds) / decay;
+        x += targetX * seconds + (velocityX - targetX) * glide;
+        y += targetY * seconds + (velocityY - targetY) * glide;
+        z += targetZ * seconds + (velocityZ - targetZ) * glide;
+        velocityX = targetX + (velocityX - targetX) * kept;
+        velocityY = targetY + (velocityY - targetY) * kept;
+        velocityZ = targetZ + (velocityZ - targetZ) * kept;
     }
 
     private static double axis(boolean more, boolean less) {

@@ -94,6 +94,8 @@ public final class Renderer3D {
     private static int registrySize=-1;
     public static void init() {
         WorldRenderEvents.END_MAIN.register(context -> {
+            boolean clean=dev.maro.render.capture.CleanCapture.beginPrivateWorld();
+            try {
             BaseESP module = ModuleManager.get(BaseESP.class);
             AutoBuilder builder=ModuleManager.get(AutoBuilder.class);
             // Block ESP and the modules built on it (Storage ESP).
@@ -129,6 +131,7 @@ public final class Renderer3D {
                 if(builder!=null&&builder.isEnabled())SchematicRenderer.render(builder,new Renderer3D(context),context);
             }
             finally { BUFFERS.draw(); }
+            } finally { dev.maro.render.capture.CleanCapture.endPrivateWorld(clean); }
         });
     }
     private void vertex(VertexConsumer consumer, double x, double y, double z, Color color) {

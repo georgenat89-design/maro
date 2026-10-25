@@ -14,12 +14,9 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.texture.TextureSetup;
 import net.minecraft.text.Text;
 import org.joml.Matrix3x2f;
-import org.lwjgl.system.MemoryStack;
-import org.lwjgl.util.tinyfd.TinyFileDialogs;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 /** Pick a picture for {@link CustomSky}: browse, paste a path or drag a file in. */
 public final class SkyImageScreen extends Screen {
@@ -28,7 +25,6 @@ public final class SkyImageScreen extends Screen {
     private final Screen parent;
     private final CustomSky module;
     private TextFieldWidget path;
-    private boolean choosing;
     private String pickerError = "";
 
     public SkyImageScreen(Screen parent, CustomSky module) {
@@ -40,8 +36,10 @@ public final class SkyImageScreen extends Screen {
     @Override
     protected void init() {
         int w = Math.min(420, width - 32), x = (width - w) / 2, y = height / 2 + 20;
+        String previousPath=path==null?"":path.getText();
         path = new TextFieldWidget(textRenderer, x, y + 8, w - 78, 20, Text.literal("Image file path"));
         path.setMaxLength(32767);
+        path.setText(previousPath);
         addDrawableChild(path);
         setInitialFocus(path);
         addDrawableChild(ButtonWidget.builder(Text.literal("Browse"), button -> browse()).dimensions(x + w - 72, y + 8, 72, 20).build());
@@ -57,22 +55,9 @@ public final class SkyImageScreen extends Screen {
     }
 
     private void browse() {
-        if (choosing || module.pictureBusy()) return;
-        choosing = true;
+        if (module.pictureBusy()) return;
         pickerError = "";
-        CompletableFuture.supplyAsync(() -> {
-            try (MemoryStack stack = MemoryStack.stackPush()) {
-                return TinyFileDialogs.tinyfd_openFileDialog("Choose a sky image", module.pictureFolder().toString() + java.io.File.separator,
-                    stack.pointers(stack.UTF8("*.png"), stack.UTF8("*.jpg"), stack.UTF8("*.jpeg")), "PNG or JPG images", false);
-            }
-        }).whenComplete((file, error) -> client.execute(() -> {
-            choosing = false;
-            if (error != null) pickerError = "Paste the image's file path or drag the file into this window";
-            else if (file != null) {
-                path.setText(file);
-                module.importPicture(Path.of(file));
-            }
-        }));
+        client.setScreen(new dev.maro.gui.PngFilePickerScreen(this,Path.of(System.getProperty("user.home")),"Choose a sky image",file->{path.setText(file.toString());module.importPicture(file);},"png","jpg","jpeg"));
     }
 
     @Override
@@ -96,7 +81,7 @@ public final class SkyImageScreen extends Screen {
         drawPreview(ctx, px, py, PREVIEW_W, PREVIEW_H);
         Fonts.centeredTop(ctx, "Browse, paste a path, or drag a PNG or JPG here", width / 2, y - 12, width - 24, 0xFFADB5C7);
         super.render(ctx, mx, my, delta);
-        String status = !pickerError.isEmpty() ? pickerError : choosing ? "Choosing a file…" : module.pictureStatus();
+        String status = !pickerError.isEmpty() ? pickerError : module.pictureStatus();
         Fonts.centeredTop(ctx, Fonts.trim(status, w, false, .9f), width / 2, y + 63, width - 24, 0xFFADB5C7);
         Fonts.centeredTop(ctx, Fonts.trim("2:1 images are used as 360° panoramas and 4:3 as skybox crosses;", w, false, .9f), width / 2, y + 77, width - 24, 0xFF7C8599);
         Fonts.centeredTop(ctx, Fonts.trim("any other picture wraps round the horizon.", w, false, .9f), width / 2, y + 89, width - 24, 0xFF7C8599);

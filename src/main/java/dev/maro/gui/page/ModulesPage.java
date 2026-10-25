@@ -28,7 +28,7 @@ import java.util.List;
  * a right click turns it on or off, and a middle click sets its key.
  */
 public class ModulesPage extends Page {
-    private static final float CARD_H = 34f;
+    private static final float CARD_H = 36f;
     private static final float GAP = 8f;
     private static final float FOOTER_H = 22f;
 
@@ -59,6 +59,11 @@ public class ModulesPage extends Page {
 
     /** Opens a module's settings: its own screen if it has one, otherwise the panel beside the window. */
     public void openSettings(Module m) {
+        if (dev.maro.gui.VisualPreview.supports(m)) {
+            // Dedicated wardrobes/choosers remain explicit setting buttons, not the card's default.
+            openOptions(m);
+            return;
+        }
         if (m instanceof dev.maro.module.impl.player.AutoBuilder builder) {
             net.minecraft.client.MinecraftClient.getInstance().setScreen(new dev.maro.builder.BuilderControlScreen(gui, builder));
             return;
@@ -103,6 +108,7 @@ public class ModulesPage extends Page {
         int rows = (mods.size() + cols - 1) / cols;
         scroll.setBounds(rows * (CARD_H + GAP) - GAP + 2, h);
         float off = scroll.update();
+        gui.scrollHit(x,y,w,h,scroll::scroll);
 
         gui.pushClip(x - 4, y, w + 8, h);
         for (int i = 0; i < mods.size(); i++) {
@@ -127,9 +133,10 @@ public class ModulesPage extends Page {
         float r = SettingsList.cardRadius();
         float cy = y + h / 2f;
 
-        Render2D.roundRect(ctx, x, y, w, h, r, ColorUtil.lerp(Theme.CARD, Theme.CARD_HOVER, Math.max(hv, sel * 0.6f)));
-        Render2D.roundOutline(ctx, x, y, w, h, r, 1f, ColorUtil.lerp(ColorUtil.withAlpha(Theme.BORDER, 0x90), Theme.accent(0xB0), sel));
-        if (sel > 0.01f) Render2D.roundRect(ctx, x + 1, y + 8, 2, h - 16, 1f, Theme.accent(Math.round(255 * sel)));
+        int surface = ColorUtil.lerp(Theme.CARD, Theme.CARD_HOVER, hv);
+        Render2D.roundRect(ctx, x, y, w, h, r, ColorUtil.lerp(surface, ColorUtil.lerp(Theme.CARD, Theme.accent(), .14f), sel));
+        Render2D.roundOutline(ctx, x, y, w, h, r, Render2D.px(), ColorUtil.lerp(ColorUtil.withAlpha(Theme.BORDER, Math.round(0x28 * hv)), Theme.accent(0x65), sel));
+        if (sel > 0.01f) Render2D.roundRect(ctx, x + 1, y + 9, 2, h - 18, 1f, Theme.accent(Math.round(255 * sel)));
 
         // the card: left = settings, right = on/off, middle = key
         gui.hit(x, y, w, h, (button, mx, my) -> {
@@ -145,21 +152,20 @@ public class ModulesPage extends Page {
         });
         gui.place(m, x + w * 0.4f, cy);
 
-        // icon tile
-        float ts = 22, tx = x + 7, ty = cy - ts / 2f;
-        Render2D.roundRect(ctx, tx, ty, ts, ts, 6f, ColorUtil.lerp(ColorUtil.withAlpha(0xFFFFFFFF, 0x10 + Math.round(0x08 * hv)), Theme.accent(0x30), on));
+        // A consistent outline icon leaves the row quiet and gives names more room.
+        float ts = 18, tx = x + 9;
         int iconColor = ColorUtil.lerp(ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT_DIM, hv), Theme.accent(), on);
-        Glyphs.draw(ctx, ModuleIcons.of(m), tx + ts / 2f, ty + ts / 2f, 12f, iconColor);
+        Glyphs.draw(ctx, ModuleIcons.of(m), tx + ts / 2f, cy, 14f, iconColor);
 
         // switch, star, then the name in what is left
-        float toggleX = x + w - 9 - 20, starX = toggleX - 12;
+        float toggleX = x + w - 9 - 23, starX = toggleX - 14;
         float nx = tx + ts + 9, maxName = starX - 10 - nx;
         boolean listening = gui.listening == m.getBind();
         int nameColor = ColorUtil.lerp(ColorUtil.lerp(Theme.TEXT_DIM, Theme.TEXT, hv), 0xFFFFFFFF, on);
-        String name = listening ? "Press a key…" : Fonts.trim(m.getDisplayName(), maxName - (m.isExperimental() ? 11 : 0), false, 0.84f);
-        Fonts.drawV(ctx, name, nx, cy, listening ? Theme.accent() : nameColor, false, 0.84f);
+        String name = listening ? "Press a key…" : Fonts.trim(m.getDisplayName(), maxName - (m.isExperimental() ? 11 : 0), false, 0.9f);
+        Fonts.drawV(ctx, name, nx, cy, listening ? Theme.accent() : nameColor, false, 0.9f);
         if (m.isExperimental() && !listening) {
-            float wx = nx + Fonts.width(name, false, 0.84f) + 6;
+            float wx = nx + Fonts.width(name, false, 0.9f) + 6;
             Icons.WARNING.draw(ctx, wx, cy, 7f, Theme.RED, 0);
             if (gui.hovered(wx - 5, cy - 5, 10, 10)) gui.tooltip("Experimental - may be unstable or detectable");
         }
@@ -167,21 +173,23 @@ public class ModulesPage extends Page {
         boolean starred = ModuleFavorites.contains(m);
         boolean starHover = gui.hovered(starX - 7, cy - 7, 14, 14);
         float st = Anims.of(m, "starred", starred);
-        int starIdle = ColorUtil.withAlpha(Theme.TEXT_MUTED, starHover ? 0xFF : Math.round(0x70 + 0x50 * hv));
-        Glyphs.draw(ctx, GlyphNames.STAR, starX, cy, 10.5f, ColorUtil.lerp(starIdle, Theme.YELLOW, st));
+        int starIdle = ColorUtil.withAlpha(Theme.TEXT_MUTED, starHover ? 0xFF : Math.round(0xA0 + 0x30 * hv));
+        Glyphs.draw(ctx, GlyphNames.STAR, starX, cy, 10.5f, ColorUtil.lerp(starIdle, Theme.accent(), st));
         gui.hit(starX - 7, cy - 7, 14, 14, (button, mx, my) -> {
             if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return;
             ModuleFavorites.toggle(m);
             Sounds.click();
         });
+        gui.place(ClickGuiScreen.MODULE_FAVORITE + m.getName(), starX, cy);
 
         boolean toggleHover = gui.hovered(toggleX - 3, cy - 8, 26, 16);
-        Widgets.toggle(ctx, toggleX, cy - 5, 20, 10, on, toggleHover ? 1 : hv * 0.5f);
-        gui.hit(toggleX - 3, cy - 8, 26, 16, (button, mx, my) -> {
+        Widgets.toggle(ctx, toggleX, cy - 5.5f, 23, 11, on, toggleHover ? 1 : hv * 0.5f);
+        gui.hit(toggleX - 3, cy - 8, 29, 16, (button, mx, my) -> {
             if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return;
             m.toggle();
             Sounds.toggle(m.isEnabled());
         });
+        gui.place(ClickGuiScreen.MODULE_TOGGLE + m.getName(), toggleX + 11.5f, cy);
 
         if (starHover) gui.tooltip(starred ? "Unstar" : "Star, to find it under Starred");
         else if (hovered && !toggleHover) {
@@ -197,8 +205,6 @@ public class ModulesPage extends Page {
         Render2D.rect(ctx, x, y + 2, w, Render2D.px(), ColorUtil.withAlpha(Theme.BORDER, 0x70));
         String count = all.size() + (all.size() == 1 ? " module" : " modules") + "  ·  " + enabled + " enabled";
         Fonts.drawV(ctx, count, x + 1, y + 13, Theme.TEXT_MUTED, false, 0.66f);
-        Fonts.drawRight(ctx, "Left click: settings   ·   Right click: on / off", x + w, y + 13,
-                ColorUtil.withAlpha(Theme.TEXT_MUTED, 0xA0), false, 0.6f);
     }
 
     private void empty(DrawContext ctx, float x, float y, float w, float h) {

@@ -14,6 +14,7 @@ final class MenuBlurChecks {
         int vanilla=context.computeOnClient(c -> c.options.getMenuBackgroundBlurriness().getValue());
         int scale=context.computeOnClient(c -> c.options.getGuiScale().getValue());
         boolean blur=ClientSettings.backgroundBlur.get(), dim=ClientSettings.backgroundDim.get();
+        double strength=ClientSettings.backgroundBlurStrength.get();
         boolean floating=ClientSettings.spatialMenu.get(),screenGui=ClientSettings.screenGui.get();
 
         try {
@@ -22,14 +23,14 @@ final class MenuBlurChecks {
                 c.options.getMenuBackgroundBlurriness().setValue(0);
                 ClientSettings.backgroundDim.set(false);ClientSettings.spatialMenu.set(false);
                 ClientSettings.screenGui.set(false);
-                ClientSettings.backgroundBlur.set(false);c.setScreen(new Probe());
+                ClientSettings.backgroundBlur.set(false);ClientSettings.backgroundBlurStrength.set(5d);c.setScreen(new Probe());
             });
             context.waitTicks(15);
             var off=read(context.takeScreenshot("maro-menu-blur-off"));
             context.runOnClient(c -> {
                 require(c.options.getMenuBackgroundBlurrinessValue()==0,"Blur off changed vanilla radius");
                 ClientSettings.backgroundBlur.set(true);
-                require(c.options.getMenuBackgroundBlurrinessValue()==5,"Enabled blur has no fallback radius");
+                require(c.options.getMenuBackgroundBlurrinessValue()==5,"Enabled blur did not use Maro's selected radius");
                 require(c.options.getMenuBackgroundBlurriness().getValue()==0,"Toggle changed saved vanilla setting");
             });
             context.waitTicks(4);
@@ -37,6 +38,14 @@ final class MenuBlurChecks {
             double before=contrast(off,20,20,190,120),after=contrast(on,20,20,190,120);
             require(before>40 && after<before*.55,"Background pixels were not blurred: "+before+" -> "+after);
             require(contrast(on,20,610,190,690)>100,"Foreground controls were blurred");
+            context.runOnClient(c->{ClientSettings.backgroundBlurStrength.set(1d);require(c.options.getMenuBackgroundBlurrinessValue()==1,"Minimum custom blur radius was ignored");});
+            context.waitTicks(4);var weak=read(context.takeScreenshot("maro-menu-blur-strength-1"));
+            context.runOnClient(c->{ClientSettings.backgroundBlurStrength.set(9d);require(c.options.getMenuBackgroundBlurrinessValue()==9,"Higher custom blur radius was ignored");});
+            context.waitTicks(4);var strong=read(context.takeScreenshot("maro-menu-blur-strength-9"));
+            double weakContrast=contrast(weak,20,20,190,120),strongContrast=contrast(strong,20,20,190,120);
+            require(weakContrast>strongContrast+2,"Changing blur strength did not affect the native post-process: "+weakContrast+" -> "+strongContrast);
+            require(contrast(strong,20,610,190,690)>100,"Stronger blur affected foreground controls");
+            context.runOnClient(c->ClientSettings.backgroundBlurStrength.set(5d));
             for(boolean spatial:new boolean[]{false}) {
                 context.runOnClient(c -> {
                     ClientSettings.spatialMenu.set(spatial);ClientSettings.screenGui.set(!spatial);
@@ -51,7 +60,12 @@ final class MenuBlurChecks {
                 ClientSettings.spatialMenu.set(false);ClientSettings.screenGui.set(false);
                 c.setScreen(new ClickGuiScreen());((ClickGuiScreen)c.currentScreen).openPage(6);
                 c.options.getMenuBackgroundBlurriness().setValue(8);
-                require(c.options.getMenuBackgroundBlurrinessValue()==8,"Custom vanilla strength lost");
+                require(c.options.getMenuBackgroundBlurrinessValue()==5,"Custom Maro strength did not override the vanilla radius");
+                require(c.options.getMenuBackgroundBlurriness().getValue()==8,"Maro blur changed the saved vanilla strength");
+                ClientSettings.backgroundBlurStrength.set(1d);require(c.options.getMenuBackgroundBlurrinessValue()==1,"Radius one was clamped by vanilla's larger radius");
+                ClientSettings.backgroundBlurStrength.set(9d);require(c.options.getMenuBackgroundBlurrinessValue()==9,"Radius nine was clamped by vanilla's radius");
+                require(c.options.getMenuBackgroundBlurriness().getValue()==8,"Strength changes overwrote the vanilla setting");
+                ClientSettings.backgroundBlurStrength.set(5d);
                 c.options.getMenuBackgroundBlurriness().setValue(0);
             });
             context.waitTicks(15);context.takeScreenshot("maro-menu-settings-blur-on");
@@ -60,10 +74,10 @@ final class MenuBlurChecks {
             context.setScreen(() -> null);
             context.runOnClient(c -> require(c.options.getMenuBackgroundBlurrinessValue()==0,"Blur override leaked outside Maro menu"));
             RenderFaultChecks.assertClean();
-            System.out.println("[menu-blur] PASS: visible with vanilla radius zero, toggle off, sharp foreground, Window/Screen GUI, vanilla setting preserved");
+            System.out.println("[menu-blur] PASS: native strength 1/5/9, sharp foreground, Window/Screen GUI, vanilla setting preserved");
         } finally {
             context.runOnClient(c -> {
-                c.setScreen(null);ClientSettings.backgroundBlur.set(blur);ClientSettings.backgroundDim.set(dim);
+                c.setScreen(null);ClientSettings.backgroundBlur.set(blur);ClientSettings.backgroundBlurStrength.set(strength);ClientSettings.backgroundDim.set(dim);
                 ClientSettings.spatialMenu.set(floating);ClientSettings.screenGui.set(screenGui);
                 c.options.getMenuBackgroundBlurriness().setValue(vanilla);c.options.getGuiScale().setValue(scale);c.onResolutionChanged();
             });

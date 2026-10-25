@@ -5,24 +5,29 @@ import dev.maro.util.ColorUtil;
 
 /** Central palette. The accent is animated so preset changes fade smoothly. */
 public final class Theme {
-    public static final int BG = 0xFF000000;
-    public static final int PANEL = 0xFF0B0B0F;
-    public static final int CARD = 0x840E1119;
-    public static final int CARD_HOVER = 0xB91B202C;
-    public static final int BORDER = 0x80404A5A;
-    public static final int INPUT = 0x72070A10;
-    public static final int TEXT = 0xFFF2F4FA;
-    public static final int TEXT_DIM = 0xFFD0D5E0;
-    public static final int TEXT_MUTED = 0xFFA2ABBC;
-    public static final int TOGGLE_OFF = 0xFF272737;
-    public static final int KNOB_OFF = 0xFF8E8EA6;
+    public static final int BG = 0xFF1B1F24;
+    public static final int PANEL = 0xFF23272E;
+    public static final int CARD = 0xFF252A31;
+    public static final int CARD_HOVER = 0xFF2C323A;
+    public static final int BORDER = 0xFF363C45;
+    public static final int INPUT = 0xFF1B2026;
+    public static final int TEXT = 0xFFE9EBF0;
+    public static final int TEXT_DIM = 0xFFC5CBD5;
+    public static final int TEXT_MUTED = 0xFF9DA7B6;
+    public static final int TOGGLE_OFF = 0xFF1A2028;
+    public static final int KNOB_OFF = 0xFF9AA6B6;
+    public static final int DEFAULT_ACCENT = 0xFFB18AE8;
+    public static final float MENU_HEADER_HEIGHT = 36f, MENU_NAV_HEIGHT = 36f;
+    public static final float PANEL_RADIUS = 10f, CONTROL_RADIUS = 6f, ROW_RADIUS = 8f, SPACING = 12f;
+    public static final float TEXT_BODY = .95f, TEXT_SMALL = .8f, TEXT_TITLE = 1.2f;
+    public static final float MENU_TEXT_BASE = 1.3f;
     public static final int RED = 0xFFE5484D;
     public static final int GREEN = 0xFF30C77B;
     public static final int YELLOW = 0xFFF5A524;
 
     /** Accent presets shown on the Theme page. */
     public static final int[] PRESETS = {
-            0xFF8B5CF6, // violet
+            DEFAULT_ACCENT, // violet
             0xFF6366F1, // indigo
             0xFF3391FC, // Maro: the logo's blue
             0xFF06B6D4, // cyan
@@ -101,6 +106,9 @@ public final class Theme {
         int base = ColorUtil.shade(ClientSettings.background.get() | 0xFF000000, 0.045f);
         return ColorUtil.withAlpha(base, Math.round(255 * Math.min(1f, ClientSettings.opacity.getFloat() / 100f + 0.04f)));
     }
+
+    public static int selected() { return ColorUtil.lerp(PANEL, accent(), .14f); }
+    public static int controlHover() { return CARD_HOVER; }
 
     public static float radius() {
         return ClientSettings.radius.getFloat();

@@ -18,6 +18,7 @@ public final class MaroTitleStyle {
     public static String key(ClickableWidget w){return w.getMessage().getContent() instanceof TranslatableTextContent t?t.getKey():"";}
     private static boolean browsing(){return net.minecraft.client.MinecraftClient.getInstance().currentScreen instanceof dev.maro.gui.MaroHomeScreen home&&home.page()!=null;}
     public static void layout(Screen screen){
+        if(dev.maro.render.capture.CapturePass.active())return;
         float s=titleScale(screen.width,screen.height),ox=(screen.width-960*s)/2,oy=(screen.height-540*s)/2;int extra=0;
         for(var child:screen.children())if(child instanceof PressableWidget b){
             String hint="";float x=48,y,w=240,h=42;boolean footer=false;
@@ -52,12 +53,14 @@ public final class MaroTitleStyle {
         }
     }
     public static void layoutLoading(Screen screen){
+        if(dev.maro.render.capture.CapturePass.active())return;
         float s=BootScene.scale(screen.width,screen.height),ox=(screen.width-960*s)/2,oy=(screen.height-540*s)/2;int row=0;
         for(var child:screen.children())if(child instanceof PressableWidget b){
             b.setDimensionsAndPosition(Math.max(1,Math.round(180*s)),Math.max(1,Math.round(30*s)),Math.round(ox+390*s),Math.round(oy+(398+row++*34)*s));STYLES.put(b,new Style("",false));
         }
     }
     public static void render(DrawContext ctx,int w,int h){
+        if(dev.maro.render.capture.CapturePass.active())return;
         float old=Render2D.getAlpha();Render2D.setAlpha(1);var m=ctx.getMatrices();m.pushMatrix();
         try{
             MenuLandscape.draw(ctx,w,h);ctx.createNewRootLayer();float s=titleScale(w,h);m.translate((w-960*s)/2,(h-540*s)/2);m.scale(s,s);
@@ -81,6 +84,7 @@ public final class MaroTitleStyle {
         }finally{m.popMatrix();Render2D.setAlpha(old);}
     }
     public static boolean button(DrawContext ctx,ClickableWidget b){
+        if(dev.maro.render.capture.CapturePass.active())return false;
         Style style=STYLES.get(b);if(style==null)return false;
         var c=net.minecraft.client.MinecraftClient.getInstance();float s=c.currentScreen instanceof net.minecraft.client.gui.screen.TitleScreen?titleScale(c.getWindow().getScaledWidth(),c.getWindow().getScaledHeight()):BootScene.scale(c.getWindow().getScaledWidth(),c.getWindow().getScaledHeight());
         float x=b.getX(),y=b.getY(),w=b.getWidth(),h=b.getHeight();boolean selected=!activePage.isEmpty()?key(b).equals(activePage):b.isSelected();

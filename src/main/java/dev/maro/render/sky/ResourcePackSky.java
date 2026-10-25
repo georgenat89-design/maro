@@ -89,6 +89,7 @@ public final class ResourcePackSky {
     }
 
     public static boolean active() {
+        if (dev.maro.render.capture.CapturePass.active()) return false;
         var mc = MinecraftClient.getInstance();
         return !wanted.isEmpty() && wanted.equals(ready) && IMAGE.loaded() && mc.world != null
                 && mc.world.getRegistryKey().equals(World.OVERWORLD);

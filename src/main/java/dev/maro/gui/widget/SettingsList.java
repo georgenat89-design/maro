@@ -34,6 +34,7 @@ public class SettingsList {
     private static final float HEADER = 22f, PAD = 10f, ROW = 22f, PICKER_H = 80f;
     private final Set<ColorSetting> expanded = new HashSet<>();
     private final Map<TextSetting, TextField> textFields = new IdentityHashMap<>();
+    private final Map<NumberSetting, TextField> numericFields = new IdentityHashMap<>();
     private final Map<SettingSection, Float> tops = new IdentityHashMap<>();
     private final Map<Setting<?>, float[]> visiblePlaces = new IdentityHashMap<>();
     private final Scroll boxScroll = new Scroll();
@@ -60,6 +61,8 @@ public class SettingsList {
     public Map<Setting<?>, float[]> visiblePlaces() {
         return Map.copyOf(visiblePlaces);
     }
+
+    public Map<NumberSetting, TextField> numericFields() { return Map.copyOf(numericFields); }
 
     /**
      * The cards in a box of their own, scrolling inside it, for pages that give the list a fixed
@@ -142,7 +145,7 @@ public class SettingsList {
         if (hv > 0.01f) Render2D.roundRect(ctx, x - 5, y + 1, w + 10, Math.min(h, s instanceof NumberSetting ? 32f : ROW) - 2, 4f,
                 ColorUtil.withAlpha(0xFFFFFFFF, Math.round(0x0A * hv)));
 
-        float labelW = s instanceof NumberSetting || s instanceof TextSetting ? w * 0.7f : w * 0.52f;
+        float labelW = s instanceof NumberSetting n ? w - numericWidth(n) - 10 : s instanceof TextSetting ? w * 0.7f : w * 0.52f;
         float nameY = s instanceof NumberSetting ? y + 10 : s instanceof TextSetting ? y + 9 : y + ROW / 2f;
         Fonts.drawV(ctx, Fonts.trim(s.getName(), labelW, false, 0.8f), x, nameY, ColorUtil.lerp(Theme.TEXT_DIM, Theme.TEXT, hv), false, 0.8f);
         if (hovered && !s.getDescription().isEmpty() && gui.hovered(x, nameY - 6, Fonts.width(s.getName(), false, 0.8f), 12))
@@ -180,19 +183,32 @@ public class SettingsList {
     // ---- number -------------------------------------------------------------------------
 
     private void number(ClickGuiScreen gui, DrawContext ctx, NumberSetting n, float x, float y, float w) {
-        float tx = x, tw = w, ty = y + 23f;
+        float tx = x, tw = w, ty = y + 25f;
         // The track first: it is the row's control, and what a click on the row's slider finds.
-        gui.hit(tx - 4, ty - 7, tw + 8, 14, (button, mx, my) -> {
+        gui.hit(tx - 4, ty - 5, tw + 8, 10, (button, mx, my) -> {
             if (button == 1) {
                 n.reset();
                 Sounds.click();
                 return;
             }
+            if (button != 0) return;
+            gui.focused = null;
             gui.startDrag(n, (dx, dy) -> n.setPercent((dx - tx) / tw));
         });
-        String value = n.format();
-        Fonts.drawRight(ctx, value, x + w, y + 10, Theme.accent(), false, 0.76f);
-        gui.scrollHit(x + w - Fonts.width(value, false, 0.76f) - 4, y + 3, Fonts.width(value, false, 0.76f) + 8, 14,
+        TextField field = numericFields.computeIfAbsent(n, k -> new TextField("Value", 24)
+                .suffix(k.getSuffix())
+                .filter(c -> c >= '0' && c <= '9' || c == '.' || c == '-' || c == '+' || c == 'e' || c == 'E')
+                .onChange(value -> {
+                    try {
+                        double parsed = Double.parseDouble(value);
+                        if (Double.isFinite(parsed)) k.set(parsed);
+                    } catch (NumberFormatException ignored) { /* Incomplete input remains a draft. */ }
+                }));
+        if (gui.focused != field && !field.getText().equals(numericValue(n))) field.setTextSilently(numericValue(n));
+        field.onEnter(() -> { gui.focused = null; field.setTextSilently(numericValue(n)); });
+        float fw = numericWidth(n), fx = x + w - fw;
+        field.render(gui, ctx, fx, y + 1, fw, 17, null, null);
+        gui.scrollHit(fx, y + 1, fw, 17,
                 amount -> n.set(n.get() + n.getStep() * Math.signum(amount)));
 
         boolean dragging = gui.isDragging(n);
@@ -205,7 +221,15 @@ public class SettingsList {
         float kx = tx + tw * pct, kr = 3.6f + hv * 0.8f;
         if (Theme.glow()) Render2D.shadow(ctx, kx - kr, ty - kr, kr * 2, kr * 2, kr, 3f + hv * 2, Theme.accent(0x50));
         Render2D.circle(ctx, kx, ty, kr, 0xFFFFFFFF);
-        if (hovered && !dragging) gui.tooltip("Drag to change • Scroll on the value • Right-click to reset");
+        if (hovered && !dragging) gui.tooltip("Drag to change • Type a value • Scroll to step • Right-click the slider to reset");
+    }
+
+    private static String numericValue(NumberSetting n) {
+        return java.math.BigDecimal.valueOf(n.get()).stripTrailingZeros().toPlainString();
+    }
+
+    private static float numericWidth(NumberSetting n) {
+        return Math.min(94, Math.max(42, Fonts.width(numericValue(n), false, .85f) + Fonts.width(n.getSuffix(), false, .75f) + 20));
     }
 
     // ---- text ---------------------------------------------------------------------------
@@ -234,7 +258,7 @@ public class SettingsList {
         if (modes.size() <= 4 && total + 4 <= w * 0.6f) {
             // segmented control
             float bx = x + w - total - 4;
-            Render2D.roundRect(ctx, bx, cy - h / 2, total + 4, h, r, 0x40000000);
+            Render2D.roundRect(ctx, bx, cy - h / 2, total + 4, h, r, Theme.INPUT);
             Render2D.roundOutline(ctx, bx, cy - h / 2, total + 4, h, r, 1f, ColorUtil.withAlpha(Theme.BORDER, 0x90));
             float sx = bx + 2, selX = 0, selW = 0;
             for (int i = 0; i < modes.size(); i++) {
@@ -245,7 +269,7 @@ public class SettingsList {
                 sx += widths[i];
             }
             float ax = Anims.of(m, "segX", selX - bx, 18f), aw = Anims.of(m, "segW", selW, 18f);
-            Render2D.roundRect(ctx, bx + ax, cy - h / 2 + 2, aw, h - 4, Math.max(1f, r - 1), Theme.accent(0xD0));
+            Render2D.roundRect(ctx, bx + ax, cy - h / 2 + 2, aw, h - 4, Math.max(1f, r - 1), Theme.selected());
             sx = bx + 2;
             for (int i = 0; i < modes.size(); i++) {
                 String mode = modes.get(i);
@@ -269,7 +293,7 @@ public class SettingsList {
         boolean hov = gui.hovered(px, cy - h / 2, pw, h);
         float hv = Anims.of(m, "pill", hov);
         boolean open = Dropdown.isOpen(m);
-        Render2D.roundRect(ctx, px, cy - h / 2, pw, h, r, ColorUtil.lerp(0x40000000, 0x60202430, hv));
+        Render2D.roundRect(ctx, px, cy - h / 2, pw, h, r, ColorUtil.lerp(Theme.INPUT, Theme.CARD_HOVER, hv));
         Render2D.roundOutline(ctx, px, cy - h / 2, pw, h, r, 1f, ColorUtil.lerp(ColorUtil.withAlpha(Theme.BORDER, 0x90), Theme.accent(0x90), open ? 1 : hv));
         Dropdown.anchor(m, px, px + pw, cy - h / 2, h);
         Fonts.drawV(ctx, Fonts.trim(v, pw - 22, false, scale), px + 7, cy, open ? Theme.accent() : Theme.TEXT, false, scale);
@@ -292,7 +316,7 @@ public class SettingsList {
         float chipW = 44, chipH = 14, chipX = x + w - chipW, chipY = y + ROW / 2f - chipH / 2f;
         boolean open = expanded.contains(c);
         boolean chipHover = gui.hovered(chipX, chipY, chipW, chipH);
-        Render2D.roundRect(ctx, chipX, chipY, chipW, chipH, 4f, ColorUtil.lerp(0x40000000, 0x60202430, chipHover ? 1 : 0));
+        Render2D.roundRect(ctx, chipX, chipY, chipW, chipH, 4f, ColorUtil.lerp(Theme.INPUT, Theme.CARD_HOVER, chipHover ? 1 : 0));
         Render2D.roundOutline(ctx, chipX, chipY, chipW, chipH, 4f, 1f, open ? Theme.accent(0x90) : ColorUtil.withAlpha(Theme.BORDER, 0x90));
         if (c.allowsAlpha()) Render2D.checker(ctx, chipX + 3, chipY + 3, 10, chipH - 6, 2);
         Render2D.roundRect(ctx, chipX + 3, chipY + 3, 10, chipH - 6, 2f, c.get());

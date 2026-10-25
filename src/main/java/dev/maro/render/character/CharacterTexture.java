@@ -50,6 +50,8 @@ extends AbstractTexture {
             image.close();
             levels[level] = null;
         }
-        this.sampler = RenderSystem.getSamplerCache().get(FilterMode.LINEAR, true);
+        // Skinned meshes retain the source UVs, including coordinates outside 0..1.
+        // All bundled glTF samplers use REPEAT; the legacy atlas above stays clamped.
+        this.sampler = RenderSystem.getSamplerCache().getRepeated(FilterMode.LINEAR, true);
     }
 }

@@ -31,7 +31,7 @@ public abstract class VisualPreviewMixin {
         if(!(element instanceof EntityGuiElementRenderState entity)||!(entity.renderState() instanceof PlayerEntityRenderState player)||player.id!=VisualPreview.ENTITY_ID
             ||!(MinecraftClient.getInstance().currentScreen instanceof ClickGuiScreen gui))return;
         var preview=gui.visualPreview();GpuTextureView view=textureView;
-        if(preview.module() instanceof PlayerESP esp)view=VisualPreviewEffect.apply(view,esp);
+        if(preview.module() instanceof PlayerESP esp)view=VisualPreviewEffect.apply(view,esp,preview.playbackTime());
         int alpha=Math.clamp(Math.round(preview.opacity()*255),0,255);
         state.addSimpleElementToCurrentLayer(new TexturedQuadGuiElementRenderState(RenderPipelines.GUI_TEXTURED_PREMULTIPLIED_ALPHA,
             TextureSetup.of(view,RenderSystem.getSamplerCache().get(FilterMode.LINEAR)),element.pose(),

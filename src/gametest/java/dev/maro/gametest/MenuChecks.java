@@ -33,6 +33,8 @@ final class MenuChecks {
     }
 
     static void run(ClientGameTestContext context) {
+        require(ModuleManager.getByName("Trident Boost") == null && ModuleManager.getByName("Air Stuck") == null && ModuleManager.getByName("No Fall") == null,
+                "Removed movement modules are still available");
         Module example = ModuleManager.getByName("Example");
         require(example != null, "No Example module");
         boolean wasOn = context.computeOnClient(c -> example.isEnabled());
@@ -115,11 +117,11 @@ final class MenuChecks {
         require(context.computeOnClient(c -> screen(c).filter() == ClickGuiScreen.Filter.ALL), "The All filter did not come back");
 
         // The client pages open in the same window.
-        for (String page : List.of("theme", "socials")) {
-            int index = page.equals("theme") ? 8 : 9;
+        for (String page : List.of("settings", "theme", "socials")) {
+            int index = page.equals("settings") ? 6 : page.equals("theme") ? 8 : 9;
             context.runOnClient(c -> screen(c).openPage(index));
             settle(context);
-            context.takeScreenshot("maro-menu-" + page);
+            context.takeScreenshot("maro-menu-" + page + (page.equals("settings") ? "-page" : ""));
         }
 
         // Typing on a module page searches every category at once.

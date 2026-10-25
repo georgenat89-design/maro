@@ -22,7 +22,7 @@ public final class Dropdown {
     private Dropdown() {
     }
 
-    private static final float ROW = 13f, PAD = 3f;
+    private static final float ROW = 18f, PAD = 4f;
 
     private static ModeSetting open;
     private static long openedAt;
@@ -99,7 +99,7 @@ public final class Dropdown {
             Render2D.shadow(ctx, x, y + 2, w, h, r, 12f, 0x90000000);
             if (Theme.glow()) Render2D.shadow(ctx, x, y, w, h, r, 10f, Theme.accent(0x18));
             Render2D.roundRect(ctx, x, y, w, h, r, Theme.windowBg());
-            Render2D.roundOutline(ctx, x, y, w, h, r, 1f, Theme.accent(0x60), Theme.accent2(0x30), 0xFF1A1A22, 0xFF1A1A22);
+            Render2D.roundOutline(ctx, x, y, w, h, r, 1f, Theme.BORDER);
 
             gui.pushClip(x + 1, y + 1, w - 2, h - 2);
             float ry = y + PAD - scroll;
@@ -109,7 +109,7 @@ public final class Dropdown {
                 boolean hov = gui.hovered(x + 2, ry, w - 4, ROW);
                 float hv = Anims.of(m, "drop" + i, hov);
                 if (selected) Render2D.roundRect(ctx, x + 2, ry + 0.5f, w - 4, ROW - 1, 3f, Theme.accent(0x38));
-                else if (hv > 0.01f) Render2D.roundRect(ctx, x + 2, ry + 0.5f, w - 4, ROW - 1, 3f, ColorUtil.withAlpha(0xFF262633, Math.round(0xFF * hv)));
+                else if (hv > 0.01f) Render2D.roundRect(ctx, x + 2, ry + 0.5f, w - 4, ROW - 1, 3f, ColorUtil.withAlpha(Theme.CARD_HOVER, Math.round(0xFF * hv)));
                 if (selected) Render2D.roundRect(ctx, x + 3.5f, ry + 3f, 1.6f, ROW - 6, 0.8f, Theme.accent());
                 int color = selected ? 0xFFFFFFFF : ColorUtil.lerp(Theme.TEXT_DIM, Theme.TEXT, hv);
                 Fonts.drawV(ctx, mode, x + 9f, ry + ROW / 2f, color, selected, 0.74f);

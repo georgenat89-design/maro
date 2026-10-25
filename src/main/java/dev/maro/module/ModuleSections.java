@@ -11,7 +11,7 @@ public final class ModuleSections {
     private static final Map<Module,Section> CACHE=new IdentityHashMap<>();
     private static final Map<Category,Section> GENERAL=new EnumMap<>(Category.class);
     static {
-        add(Category.MOVEMENT,"travel","Travel & Movement","Travel","Walking, guided travel and movement helpers.","Auto Walk","Air Stuck","Coords Fly","No Fall","Trident Boost");
+        add(Category.MOVEMENT,"travel","Travel & Movement","Travel","Walking, guided travel and movement helpers.","Auto Walk","Coords Fly");
         add(Category.MOVEMENT,"camera","Camera & View","Camera & View","Detached cameras and looking around.","Free Cam","Free Look");
         add(Category.MOVEMENT,"vehicles","Vehicles","Vehicles","Cars, boats and other ride controls.","Vehicles");
         add(Category.PLAYER,"building","Building & Mining","Build & Mine","Build schematics, mine tunnels and select tools.","Auto Builder","Auto Mine","Auto Tool","Fast Place");

@@ -437,14 +437,17 @@ public final class SpatialView {
         WorldRenderEvents.END_MAIN.register(context -> {
             SpatialView view = active;
             if (view == null || !view.open || !view.placed) return;
+            if(dev.maro.render.capture.CapturePass.active()&&(!dev.maro.render.capture.CleanCapture.protectedLayer()||!dev.maro.render.capture.StreamproofScenePolicy.ready()))return;
+            boolean clean=dev.maro.render.capture.CleanCapture.beginPrivateWorld();
             try {
+                if(dev.maro.render.capture.CapturePass.active()&&!dev.maro.render.capture.CleanCapture.protectedLayer())return;
                 // This pane is world geometry, so blur the world before drawing it. A later
                 // GUI blur boundary would also blur the pane's already-rendered labels.
                 if (ClientSettings.backgroundBlur.get() && view.menu.menuProgress() > .2f) mc.gameRenderer.renderBlur();
                 view.drawWorld(context.matrices().peek(), context.worldState().cameraRenderState.pos);
             } catch (RuntimeException e) {
                 dev.maro.Maro.LOGGER.error("The floating window could not be drawn", e);
-            }
+            } finally { dev.maro.render.capture.CleanCapture.endPrivateWorld(clean); }
         });
     }
 

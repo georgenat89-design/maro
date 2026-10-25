@@ -60,7 +60,7 @@ public final class SkinAccessoriesLayer extends FeatureRenderer<PlayerEntityRend
             if (group.primary() != null) queue.submitModelPart(group.primary(), pose, solid, light, OverlayTexture.DEFAULT_UV, null, m.primaryColor(), null);
             if (group.accent() != null) queue.submitModelPart(group.accent(), pose, detail,
                 m.glow() ? LightmapTextureManager.MAX_LIGHT_COORDINATE : light, OverlayTexture.DEFAULT_UV, null,
-                category.equals("halo") ? m.haloColor() : m.accentColor(), null);
+                category.equals("halo") ? m.haloColor(state) : m.accentColor(state), null);
             pose.pop();
         }
     }

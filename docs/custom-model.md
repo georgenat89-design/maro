@@ -52,7 +52,7 @@ The wardrobe has 30 built-in models:
 
 Sakura, Luna, Mika, Aoi and Miku have been removed. Old saved selections for those
 names fall back to the default model (Neon Robot for self, None for others) when
-settings load. Auto Trident has been removed; manual Trident Boost remains.
+settings load. Auto Trident, Trident Boost and Air Stuck have been removed.
 
 The portraits are original stylized likenesses. Continuous bevelled cross-sections
 replace the stacked round primitives for human heads, torsos and limbs.

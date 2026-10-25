@@ -135,9 +135,15 @@ public class CustomTotem extends Module {
             pendingKey = wanted;
             pendingTicks = 0;
         }
-        if (++pendingTicks < 10 || mc.currentScreen != null || mc.getOverlay() != null) return;
+        boolean restoringCapture = dev.maro.render.capture.StreamproofScenePolicy.running() && wanted == 0;
+        if (mc.getOverlay() != null || !restoringCapture && (++pendingTicks < 10 || mc.currentScreen != null)) return;
         requestedKey = wanted;
         mc.reloadResources();
+    }
+
+    /** Capture preparation must restore the original atlas sprite even while ClickGUI is open. */
+    public static void restoreForCapture() {
+        if (dev.maro.render.capture.StreamproofScenePolicy.running()) syncTexture();
     }
 
     /** Whether the loaded totem texture is the one wanted and no reload is running. */

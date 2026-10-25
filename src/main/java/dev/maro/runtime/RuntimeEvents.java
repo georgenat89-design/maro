@@ -79,5 +79,5 @@ public final class RuntimeEvents {
         if(!client.isOnThread())return; // The packet handler repeats after forceMainThread.
         MeteorClient.EVENT_BUS.post(new dev.maro.runtime.events.packets.PacketEvent.Receive(packet));
     }
-    public static void shutdown(){for(var module:dev.maro.module.ModuleManager.all())if(module.isEnabled())module.setEnabled(false);dev.maro.runtime.renderer.Texture.endFrame();}
+    public static void shutdown(){dev.maro.render.capture.StreamproofScenePolicy.shutdown();for(var module:dev.maro.module.ModuleManager.all())if(module.isEnabled())module.setEnabled(false);dev.maro.runtime.renderer.Texture.endFrame();}
 }

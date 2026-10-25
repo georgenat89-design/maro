@@ -22,7 +22,7 @@ public abstract class InGameHudMixin {
     /** The floating menu draws its own centered pointer; do not draw a second game reticle beneath it. */
     @Inject(method="renderCrosshair",at=@At("HEAD"),cancellable=true)
     private void maro$floatingPointer(DrawContext context,RenderTickCounter tickCounter,CallbackInfo ci){
-        if(MinecraftClient.getInstance().currentScreen instanceof ClickGuiScreen gui&&gui.spatialView().isOpen())ci.cancel();
+        if(!dev.maro.render.capture.CapturePass.active()&&MinecraftClient.getInstance().currentScreen instanceof ClickGuiScreen gui&&gui.spatialView().isOpen())ci.cancel();
     }
     /** Replace just the crosshair sprite, keeping vanilla's attack indicator and visibility checks. */
     @WrapOperation(method = "renderCrosshair", at = @At(value = "INVOKE",
@@ -31,13 +31,13 @@ public abstract class InGameHudMixin {
     private void maro$customCrosshair(DrawContext ctx, RenderPipeline pipeline, Identifier texture,
         int x, int y, int width, int height, Operation<Void> original) {
         CustomCrosshair module = ModuleManager.get(CustomCrosshair.class);
-        if (module != null && module.isEnabled()) module.renderCrosshair(ctx);
+        if (!dev.maro.render.capture.CapturePass.active() && module != null && module.isEnabled()) module.renderCrosshair(ctx);
         else original.call(ctx, pipeline, texture, x, y, width, height);
     }
 
     /** With the HUD hidden (F1) HUD elements don't run, but hidden areas must stay hidden. */
     @Inject(method = "render", at = @At("HEAD"))
     private void maro$hiderWhenHudHidden(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
-        if (MinecraftClient.getInstance().options.hudHidden) ScreenHider.renderOver(null, context);
+        if (!dev.maro.render.capture.CapturePass.active() && MinecraftClient.getInstance().options.hudHidden) ScreenHider.renderOver(null, context);
     }
 }

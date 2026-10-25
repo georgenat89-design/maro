@@ -23,7 +23,6 @@ import dev.maro.gui.widget.Widgets;
 import dev.maro.module.Category;
 import dev.maro.module.Module;
 import dev.maro.setting.KeybindSetting;
-import dev.maro.util.Animation;
 import dev.maro.util.ColorUtil;
 import dev.maro.util.Easing;
 import dev.maro.util.KeyUtil;
@@ -46,9 +45,9 @@ import java.util.Map;
 import java.util.function.DoubleConsumer;
 
 /**
- * The menu: one window with the categories and client pages down a sidebar and the open one's
- * modules in a grid. A module's settings slide out in a panel beside the window, which moves aside
- * to make room. Uses an immediate-mode approach: everything (including click regions) is rebuilt
+ * The menu: horizontal navigation, a two-column browser and an independent settings editor.
+ * A supported module can also show its common preview between those panels.
+ * Uses an immediate-mode approach: everything (including click regions) is rebuilt
  * every frame during {@link #render}, so pages only need to describe what they draw.
  */
 public class ClickGuiScreen extends Screen {
@@ -96,11 +95,17 @@ public class ClickGuiScreen extends Screen {
 
     private static final Object WINDOW = new Object();
     /** The layout the menu is drawn in, scaled to fit the screen. */
-    private static final int CANVAS_W = 860, CANVAS_H = 480;
-    private static final float MAIN_W = 540f, MAIN_H = 384f, SIDEBAR_W = 140f, PANEL_GAP = 10f, HEADER_H = 28f;
+    private static final int CANVAS_W = 1080, CANVAS_H = 640;
+    private static final float MAIN_W = 530f, MAIN_H = 468f, PANEL_GAP = 16f;
     private static final Icons.Icon SEARCH_ICON = (ctx, cx, cy, s, c, h) -> Glyphs.draw(ctx, GlyphNames.SEARCH, cx, cy, s * 1.15f, c);
     /** The test hook name for the sidebar's Screen GUI switch. */
     public static final String SCREEN_GUI_SWITCH = "screen-gui";
+    public static final String PROFILE_SELECTOR = "profile-selector", MODULE_RESET = "module-reset";
+    public static final String MODULE_TOGGLE = "module-toggle:", MODULE_FAVORITE = "module-favorite:";
+    private boolean profileOpen;
+    private List<ConfigManager.ConfigInfo> profileOptions = List.of();
+    private float profileScroll;
+    private Rect profileRect;
 
     // remembered between openings
     private static int lastEntry = 0;
@@ -128,8 +133,9 @@ public class ClickGuiScreen extends Screen {
     /** Set while the menu is being drawn for the floating pane (no dimming of its own). */
     private boolean paneDraw;
     private final Map<Module, float[]> moduleConfigPlaces = new HashMap<>();
-    private final Animation settingsShown = new Animation(13f, 0f);
     private Rect panelRect;
+    private Rect previewRect, mainRect, pageRect;
+    private boolean previewCollapsed;
     private int selected;
     private long pageSwitchedAt = System.currentTimeMillis();
     private boolean wasSearching;
@@ -167,6 +173,9 @@ public class ClickGuiScreen extends Screen {
     private DragHandler drag;
     private double mouseXd, mouseYd;
     private double rawMouseX, rawMouseY;
+    /** A held widget owns relative mouse motion, while the ordinary crosshair stays captured. */
+    private double screenDragX, screenDragY;
+    private boolean screenDragReleasePending;
     private boolean pointerKnown;
     private int menuWidth = CANVAS_W, menuHeight = CANVAS_H;
     private float lastLayoutScale;
@@ -175,10 +184,13 @@ public class ClickGuiScreen extends Screen {
     private final dev.maro.gui.render.ScreenGuiPose screenPose = new dev.maro.gui.render.ScreenGuiPose();
     public dev.maro.gui.render.ScreenGuiPose screenPose() { return screenPose; }
     private final dev.maro.gui.hud.ScreenGuiMovement worldMovement = new dev.maro.gui.hud.ScreenGuiMovement();
-    public boolean worldControls() { return !spatialStyle() && ClientSettings.screenGui.get() && client != null && client.world != null && client.player != null; }
+    /** Floating Window previews retain their flat pointer; Screen GUI previews stay on its plane. */
+    public boolean previewPointerMode() { return settings.previewSelected() && spatialStyle(); }
+    public boolean worldControls() { return !previewPointerMode() && !spatialStyle() && ClientSettings.screenGui.get() && client != null && client.world != null && client.player != null; }
     public boolean capturesMouse() { return worldControls() && client.isWindowFocused() && client.getOverlay() == null; }
     public net.minecraft.util.PlayerInput movementInput() { return worldControls() && focused == null && listening == null ? worldMovement.read() : net.minecraft.util.PlayerInput.DEFAULT; }
     public void prepareScreenView(net.minecraft.client.render.Camera camera) {
+        screenPose.canvas(CANVAS_W, CANVAS_H);
         screenPose.update(width, height, worldControls());
         if (worldControls()) screenPose.view(camera, client.options.getFov().getValue(), ClientSettings.screenDistance.getFloat());
     }
@@ -206,7 +218,7 @@ public class ClickGuiScreen extends Screen {
         entries.add(new Entry("Theme", GlyphNames.PALETTE, new ThemePage(this), null, "Accent, colours and window style"));
         entries.add(new Entry("Socials", GlyphNames.USERS, new SocialsPage(this), null, "Friends and online players"));
         searchPage = new ModulesPage(this, null);
-        search = new TextField("Search", 32);
+        search = new TextField("Search modules", 48);
         selected = Math.max(0, Math.min(lastEntry, entries.size() - 1));
         // Open on a category with something in it, not an empty one.
         if (selected < moduleEntries && entries.get(selected).category() != Category.ANTI_CHEAT_OFF
@@ -267,6 +279,10 @@ public class ClickGuiScreen extends Screen {
     public float[] modulePlace(Module module) {
         return placeOf(module);
     }
+    public float[] moduleTogglePlace(Module module) { return placeOf(MODULE_TOGGLE + module.getName()); }
+    public float[] moduleFavoritePlace(Module module) { return placeOf(MODULE_FAVORITE + module.getName()); }
+    public float[] profilePlace() { return placeOf(PROFILE_SELECTOR); }
+    public float[] moduleResetPlace() { return placeOf(MODULE_RESET); }
 
     public void pushClip(float x, float y, float w, float h) {
         Rect r = new Rect(x, y, w, h);
@@ -323,7 +339,49 @@ public class ClickGuiScreen extends Screen {
     public void startDrag(Object owner, DragHandler handler) {
         dragOwner = owner;
         drag = handler;
+        screenDragReleasePending = false;
+        if (worldControls()) {
+            double[] point = screenPose.project(mouseXd, mouseYd);
+            screenDragX = Double.isFinite(point[0]) ? point[0] : width / 2d;
+            screenDragY = Double.isFinite(point[1]) ? point[1] : height / 2d;
+        }
         handler.drag(mouseXd, mouseYd);
+    }
+
+    public boolean screenInteractionDragging() { return worldControls() && drag != null; }
+    /** Menu-local pointer owned by a held widget, for input isolation checks. */
+    public double[] screenInteractionPointer() { return new double[] {mouseXd, mouseYd}; }
+
+    /** Raw physical cursor motion. The native Mouse hook consumes it before player look. */
+    public boolean consumeScreenInteractionMouse(double deltaX, double deltaY) {
+        if (!worldControls()) return false;
+        if (!screenInteractionDragging()) {
+            boolean consumed = screenDragReleasePending;
+            screenDragReleasePending = false;
+            return consumed;
+        }
+        var window = client.getWindow();
+        dragScreenPointer(net.minecraft.client.Mouse.scaleX(window, deltaX), net.minecraft.client.Mouse.scaleY(window, deltaY));
+        return true;
+    }
+
+    private void dragScreenPointer(double deltaX, double deltaY) {
+        if (!screenInteractionDragging() || !Double.isFinite(deltaX) || !Double.isFinite(deltaY)) return;
+        double x = screenDragX + deltaX, y = screenDragY + deltaY;
+        double[] point = screenPose.unprojectDrag(x, y);
+        if (!Double.isFinite(point[0]) || !Double.isFinite(point[1])) return;
+        screenDragX = x;
+        screenDragY = y;
+        mouseXd = point[0];
+        mouseYd = point[1];
+        drag.drag(mouseXd, mouseYd);
+    }
+
+    private void clearPointerDrag() {
+        if (screenInteractionDragging()) screenDragReleasePending = true;
+        drag = null;
+        dragOwner = null;
+        mouseDown = false;
     }
 
     public boolean isDragging(Object owner) {
@@ -349,7 +407,7 @@ public class ClickGuiScreen extends Screen {
 
     /** Whether the menu is on the floating pane now: Floating Window, in a world. */
     private boolean spatialOn() {
-        return spatialStyle() && client != null && client.world != null && client.player != null;
+        return !previewPointerMode() && spatialStyle() && client != null && client.world != null && client.player != null;
     }
 
     /** The floating pane; for tests. */
@@ -437,7 +495,9 @@ public class ClickGuiScreen extends Screen {
     }
 
     public void openPage(int index) {
+        profileOpen = false;
         if (index == selected && search.getText().isEmpty()) return;
+        if (index != selected && settings.module() != null) closeSettings();
         search.clear();
         if (focused == search) focused = null;
         selected = index;
@@ -488,16 +548,67 @@ public class ClickGuiScreen extends Screen {
 
     /** Shows a module's settings in the panel beside the window. */
     public void showSettings(Module module) {
+        if (settings.module() != module) clearSettingsInteraction();
         settings.open(module);
+        refreshPreviewInputMode();
     }
 
     public void closeSettings() {
+        clearSettingsInteraction();
         settings.close();
+        refreshPreviewInputMode();
     }
 
     /** The module whose settings panel is open, or null. */
     public Module settingsModule() {
         return settings.module();
+    }
+
+    /** The settings rectangle in menu coordinates; used by layout verification. */
+    public float[] settingsBounds() {
+        return panelRect == null ? null : new float[] {panelRect.x, panelRect.y, panelRect.w, panelRect.h};
+    }
+    public float[] settingsContentBounds() { return settings.scrollBounds(); }
+    public float[] browserContentBounds() { return pageRect == null ? null : new float[]{pageRect.x,pageRect.y,pageRect.w,pageRect.h}; }
+
+    /** Preview support comes from the explicit provider registry, never category or module names. */
+    public static boolean hasPreviewTab(Module module) { return SettingsPanel.hasPreview(module); }
+    public void selectPreviewTab(boolean selected) {
+        if (!SettingsPanel.hasPreview(settings.module())) return;
+        if (settings.previewSelected() != selected) clearSettingsInteraction();
+        settings.selectPreview(selected);
+        refreshPreviewInputMode();
+    }
+    public boolean previewTabSelected() { return settings.previewSelected(); }
+    public boolean previewCollapsedToFit() { return previewCollapsed && settings.previewSelected(); }
+    public boolean previewPanelVisible() { return closingAt < 0 && settings.previewSelected() && !previewCollapsed && previewRect != null; }
+    /** Panel rectangles and tab centers use menu coordinates; screenPose projects them for input. */
+    public float[] previewPanelBounds() { return !previewPanelVisible() ? null : new float[]{previewRect.x,previewRect.y,previewRect.w,previewRect.h}; }
+    public float[] mainWindowBounds() { return mainRect == null ? null : new float[]{mainRect.x,mainRect.y,mainRect.w,mainRect.h}; }
+    public float[] previewTabPlace() { return settings.previewTabPlace(); }
+    public float[] settingsTabPlace() { return settings.settingsTabPlace(); }
+    private void cancelPreviewDrag() { if (dragOwner == visualPreview) clearPointerDrag(); }
+    private void clearSettingsInteraction() {
+        if (dragOwner != WINDOW) clearPointerDrag();
+        if (focused != search) focused = null;
+        listening = null;
+        worldMovement.clear();
+        dev.maro.gui.widget.Dropdown.close();
+    }
+    private void refreshPreviewInputMode() {
+        if (client == null || client.currentScreen != this) return;
+        pointerKnown = false;
+        if (previewPointerMode()) {
+            if (spatial.isOpen()) spatial.close();
+            screenPose.update(width,height,false);
+            syncMouseCapture();
+        } else if (spatialOn()) {
+            spatial.open();
+        } else {
+            if (spatial.isOpen()) spatial.close();
+            screenPose.update(width,height,worldControls());
+            syncMouseCapture();
+        }
     }
 
     private Page currentPage() {
@@ -527,9 +638,7 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     protected void init() {
-        drag = null;
-        dragOwner = null;
-        mouseDown = false;
+        clearPointerDrag();
         pointerKnown = false;
         hits.clear();
         scrollHits.clear();
@@ -539,7 +648,7 @@ public class ClickGuiScreen extends Screen {
     @Override
     public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
         // Mark the main framebuffer before either flat or floating menu content is submitted.
-        if (!spatialOn() && ClientSettings.backgroundBlur.get() && client.world != null && progress() > 0.2f) {
+        if (!spatialOn() && !worldControls() && ClientSettings.backgroundBlur.get() && client.world != null && progress() > 0.2f) {
             try {
                 ctx.applyBlur();
             } catch (IllegalStateException ignored) {
@@ -574,6 +683,10 @@ public class ClickGuiScreen extends Screen {
     private void drawMenuContent(DrawContext ctx, int mouseX, int mouseY) {
         DrawContext mainContext = ctx;
         if (!pointerKnown) { rawMouseX = mouseX; rawMouseY = mouseY; pointerKnown = true; }
+        boolean previewRequested = settings.previewSelected() && closingAt < 0;
+        boolean anchored = worldControls();
+        previewCollapsed = previewRequested && !anchored && !previewFitsViewport();
+        boolean previewVisible = previewRequested && !previewCollapsed;
         menuWidth = CANVAS_W;
         menuHeight = CANVAS_H;
         float fit = Math.min(width / (float) menuWidth, height / (float) menuHeight);
@@ -584,14 +697,17 @@ public class ClickGuiScreen extends Screen {
         float offsetX = (width - menuWidth * scale) / 2, offsetY = (height - menuHeight * scale) / 2;
         screenPose.layout(scale, offsetX, offsetY);
         if (client.world == null || paneDraw) screenPose.update(width, height, false);
-        double[] pointer = screenPose.unproject(worldControls() ? width / 2d : rawMouseX, worldControls() ? height / 2d : rawMouseY);
-        mouseXd = pointer[0];
-        mouseYd = pointer[1];
+        if (!screenInteractionDragging()) {
+            double[] pointer = screenPose.unproject(anchored ? width / 2d : rawMouseX, anchored ? height / 2d : rawMouseY);
+            mouseXd = pointer[0];
+            mouseYd = pointer[1];
+        }
         hits.clear();
         scrollHits.clear();
         places.clear();
         entryPlaces.clear();
         visualPreview.beginFrame();
+        if (!previewVisible) { cancelPreviewDrag(); visualPreview.hidden(); }
         moduleConfigPlaces.clear();
         clips.clear();
         scissorActive = false;
@@ -607,13 +723,9 @@ public class ClickGuiScreen extends Screen {
 
         // background
         Render2D.setAlpha(p);
-        if (!paneDraw && ClientSettings.backgroundDim.get()) {
-            int dim = Math.round(255 * ClientSettings.dimAmount.getFloat() / 100f);
-            Render2D.rectGradient(ctx, 0, 0, width, height, ColorUtil.withAlpha(0, Math.round(dim * 0.85f)), ColorUtil.withAlpha(0, Math.round(dim * 0.85f)),
-                    ColorUtil.withAlpha(0, dim), ColorUtil.withAlpha(0, dim));
-        }
+        if (!paneDraw && !anchored) dev.maro.gui.render.GuiBackground.draw(ctx, 0, 0, width, height);
         // The contour lines of the logo, faint, behind everything.
-        if (!paneDraw) Logo.contours(ctx, width, height, 0.16f);
+        if (!paneDraw && !anchored && dev.maro.gui.render.GuiBackground.isDefault()) Logo.contours(ctx, width, height, 0.16f);
 
         if (screenPose.active()) ctx = dev.maro.gui.render.ScreenGuiSurface.begin(client, (int) mouseXd, (int) mouseYd, screenPose);
         else dev.maro.gui.render.ScreenGuiSurface.release();
@@ -631,194 +743,142 @@ public class ClickGuiScreen extends Screen {
         // A mode setting's open list, over the window and the settings panel.
         dev.maro.gui.widget.Dropdown.render(this, ctx, width, height);
         ctx.createNewRootLayer();
+        renderProfiles(ctx);
+        ctx.createNewRootLayer();
         renderTooltip(ctx, p, width, height);
+        if (screenInteractionDragging() && Double.isFinite(mouseXd) && Double.isFinite(mouseYd)) {
+            Render2D.circle(ctx, (float)mouseXd, (float)mouseYd, 1.5f, Theme.TEXT);
+            Render2D.ring(ctx, (float)mouseXd, (float)mouseYd, 3.5f, 1f, Theme.accent());
+        }
         Render2D.setAlpha(1f);
         ctx.getMatrices().popMatrix();
         Fonts.setMeasureScale(1);
-        if (!paneDraw) Notifications.render(mainContext);
+        if (!paneDraw && !anchored) Notifications.render(mainContext);
     }
 
-    /** The window, and the settings panel beside it while a module's settings are open. */
+    /** One coherent shell; opening settings never changes its world geometry. */
     private void renderWindow(DrawContext ctx, float p, int width, int height) {
-        float t = settingsShown.update(settings.module() != null ? 1f : 0f);
-        float total = MAIN_W + (PANEL_GAP + SettingsPanel.WIDTH) * t;
-        float baseX = (width - total) / 2f, baseY = (height - MAIN_H) / 2f;
-        float slackX = Math.max(0, baseX - 2), slackY = Math.max(0, baseY - 2);
-        dragX = Math.max(-slackX, Math.min(slackX, dragX));
-        dragY = Math.max(-slackY, Math.min(slackY, dragY));
-        float wx = baseX + (paneDraw ? 0 : dragX);
-        float wy = baseY + (paneDraw ? 0 : dragY) + (1f - p) * 18f;
-        float r = windowRadius();
-        spatialWindow = new float[] {wx, wy, total, MAIN_H, r};
-        boolean shadows = ClientSettings.shadow.get() && !paneDraw;
-
-        // The settings panel first: it slides out from behind the window.
-        panelRect = null;
-        if (t > 0.01f && settings.drawn() != null) {
-            float sx = wx + MAIN_W + PANEL_GAP - (1 - t) * 26f;
-            Render2D.setAlpha(p * t);
-            if (shadows) Render2D.shadow(ctx, sx, wy + 3, SettingsPanel.WIDTH, MAIN_H, r, 24f, 0x80000000);
-            interactive = settings.module() != null;
-            settings.render(ctx, sx, wy, SettingsPanel.WIDTH, MAIN_H, r);
-            interactive = true;
-            if (settings.module() != null) panelRect = new Rect(sx, wy, SettingsPanel.WIDTH, MAIN_H);
+        boolean anchored=worldControls();
+        float shellW=width-28,shellH=height-24,wx=14,wy=12;
+        if(!anchored&&!paneDraw){dragX=Math.clamp(dragX,-8,8);dragY=Math.clamp(dragY,-8,8);wx+=dragX;wy+=dragY;}
+        float r=Math.max(10,Theme.radius());
+        spatialWindow=new float[]{wx,wy,shellW,shellH,r};
+        if(ClientSettings.shadow.get()&&!paneDraw)Render2D.shadow(ctx,wx,wy+4,shellW,shellH,r,20,0x60000000);
+        hit(wx,wy,shellW,shellH,(button,mx,my)->{});
+        Render2D.roundGradientV(ctx,wx,wy,shellW,shellH,r,Theme.windowBg(),ColorUtil.shade(Theme.windowBg(),-.035f));
+        if((paneDraw||anchored)&&!dev.maro.gui.render.GuiBackground.isDefault()){
+            pushClip(wx+1,wy+1,shellW-2,shellH-2);dev.maro.gui.render.GuiBackground.draw(ctx,wx,wy,shellW,shellH);
+            Render2D.rect(ctx,wx,wy,shellW,shellH,0xA0191C22);popClip();
         }
-        Render2D.setAlpha(p);
-
-        if (shadows) {
-            Render2D.shadow(ctx, wx, wy + 3, MAIN_W, MAIN_H, r, 24f, 0x80000000);
-            if (Theme.glow()) Render2D.shadow(ctx, wx, wy, MAIN_W, MAIN_H, r, 36f, Theme.accent(0x12));
+        Render2D.roundOutline(ctx,wx,wy,shellW,shellH,r,Render2D.px(),Theme.BORDER);
+        renderTopHeader(ctx,wx+18,wy+12,shellW-36,32);
+        renderNavigation(ctx,wx+18,wy+58,shellW-36,30);
+        Render2D.rect(ctx,wx+18,wy+96,shellW-36,Render2D.px(),Theme.BORDER);
+        boolean searching=!search.getText().isEmpty();
+        if(searching!=wasSearching){wasSearching=searching;pageSwitchedAt=System.currentTimeMillis();if(searching)searchPage.onOpen();else entries.get(selected).page().onOpen();}
+        boolean modulePage=searching||entries.get(selected).category()!=null;
+        float x=wx+18,y=wy+110,w=shellW-36,h=shellH-148;
+        boolean showPreview=modulePage&&settings.previewSelected()&&!previewCollapsed&&closingAt<0;
+        float browserW=modulePage?(showPreview?414:MAIN_W):w;
+        mainRect=new Rect(x,y,browserW,h);panelRect=previewRect=null;
+        if(modulePage){
+            renderBrowserHeader(ctx,x,y,browserW);
+            float pageY=y+64,pageH=h-64;
+            pageRect=new Rect(x,pageY,browserW,Math.max(0,pageH-22));
+            pushClip(x-4,pageY,browserW+10,pageH);currentPage().render(ctx,x,pageY,browserW,pageH);popClip();
+            float settingsW=showPreview?380:SettingsPanel.WIDTH,sx=x+w-settingsW;
+            panelRect=new Rect(sx,y,settingsW,h);
+            if(showPreview){
+                float px=sx-PANEL_GAP-SettingsPanel.PREVIEW_WIDTH;previewRect=new Rect(px,y,SettingsPanel.PREVIEW_WIDTH,h);
+                scrollHit(px,y,SettingsPanel.PREVIEW_WIDTH,h,amount->{});
+                if(anchored&&!screenPose.visible())visualPreview.suspendFrame();else settings.renderPreview(ctx,px,y,SettingsPanel.PREVIEW_WIDTH,h);
+            }
+            settings.render(ctx,sx,y,settingsW,h,Math.max(8,Theme.radius()));
+        }else{
+            Fonts.drawV(ctx,entries.get(selected).label(),x,y+13,Theme.TEXT,true,1.15f);
+            String about=entries.get(selected).subtitle();if(about!=null)Fonts.drawV(ctx,about,x,y+32,Theme.TEXT_MUTED,false,.78f);
+            pageRect=new Rect(x,y+50,w,h-50);
+            pushClip(x-6,y+50,w+12,h-50);currentPage().render(ctx,x,y+50,w,h-50);popClip();
         }
-        hit(wx, wy, MAIN_W, MAIN_H, (button, mx, my) -> {
-        }); // the window takes clicks that land on it but on nothing in it
-        Render2D.roundRect(ctx, wx, wy, MAIN_W, MAIN_H, r, Theme.windowBg());
-        // The sidebar a shade darker, its right edge square against the content.
-        pushClip(wx, wy, SIDEBAR_W, MAIN_H);
-        Render2D.roundRect(ctx, wx, wy, SIDEBAR_W + r * 2, MAIN_H, r, 0x2A000000);
-        popClip();
-        Render2D.rect(ctx, wx + SIDEBAR_W, wy, Render2D.px(), MAIN_H, ColorUtil.withAlpha(Theme.BORDER, 0x90));
-        Render2D.roundOutline(ctx, wx, wy, MAIN_W, MAIN_H, r, Render2D.px(), Theme.BORDER);
-        renderSidebar(ctx, wx, wy, SIDEBAR_W, MAIN_H);
-
-        float hx = wx + SIDEBAR_W + 16, hw = MAIN_W - SIDEBAR_W - 32;
-        float hy = wy + 15;
-        renderHeader(ctx, hx, hy, hw, HEADER_H);
-
-        // page
-        boolean searching = !search.getText().isEmpty();
-        if (searching != wasSearching) {
-            wasSearching = searching;
-            pageSwitchedAt = System.currentTimeMillis();
-            if (searching) searchPage.onOpen();
-            else entries.get(selected).page().onOpen();
-        }
-        float py = hy + HEADER_H + 10, ph = wy + MAIN_H - 10 - py;
-        float pt = Easing.outCubic((System.currentTimeMillis() - pageSwitchedAt) / (260f / ClientSettings.animationSpeed()));
-        Render2D.setAlpha(p * pt);
-        pushClip(hx - 4, py, hw + 8, ph);
-        currentPage().render(ctx, hx, py + (1 - pt) * 8f, hw, ph);
-        popClip();
-        Render2D.setAlpha(p);
-        interactive = true;
+        Render2D.rect(ctx,wx+18,wy+shellH-27,shellW-36,Render2D.px(),Theme.BORDER);
+        Fonts.drawV(ctx,"Maro · "+Maro.VERSION,wx+20,wy+shellH-13,Theme.TEXT_MUTED,false,.67f);
+        float modeW=108,modeX=wx+shellW-18-modeW,modeY=wy+shellH-23;
+        Widgets.button(this,ctx,SCREEN_GUI_SWITCH,modeX,modeY,modeW,19,worldControls()?"GUI: World":"GUI: Screen",Widgets.Style.SECONDARY,Icons.VISUALS,()->{ClientSettings.screenGui.set(!ClientSettings.screenGui.get());refreshPreviewInputMode();Sounds.click();});
+        place(SCREEN_GUI_SWITCH,modeX+modeW/2,modeY+9.5f);
     }
 
-    private void renderSidebar(DrawContext ctx, float x, float y, float w, float h) {
-        // The logo row is the handle that drags the window.
-        hit(x, y, w, 36, (button, mx, my) -> {
-            if (button != 0 || paneDraw || spatial.isOpen()) return;
-            final float sx = dragX, sy = dragY;
-            startDrag(WINDOW, (nx, ny) -> { dragX = sx + (float) (nx - mx); dragY = sy + (float) (ny - my); });
-        });
-        // The blue M of the logo, then the rest of the name in white.
-        Logo.mark(ctx, x + 23, y + 21, 19, 0);
-        Fonts.beginRaw();
-        Fonts.drawV(ctx, "aro", x + 32, y + 21.5f, Theme.TEXT, true, 1.32f);
-        Fonts.endRaw();
+    private void renderTopHeader(DrawContext ctx,float x,float y,float w,float h){
+        hit(x,y,Math.max(100,w-220),h,(button,mx,my)->{if(button!=0||paneDraw||spatial.isOpen()||worldControls())return;float sx=dragX,sy=dragY;startDrag(WINDOW,(nx,ny)->{dragX=sx+(float)(nx-mx);dragY=sy+(float)(ny-my);});});
+        Logo.mark(ctx,x+13,y+h/2,26,0);Fonts.drawV(ctx,"Maro",x+34,y+h/2,Theme.TEXT,true,1.55f);
+        float closeX=x+w-27,profileX=closeX-12-132;profileRect=new Rect(profileX,y+3,132,h-6);
+        boolean over=hovered(profileX,y+3,132,h-6);
+        Render2D.roundRect(ctx,profileX,y+3,132,h-6,6,over?Theme.CARD_HOVER:Theme.INPUT);
+        Render2D.roundOutline(ctx,profileX,y+3,132,h-6,6,Render2D.px(),Theme.BORDER);
+        Fonts.drawCentered(ctx,Fonts.trim(ConfigManager.getCurrent(),103,false,.9f),profileX+60,y+h/2,Theme.TEXT_DIM,false,.9f);
+        Render2D.line(ctx,profileX+116,y+h/2-1,profileX+119,y+h/2+2,1,Theme.TEXT_MUTED);
+        Render2D.line(ctx,profileX+119,y+h/2+2,profileX+122,y+h/2-1,1,Theme.TEXT_MUTED);
+        hit(profileX,y+3,132,h-6,(button,mx,my)->{if(button!=0)return;profileOpen=!profileOpen;profileScroll=0;if(profileOpen){profileOptions=ConfigManager.list();dev.maro.gui.widget.Dropdown.close();focused=null;}Sounds.click();});
+        place(PROFILE_SELECTOR,profileX+66,y+h/2);
+        Widgets.button(this,ctx,"close-menu",closeX,y+3,27,h-6,"",Widgets.Style.SECONDARY,Icons.CLOSE,this::close);place("close-menu",closeX+13.5f,y+h/2);
+    }
 
-        search.render(this, ctx, x + 10, y + 40, w - 20, 19, SEARCH_ICON, focused == search ? null : "Ctrl K");
-
-        float rx = x + 8, rw = w - 16, rowH = 22f;
-        float ry = y + 70;
-        sideLabel(ctx, "MODULES", rx + 4, ry);
-        ry += 12;
-        for (int i = 0; i < moduleEntries; i++) {
-            Entry entry = entries.get(i);
-            int count = ((ModulesPage) entry.page()).all().size();
-            boolean locked = entry.category() == Category.ANTI_CHEAT_OFF && !antiCheatSectionUnlocked;
-            if (count == 0 && !locked && selected != i) continue; // nothing to show in it
-            sideRow(ctx, entry, i, rx, ry, rw, rowH, locked ? null : String.valueOf(count));
-            ry += rowH + 1;
+    private void renderNavigation(DrawContext ctx,float x,float y,float w,float h){
+        float total=0;float[] sizes=new float[entries.size()];
+        for(int i=0;i<entries.size();i++){sizes[i]=Fonts.width(entries.get(i).label(),false,.84f)+32;total+=sizes[i]+4;}
+        float fit=Math.min(1,w/Math.max(1,total));
+        for(int i=0;i<entries.size();i++){
+            Entry entry=entries.get(i);float tw=sizes[i]*fit;boolean active=selected==i&&search.getText().isEmpty(),over=hovered(x,y,tw,h);
+            if(active||over)Render2D.roundRect(ctx,x,y,tw,h,6,active?Theme.accent(0x1D):0x0CFFFFFF);
+            int color=active?Theme.TEXT:over?Theme.TEXT_DIM:Theme.TEXT_MUTED;
+            Glyphs.draw(ctx,entry.glyph(),x+12,y+h/2,11,active?Theme.accent():color);
+            Fonts.drawV(ctx,Fonts.trim(entry.label(),tw-29,false,.84f),x+24,y+h/2,color,false,.84f);
+            if(active)Render2D.roundRect(ctx,x+10,y+h-1,tw-20,1.5f,.75f,Theme.accent());
+            final int index=i;hit(x,y,tw,h,(button,mx,my)->{if(button==0){openPage(index);Sounds.click();}});
+            entryPlaces.put(i,new float[]{x+tw/2,y+h/2});if(over&&entry.subtitle()!=null)tooltip(entry.subtitle());x+=tw+4*fit;
         }
-        ry += 8;
-        sideLabel(ctx, "CLIENT", rx + 4, ry);
-        ry += 12;
-        for (int i = moduleEntries; i < entries.size(); i++) {
-            sideRow(ctx, entries.get(i), i, rx, ry, rw, rowH, "");
-            ry += rowH + 1;
+    }
+
+    private void renderBrowserHeader(DrawContext ctx,float x,float y,float w){
+        String title=search.getText().isEmpty()?entries.get(selected).label():"Search results";float searchW=Math.min(245,w*.53f);
+        Fonts.drawV(ctx,Fonts.trim(title,w-searchW-12,true,1.08f),x+1,y+13,Theme.TEXT,true,1.08f);
+        search.render(this,ctx,x+w-searchW,y,searchW,26,SEARCH_ICON,null);place(search,x+w-searchW/2,y+13);filters(ctx,x,y+40);
+    }
+
+    private void filters(DrawContext ctx,float x,float cy){
+        for(Filter f:Filter.values()){
+            float w=Fonts.width(f.label,false,.8f)+20,h=22,y=cy-h/2;boolean selected=filter==f,over=hovered(x,y,w,h);
+            if(selected||over)Render2D.roundRect(ctx,x,y,w,h,6,selected?Theme.accent(0x20):0x0CFFFFFF);
+            Fonts.drawCentered(ctx,f.label,x+w/2,cy,selected?Theme.TEXT:Theme.TEXT_MUTED,false,.8f);
+            if(selected)Render2D.roundRect(ctx,x+9,y+h-1,w-18,1.5f,.75f,Theme.accent());
+            hit(x,y,w,h,(button,mx,my)->{if(button==0){filter=f;Sounds.click();}});place(f,x+w/2,cy);x+=w+3;
         }
-
-        // Screen GUI, at the bottom: the menu placed in the world.
-        float fy = y + h - 28;
-        boolean hov = hovered(rx, fy, rw, 20);
-        float hv = Anims.of(WINDOW, "screenGuiHover", hov);
-        Render2D.roundRect(ctx, rx, fy, rw, 20, 6f, ColorUtil.withAlpha(0xFFFFFFFF, 0x08 + Math.round(0x08 * hv)));
-        Glyphs.draw(ctx, GlyphNames.MONITOR, rx + 12, fy + 10, 10f, Theme.TEXT_MUTED);
-        Fonts.drawV(ctx, "Screen GUI", rx + 23, fy + 10, ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT_DIM, hv), false, 0.72f);
-        Widgets.toggle(ctx, rx + rw - 24, fy + 5.5f, 18, 9, Anims.of(WINDOW, "screenGui", ClientSettings.screenGui.get()), hv);
-        hit(rx, fy, rw, 20, (button, mx, my) -> { if (button == 0) { ClientSettings.screenGui.set(!ClientSettings.screenGui.get()); Sounds.click(); } });
-        place(SCREEN_GUI_SWITCH, rx + rw / 2f, fy + 10);
-        if (hov) tooltip("Place the menu in the world, in front of you");
     }
 
-    private static void sideLabel(DrawContext ctx, String text, float x, float y) {
-        Fonts.draw(ctx, text, x, y, ColorUtil.withAlpha(Theme.TEXT_MUTED, 0xB0), true, 0.58f);
-    }
-
-    private void sideRow(DrawContext ctx, Entry entry, int index, float x, float y, float w, float h, String count) {
-        boolean hov = hovered(x, y, w, h);
-        float hv = Anims.of(entry, "sideHover", hov);
-        float sel = Anims.of(entry, "sideSelected", selected == index && search.getText().isEmpty());
-        Render2D.roundRect(ctx, x, y, w, h, 6f, ColorUtil.lerp(ColorUtil.withAlpha(0xFFFFFFFF, Math.round(0x0C * hv)), Theme.accent(0x22), sel));
-        if (sel > 0.01f) Render2D.roundOutline(ctx, x, y, w, h, 6f, 1f, Theme.accent(Math.round(0x50 * sel)));
-        int fg = ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT, Math.max(hv, sel));
-        Glyphs.draw(ctx, entry.glyph(), x + 13, y + h / 2f, 11f, ColorUtil.lerp(fg, Theme.accent(), sel));
-        Fonts.drawV(ctx, Fonts.trim(entry.label(), w - 50, false, 0.8f), x + 26, y + h / 2f, fg, false, 0.8f);
-        if (count == null) Glyphs.draw(ctx, GlyphNames.LOCK, x + w - 11, y + h / 2f, 8f, Theme.TEXT_MUTED);
-        else if (!count.isEmpty()) Fonts.drawRight(ctx, count, x + w - 8, y + h / 2f, ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT_DIM, sel), false, 0.64f);
-        hit(x, y, w, h, (button, mx, my) -> { if (button == 0) { openPage(index); Sounds.click(); } });
-        if (interactive) entryPlaces.put(index, new float[] {x + w / 2f, y + h / 2f});
-        if (hov && entry.subtitle() != null) tooltip(entry.subtitle());
-    }
-
-    private void renderHeader(DrawContext ctx, float x, float y, float w, float h) {
-        boolean searching = !search.getText().isEmpty();
-        Entry e = entries.get(selected);
-        boolean locked = !searching && e.category() == Category.ANTI_CHEAT_OFF && !antiCheatSectionUnlocked;
-        boolean modules = (searching || e.category() != null) && !locked;
-        String title = searching ? "Search" : e.label();
-        String subtitle;
-        if (searching) {
-            int n = searchPage.all().size();
-            subtitle = n + (n == 1 ? " match for \"" : " matches for \"") + search.getText() + "\"";
-        } else subtitle = e.subtitle();
-
-        float filtersW = modules ? filters(ctx, x + w, y + h / 2f) : 0;
-        float titleMax = w - filtersW - 12;
-        float titleY = subtitle == null ? y + h / 2f : y + 9;
-        Fonts.drawV(ctx, Fonts.trim(title, titleMax, true, 1.3f), x, titleY, Theme.TEXT, true, 1.3f);
-        if (subtitle != null) Fonts.drawV(ctx, Fonts.trim(subtitle, titleMax, false, 0.68f), x, y + 23, Theme.TEXT_MUTED, false, 0.68f);
-    }
-
-    /** The All / Enabled / Starred chips, right-aligned at {@code right}; returns their width. */
-    private float filters(DrawContext ctx, float right, float cy) {
-        float h = 18, pad = 11, scale = 0.74f;
-        Filter[] all = Filter.values();
-        float[] widths = new float[all.length];
-        float total = 4;
-        for (int i = 0; i < all.length; i++) {
-            widths[i] = Fonts.width(all[i].label, false, scale) + pad * 2;
-            total += widths[i];
+    private void renderProfiles(DrawContext ctx){
+        if(!profileOpen||profileRect==null)return;
+        float x=profileRect.x,y=profileRect.y+profileRect.h+5,w=profileRect.w,row=25,content=profileOptions.size()*row,h=Math.min(175,Math.max(row,content))+row+6;
+        hit(0,0,menuWidth,menuHeight,(button,mx,my)->profileOpen=false);
+        scrollHit(0,0,menuWidth,menuHeight,amount->{});
+        Render2D.shadow(ctx,x,y,w,h,6,12,0x70000000);Render2D.roundRect(ctx,x,y,w,h,6,Theme.panelBg());Render2D.roundOutline(ctx,x,y,w,h,6,Render2D.px(),Theme.BORDER);hit(x,y,w,h,(button,mx,my)->{});
+        float viewH=h-row-6,max=Math.max(0,content-viewH);scrollHit(x,y,w,viewH,amount->profileScroll=(float)Math.clamp(profileScroll-amount*row,0,max));profileScroll=Math.clamp(profileScroll,0,max);
+        pushClip(x+1,y+2,w-2,viewH);
+        if(profileOptions.isEmpty())Fonts.drawCentered(ctx,"No saved profiles",x+w/2,y+row/2,Theme.TEXT_MUTED,false,.76f);
+        for(int i=0;i<profileOptions.size();i++){
+            var info=profileOptions.get(i);float py=y+i*row-profileScroll;if(!isVisible(py,row))continue;
+            boolean over=hovered(x+3,py,w-6,row),active=info.name().equals(ConfigManager.getCurrent());
+            if(over||active)Render2D.roundRect(ctx,x+3,py+1,w-6,row-2,4,Theme.accent(active?0x25:0x12));
+            Fonts.drawV(ctx,Fonts.trim(info.name(),w-16,false,.82f),x+8,py+row/2,active?Theme.accent():Theme.TEXT_DIM,false,.82f);
+            hit(x+3,py,w-6,row,(button,mx,my)->{if(button==0){if(!ConfigManager.load(info.name()))Notifications.push("Config","Could not load "+info.name(),Notifications.Type.ERROR);profileOpen=false;Sounds.click();}});place("profile:"+info.name(),x+w/2,py+row/2);
         }
-        float x = right - total, y = cy - h / 2f;
-        Render2D.roundRect(ctx, x, y, total, h, 6f, 0x30000000);
-        Render2D.roundOutline(ctx, x, y, total, h, 6f, 1f, ColorUtil.withAlpha(Theme.BORDER, 0x80));
-        float sx = x + 2;
-        for (int i = 0; i < all.length; i++) {
-            Filter f = all[i];
-            boolean sel = filter == f;
-            boolean hov = hovered(sx, y, widths[i], h);
-            float t = Anims.of(f, "chip", sel ? 1f : 0f);
-            float hv = Anims.of(f, "chipHover", hov);
-            if (t > 0.01f) Render2D.roundRect(ctx, sx, y + 2, widths[i], h - 4, 4.5f, ColorUtil.withAlpha(0xFFFFFFFF, Math.round(0x1A * t)));
-            int fg = ColorUtil.lerp(ColorUtil.lerp(Theme.TEXT_MUTED, Theme.TEXT_DIM, hv), Theme.TEXT, t);
-            Fonts.drawCentered(ctx, f.label, sx + widths[i] / 2f, cy, fg, false, scale);
-            hit(sx, y, widths[i], h, (button, mx, my) -> { if (button == 0) { filter = f; Sounds.click(); } });
-            place(f, sx + widths[i] / 2f, cy);
-            sx += widths[i];
-        }
-        return total;
+        popClip();float py=y+h-row-2;Render2D.rect(ctx,x+6,py,w-12,Render2D.px(),Theme.BORDER);Fonts.drawCentered(ctx,"Manage configs",x+w/2,py+row/2,Theme.TEXT_DIM,false,.79f);
+        hit(x,py,w,row,(button,mx,my)->{if(button==0)openPage(moduleEntries+1);});place("manage-configs",x+w/2,py+row/2);
     }
 
+    /** The anchored canvas stays complete; flat menus may hide only the optional subject dock. */
+    private boolean previewFitsViewport(){
+        float fit=Math.min(width/(float)CANVAS_W,height/(float)CANVAS_H),preferred=ClientSettings.guiFullscreen.get()?.97f:Math.min(ClientSettings.guiSize.getFloat()/100f,.98f);
+        float physical=fit*preferred*(float)client.getWindow().getScaleFactor();return SettingsPanel.PREVIEW_WIDTH*physical>=130&&380*physical>=160&&MAIN_H*physical>=230;
+    }
     private void renderTooltip(DrawContext ctx, float p, int width, int height) {
         long now = System.currentTimeMillis();
         if (tooltip == null || !tooltip.equals(shownTooltip)) {
@@ -837,8 +897,8 @@ public class ClickGuiScreen extends Screen {
         if (y + h > height - 4) y = (float) mouseYd - h - 6;
         Render2D.setAlpha(p * a);
         Render2D.shadow(ctx, x, y, w, h, 4, 6, 0x60000000);
-        Render2D.roundRect(ctx, x, y, w, h, 4, 0xF5181A20);
-        Render2D.roundOutline(ctx, x, y, w, h, 4, 1f, 0xFF30343E);
+        Render2D.roundRect(ctx, x, y, w, h, Theme.CONTROL_RADIUS, Theme.panelBg());
+        Render2D.roundOutline(ctx, x, y, w, h, Theme.CONTROL_RADIUS, Render2D.px(), Theme.BORDER);
         for (int i = 0; i < lines.size(); i++) Fonts.draw(ctx, lines.get(i), x + 6, y + 5 + i * 8.5f, Theme.TEXT_DIM, false, 0.75f);
     }
 
@@ -872,6 +932,7 @@ public class ClickGuiScreen extends Screen {
             mouseXd = point[0];
             mouseYd = point[1];
         }
+        if (!Double.isFinite(mouseXd) || !Double.isFinite(mouseYd)) return true;
         mouseDown = true;
         if (listening != null) {
             if (button >= 2) {
@@ -907,14 +968,16 @@ public class ClickGuiScreen extends Screen {
     public boolean mouseReleased(Click click) {
         worldMovement.mouse(click, false);
         spatial.release();
-        mouseDown = false;
-        drag = null;
-        dragOwner = null;
+        clearPointerDrag();
         return true;
     }
 
     @Override
     public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+        if (worldControls()) {
+            dragScreenPointer(deltaX, deltaY);
+            return true;
+        }
         if (spatial.isOpen()) {
             if (drag != null) drag.drag(mouseXd, mouseYd);
             return true;
@@ -937,6 +1000,7 @@ public class ClickGuiScreen extends Screen {
             mouseX = point[0];
             mouseY = point[1];
         }
+        if (!Double.isFinite(mouseX) || !Double.isFinite(mouseY)) return true;
         for (int i = scrollHits.size() - 1; i >= 0; i--) {
             ScrollHit h = scrollHits.get(i);
             if (mouseX >= h.x && mouseX < h.x + h.w && mouseY >= h.y && mouseY < h.y + h.h) {
@@ -944,8 +1008,9 @@ public class ClickGuiScreen extends Screen {
                 return true;
             }
         }
-        if (panelRect != null && panelRect.contains(mouseX, mouseY)) settings.onScroll(verticalAmount);
-        else currentPage().onScroll(verticalAmount);
+        if (previewRect != null && previewRect.contains(mouseX,mouseY)) return true;
+        if (panelRect != null && panelRect.contains(mouseX, mouseY)) return true;
+        if (pageRect != null && pageRect.contains(mouseX, mouseY)) currentPage().onScroll(verticalAmount);
         return true;
     }
 
@@ -963,6 +1028,7 @@ public class ClickGuiScreen extends Screen {
         }
         boolean ctrl = (modifiers & (GLFW.GLFW_MOD_CONTROL | GLFW.GLFW_MOD_SUPER)) != 0;
         if (ctrl && (keyCode == GLFW.GLFW_KEY_K || keyCode == GLFW.GLFW_KEY_F)) {
+            profileOpen = false;
             worldMovement.clear();
             focused = search;
             return true;
@@ -978,7 +1044,8 @@ public class ClickGuiScreen extends Screen {
         }
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
             // Back one step at a time: the open list, the settings panel, the search, then the menu.
-            if (dev.maro.gui.widget.Dropdown.anyOpen()) dev.maro.gui.widget.Dropdown.close();
+            if (profileOpen) profileOpen=false;
+            else if (dev.maro.gui.widget.Dropdown.anyOpen()) dev.maro.gui.widget.Dropdown.close();
             else if (settings.module() != null) closeSettings();
             else if (!search.getText().isEmpty()) search.clear();
             else if (!currentPage().onEscape()) close();
@@ -1002,6 +1069,7 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public boolean charTyped(CharInput input) {
+        if (profileOpen) return true;
         if (worldControls() && focused == null) return true;
         if (input.codepoint() > Character.MAX_VALUE) return true;
         char chr = (char) input.codepoint();
@@ -1023,12 +1091,13 @@ public class ClickGuiScreen extends Screen {
         closingAt = System.currentTimeMillis();
         listening = null;
         focused = null;
-        drag = null;
+        clearPointerDrag();
+        visualPreview.hidden();
     }
 
     @Override
     public void tick() {
-        if (!client.isWindowFocused()) { worldMovement.clear(); drag = null; mouseDown = false; }
+        if (!client.isWindowFocused() || client.getOverlay() != null) { worldMovement.clear(); clearPointerDrag(); }
         if (!worldControls()) worldMovement.clear();
         if (!spatialOn() && spatial.isOpen()) spatial.close();
         syncMouseCapture();
@@ -1045,6 +1114,8 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public void removed() {
+        clearPointerDrag();
+        screenDragReleasePending = false;
         worldMovement.clear();
         if (client.mouse.isCursorLocked()) client.mouse.unlockCursor();
         spatial.close();

@@ -40,7 +40,9 @@ public class HatLayer extends FeatureRenderer<PlayerEntityRenderState, PlayerEnt
                        float yRot, float xRot) {
         Hats module = Modules.get().get(Hats.class);
 
-        if (module == null || !module.isActive() || !module.wants(state)) return;
+        var portrait=dev.maro.gui.render.PlayerPreviewData.of(state);
+        boolean selected=portrait!=null&&portrait.maro$previewModule()==module;
+        if (module == null || (!module.isActive()&&!selected) || !module.wants(state)) return;
 
         pose.push();
         getContextModel().head.applyTransform(pose);

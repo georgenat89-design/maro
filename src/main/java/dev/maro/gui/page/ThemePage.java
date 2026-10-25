@@ -36,14 +36,13 @@ public class ThemePage extends Page {
             list.renderPaged(gui,ctx,x,y+32,lw,h-32,ClientSettings.THEME_PAGE,false);
             return;
         }
-        int presetColumns=Math.max(1,(int)((lw+5)/51));
         gui.pushClip(x - 6, y, w + 12, h);
         float cy = y;
 
         Widgets.sectionLabel(ctx, "Presets", x + 2, cy + 1, lw - 4);
         cy += 13;
         float tileW = 46, tileH = 38, gap = 5;
-        int cols = Math.max(1, (int) ((lw + gap) / (tileW + gap)));
+        int cols = Math.min(Theme.PRESETS.length, Math.max(1, (int) ((lw + gap) / (tileW + gap))));
         tileW = (lw - gap * (cols - 1)) / cols;
         int rows = (Theme.PRESETS.length + cols - 1) / cols;
         for (int i = 0; i < Theme.PRESETS.length; i++) {

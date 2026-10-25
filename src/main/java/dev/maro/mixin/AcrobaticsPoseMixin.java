@@ -17,6 +17,12 @@ public abstract class AcrobaticsPoseMixin {
     @Inject(method = "setAngles(Lnet/minecraft/client/render/entity/state/BipedEntityRenderState;)V", at = @At("RETURN"))
     private void maro$acrobaticsPose(BipedEntityRenderState state, CallbackInfo ci) {
         if (!(state instanceof PlayerEntityRenderState player)) return;
+        var preview=dev.maro.gui.render.PlayerPreviewData.of(player);
+        if(preview!=null&&preview.maro$previewModule() instanceof Acrobatics acrobatics){
+            Pose pose=preview.maro$previewAnimated()?acrobatics.previewPose(preview.maro$previewSeconds()):null;
+            if(pose!=null)pose.apply((BipedEntityModel<?>)(Object)this,acrobatics.previewBlend(preview.maro$previewSeconds()));
+            return;
+        }
         float delta = MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(true);
         Pose pose = Acrobatics.pose(player.id, delta);
         if (pose != null) pose.apply((BipedEntityModel<?>) (Object) this, Acrobatics.poseBlend(player.id, delta));

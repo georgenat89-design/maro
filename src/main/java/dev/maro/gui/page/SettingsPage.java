@@ -40,14 +40,16 @@ public class SettingsPage extends Page {
                 if(System.currentTimeMillis()-resetConfirm<3000){for(var section:ClientSettings.ALL)section.getSettings().forEach(Setting::reset);resetConfirm=0;}
                 else resetConfirm=System.currentTimeMillis();
             });
-            list.renderPaged(gui,ctx,x,y+32,lw,h-32,ClientSettings.GENERAL_PAGE,false);
+            Widgets.button(gui,ctx,"backgrounds-compact",x,y+29,lw-8,22,"Background Studio",Widgets.Style.SECONDARY,Icons.SETTINGS,
+                ()->net.minecraft.client.MinecraftClient.getInstance().setScreen(new dev.maro.gui.hud.GuiBackgroundScreen(gui)));
+            list.renderPaged(gui,ctx,x,y+58,lw,h-58,ClientSettings.GENERAL_PAGE,false);
             return;
         }
         gui.pushClip(x - 6, y, w + 12, h);
         float cy = y + 1;
 
         float r = Theme.radius();
-        float ch = 64;
+        float ch = 96;
         Render2D.roundRect(ctx, x, cy, lw, ch, r, Theme.CARD);
         Render2D.roundGradientH(ctx, x, cy, lw, ch, r, Theme.accent(0x1C), Theme.accent2(0x00));
         Render2D.roundOutline(ctx, x, cy, lw, ch, r, 1f, Theme.BORDER);
@@ -75,9 +77,15 @@ public class SettingsPage extends Page {
         });
         Widgets.button(gui,ctx,"accounts",x+lw-78,cy+7,70,18,"Accounts",Widgets.Style.SECONDARY,Icons.PLAYER,
                 () -> net.minecraft.client.MinecraftClient.getInstance().setScreen(new dev.maro.gui.accounts.AccountsScreen(gui)));
+        Widgets.button(gui,ctx,"background-studio",x+10,cy+65,140,22,"Background Studio",Widgets.Style.SECONDARY,Icons.SETTINGS,
+                () -> net.minecraft.client.MinecraftClient.getInstance().setScreen(new dev.maro.gui.hud.GuiBackgroundScreen(gui)));
+        float previewX=x+160,previewY=cy+62,previewW=Math.max(30,lw-170);
+        Render2D.checker(ctx,previewX,previewY,previewW,26,5);
+        dev.maro.gui.render.GuiBackground.draw(ctx,previewX,previewY,previewW,26);
+        Render2D.roundOutline(ctx,previewX,previewY,previewW,26,3,.8f,Theme.BORDER);
         cy += ch + 8;
 
-        list.renderPaged(gui, ctx, x, cy, lw,h-73,ClientSettings.GENERAL_PAGE,true);
+        list.renderPaged(gui, ctx, x, cy, lw,h-105,ClientSettings.GENERAL_PAGE,true);
         gui.popClip();
     }
 }

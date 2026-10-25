@@ -21,6 +21,7 @@ public abstract class MaroWorldLoadingMixin extends Screen {
     protected MaroWorldLoadingMixin(Text title) { super(title); }
     @Inject(method = "render", at = @At("HEAD"), cancellable = true)
     private void maro$render(DrawContext ctx, int mx, int my, float delta, CallbackInfo ci) {
+        if (dev.maro.render.capture.CapturePass.active()) return;
         long now = Util.getMeasuringTimeMs();
         if (now - lastNarrationTime > 2000) {
             lastNarrationTime = now;

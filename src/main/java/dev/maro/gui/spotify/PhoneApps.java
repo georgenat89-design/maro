@@ -263,16 +263,15 @@ final class PhoneApps {
         network.read(peer);
     }
     private void chooseVideo(){
-        if(choosingVideo||sendingVideo)return;choosingVideo=true;String contact=peer;focused=null;
-        java.util.concurrent.CompletableFuture.supplyAsync(()->{
-            try(var stack=org.lwjgl.system.MemoryStack.stackPush()){
-                return org.lwjgl.util.tinyfd.TinyFileDialogs.tinyfd_openFileDialog("Choose an MP4 video (32 MB maximum)","",stack.pointers(stack.UTF8("*.mp4")),"H.264 MP4 videos",false);
-            }
-        }).whenComplete((file,failure)->MinecraftClient.getInstance().execute(()->{
-            choosingVideo=false;if(closed||app!=App.MESSAGES||!peer.equals(contact))return;
-            if(failure!=null){error="Could not open the video picker";return;}
-            if(file!=null){videoDraft=java.nio.file.Path.of(file);videoSendId=java.util.UUID.randomUUID().toString();error="";}
-        }));
+        if(choosingVideo||sendingVideo)return;
+        var client=MinecraftClient.getInstance();
+        if(!(client.currentScreen instanceof SpotifyPhoneScreen phone)){error="Open the phone before choosing a video";return;}
+        choosingVideo=true;String contact=peer;focused=null;
+        var picker=new dev.maro.gui.PngFilePickerScreen(phone,java.nio.file.Path.of(System.getProperty("user.home")),"Choose an MP4 video (32 MB maximum)",file->{
+            if(closed||app!=App.MESSAGES||!peer.equals(contact))return;
+            videoDraft=file;videoSendId=java.util.UUID.randomUUID().toString();error="";
+        },"mp4").onDismiss(returning->{choosingVideo=false;phone.returnFromPicker(returning);});
+        phone.suspendForPicker(picker);client.setScreen(picker);
     }
     private void send() { act(() -> {
         if(sendingVideo)return;

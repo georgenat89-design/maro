@@ -23,12 +23,13 @@ import java.lang.reflect.Method;
 import java.nio.file.Path;
 
 /**
- * Pose sheets: three characters standing, running, crouching and jumping, then three emotes, and
+ * Pose sheets: all bundled characters standing, running, crouching and jumping, then three emotes, and
  * the default skin doing the same emotes. Each sheet is saved whole as crop_*.png, which CI prints
  * unscaled, so the look and movement of the models can be compared between builds.
  */
 final class CharacterShotChecks {
-    static final String[] CHARACTERS = {"Donald Trump", "Chun-Li", "LeBron James"};
+    static final String[] CHARACTERS = {"SpongeBob", "LeBron James", "Chun-Li", "Skeleton", "Jeffrey Epstein",
+            "Donald Trump", "Michael Jackson", "Roblox Bacon Hair", "Verity", "Minion", "Travis Scott", "Undead Fuhrer"};
     static final Emote[] EMOTES = {Emote.WAVE, Emote.FLOSS, Emote.DEFAULT_DANCE};
     static final String[] POSES = {"Idle", "Run", "Crouch", "Jump"};
 
@@ -78,6 +79,14 @@ final class CharacterShotChecks {
         Path shot = context.takeScreenshot("maro-character-" + slug);
         try {
             BufferedImage image = ImageIO.read(shot.toFile());
+            if (title.equals("SpongeBob")) {
+                int yellow = 0;
+                for (int y = 30; y < image.getHeight(); y++) for (int x = 0; x < image.getWidth(); x++) {
+                    int p = image.getRGB(x, y), red = p >> 16 & 255, green = p >> 8 & 255, blue = p & 255;
+                    if (red > 100 && green > 90 && blue < Math.min(red, green) * .65f) yellow++;
+                }
+                require(yellow > 8000, "SpongeBob's body lost its authored yellow texture: " + yellow + " pixels");
+            }
             ImageIO.write(image, "png", shot.resolveSibling("crop_character-" + slug + ".png").toFile());
         } catch (IOException error) {
             throw new AssertionError(error);

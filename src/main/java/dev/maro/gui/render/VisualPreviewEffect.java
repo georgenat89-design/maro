@@ -35,7 +35,7 @@ public final class VisualPreviewEffect {
     public static int frames(){return frames;}
     public static boolean hasResources(){return target!=null;}
 
-    public static GpuTextureView apply(GpuTextureView portrait,PlayerESP module){
+    public static GpuTextureView apply(GpuTextureView portrait,PlayerESP module,double previewSeconds){
         int w=portrait.texture().getWidth(0),h=portrait.texture().getHeight(0);
         if(target==null)target=new SimpleFramebuffer("Maro visual preview",w,h,false);
         else if(target.textureWidth!=w||target.textureHeight!=h)target.resize(w,h);
@@ -48,7 +48,7 @@ public final class VisualPreviewEffect {
             indices=RenderSystem.getDevice().createBuffer(()->"Maro preview indices",GpuBuffer.USAGE_INDEX,ix);
         }
         DATA.clear();for(int i=0;i<UNIFORM_BYTES;i+=4)DATA.putFloat(i,0);
-        float[] values=module.uniformValues();values[PlayerESP.MASK_SCALE_INDEX]=1;
+        float[] values=module.uniformValues();values[PlayerESP.MASK_SCALE_INDEX]=1;values[12]=(float)previewSeconds;
         for(int i=0;i<values.length;i++)DATA.putFloat(i*4,values[i]);
         int color=module.playerColor(MinecraftClient.getInstance().player);
         // Negative count selects portrait composition; yzw carry the real player's ESP color.

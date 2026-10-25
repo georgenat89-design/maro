@@ -100,6 +100,7 @@ public class SpinBot extends Module {
      * turned off has come to rest.
      */
     public static float angleFor(int entityId) {
+        if (dev.maro.render.capture.CapturePass.active()) return 0;
         SpinBot module = instance;
         MinecraftClient mc = MinecraftClient.getInstance();
 

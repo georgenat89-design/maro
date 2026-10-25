@@ -2,7 +2,7 @@ package dev.maro.module.impl.visuals;
 
 import dev.maro.Maro;
 import dev.maro.config.FriendManager;
-import dev.maro.gui.hud.EspPreviewScreen;
+import dev.maro.gui.ClickGuiScreen;
 import dev.maro.gui.notification.Notifications;
 import dev.maro.module.Category;
 import dev.maro.module.Module;
@@ -31,11 +31,13 @@ public class PlayerESP extends Module {
     /** Rainbow is painted in player_esp.fsh; the others are worked out per player here. */
     private static final String[] TRACER_COLORS = {"Player", "Distance", "Rainbow", "Custom"};
 
-    private final ButtonSetting preview = add(new ButtonSetting("Preview", "See the ESP on yourself and flip through styles live", "Open",
-            () -> mc.setScreen(new EspPreviewScreen(mc.currentScreen, this))));
-
-    /** While the preview screen is open: draw yourself, even with the module or Self off. */
-    private static boolean previewing;
+    private final ButtonSetting preview = add(new ButtonSetting("Preview", "Inspect the configured ESP on an isolated player model", "Open",
+            () -> {
+                var gui = mc.currentScreen instanceof ClickGuiScreen open ? open : new ClickGuiScreen();
+                if (mc.currentScreen != gui) mc.setScreen(gui);
+                gui.openModuleOptions(this);
+                gui.selectPreviewTab(true);
+            }));
 
     // ---- targets
     private final BooleanSetting self = add(new BooleanSetting("Self", "Draw yourself in third person", false));
@@ -128,17 +130,9 @@ public class PlayerESP extends Module {
         return sections;
     }
 
-    public static boolean previewing() {
-        return previewing;
-    }
-
     /** The main fill colour, used to tint the preview screen's controls. */
     public int accentColor() {
         return colorA.get();
-    }
-
-    public static void setPreviewing(boolean on) {
-        previewing = on;
     }
 
     private boolean usesColorA() {
@@ -151,7 +145,7 @@ public class PlayerESP extends Module {
     /** Called on the render thread for each entity rendered this frame. */
     public boolean shouldDraw(Entity entity) {
         if (!(entity instanceof PlayerEntity player) || mc.player == null) return false;
-        if (player == mc.player) return (self.get() || previewing) && !mc.options.getPerspective().isFirstPerson();
+        if (player == mc.player) return self.get() && !mc.options.getPerspective().isFirstPerson();
         if (player.isSpectator() && !spectators.get()) return false;
         if (!friends.get() && FriendManager.isFriend(player.getName().getString())) return false;
         return range.get() <= 0 || mc.player.distanceTo(player) <= range.get();

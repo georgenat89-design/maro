@@ -215,11 +215,15 @@ public class Acrobatics extends Module {
         if (move == null) return;
         double e = a.progress(move, delta);
         if (e < 0) return;
-        float angle = (float) (360 * move.turns() * e);
+        transformMove(move.kind(),move.turns(),move.hop(),e,matrices,height);
+    }
+
+    private static void transformMove(Kind kind,int turns,boolean hop,double e,MatrixStack matrices,float height){
+        float angle = (float) (360 * turns * e);
         float middle = height / 2f;
-        if (move.hop()) matrices.translate(0, (float) Math.sin(Math.PI * e) * 0.9f, 0);
+        if (hop) matrices.translate(0, (float) Math.sin(Math.PI * e) * 0.9f, 0);
         matrices.translate(0, middle, 0);
-        switch (move.kind()) {
+        switch (kind) {
             case FRONT -> matrices.multiply(RotationAxis.NEGATIVE_X.rotationDegrees(angle));
             case BACK -> matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(angle));
             case SIDE -> matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(angle));
@@ -231,6 +235,26 @@ public class Acrobatics extends Module {
         }
         matrices.translate(0, -middle, 0);
     }
+
+    private record PreviewMove(Kind kind,double position) { }
+
+    /** Samples the same model transform and key poses without starting a live trick or camera. */
+    private PreviewMove previewMove(double seconds){
+        double length=13/speed.get()*Math.max(1,.7+turns.get()*.3),cycle=length+12;
+        double ticks=Math.max(0,seconds)*20,t=(ticks%cycle)/length;
+        if(t>=1)return null;
+        Kind kind=trick.is("Random")?Kind.values()[(int)(ticks/cycle)%Kind.values().length]:switch(trick.get()){
+            case "Front Flip"->Kind.FRONT;case "Side Flip"->Kind.SIDE;case "Spin"->Kind.SPIN;case "Corkscrew"->Kind.CORKSCREW;default->Kind.BACK;
+        };
+        return new PreviewMove(kind,t);
+    }
+
+    public void previewTransform(MatrixStack matrices,float height,double seconds){
+        var sample=previewMove(seconds);if(sample==null)return;
+        double t=sample.position();transformMove(sample.kind(),turns.getInt(),true,t*t*(3-2*t),matrices,height);
+    }
+    public Pose previewPose(double seconds){var sample=previewMove(seconds);return sample==null?null:limbPose(sample.kind(),sample.position());}
+    public float previewBlend(double seconds){var sample=previewMove(seconds);return sample==null?0:(float)MathHelper.clamp(Math.min(sample.position()/.06,(1-sample.position())/.08),0,1);}
 
     // ---- arms and legs, as a person would move them ---------------------------------------------
 
@@ -285,7 +309,11 @@ public class Acrobatics extends Module {
         if (move == null) return null;
         double t = (a.now(delta) - move.start()) / move.length();
         if (t < 0 || t >= 1) return null;
-        float[] l = limbs(move.kind(), t);
+        return limbPose(move.kind(),t);
+    }
+
+    private static Pose limbPose(Kind kind,double t){
+        float[] l = limbs(kind, t);
         return new Pose()
                 .rightArm(l[0], l[1], l[2]).leftArm(l[0], -l[1], -l[2])
                 .rightLeg(l[3], 0, l[4]).leftLeg(l[3], 0, -l[4])

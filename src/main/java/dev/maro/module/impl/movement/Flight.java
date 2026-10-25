@@ -59,7 +59,7 @@ public final class Flight extends Module {
     }
     public static void beforeTick() {
         var m = active;
-        if (m == null || !m.current() || AirStuck.freezing(mc.player)) return;
+        if (m == null || !m.current()) return;
         float yaw = mc.player.getYaw();
         if (mc.player.fallDistance >= 3 && yaw == m.lastYaw && mc.player.getVelocity().length() < 0.003) {
             mc.player.setYaw(yaw + (m.flip ? 1 : -1)); m.flip = !m.flip;
@@ -68,7 +68,7 @@ public final class Flight extends Module {
     }
     @Override public void onTick() {
         if (!current()) { setEnabled(false); return; }
-        if (AirStuck.freezing(player) || player.hasVehicle()) return;
+        if (player.hasVehicle()) return;
         if (delayLeft > 0) delayLeft--;
         if (offLeft <= 0 && delayLeft <= 0) {
             delayLeft = delay.getInt(); offLeft = offTime.getInt();
@@ -109,7 +109,7 @@ public final class Flight extends Module {
         var m = active;
         if (m == null || !m.current() || !mc.isOnThread() || mc.getNetworkHandler() == null
             || connection != mc.getNetworkHandler().getConnection() || m.player.hasVehicle()
-            || !m.antiKick.is("Packet") || noFallProtecting() || !(original instanceof PlayerMoveC2SPacket packet)) return original;
+            || !m.antiKick.is("Packet") || !(original instanceof PlayerMoveC2SPacket packet)) return original;
         double y = packet.getY(m.player.getY());
         boolean lower = m.delayLeft <= 0 && !Double.isNaN(m.lastY) && y >= m.lastY - 0.0313 && BoatControl.onAir(m.player);
         double sentY = lower ? m.lastY - 0.0313 : y;
@@ -118,9 +118,5 @@ public final class Flight extends Module {
             packet.getYaw(m.player.getYaw()), packet.getPitch(m.player.getPitch()), packet.isOnGround(), packet.horizontalCollision());
         return new PlayerMoveC2SPacket.PositionAndOnGround(packet.getX(m.player.getX()), sentY, packet.getZ(m.player.getZ()),
             packet.isOnGround(), packet.horizontalCollision());
-    }
-    private static boolean noFallProtecting() {
-        var module = dev.maro.module.ModuleManager.get(NoFall.class);
-        return module != null && module.protecting();
     }
 }

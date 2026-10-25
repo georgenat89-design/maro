@@ -12,7 +12,7 @@ import static dev.maro.gui.render.GlyphNames.*;
 public final class ModuleIcons {
     private static final Map<String, String> MODULES = Map.ofEntries(
             // Movement
-            Map.entry("air stuck", SNOWFLAKE), Map.entry("coords fly", NAVIGATION), Map.entry("no fall", FEATHER),
+            Map.entry("coords fly", NAVIGATION),
             Map.entry("vehicles", CAR), Map.entry("auto walk", FOOTPRINTS), Map.entry("free cam", CAMERA),
             Map.entry("freelook", SCAN_EYE), Map.entry("boat fly", SAILBOAT), Map.entry("boat no clip", GHOST),
             // Anti-cheat off

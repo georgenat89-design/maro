@@ -30,7 +30,7 @@ final class SkinAccessoriesChecks {
             context.runOnClient(c -> {
                 c.options.getGuiScale().setValue(2); c.onResolutionChanged(); m.setEnabled(false);
                 c.setScreen(new SkinAccessoriesScreen(null, m)); m.selectPreset("Cyber");
-                ((SkinAccessoriesScreen)c.currentScreen).showAngle(0);
+                UnifiedPreviewTestView.angle(c,0);
                 ((ModeSetting)setting(m, "Halo")).set("Ring");
                 ((ColorSetting)setting(m, "Halo Color")).set(0xFF55E6F5);
                 ((BooleanSetting)setting(m, "Animate")).set(false);
@@ -40,7 +40,7 @@ final class SkinAccessoriesChecks {
             float[] after = context.computeOnClient(c -> new float[]{c.player.getYaw(), c.player.getPitch()});
             require(after[0] == rotation[0] && after[1] == rotation[1], "Preview rotated the real player");
             var screenshot = context.takeScreenshot("maro-skin-accessories-cyber");
-            int[] bounds = context.computeOnClient(c -> ((SkinAccessoriesScreen) c.currentScreen).previewBounds());
+            int[] bounds = context.computeOnClient(c -> UnifiedPreviewTestView.bounds(c));
             try {
                 var image = ImageIO.read(screenshot.toFile()); int cyan = 0;
                 for (int y = bounds[1]; y < bounds[3]; y++) for (int x = bounds[0]; x < bounds[2]; x++) {
@@ -53,7 +53,7 @@ final class SkinAccessoriesChecks {
 
             context.runOnClient(c -> {
                 m.selectPreset("Angel"); ((BooleanSetting)setting(m, "Animate")).set(false);
-                ((SkinAccessoriesScreen)c.currentScreen).showAngle(0);
+                UnifiedPreviewTestView.angle(c,0);
                 ((NumberSetting)setting(m, "Wing Spread")).set(0.0);
             });
             context.waitTicks(3); context.takeScreenshot("maro-wings-folded-behind");
@@ -77,7 +77,7 @@ final class SkinAccessoriesChecks {
             }
             // The Looks tab picks a whole look; the Sword tab shows a skin in the preview player's hand.
             context.runOnClient(c -> {
-                var screen = (SkinAccessoriesScreen) c.currentScreen;
+                var screen = new SkinAccessoriesScreen(null,m);c.setScreen(screen);m.setEnabled(true);c.options.setPerspective(Perspective.THIRD_PERSON_FRONT);
                 screen.showTab("Looks");
                 m.selectPreset("Dragon");
                 screen.showTab("Sword");
@@ -154,7 +154,7 @@ final class SkinAccessoriesChecks {
                 ((BooleanSetting)setting(m, "Hide Head With Helmet")).set(false);
                 ((BooleanSetting)setting(m, "Hide Wings With Elytra")).set(false);
                 require(m.showHead(state) && m.showWings(state), "Equipment overlap options did not update");
-                require(m.wants(state), "Disabled module did not allow its own preview");
+                require(m.wants(state), "Enabled cosmetics did not render the configured self target");
                 state.invisible = true; require(!m.wants(state), "Invisible player accessories rendered");
                 state.invisible = false; state.spectator = true; require(!m.wants(state), "Spectator accessories rendered");
                 state.spectator = false; state.id++; require(!m.wants(state), "Preview accessories leaked to another player");

@@ -208,6 +208,7 @@ final class SkinnedRenderer {
         INSTANCES.clear();
         Arms.CACHE.clear();
     }
+    static void forget(int entityId){INSTANCES.remove(entityId);}
 
     /** One player's animation and skinned mesh. */
     private static final class Instance {

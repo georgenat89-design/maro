@@ -12,7 +12,17 @@ import org.spongepowered.asm.mixin.Unique;
 @Environment(value=EnvType.CLIENT)
 @Mixin(value={PlayerEntityRenderState.class})
 public abstract class CustomModelAvatarRenderState
-implements CharacterHolder {
+implements CharacterHolder, dev.maro.gui.render.PlayerPreviewData {
+    @Unique private dev.maro.module.Module maro$previewModule;
+    @Unique private double maro$previewSeconds;
+    @Unique private boolean maro$previewAnimated;
+
+    public dev.maro.module.Module maro$previewModule(){return maro$previewModule;}
+    public double maro$previewSeconds(){return maro$previewSeconds;}
+    public boolean maro$previewAnimated(){return maro$previewAnimated;}
+    public void maro$setPreview(dev.maro.module.Module module,double seconds,boolean animated){
+        maro$previewModule=module;maro$previewSeconds=seconds;maro$previewAnimated=animated;
+    }
     @Unique
     private WornCharacter maro$character;
     @Unique

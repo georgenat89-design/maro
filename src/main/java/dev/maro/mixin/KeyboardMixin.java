@@ -14,6 +14,7 @@ public abstract class KeyboardMixin {
     @Inject(method = "onKey", at = @At("HEAD"), cancellable=true)
     private void maro$onKey(long window, int action, KeyInput input, CallbackInfo ci) {
         if (window == MinecraftClient.getInstance().getWindow().getHandle()) {
+            if(MinecraftClient.getInstance().currentScreen instanceof dev.maro.gui.hud.HandPlacementScreen)return;
             if(dev.maro.runtime.RuntimeEvents.key(input,action)){ci.cancel();return;}
             Maro.onKey(input.key(), action);
         }

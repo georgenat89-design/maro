@@ -14,6 +14,7 @@ public abstract class MouseMixin {
     @Inject(method = "onMouseButton", at = @At("HEAD"), cancellable=true)
     private void maro$onMouseButton(long window, MouseInput input, int action, CallbackInfo ci) {
         if (window == MinecraftClient.getInstance().getWindow().getHandle()) {
+            if(MinecraftClient.getInstance().currentScreen instanceof dev.maro.gui.hud.HandPlacementScreen)return;
             if(dev.maro.runtime.RuntimeEvents.mouse(input,action)){ci.cancel();return;}
             Maro.onMouseButton(input.button(), action);
         }
@@ -21,6 +22,7 @@ public abstract class MouseMixin {
 
     @Inject(method="onMouseScroll",at=@At("HEAD"),cancellable=true)
     private void maro$scroll(long window,double horizontal,double vertical,CallbackInfo info){
+        if(MinecraftClient.getInstance().currentScreen instanceof dev.maro.gui.hud.HandPlacementScreen)return;
         if(window==MinecraftClient.getInstance().getWindow().getHandle() && dev.maro.runtime.MeteorClient.EVENT_BUS.post(new dev.maro.runtime.events.meteor.MouseScrollEvent(vertical)).isCancelled())info.cancel();
     }
 }

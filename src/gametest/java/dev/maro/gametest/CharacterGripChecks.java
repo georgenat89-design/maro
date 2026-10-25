@@ -49,7 +49,7 @@ final class CharacterGripChecks {
                 for(int i=0;i<300&&!context.computeOnClient(c->model.ready(name)!=null);i++)context.waitTicks(1);
                 if(!context.computeOnClient(c->model.ready(name)!=null))throw new AssertionError("Missing character: "+name);
                 for(int angle:new int[]{0,90}) {
-                    context.runOnClient(c->((CustomModelScreen)c.currentScreen).showAngle(angle));context.waitTicks(3);
+                    context.runOnClient(c->UnifiedPreviewTestView.angle(c,angle));context.waitTicks(3);
                     context.takeScreenshot("maro-grip-"+name.toLowerCase().replace(' ','-')+"-"+angle);
                 }
                 context.runOnClient(c->cosmetics.setEnabled(false));context.waitTicks(2);

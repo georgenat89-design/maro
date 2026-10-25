@@ -53,6 +53,7 @@ public final class SpotifyPhone extends Module {
         var old = screen;
         screen = null;
         if (old != null && mc.currentScreen == old) mc.setScreen(null);
+        else if(old!=null)old.cancelFilePicker();
         if (acquired) { acquired = false; SpotifySession.release(); }
     }
 

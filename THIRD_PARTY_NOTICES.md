@@ -1,3 +1,13 @@
+Inter interface font
+-------------------
+Copyright 2016, 2020 The Inter Project Authors (https://github.com/rsms/inter).
+Inter Regular (400, optical size 14) and SemiBold (600) are bundled under the
+SIL Open Font License 1.1, included as INTER_LICENSE.txt in the JAR. Regular was
+instantiated from Google Fonts' Inter[opsz,wght].ttf version 4.001, git 66647c0bb:
+https://github.com/google/fonts/tree/main/ofl/inter
+No runtime download is used. Native font providers retain Minecraft fallback;
+the smooth text renderer uses platform fallback for unsupported characters.
+
 Sora interface font
 ===================
 

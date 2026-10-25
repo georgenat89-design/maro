@@ -29,9 +29,10 @@ import java.util.Locale;
 
 /** Grayscale antialiasing at final physical size, with bounded reusable GUI/HUD text textures. */
 public final class SmoothHudText {
-    private static final FontRenderContext METRICS = new FontRenderContext(new AffineTransform(), true, false);
-    private static final Font[][] FONTS = new Font[3][2];
-    private static final double[][] CAPS_RATIO = new double[3][2];
+    private static final FontRenderContext METRICS = new FontRenderContext(new AffineTransform(), true, true);
+    private static final Font[][] FONTS = new Font[4][2];
+    private static final double[][] CAPS_RATIO = new double[4][2];
+    private static final java.util.Map<String, Double> GLYPH_SIZE = new java.util.HashMap<>();
     private static final LinkedHashMap<Key, Line> CACHE = new LinkedHashMap<>(512, .75f, true);
     private static final LinkedHashMap<Key, Float> WIDTHS = new LinkedHashMap<>(1024, .75f, true);
     private static long cachedBytes;
@@ -68,8 +69,8 @@ public final class SmoothHudText {
     private static Font font(int family, boolean bold) {
         int index = bold ? 1 : 0;
         if (FONTS[family][index] == null) {
-            String path = "/assets/maro/font/" + (family == 0 ? "rubik_" + (bold ? "bold" : "medium")
-                    : family == 1 ? "inter_" + (bold ? "extrabold" : "semibold")
+            String path = "/assets/maro/font/" + (family == 3 ? "lucide" : family == 0 ? "rubik_" + (bold ? "bold" : "medium")
+                    : family == 1 ? "inter_" + (bold ? "semibold" : "regular")
                     : "sora_" + (bold ? "bold" : "semibold")) + ".ttf";
             try (var input = SmoothHudText.class.getResourceAsStream(path)) {
                 if (input == null) throw new IllegalStateException("Missing interface font: " + path);
@@ -135,17 +136,16 @@ public final class SmoothHudText {
         Graphics2D graphics = image.createGraphics();
         try {
             graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-            graphics.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
+            graphics.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
             graphics.setColor(java.awt.Color.WHITE);
             layout.draw(graphics, 2 - bounds.x, 2 - bounds.y);
         } finally { graphics.dispose(); }
         int[] argb = image.getRGB(0, 0, w, h, null, 0, w); byte[] rgba = new byte[w * h * 4];
         for (int i = 0; i < argb.length; i++) {
             rgba[i * 4] = rgba[i * 4 + 1] = rgba[i * 4 + 2] = (byte)255;
-            // Trim the faint coverage halo and strengthen the solid edge while keeping
-            // intermediate coverage on curved strokes. Do not blur the finished texture.
-            int coverage = argb[i] >>> 24;
-            rgba[i * 4 + 3] = (byte)Math.max(0, Math.min(255, (coverage - 28) * 255 / 199));
+            // Preserve grayscale coverage: clipping or boosting it makes small text and
+            // diagonal icon strokes look jagged even though the texture is antialiased.
+            rgba[i * 4 + 3] = (byte)(argb[i] >>> 24);
         }
         Texture texture = new Texture(w, h, TextureFormat.RGBA8, FilterMode.LINEAR, FilterMode.LINEAR);
         texture.upload(rgba);
@@ -159,6 +159,9 @@ public final class SmoothHudText {
         double unit = unit(ctx);
         var key = key(text, bold, size, unit);
         Line line = CACHE.computeIfAbsent(key, SmoothHudText::raster);
+        drawLine(ctx, line, x, y, ink, unit);
+    }
+    private static void drawLine(DrawContext ctx, Line line, float x, float y, int ink, double unit) {
         var pose = new Matrix3x2f(ctx.getMatrices());
         double gui = MinecraftClient.getInstance().getWindow().getScaleFactor() * ScreenGuiSurface.textScale(ctx);
         boolean flat = pose.m01() == 0 && pose.m10() == 0 && pose.m00() != 0 && pose.m11() != 0;
@@ -179,7 +182,33 @@ public final class SmoothHudText {
                 : line.texture.getSampler()), bounds, scissor));
     }
     public static void drawRight(DrawContext ctx, String text, float right, float cy, int color, boolean bold, float size) {
-        draw(ctx, text, right - width(ctx, text, bold, size), cy - size * 4 * heightRatio(), color, bold, size);
+        if (text == null || text.isBlank()) return;
+        double unit = unit(ctx);
+        Line line = CACHE.computeIfAbsent(key(text, bold, size, unit), SmoothHudText::raster);
+        draw(ctx, text, right - (float)((line.offsetX + line.width - 2) / unit),
+                cy - (float)((line.offsetY + line.height / 2f) / unit), color, bold, size);
+    }
+    /** Vertically center the visible ink, rather than a nominal font line box. */
+    public static void drawV(DrawContext ctx, String text, float x, float cy, int color, boolean bold, float size) {
+        if (text == null || text.isBlank()) return;
+        double unit = unit(ctx);
+        Line line = CACHE.computeIfAbsent(key(text, bold, size, unit), SmoothHudText::raster);
+        draw(ctx, text, x, cy - (float)((line.offsetY + line.height / 2f) / unit), color, bold, size);
+    }
+    /** Lucide icons use their actual outline bounds, independently of font bearings and baseline. */
+    public static void drawGlyph(DrawContext ctx, String glyph, float cx, float cy, float size, int color) {
+        if (glyph == null || glyph.isEmpty() || size <= 0) return;
+        int ink = ColorUtil.mulAlpha(color, Render2D.getAlpha());
+        if ((ink >>> 24) < 8) return;
+        double unit = unit(ctx);
+        double ratio = GLYPH_SIZE.computeIfAbsent(glyph, g -> {
+            var bounds = font(3, false).deriveFont(100f).createGlyphVector(METRICS, g).getVisualBounds();
+            return Math.max(.01, Math.max(bounds.getWidth(), bounds.getHeight()) / 100);
+        });
+        int pixels = Math.clamp((int)Math.round(size * unit / ratio), 6, 512);
+        Line line = CACHE.computeIfAbsent(new Key(glyph, pixels, 3, false), SmoothHudText::raster);
+        drawLine(ctx, line, cx - (float)((line.offsetX + line.width / 2f) / unit),
+                cy - (float)((line.offsetY + line.height / 2f) / unit), ink, unit);
     }
     /** Center the visible lettering, including its bearings and final raster height. */
     public static void drawCentered(DrawContext ctx, String text, float cx, float cy, int color, boolean bold, float size) {

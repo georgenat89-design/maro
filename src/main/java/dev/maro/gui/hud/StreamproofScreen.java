@@ -35,12 +35,12 @@ public final class StreamproofScreen extends Screen {
             button(c,module.isEnabled()?"Enabled":"Enable",420,21,90,29,module.isEnabled(),module::toggle);button(c,"Done",521,21,75,29,false,this::close);
             Render2D.roundRect(c,24,86,572,78,9,0xFF1C2B30);Render2D.circle(c,43,109,3,module.isEnabled()&&CleanCapture.frames()>0?ACCENT:MUTED);
             text(c,"BUILT INTO YOUR MAIN SCREEN",56,109,.60f,true,ACCENT);text(c,"Share Minecraft normally",40,135,1.01f,true,TEXT);
-            text(c,"1",30,190,.76f,true,ACCENT);text(c,"Enable Streamproof while you are in a world.",50,190,.76f,false,TEXT);
-            text(c,"2",30,216,.76f,true,ACCENT);text(c,"Select your normal Minecraft window in your capture app.",50,216,.76f,false,TEXT);
+            text(c,"1",30,190,.76f,true,ACCENT);text(c,"Windows 10 (2004+) / 11. Use windowed or borderless Minecraft.",50,190,.72f,false,TEXT);
+            text(c,"2",30,216,.76f,true,ACCENT);text(c,"Scene-changing effects pause. Menus, HUD and ESP stay private.",50,216,.72f,false,TEXT);
             text(c,"3",30,242,.76f,true,ACCENT);text(c,"Check its recording preview before going live.",50,242,.76f,false,TEXT);
             text(c,module.status(),24,272,.64f,false,MUTED);
-            button(c,"Settings",24,291,94,25,false,()->{var gui=parent instanceof ClickGuiScreen p?p:new ClickGuiScreen();client.setScreen(gui);gui.openModuleOptions(module);});
-            Fonts.drawRight(c,module.captureFps()+" FPS · Chat "+(Streamproof.hideChat()?"hidden":"shown"),596,304,MUTED,false,.65f);
+            text(c,"Scene effects restore when disabled.",24,304,.65f,false,MUTED);
+            Fonts.drawRight(c,"One world render · Chat "+(Streamproof.hideChat()?"hidden":"shown"),596,304,MUTED,false,.65f);
         }finally{Fonts.setMeasureScale(1);Fonts.endRaw();c.getMatrices().popMatrix();}
     }
     private void text(DrawContext c,String text,float x,float y,float size,boolean bold,int color){Fonts.drawV(c,text,x,y,color,bold,size);}

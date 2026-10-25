@@ -38,7 +38,7 @@ public final class CustomPickaxe {
             for(String choice:PickaxeModels.NAMES)if(own.getPath().equals("custom_pickaxe/"+PickaxeModels.key(choice))){name=choice;preview=true;break;}
         }
         if(!preview){
-            if(!(m.isEnabled()||mc.currentScreen instanceof SkinAccessoriesScreen)||!PickaxeModels.contains(name)||own!=null&&!Objects.equals(own,stack.getItem().getComponents().get(DataComponentTypes.ITEM_MODEL)))return false;
+            if(!(m.isEnabled()||dev.maro.gui.render.PlayerPreviewState.extracting(m))||!PickaxeModels.contains(name)||own!=null&&!Objects.equals(own,stack.getItem().getComponents().get(DataComponentTypes.ITEM_MODEL)))return false;
             boolean mine=holder!=null&&holder.getEntity()==mc.player;
             boolean first=context==ItemDisplayContext.FIRST_PERSON_RIGHT_HAND||context==ItemDisplayContext.FIRST_PERSON_LEFT_HAND;
             boolean third=context==ItemDisplayContext.THIRD_PERSON_RIGHT_HAND||context==ItemDisplayContext.THIRD_PERSON_LEFT_HAND;

@@ -4,13 +4,36 @@ A **Fabric 1.21.11 / Java 21** client with a smooth, modern ClickGUI and the 20 
 
 Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 
+The local **1.0.2** update makes Free Cam faster: 96 blocks per second by default,
+with an effective 0.5–4096 speed range, normalized diagonal movement and clean camera
+restoration. **No Fall is removed**. **Coords Fly** adds labeled Position and Nether
+rows: Overworld X/Z divide by eight, Nether coordinates use the actual position,
+and unsupported dimensions show no conversion. See [movement and coordinates](docs/movement-coordinate-update.md).
+
+**Settings → Background Studio** adds default, solid, gradient, transparent and PNG
+backdrops with live previews, persistent image imports and fit/fill/stretch/tile controls.
+**Interface → Frosted Glass** has a native blur strength of 1–10 without changing
+Minecraft's saved blur preference. Image, resource-pack and phone-video imports use
+an in-game file picker, keeping folder navigation inside Maro's private GUI.
+See [GUI backgrounds](docs/gui-backgrounds.md).
+
+The local 1.0.1 update improves icon/text smoothing and centering, restores the
+custom models' original texture quality, and removes Trident Boost and Air Stuck.
+See [rendering and model appearance](docs/rendering-quality.md).
+
 The menu is one window. The sidebar has the search, the categories with their module counts,
 and the Settings, Configs, Theme and Socials pages. Each category shows its modules as cards
 with an icon, a star and a switch; **All**, **Enabled** and **Starred** filter them.
 **Left-click** a card to open its settings in a panel that slides out on the right, and
 **right-click** it (or click its switch) to turn it on or off. Settings are grouped into
-cards; modules that change how players look, such as Player ESP and Nametags, show a live
-preview of your character. **Esc** closes the panel, then the menu.
+cards. An explicit capability list gives **Custom Model, Cosmetics, Skin Changer,
+Emotes and Player ESP** a live player preview on the left of their settings, using
+the current skin and equipment where applicable. World, sky, GUI, coordinate and
+Free Cam settings do not receive an unrelated player portrait. **Esc** closes the
+panel, then the menu.
+
+See [unified module previews](docs/unified-previews.md) for the common Preview tab,
+supported subjects, controls and rendering limits.
 
 
 Maro opens with a black/cobalt loading screen and matching main menu, a sharp
@@ -34,6 +57,12 @@ a text field (or press **Ctrl+F**) to type; movement pauses while a field is foc
 Press **Enter** to finish typing and **Esc** to go back or close the menu.
 Turn Floating Window off to use Screen GUI's placement and distance controls.
 
+The local **1.0.4** Screen GUI change keeps the panel's opening position, facing
+and physical size fixed, with attached settings and previews and local model/slider
+drag input. The current design and flat GUI are preserved. Native behavior,
+rendering-mod compatibility and regular GUI regression checks passed; see
+[stationary Screen GUI](docs/stationary-screen-gui.md).
+
 When the optional Zen companion is installed, Maro reserves the missing native vertex/index
 capacity for its Block Outlines star before it draws. This prevents the address-zero crash
 when first aiming at a block, and protects later draws as the mesh fills. The integration
@@ -49,9 +78,15 @@ The phone reuses its immutable album-art geometry across frames.
 while typing. It includes a searchable editor, anonymous player numbers and friend exclusions.
 Original account identities, commands and messages stay intact. See [Name Protect](docs/name-protect.md).
 
-**Streamproof** (Misc, Windows) keeps private visuals on your main game screen and presents clean
-gameplay to the normal Minecraft capture window. It uses an attached capture-excluded layer in
-the same game instance. Check your recorder's preview; see [Streamproof](docs/streamproof.md).
+**Streamproof** (Misc, Windows) uses one world render in the same Minecraft instance:
+the normal window presents ordinary gameplay, while an attached capture-excluded
+layer presents local GUI, HUD and annotations on the same monitor. Shared-scene
+effects, including Free Cam, custom player/item models and sky/lighting changes,
+pause locally as well as in the capture; their requested states restore when
+Streamproof ends. Gameplay actions remain visible. Operating-system capture,
+OBS and Discord protection are not verified for this update; check the selected
+application's actual preview. External applications opened through links are outside
+this presentation's scope. See [Streamproof and capture limits](docs/streamproof.md).
 
 Click a module for its usual settings. The folder icon in its settings header opens that module's
 public configs, including Top liked, preview, apply and undo. See [public configs](docs/public-configs.md).
@@ -303,7 +338,7 @@ stop mining or disable the module; a manual slot change is preserved. **Protect 
 skips tools with one durability point remaining. Both options are on by default.
 It leaves item use and creative mode alone and does not move items out of your inventory.
 
-Auto Trident has been removed. Movement → Trident Boost remains available for manually charged Riptide.
+Auto Trident, Trident Boost and Air Stuck have been removed. Tridents use native Riptide behavior.
 
 **GUI**
 - Floating top-bar navigation (category tabs with a sliding pill, icon buttons for general pages) over a black, top-lit window

@@ -14,12 +14,9 @@ import net.minecraft.client.input.*;
 import net.minecraft.text.Text;
 import net.minecraft.util.Util;
 import org.lwjgl.glfw.GLFW;
-import org.lwjgl.system.MemoryStack;
-import org.lwjgl.util.tinyfd.TinyFileDialogs;
 import java.nio.file.Path;
 import java.net.URI;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 
 /** Original native Maro browser for the first 50 PacksMC Trending packs. */
 public final class PacksMcScreen extends Screen {
@@ -32,7 +29,7 @@ public final class PacksMcScreen extends Screen {
     private final List<Hit> hits=new ArrayList<>();
     private Pack selected;
     private String query="";
-    private boolean typing,ignoreSlash,favoritesOnly,zoom,choosing;
+    private boolean typing,ignoreSlash,favoritesOnly,zoom;
     private float scale=1,ox,oy,mx,my,scroll,target,maxScroll;
     private long lastFrame;
     private java.util.function.Consumer<URI> openInBrowser=uri->Util.getMainWorkerExecutor().execute(()->Util.getOperatingSystem().open(uri));
@@ -52,13 +49,8 @@ public final class PacksMcScreen extends Screen {
     public static URI downloadPage(Pack p){if(!PacksMcCatalog.packPage(p.page()))throw new IllegalArgumentException("Invalid pack page");return URI.create(p.page());}
     private void download(Pack p){openInBrowser.accept(downloadPage(p));}
     private void browse(Pack p){
-        if(choosing||module.importing())return;choosing=true;
-        CompletableFuture.supplyAsync(()->{
-            try(MemoryStack stack=MemoryStack.stackPush()){
-                return TinyFileDialogs.tinyfd_openFileDialog("Import downloaded resource pack",Path.of(System.getProperty("user.home"),"Downloads").toString()+java.io.File.separator,
-                        stack.pointers(stack.UTF8("*.zip")),"Minecraft resource-pack ZIP",false);
-            }
-        },Modrinth.POOL).whenComplete((file,error)->client.execute(()->{choosing=false;if(error==null&&file!=null)module.importPack(p,Path.of(file));}));
+        if(module.importing())return;
+        client.setScreen(new dev.maro.gui.PngFilePickerScreen(this,Path.of(System.getProperty("user.home"),"Downloads"),"Import downloaded resource pack",file->module.importPack(p,file),"zip"));
     }
     @Override public void onFilesDropped(List<Path> files){if(selected!=null&&!files.isEmpty())module.importPack(selected,files.getFirst());}
     @Override public void renderBackground(DrawContext ctx,int x,int y,float delta){}

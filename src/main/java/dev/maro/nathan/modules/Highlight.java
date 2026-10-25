@@ -36,6 +36,7 @@ public final class Highlight {
     }
 
     public static boolean has(int entityId) {
+        if (dev.maro.render.capture.CapturePass.active()) return false;
         if (!enabled) return false;
 
         Long expiry = ENTRIES.get(entityId);

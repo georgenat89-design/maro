@@ -31,6 +31,8 @@ public class NumberSetting extends Setting<Double> {
         return step;
     }
 
+    public String getSuffix() { return suffix; }
+
     public float getFloat() {
         return value.floatValue();
     }

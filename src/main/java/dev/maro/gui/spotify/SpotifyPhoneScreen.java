@@ -55,7 +55,8 @@ public final class SpotifyPhoneScreen extends Screen {
     private long lastFrame;
 
     private SpotifyMedia.Artwork shownArtwork;
-    private boolean dragging, draggingVolume, looking, removed, sizeChanged;
+    private boolean dragging, draggingVolume, looking, removed, sizeChanged, pickerSuspended;
+    private Screen suspendedPicker;
     private boolean leftAlt, rightAlt;
     private double lastAudibleVolume = .5;
     private long scrubPosition;
@@ -672,7 +673,23 @@ public final class SpotifyPhoneScreen extends Screen {
         }
     }
     @Override public boolean shouldPause() { return false; }
+    /** A private file browser temporarily replaces the screen without ending this phone session. */
+    void suspendForPicker(Screen picker) {
+        pickerSuspended=true;suspendedPicker=picker;cancelDrags();clearGameInput();mediaHeld.clear();movement.clear();
+        if(client.mouse.isCursorLocked())client.mouse.unlockCursor();
+    }
+    void returnFromPicker(boolean returning) {
+        pickerSuspended=false;suspendedPicker=null;
+        if(!returning)removed();
+    }
+    /** Module toggles must also dispose a temporarily suspended phone, never revive it on Cancel. */
+    public void cancelFilePicker() {
+        if(!pickerSuspended)return;
+        if(client.currentScreen==suspendedPicker)client.setScreen(null);
+        else{pickerSuspended=false;suspendedPicker=null;removed();}
+    }
     @Override public void removed() {
+        if(pickerSuspended)return;
         if (removed) return;
         removed = true; cancelDrags(); clearGameInput(); mediaHeld.clear(); movement.clear(); apps.close();
         if (client.mouse.isCursorLocked()) client.mouse.unlockCursor();

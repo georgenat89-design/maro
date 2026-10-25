@@ -14,12 +14,9 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.texture.TextureSetup;
 import net.minecraft.text.Text;
 import org.joml.Matrix3x2f;
-import org.lwjgl.system.MemoryStack;
-import org.lwjgl.util.tinyfd.TinyFileDialogs;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 /** Pick a picture for {@link CustomTotem}: browse, paste a path or drag a file in. */
 public final class TotemImageScreen extends Screen {
@@ -28,7 +25,6 @@ public final class TotemImageScreen extends Screen {
     private final Screen parent;
     private final CustomTotem module;
     private TextFieldWidget path;
-    private boolean choosing;
     private String pickerError = "";
 
     public TotemImageScreen(Screen parent, CustomTotem module) {
@@ -40,8 +36,10 @@ public final class TotemImageScreen extends Screen {
     @Override
     protected void init() {
         int w = Math.min(420, width - 32), x = (width - w) / 2, y = height / 2 + 20;
+        String previousPath=path==null?"":path.getText();
         path = new TextFieldWidget(textRenderer, x, y + 8, w - 78, 20, Text.literal("Image file path"));
         path.setMaxLength(32767);
+        path.setText(previousPath);
         addDrawableChild(path);
         setInitialFocus(path);
         addDrawableChild(ButtonWidget.builder(Text.literal("Browse"), button -> browse()).dimensions(x + w - 72, y + 8, 72, 20).build());
@@ -72,22 +70,9 @@ public final class TotemImageScreen extends Screen {
     }
 
     private void browse() {
-        if (choosing || module.imageBusy()) return;
-        choosing = true;
+        if (module.imageBusy()) return;
         pickerError = "";
-        CompletableFuture.supplyAsync(() -> {
-            try (MemoryStack stack = MemoryStack.stackPush()) {
-                return TinyFileDialogs.tinyfd_openFileDialog("Choose a totem image", module.imageFolder().toString() + java.io.File.separator,
-                    stack.pointers(stack.UTF8("*.png"), stack.UTF8("*.jpg"), stack.UTF8("*.jpeg")), "PNG or JPG images", false);
-            }
-        }).whenComplete((file, error) -> client.execute(() -> {
-            choosing = false;
-            if (error != null) pickerError = "Paste the image's file path or drag the file into this window";
-            else if (file != null) {
-                path.setText(file);
-                use(Path.of(file));
-            }
-        }));
+        client.setScreen(new dev.maro.gui.PngFilePickerScreen(this,Path.of(System.getProperty("user.home")),"Choose a totem image",file->{path.setText(file.toString());use(file);},"png","jpg","jpeg"));
     }
 
     @Override
@@ -111,7 +96,7 @@ public final class TotemImageScreen extends Screen {
         drawPreview(ctx, px, py, PREVIEW);
         Fonts.centeredTop(ctx, "Browse, paste a path, or drag a PNG here", width / 2, y - 12, width - 24, 0xFFADB5C7);
         super.render(ctx, mx, my, delta);
-        String status = !pickerError.isEmpty() ? pickerError : choosing ? "Choosing a file…" : module.imageStatus();
+        String status = !pickerError.isEmpty() ? pickerError : module.imageStatus();
         Fonts.centeredTop(ctx, Fonts.trim(status, w, false, .9f), width / 2, y + 63, width - 24, 0xFFADB5C7);
         String[] help = switch (module.shapeSetting().get()) {
             case CustomTotem.CUT_OUT -> new String[] {"Cut Out: a plain background is taken away,", "so your picture's own outline is the totem."};

@@ -25,11 +25,13 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.entity.projectile.FireworkRocketEntity;
 import net.minecraft.item.Items;
 import net.minecraft.sound.SoundEvents;
+import net.minecraft.registry.RegistryKey;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.Heightmap;
+import net.minecraft.world.World;
 import org.joml.Matrix3x2fStack;
 
 import java.util.ArrayList;
@@ -83,6 +85,7 @@ public class CoordsFly extends Module implements HudElement {
     private final BooleanSetting progress = new BooleanSetting("Progress Bar", "How much of the way you have come", true);
     private final BooleanSetting speedEta = new BooleanSetting("Speed & ETA", "How fast you are closing in and when you will get there", true);
     private final BooleanSetting showCoords = new BooleanSetting("Show Coords", "The coords themselves and the height to climb or drop", true);
+    private final BooleanSetting playerCoords = new BooleanSetting("Player Coords", "Your current position and clearly labeled Nether coordinates; no conversion in other dimensions", true);
     private final NumberSetting opacity = new NumberSetting("Background Opacity", "How solid the card is", 85, 0, 100, 1).suffix("%");
     private final ButtonSetting position = new ButtonSetting("Position", "Drag the card where you want it and scroll to resize it", "Place",
             () -> mc.setScreen(new HudPlacementScreen(mc.currentScreen, this)));
@@ -132,11 +135,15 @@ public class CoordsFly extends Module implements HudElement {
     private double closing;
     private double speed;
     private int steeredTicks;
+    private String parsedTargetText;
+    private String parsedTargetWorld;
+    private RegistryKey<World> parsedTargetDimension;
+    private Target parsedTarget;
 
     public CoordsFly() {
         super("Coords Fly", "Type in coords and get guided there: km and m away, which way to turn, a beam on the spot and elytra auto steer", Category.MOVEMENT);
         SettingSection target = section("Coords", coords, setHere, paste, clear, world, otherWorld);
-        SettingSection card = section("Guide", units, turnHint, progress, speedEta, showCoords, opacity);
+        SettingSection card = section("Guide", units, turnHint, progress, speedEta, showCoords, playerCoords, opacity);
         SettingSection inWorld = section("World", beam, beamColor, marker, arrows);
         SettingSection elytra = section("Elytra", steer, turnSpeed, holdHeight, cruise, glideDown, descendAt, rockets, rocketBelow, rocketDelay);
         SettingSection arriving = section("Arriving", arriveWithin, arriveSound, offOnArrive);
@@ -201,20 +208,27 @@ public class CoordsFly extends Module implements HudElement {
 
     /** How coords written for the chosen dimension scale into the one you are in. */
     private double dimensionScale() {
-        String here = dimension();
-        if (world.is("Overworld") && here.equals("the_nether")) return 1 / 8.0;
-        if (world.is("Nether") && here.equals("overworld")) return 8;
+        var here = mc.world.getRegistryKey();
+        if (world.is("Overworld") && here.equals(World.NETHER)) return 1 / 8.0;
+        if (world.is("Nether") && here.equals(World.OVERWORLD)) return 8;
         return 1;
     }
 
     /** The coords in the world you are in, the middle of the block; null when none are set or they do not read. */
     public Target target() {
-        double[] p = parse(coords.get());
-        if (p == null || !inGame()) return null;
+        if (!inGame()) return null;
+        String text = coords.get(), destinationWorld = world.get();
+        var dimension = mc.world.getRegistryKey();
+        if (text.equals(parsedTargetText) && destinationWorld.equals(parsedTargetWorld) && dimension.equals(parsedTargetDimension)) return parsedTarget;
+        parsedTargetText = text;
+        parsedTargetWorld = destinationWorld;
+        parsedTargetDimension = dimension;
+        double[] p = parse(text);
+        if (p == null) return parsedTarget = null;
         double s = dimensionScale();
         double tx = s == 1 && p[0] == Math.floor(p[0]) ? p[0] + 0.5 : p[0] * s;
         double tz = s == 1 && p[2] == Math.floor(p[2]) ? p[2] + 0.5 : p[2] * s;
-        return new Target(tx, p[1], tz);
+        return parsedTarget = new Target(tx, p[1], tz);
     }
 
     private void useHere() {
@@ -307,10 +321,35 @@ public class CoordsFly extends Module implements HudElement {
 
     /** The same spot in the other dimension, as you would type it there; empty in the End. */
     private String otherWorldText(Target t) {
-        String here = dimension();
-        if (here.equals("overworld")) return "Nether  " + grouped(t.x() / 8) + "  " + grouped(t.z() / 8);
-        if (here.equals("the_nether")) return "Overworld  " + grouped(t.x() * 8) + "  " + grouped(t.z() * 8);
+        var here = mc.world.getRegistryKey();
+        if (here.equals(World.OVERWORLD)) return "Target Nether  " + grouped(t.x() / 8) + "  " + grouped(t.z() / 8);
+        if (here.equals(World.NETHER)) return "Target Overworld  " + grouped(t.x() * 8) + "  " + grouped(t.z() * 8);
         return "";
+    }
+
+    /** Current-player conversion, independent of the destination's configured dimension. */
+    public static Target netherCoordinates(RegistryKey<World> dimension, double x, double y, double z) {
+        if (World.OVERWORLD.equals(dimension)) return new Target(x / 8, y, z / 8);
+        if (World.NETHER.equals(dimension)) return new Target(x, y, z);
+        return null;
+    }
+
+    public String playerPositionText(float tickDelta) {
+        if (!inGame()) return "";
+        return "Position  " + coordsText(playerPosition(tickDelta));
+    }
+
+    public String playerNetherText(float tickDelta) {
+        if (!inGame()) return "";
+        Target p = playerPosition(tickDelta);
+        Target nether = netherCoordinates(mc.world.getRegistryKey(), p.x(), p.y(), p.z());
+        return nether == null ? "" : "Nether  " + coordsText(nether);
+    }
+
+    private Target playerPosition(float tickDelta) {
+        return new Target(MathHelper.lerp(tickDelta, mc.player.lastRenderX, mc.player.getX()),
+                MathHelper.lerp(tickDelta, mc.player.lastRenderY, mc.player.getY()),
+                MathHelper.lerp(tickDelta, mc.player.lastRenderZ, mc.player.getZ()));
     }
 
     // ---- flying ---------------------------------------------------------------------------
@@ -517,7 +556,7 @@ public class CoordsFly extends Module implements HudElement {
         return ColorUtil.withAlpha(color, Math.round((color >>> 24) * opacity.getFloat() / 100f));
     }
 
-    private String coordsText(Target t) {
+    private static String coordsText(Target t) {
         String s = "X " + grouped(t.x());
         if (t.hasY()) s += "  Y " + Math.round(t.y());
         return s + "  Z " + grouped(t.z());
@@ -525,13 +564,15 @@ public class CoordsFly extends Module implements HudElement {
 
     private float cardHeight() {
         Target t = inGame() ? target() : null;
-        if (t == null) return 40;
+        float playerHeight = !playerCoords.get() || !inGame() ? 0
+                : (World.OVERWORLD.equals(mc.world.getRegistryKey()) || World.NETHER.equals(mc.world.getRegistryKey()) ? 27 : 16);
+        if (t == null) return 40 + playerHeight;
         float h = 46;
         if (progress.get()) h += 9;
         if (showCoords.get()) h += 11;
         if (speedEta.get()) h += 11;
-        if (otherWorld.get() && inGame() && !otherWorldText(t).isEmpty()) h += 11;
-        return h + 4;
+        if (otherWorld.get() && inGame() && (World.OVERWORLD.equals(mc.world.getRegistryKey()) || World.NETHER.equals(mc.world.getRegistryKey()))) h += 11;
+        return h + 4 + playerHeight;
     }
 
     @Override
@@ -541,7 +582,9 @@ public class CoordsFly extends Module implements HudElement {
 
     @Override
     public float hudScale() {
-        return scale.getFloat();
+        float fitX = Math.max(1, mc.getWindow().getScaledWidth() - MARGIN * 2) / CARD_W;
+        float fitY = Math.max(1, mc.getWindow().getScaledHeight() - MARGIN * 2) / cardHeight();
+        return Math.min(scale.getFloat(), Math.min(fitX, fitY));
     }
 
     @Override
@@ -604,14 +647,14 @@ public class CoordsFly extends Module implements HudElement {
         m.scale(s, s);
         Fonts.beginRaw();
         try {
-            card(ctx, t, s);
+            card(ctx, t, tickDelta);
         } finally {
             Fonts.endRaw();
             m.popMatrix();
         }
     }
 
-    private void card(DrawContext ctx, Target t, float s) {
+    private void card(DrawContext ctx, Target t, float tickDelta) {
         float w = CARD_W, h = cardHeight(), r = 9;
         float hair = Render2D.hairline(ctx, 0.5f);
         int accent = Theme.accent();
@@ -625,6 +668,7 @@ public class CoordsFly extends Module implements HudElement {
             Fonts.draw(ctx, "COORDS FLY", 10, 9, accent, true, 0.62f);
             Fonts.draw(ctx, "No coords yet", 10, 19, 0xFFF4F6FA, true, 0.8f);
             Fonts.draw(ctx, "Type them in the module's Coords setting", 10, 29, 0xFF7D8494, false, 0.55f);
+            playerCoordinateRows(ctx, 40, tickDelta);
             return;
         }
 
@@ -688,12 +732,16 @@ public class CoordsFly extends Module implements HudElement {
         }
         if (showCoords.get()) {
             float base = yy + Fonts.height(ctx, 0.6f);
-            onBase(ctx, coordsText(t), 10, base, 0xFFDCE0E8, true, 0.6f);
+            String target = coordsText(t);
+            float available = w - 20;
             if (t.hasY()) {
                 long dy = Math.round(t.y() - mc.player.getY());
                 String climb = dy == 0 ? "level" : (dy > 0 ? "up " : "down ") + Math.abs(dy) + " m";
+                available -= Fonts.width(ctx, climb, true, 0.56f) + 6;
                 onBase(ctx, climb, w - 10 - Fonts.width(ctx, climb, true, 0.56f), base, dy >= 0 ? 0xFF8FD3FF : 0xFFFFC27A, true, 0.56f);
             }
+            float targetWidth = Fonts.width(ctx, target, true, 0.6f);
+            onBase(ctx, target, 10, base, 0xFFDCE0E8, true, Math.min(0.6f, 0.6f * available / Math.max(1, targetWidth)));
             yy += 11;
         }
         if (speedEta.get()) {
@@ -710,9 +758,26 @@ public class CoordsFly extends Module implements HudElement {
         if (otherWorld.get()) {
             String other = otherWorldText(t);
             if (!other.isEmpty()) {
-                Fonts.draw(ctx, other, 10, yy, 0xFF7D8494, false, 0.56f);
+                fittedLine(ctx, other, yy, 0xFF7D8494, false, 0.56f);
+                yy += 11;
             }
         }
+        playerCoordinateRows(ctx, yy + 4, tickDelta);
+    }
+
+    private void playerCoordinateRows(DrawContext ctx, float top, float tickDelta) {
+        if (!playerCoords.get() || !inGame()) return;
+        Render2D.rect(ctx, 10, top, CARD_W - 20, Render2D.hairline(ctx, 0.5f), 0x20FFFFFF);
+        fittedLine(ctx, playerPositionText(tickDelta), top + 5, 0xFFDCE0E8, false, 0.6f);
+        String nether = playerNetherText(tickDelta);
+        if (!nether.isEmpty()) fittedLine(ctx, nether, top + 16, 0xFFB8A4DC, false, 0.6f);
+    }
+
+    private static void fittedLine(DrawContext ctx, String text, float top, int color, boolean bold, float size) {
+        float width = Fonts.width(ctx, text, bold, size);
+        float available = CARD_W - 20;
+        float fitted = width > available ? size * available / width : size;
+        Fonts.draw(ctx, text, 10, top, color, bold, fitted);
     }
 
     /** Text with its capitals standing on {@code base}, so different sizes in one row line up. */

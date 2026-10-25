@@ -1,6 +1,6 @@
 package dev.maro.gametest;
 
-import dev.maro.gui.hud.EspPreviewScreen;
+import dev.maro.gui.ClickGuiScreen;
 import dev.maro.module.ModuleManager;
 import dev.maro.module.impl.visuals.PlayerESP;
 import dev.maro.setting.BooleanSetting;
@@ -87,11 +87,14 @@ final class PlayerEspChecks {
                 c.options.setPerspective(Perspective.FIRST_PERSON);
                 ((BooleanSetting) setting(esp, "Self")).set(false);
                 esp.setEnabled(false);
-                c.setScreen(new EspPreviewScreen(null, esp));
+                var gui = new ClickGuiScreen();
+                c.setScreen(gui);
+                gui.openModuleOptions(esp);
             });
             context.waitTicks(4);
-            require(context.computeOnClient(c -> c.options.getPerspective() == Perspective.THIRD_PERSON_FRONT && PlayerESP.previewing()),
-                    "Preview did not turn the camera to face you");
+            require(context.computeOnClient(c -> c.options.getPerspective() == Perspective.FIRST_PERSON && !esp.isEnabled()
+                            && ((ClickGuiScreen)c.currentScreen).visualPreview().lastState() != null),
+                    "Preview changed the real camera/module or did not prepare an isolated player");
             int[] preview = magenta(context.takeScreenshot("maro-player-esp-preview"));
             System.out.println("PLAYER ESP preview magenta=" + preview[0] + " centre=" + preview[1] + "/" + preview[3]);
             require(preview[0] > 1500, "Preview did not draw the ESP on you: " + preview[0]);
@@ -105,7 +108,7 @@ final class PlayerEspChecks {
             require(neon > 80, "Neon Glow did not draw its pink edge: " + neon);
             context.runOnClient(c -> c.currentScreen.close());
             context.waitTicks(3);
-            require(context.computeOnClient(c -> c.currentScreen == null && c.options.getPerspective() == Perspective.FIRST_PERSON && !PlayerESP.previewing()),
+            require(context.computeOnClient(c -> c.currentScreen == null && c.options.getPerspective() == Perspective.FIRST_PERSON && !dev.maro.render.esp.PlayerEspRenderer.active()),
                     "Closing the preview did not put the camera and ESP back");
 
             context.runOnClient(c -> {

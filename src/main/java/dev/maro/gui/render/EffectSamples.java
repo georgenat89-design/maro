@@ -13,11 +13,16 @@ import net.minecraft.util.Identifier;
 /** Explicit examples for effects whose data normally comes from gameplay. No detections are inserted. */
 public final class EffectSamples {
     private EffectSamples(){}
-    private static String key(String s){return s.replace("-","").replace(" ","").toLowerCase(java.util.Locale.ROOT);}
-    public static double number(Module m,String name,double fallback){for(var s:m.getSettings())if(key(s.getName()).equals(key(name)))try{return s.toJson().getAsDouble();}catch(RuntimeException ignored){}return fallback;}
-    public static String mode(Module m,String name,String fallback){for(var s:m.getSettings())if(key(s.getName()).equals(key(name)))try{return s.toJson().getAsString();}catch(RuntimeException ignored){}return fallback;}
-    public static boolean flag(Module m,String name,boolean fallback){for(var s:m.getSettings())if(key(s.getName()).equals(key(name)))try{return s.toJson().getAsBoolean();}catch(RuntimeException ignored){}return fallback;}
-    public static int color(Module m,String name,int fallback){for(var s:m.getSettings())if(key(s.getName()).equals(key(name))&&s instanceof ColorSetting c)return c.get();return fallback;}
+    private static final java.util.Map<Item,ItemStack> ITEMS=new java.util.IdentityHashMap<>(),ENCHANTED_ITEMS=new java.util.IdentityHashMap<>();
+    /** Immutable-to-callers local sample stacks; no live inventory stack enters this cache. */
+    public static ItemStack sample(net.minecraft.item.ItemConvertible item){return sample(item,false);}
+    public static ItemStack sample(net.minecraft.item.ItemConvertible item,boolean enchanted){
+        return (enchanted?ENCHANTED_ITEMS:ITEMS).computeIfAbsent(item.asItem(),key->{var stack=new ItemStack(key);if(enchanted)stack.set(net.minecraft.component.DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE,true);return stack;});
+    }
+    public static double number(Module m,String name,double fallback){return dev.maro.gui.preview.PreviewSettings.number(m,name,fallback);}
+    public static String mode(Module m,String name,String fallback){return dev.maro.gui.preview.PreviewSettings.mode(m,name,fallback);}
+    public static boolean flag(Module m,String name,boolean fallback){return dev.maro.gui.preview.PreviewSettings.flag(m,name,fallback);}
+    public static int color(Module m,String name,int fallback){return dev.maro.gui.preview.PreviewSettings.color(m,name,fallback);}
     /** An item filling a {@code size} square, at a whole number of pixels per texel and on a whole pixel. */
     public static void item(DrawContext c,ItemStack stack,float x,float y,float size){
         float crisp=Render2D.snapSize(c,size,16);float[] at=Render2D.snap(c,x+(size-crisp)/2,y+(size-crisp)/2);
@@ -30,7 +35,7 @@ public final class EffectSamples {
     }
     public static void blocks(DrawContext c,FakeBlock m,float x,float y,float w,float h){
         float size=Math.min(48,Math.min(w*.23f,h-26)),cy=y+(h-size-16)/2;Item a=m.sourceItem(),b=m.replaceItem();
-        FakeBlock.withoutSpoof(()->{if(a!=Items.AIR)item(c,new ItemStack(a),x+w*.24f-size/2,cy,size);if(b!=Items.AIR){var stack=new ItemStack(b);if(flag(m,"Enchanted",false))stack.set(net.minecraft.component.DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE,true);item(c,stack,x+w*.76f-size/2,cy,size);}});
+        FakeBlock.withoutSpoof(()->{if(a!=Items.AIR)item(c,sample(a),x+w*.24f-size/2,cy,size);if(b!=Items.AIR)item(c,sample(b,flag(m,"Enchanted",false)),x+w*.76f-size/2,cy,size);});
         Fonts.drawCentered(c,"→",x+w/2,cy+size/2,Theme.accent(),true,1.4f);
         Fonts.drawCentered(c,Fonts.trim(a==Items.AIR?"Choose source":a.getName().getString(),w*.45f,false,.65f),x+w*.24f,cy+size+12,Theme.TEXT_DIM,false,.65f);
         Fonts.drawCentered(c,Fonts.trim(b==Items.AIR?"Choose replacement":b.getName().getString(),w*.45f,false,.65f),x+w*.76f,cy+size+12,Theme.TEXT_DIM,false,.65f);
@@ -95,11 +100,11 @@ public final class EffectSamples {
         float bw=Math.min(w-40,150),bh=Math.min(h-32,75),left=x+(w-bw)/2,top=y+(h-bh-18)/2;int tint=color(m,"box color",0xFF00FF00);String style=mode(m,"display style","Both");
         if(!style.equals("Outline"))Render2D.roundRect(c,left,top,bw,bh,4,ColorUtil.withAlpha(tint,(int)number(m,"box alpha",50)));
         if(!style.equals("Filled"))Render2D.roundOutline(c,left,top,bw,bh,4,(float)number(m,"outline width",1.5),tint);
-        item(c,new ItemStack(Blocks.CHEST),left+bw*.25f-12,top+bh/2-12,24);item(c,new ItemStack(Blocks.BARREL),left+bw*.75f-12,top+bh/2-12,24);
+        item(c,sample(Blocks.CHEST),left+bw*.25f-12,top+bh/2-12,24);item(c,sample(Blocks.BARREL),left+bw*.75f-12,top+bh/2-12,24);
         if(flag(m,"chunk mark",false))Render2D.roundOutline(c,left-8,top-5,bw+16,bh+10,3,1,color(m,"chunk mark color",0x6600FF00));
         Fonts.drawCentered(c,"Base detected · 48 storage",x+w/2,top+bh+14,Theme.TEXT_DIM,true,.65f);
     }
-    public static void spawner(DrawContext c,Module m,float x,float y,float w,float h){float size=Math.min(50,h*.55f),cx=x+w/2,top=y+(h-size-33)/2;item(c,new ItemStack(Blocks.SPAWNER),cx-size/2,top,size);int tint=color(m,"Pillar Color",0xFFFF4D5E);if(flag(m,"Pillar",true)){Render2D.line(c,cx,top,cx,top+size/2,2,tint);Render2D.roundOutline(c,cx-size/2,top,size,size,2,1,tint);}Render2D.roundRect(c,x,top+size+8,w,25,5,0xE80D121A);Fonts.drawCentered(c,"Zombie spawner · 64m",cx,top+size+20,Theme.TEXT_DIM,true,.65f);}
+    public static void spawner(DrawContext c,Module m,float x,float y,float w,float h){float size=Math.min(50,h*.55f),cx=x+w/2,top=y+(h-size-33)/2;item(c,sample(Blocks.SPAWNER),cx-size/2,top,size);int tint=color(m,"Pillar Color",0xFFFF4D5E);if(flag(m,"Pillar",true)){Render2D.line(c,cx,top,cx,top+size/2,2,tint);Render2D.roundOutline(c,cx-size/2,top,size,size,2,1,tint);}Render2D.roundRect(c,x,top+size+8,w,25,5,0xE80D121A);Fonts.drawCentered(c,"Zombie spawner · 64m",cx,top+size+20,Theme.TEXT_DIM,true,.65f);}
     public static void spotify(DrawContext c,Module m,float x,float y,float w,float h,double time){
         String theme=mode(m,"theme","AlbumColours"),view=mode(m,"player mode","Expanded"),visualizer=mode(m,"visualizer style","Bars");
         int accent=theme.equals("Monochrome")?0xFFCCD4E0:theme.equals("Midnight")?0xFF8A9FC2:Theme.accent();boolean mini=view.equals("Mini");
@@ -110,5 +115,5 @@ public final class EffectSamples {
         Render2D.roundRect(c,textX,top+ch-12,tw,3,1.5f,0xFF485263);Render2D.roundRect(c,textX,top+ch-12,tw*(float)(time%20/20),3,1.5f,accent);
         if(!mini&&flag(m,"visualizer",true)){if(visualizer.equals("Ring"))Render2D.ring(c,left+11+cover/2,top+11+cover/2,cover/2+3,1.5f,accent);else if(visualizer.equals("Wave")){for(int i=1;i<40;i++)Render2D.line(c,textX+(i-1)*3,top+ch-30+(float)Math.sin(time*3+(i-1)*.3)*6,textX+i*3,top+ch-30+(float)Math.sin(time*3+i*.3)*6,1.4f,accent);}else for(int i=0;i<18;i++){float bar=3+(float)Math.abs(Math.sin(time*3+i*.7))*12;Render2D.rect(c,textX+i*4,top+ch-26-bar,2,bar,accent);}}
     }
-    public static void trajectory(DrawContext c,Module m,float x,float y,float w,float h,double time){float start=x+12,end=x+w-12,ground=y+h-18;int tint=color(m,"Line Color",-1);float previousX=start,previousY=ground;for(int i=1;i<=48;i++){float t=i/48f,xx=start+(end-start)*t,yy=ground-(h-32)*4*t*(1-t);Render2D.line(c,previousX,previousY,xx,yy,1.4f,tint);previousX=xx;previousY=yy;}if(flag(m,"Show Landing Point",true))Render2D.ring(c,end,ground,4,1.2f,color(m,"Hit Color",0xFFFF3B3B));float t=(float)Math.min(1,time/1.6),xx=start+(end-start)*t,yy=ground-(h-32)*4*t*(1-t);item(c,new ItemStack(Items.ENDER_PEARL),xx-7,yy-7,14);if(flag(m,"Trajectory Timer",true))Fonts.drawCentered(c,String.format(java.util.Locale.ROOT,"%.1fs",Math.max(0,1.6-time)),x+w/2,y+h-4,Theme.TEXT_MUTED,false,.6f);}
+    public static void trajectory(DrawContext c,Module m,float x,float y,float w,float h,double time){float start=x+12,end=x+w-12,ground=y+h-18;int tint=color(m,"Line Color",-1);float previousX=start,previousY=ground;for(int i=1;i<=48;i++){float t=i/48f,xx=start+(end-start)*t,yy=ground-(h-32)*4*t*(1-t);Render2D.line(c,previousX,previousY,xx,yy,1.4f,tint);previousX=xx;previousY=yy;}if(flag(m,"Show Landing Point",true))Render2D.ring(c,end,ground,4,1.2f,color(m,"Hit Color",0xFFFF3B3B));float t=(float)Math.min(1,time/1.6),xx=start+(end-start)*t,yy=ground-(h-32)*4*t*(1-t);item(c,sample(Items.ENDER_PEARL),xx-7,yy-7,14);if(flag(m,"Trajectory Timer",true))Fonts.drawCentered(c,String.format(java.util.Locale.ROOT,"%.1fs",Math.max(0,1.6-time)),x+w/2,y+h-4,Theme.TEXT_MUTED,false,.6f);}
 }

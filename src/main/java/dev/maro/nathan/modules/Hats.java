@@ -192,6 +192,10 @@ public class Hats extends Module {
 
     @Override
     public void onDeactivate() {
+        releaseAssets();
+    }
+
+    private void releaseAssets() {
         dropModel();
 
         // The parts are plain geometry; a sheet read off disk is a GL object and
@@ -203,6 +207,30 @@ public class Hats extends Module {
         lastFrameAt = 0;
     }
 
+    /** A disabled settings portrait owns its uploads; enabled world hats keep their shared assets. */
+    public void releasePreview(){if(!isActive())releaseAssets();}
+
+    private String measuredHat;
+    private float measuredRise;
+    public float previewHeight(){
+        if(!hat.get().equals(measuredHat)){
+            measuredHat=hat.get();measuredRise=0;
+            var spec=HatCatalogue.get(measuredHat);
+            if(spec!=null)for(var piece:spec.pieces()){
+                float[] box=piece.box(),pivot=piece.pivot();
+                float top=box[1];
+                if(pivot!=null){
+                    float ax=Math.max(Math.abs(box[0]),Math.abs(box[0]+box[3]));
+                    float ay=Math.max(Math.abs(box[1]),Math.abs(box[1]+box[4]));
+                    float az=Math.max(Math.abs(box[2]),Math.abs(box[2]+box[5]));
+                    top=pivot[1]-(float)Math.sqrt(ax*ax+ay*ay+az*az);
+                }
+                measuredRise=Math.max(measuredRise,Math.max(0,-top-8)/16);
+            }
+        }
+        return (float)(2.05+measuredRise*scale.get()+Math.max(0,height.get())/16);
+    }
+
     private void dropModel() {
         baked = null;
     }
@@ -212,6 +240,9 @@ public class Hats extends Module {
     /** Whether this player gets one at all. */
     public boolean wants(PlayerEntityRenderState state) {
         if (mc.player == null || mc.world == null) return false;
+        var portrait=dev.maro.gui.render.PlayerPreviewData.of(state);
+        if(portrait!=null&&portrait.maro$previewModule()==this)
+            return !state.invisible&&!state.spectator&&(!hideWithHelmet.get()||state.equippedHeadStack.isEmpty());
 
         // A hidden HUD is someone taking a clean picture; an invisible or
         // spectating player is not being drawn in the first place.
@@ -219,7 +250,7 @@ public class Hats extends Module {
         if (hideWithHelmet.get() && !state.equippedHeadStack.isEmpty()) return false;
 
         return switch (target.get()) {
-            case SelfOnly -> state.id == mc.player.getId();
+            case SelfOnly -> state.id == mc.player.getId()||portrait!=null;
             case AllPlayers -> true;
             case Whitelist -> named(state);
         };
@@ -229,7 +260,7 @@ public class Hats extends Module {
     private boolean named(PlayerEntityRenderState state) {
         if (names.get().isEmpty()) return false;
 
-        Entity entity = mc.world.getEntityById(state.id);
+        Entity entity = dev.maro.gui.render.PlayerPreviewData.of(state)!=null?mc.player:mc.world.getEntityById(state.id);
         if (entity == null) return false;
 
         String name = entity.getName().getString();
@@ -282,7 +313,8 @@ public class Hats extends Module {
         SettingColor chosen = tint.get();
         int colour = chosen.a << 24 | chosen.r << 16 | chosen.g << 8 | chosen.b;
 
-        wind();
+        var portrait=dev.maro.gui.render.PlayerPreviewData.of(state);
+        if(portrait==null)wind();
 
         pose.push();
 
@@ -340,6 +372,9 @@ public class Hats extends Module {
     /** What moves a group, about the point it is fixed at. */
     private void move(MatrixStack pose, HatCatalogue.Group group, PlayerEntityRenderState state) {
         String name = group.name();
+        var portrait=dev.maro.gui.render.PlayerPreviewData.of(state);
+        double spin=portrait==null?this.spin:motion.get()?portrait.maro$previewSeconds()*SPIN_RATE:0;
+        double turn=portrait==null?this.turn:motion.get()?portrait.maro$previewSeconds()*RING_RATE:0;
 
         if (HatCatalogue.STATIC.equals(name)) return;
 

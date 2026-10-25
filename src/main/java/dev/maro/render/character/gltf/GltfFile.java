@@ -113,7 +113,18 @@ final class GltfFile {
     }
 
     private JsonObject baseColorTexture(int m) {
-        return GltfFile.object(GltfFile.object(this.material(m), "pbrMetallicRoughness"), "baseColorTexture");
+        JsonObject mat = this.material(m);
+        JsonObject pbr = GltfFile.object(GltfFile.object(mat, "pbrMetallicRoughness"), "baseColorTexture");
+        if (pbr.has("index")) return pbr;
+        return GltfFile.object(GltfFile.object(GltfFile.object(mat, "extensions"), "KHR_materials_pbrSpecularGlossiness"), "diffuseTexture");
+    }
+
+    int baseColorSource(int m) {
+        JsonObject tex = baseColorTexture(m);
+        int index = GltfFile.integer(tex, "index", -1);
+        JsonArray textures = GltfFile.array(this.json, "textures");
+        if (index < 0 || index >= textures.size()) return -1;
+        return GltfFile.integer(textures.get(index).getAsJsonObject(), "source", -1);
     }
 
     int texCoord(int m) {
@@ -122,6 +133,7 @@ final class GltfFile {
 
     float[] baseColorFactor(int m) {
         JsonArray f = GltfFile.array(GltfFile.object(this.material(m), "pbrMetallicRoughness"), "baseColorFactor");
+        if (f.size() != 4) f = GltfFile.array(GltfFile.object(GltfFile.object(this.material(m), "extensions"), "KHR_materials_pbrSpecularGlossiness"), "diffuseFactor");
         if (f.size() != 4) {
             return new float[]{1.0f, 1.0f, 1.0f, 1.0f};
         }

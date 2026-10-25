@@ -43,10 +43,11 @@ public abstract class Module {
     }
 
     public final void toggle() {
-        setEnabled(!enabled);
+        setEnabled(!dev.maro.render.capture.StreamproofScenePolicy.configuredEnabled(this, enabled));
     }
 
     public final void setEnabled(boolean enabled) {
+        if (dev.maro.render.capture.StreamproofScenePolicy.blockedChange(this, enabled)) return;
         if (this.enabled == enabled) return;
         this.enabled = enabled;
         if (enabled) onEnable();

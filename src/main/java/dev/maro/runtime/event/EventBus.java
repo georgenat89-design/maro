@@ -25,6 +25,7 @@ public final class EventBus {
     public <T> T post(T event) {
         for (Listener l : List.copyOf(listeners)) {
             if (!l.type.isInstance(event)) continue;
+            if (dev.maro.render.capture.CapturePass.active() && l.owner instanceof dev.maro.module.Module) continue;
             try { l.method.invoke(l.owner, event); }
             catch (ReflectiveOperationException e) { failures++; Maro.LOGGER.error("Module event {} failed", l.method, e.getCause() == null ? e : e.getCause()); }
         }

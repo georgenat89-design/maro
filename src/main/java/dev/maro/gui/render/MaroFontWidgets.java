@@ -9,6 +9,7 @@ import net.minecraft.text.Text;
 public final class MaroFontWidgets {
     private MaroFontWidgets() { }
     public static boolean clientScreen() {
+        if (dev.maro.render.capture.CapturePass.active()) return false;
         var screen = MinecraftClient.getInstance().currentScreen;
         return screen != null && screen.getClass().getName().startsWith("dev.maro.");
     }
@@ -19,6 +20,7 @@ public final class MaroFontWidgets {
     }
     public static int ink(int color) { return (color >>> 24) == 0 ? color | 0xFF000000 : color; }
     public static DrawnTextConsumer button(DrawContext ctx, ClickableWidget widget, DrawnTextConsumer original) {
+        if (dev.maro.render.capture.CapturePass.active()) return original;
         return new DrawnTextConsumer() {
             public Transformation getTransformation() { return original.getTransformation(); }
             public void setTransformation(Transformation transform) { original.setTransformation(transform); }

@@ -23,13 +23,13 @@ import java.util.Locale;
 public final class Fonts {
     /**
      * Each family's text and bold weights (Sora SemiBold / Bold, Rubik Medium / Bold,
-     * Inter SemiBold / ExtraBold), each
+     * Inter Regular / SemiBold), each
      * defined once per oversample factor (1x..6x). The variant whose oversample matches the real
      * pixel size of the text is picked at draw time, so glyphs are rasterised 1:1 with the screen
      * instead of being resampled, which keeps them sharp.
      */
     private static final int MAX_OVERSAMPLE = 6;
-    private static final String[][] FAMILIES = {{"rubik_medium", "rubik_bold"}, {"inter_semibold", "inter_extrabold"}, {"sora_semibold", "sora_bold"}};
+    private static final String[][] FAMILIES = {{"rubik_medium", "rubik_bold"}, {"inter_regular", "inter_semibold"}, {"sora_semibold", "sora_bold"}};
     private static final Style[][] REGULAR = new Style[FAMILIES.length][MAX_OVERSAMPLE + 1];
     private static final Style[][] BOLD = new Style[FAMILIES.length][MAX_OVERSAMPLE + 1];
     private static final Style VANILLA_BOLD = Style.EMPTY.withBold(true);
@@ -108,14 +108,16 @@ public final class Fonts {
     /** Legacy scope retained for existing callers; typography and casing now stay consistent across panels. */
     public static void beginRaw() {
         rawDepth++;
+        SmoothHudText.beginSentence();
     }
 
     public static void endRaw() {
+        if (rawDepth > 0) SmoothHudText.endSentence();
         rawDepth = Math.max(0, rawDepth - 1);
     }
 
     private static boolean caps() {
-        return ClientSettings.capsText.get();
+        return rawDepth == 0 && ClientSettings.capsText.get();
     }
 
     private static String transform(String s) {
@@ -123,7 +125,7 @@ public final class Fonts {
     }
 
     private static float eff(float scale) {
-        return scale * (menuDepth > 0 ? ClientSettings.menuTextSize.getFloat() / 100f : 1f);
+        return scale * (menuDepth > 0 ? dev.maro.gui.theme.Theme.MENU_TEXT_BASE * ClientSettings.menuTextSize.getFloat() / 100f : 1f);
     }
 
     private static boolean weight(boolean bold) {
@@ -210,14 +212,29 @@ public final class Fonts {
 
     /** Draws with the text vertically centred on {@code cy}. */
     public static void drawV(DrawContext ctx, String s, float x, float cy, int color, boolean bold, float scale) {
+        if (s == null || s.isEmpty()) return;
+        if (ClientSettings.customFont.get()) {
+            SmoothHudText.drawV(ctx, transform(s), x, cy, color, weight(bold), eff(scale) * .875f);
+            return;
+        }
         draw(ctx, s, x, cy - height(ctx, scale) / 2f, color, bold, scale);
     }
 
     public static void drawCentered(DrawContext ctx, String s, float cx, float cy, int color, boolean bold, float scale) {
+        if (s == null || s.isEmpty()) return;
+        if (ClientSettings.customFont.get()) {
+            SmoothHudText.drawCentered(ctx, transform(s), cx, cy, color, weight(bold), eff(scale) * .875f);
+            return;
+        }
         draw(ctx, s, cx - width(ctx, s, bold, scale) / 2f, cy - height(ctx, scale) / 2f, color, bold, scale);
     }
 
     public static void drawRight(DrawContext ctx, String s, float right, float cy, int color, boolean bold, float scale) {
+        if (s == null || s.isEmpty()) return;
+        if (ClientSettings.customFont.get()) {
+            SmoothHudText.drawRight(ctx, transform(s), right, cy, color, weight(bold), eff(scale) * .875f);
+            return;
+        }
         draw(ctx, s, right - width(ctx, s, bold, scale), cy - height(ctx, scale) / 2f, color, bold, scale);
     }
 

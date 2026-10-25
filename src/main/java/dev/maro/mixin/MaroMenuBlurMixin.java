@@ -14,10 +14,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class MaroMenuBlurMixin {
     @Inject(method = "getMenuBackgroundBlurrinessValue", at = @At("RETURN"), cancellable = true)
     private void maro$menuBlur(CallbackInfoReturnable<Integer> cir) {
+        if (dev.maro.render.capture.CapturePass.active()) return;
         var client = MinecraftClient.getInstance();
         if (client != null && client.world != null && client.currentScreen instanceof ClickGuiScreen
                 && ClientSettings.backgroundBlur.get()) {
-            cir.setReturnValue(Math.max(5, cir.getReturnValueI()));
+            cir.setReturnValue(ClientSettings.backgroundBlurStrength.getInt());
         }
     }
 }

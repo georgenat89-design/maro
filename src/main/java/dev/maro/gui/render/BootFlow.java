@@ -21,6 +21,7 @@ public final class BootFlow {
         return screen instanceof ConnectScreen || screen instanceof MessageScreen || screen instanceof ReconfiguringScreen;
     }
     public static void screenChanged(Screen screen) {
+        if (dev.maro.render.capture.CapturePass.active()) return;
         if (isLoading(screen)) {
             active = true; handoff = fade = -1;
         } else if (screen != null) {
@@ -28,11 +29,13 @@ public final class BootFlow {
         } else if (active && handoff < 0) handoff = Util.getMeasuringTimeMs();
     }
     public static void draw(DrawContext ctx, int w, int h, float fill, String message) {
+        if (dev.maro.render.capture.CapturePass.active()) return;
         active = true;
         status = message;
         BootScene.loading(ctx, w, h, fill < 0 ? -1 : Math.min(1, fill), message, 1, false);
     }
     public static void finishFrame(DrawContext ctx) {
+        if (dev.maro.render.capture.CapturePass.active()) return;
         var client = MinecraftClient.getInstance();
         if (!active || client.currentScreen != null || client.getOverlay() != null) return;
         long now = Util.getMeasuringTimeMs();

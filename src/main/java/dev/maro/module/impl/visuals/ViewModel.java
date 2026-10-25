@@ -11,6 +11,7 @@ import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.tag.ItemTags;
 import net.minecraft.util.math.RotationAxis;
+import net.minecraft.util.Arm;
 
 import java.util.List;
 
@@ -26,9 +27,38 @@ public class ViewModel extends Module {
 
     private final ModeSetting preset = add(new ModeSetting("Preset", "A starting point for the sliders below", "Vanilla", PRESETS));
     private final ButtonSetting apply = add(new ButtonSetting("Apply Preset", "Set the sliders to the chosen preset", "Use", this::applyPreset));
+    private final ButtonSetting handPlacement = add(new ButtonSetting("Edit hand placement", "Place each physical hand over the current world", "Edit hand placement", this::openHandPlacement));
 
     private final Hand main = new Hand("Main");
     private final Hand off = new Hand("Off");
+    // Legacy Main/Off values keep their config keys, bound once to physical arms.
+    private Arm mainBinding;
+    private Arm binding(){
+        if(mainBinding==null&&mc.options!=null)mainBinding=mc.options.getMainArm().getValue();
+        return mainBinding==null?Arm.RIGHT:mainBinding;
+    }
+
+    /** X is screen-right; rotations are physical view-space rotations. */
+    public record Placement(double x,double y,double depth,double scale,double rotX,double rotY,double rotZ) {
+        public static Placement defaults(){return new Placement(0,0,0,1,0,0,0);}
+    }
+    public ButtonSetting handPlacementAction(){return handPlacement;}
+    public void openHandPlacement(){mc.setScreen(new dev.maro.gui.hud.HandPlacementScreen(mc.currentScreen,this));}
+    public Arm mainPlacementArm(){return binding();}
+    private Hand physical(Arm arm){return arm==binding()?main:off;}
+    public Placement placement(Arm arm){
+        var h=physical(arm);double side=arm==Arm.LEFT?-1:1;
+        return new Placement(h.x.get()*side,h.y.get(),h.z.get(),h.scale.get(),h.rotX.get(),h.rotY.get()*side,h.rotZ.get()*side);
+    }
+    public void commitPlacement(Arm arm,Placement p){
+        double side=arm==Arm.LEFT?-1:1;
+        physical(arm).set(p.x*side,p.y,p.depth,p.rotX,p.rotY*side,p.rotZ*side,p.scale);
+    }
+    @Override public com.google.gson.JsonObject saveExtra(){var data=new com.google.gson.JsonObject();Arm bound=binding();if(mainBinding!=null)data.addProperty("physicalMainArm",bound.name());return data;}
+    @Override public void loadExtra(com.google.gson.JsonObject data){
+        mainBinding=null;
+        try{if(data.has("physicalMainArm"))mainBinding=Arm.valueOf(data.get("physicalMainArm").getAsString());}catch(IllegalArgumentException ignored){}
+    }
 
     private final ModeSetting swingMode = add(new ModeSetting("Swing Mode", "How the swing looks: Vanilla, none at all, eased, a spin, or a stab forward",
             "Vanilla", "Vanilla", "None", "Smooth", "Spin", "Stab"));
@@ -53,7 +83,12 @@ public class ViewModel extends Module {
         }
 
         SettingSection section(String title) {
-            SettingSection section = new SettingSection(title);
+            SettingSection section = new SettingSection(title){
+                @Override public String getTitle(){
+                    Arm bound=binding(),arm=Hand.this==main?bound:bound.getOpposite();
+                    return (arm==Arm.LEFT?"Left hand":"Right hand")+" · "+(Hand.this==main?"Main controls":"Off controls");
+                }
+            };
             for (NumberSetting s : new NumberSetting[]{x, y, z, rotX, rotY, rotZ, scale}) section.add(s);
             return section;
         }
@@ -80,7 +115,8 @@ public class ViewModel extends Module {
         animation.add(noEquip);
         animation.add(blockPose);
         animation.add(hideOff);
-        sections = List.of(presets, main.section("Main Hand"), off.section("Off Hand"), animation);
+        SettingSection placement = new SettingSection("Hand placement");placement.add(handPlacement);
+        sections = List.of(placement,presets, main.section("Main Hand"), off.section("Off Hand"), animation);
     }
 
     @Override
@@ -109,11 +145,21 @@ public class ViewModel extends Module {
         return instance != null && instance.isEnabled();
     }
 
+    public static dev.maro.gui.hud.HandPlacementScreen editor(){
+        return !dev.maro.render.capture.CapturePass.active() && mc.currentScreen instanceof dev.maro.gui.hud.HandPlacementScreen editor
+                && !editor.finished()?editor:null;
+    }
+    public static Placement renderPlacement(Arm arm){
+        var editor=editor();return editor!=null?editor.draft(arm):on()?instance.placement(arm):null;
+    }
+
     public static boolean hideOffHand() {
+        if(editor()!=null)return false;
         return on() && instance.hideOff.get() || BetterLooks.hideOffHand();
     }
 
     public static float equipProgress(float progress) {
+        if(editor()!=null)return 0;
         return on() && instance.noEquip.get() || BetterLooks.noEquipDip() ? 0 : progress;
     }
 
@@ -136,23 +182,24 @@ public class ViewModel extends Module {
 
     /** The whole hand, moved in view space before the game lays it out. */
     public static void handTransform(MatrixStack matrices, boolean mainHand, boolean leftArm) {
-        if (!on()) return;
-        Hand hand = mainHand ? instance.main : instance.off;
-        // X follows the arm, so positive X moves either hand outwards.
-        float side = leftArm ? -1 : 1;
-        matrices.translate(hand.x.getFloat() * side, hand.y.getFloat(), hand.z.getFloat());
+        var hand=renderPlacement(leftArm?Arm.LEFT:Arm.RIGHT);if(hand==null)return;
+        placementTransform(matrices,hand,leftArm);
+    }
+
+    /** Shared whole-hand transform: offsets and size apply once to arm plus held item. */
+    public static void placementTransform(MatrixStack matrices,Placement hand,boolean leftArm){
+        matrices.translate(hand.x,hand.y,hand.depth);
+        float side=leftArm?-1:1,s=(float)hand.scale;
+        if(s!=1){matrices.translate(side*.56f,-.52f,-.72f);matrices.scale(s,s,s);matrices.translate(-side*.56f,.52f,.72f);}
     }
 
     /** The item itself, turned and sized about its own middle, plus the swing styles and block pose. */
     public static void itemTransform(MatrixStack matrices, boolean mainHand, boolean leftArm) {
-        if (!on()) return;
-        Hand hand = mainHand ? instance.main : instance.off;
+        var hand=renderPlacement(leftArm?Arm.LEFT:Arm.RIGHT);if(hand==null)return;
         float side = leftArm ? -1 : 1;
-        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(hand.rotX.getFloat()));
-        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(hand.rotY.getFloat() * side));
-        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(hand.rotZ.getFloat() * side));
-        float s = hand.scale.getFloat();
-        if (s != 1) matrices.scale(s, s, s);
+        itemRotation(matrices,hand);
+
+        if(!on())return;
 
         if (mainHand && blockingNow) {
             // The 1.7/1.8 sword block.
@@ -169,5 +216,11 @@ public class ViewModel extends Module {
             default -> {
             }
         }
+    }
+
+    public static void itemRotation(MatrixStack matrices,Placement hand){
+        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees((float)hand.rotX));
+        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees((float)hand.rotY));
+        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees((float)hand.rotZ));
     }
 }

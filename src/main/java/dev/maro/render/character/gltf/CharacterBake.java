@@ -426,7 +426,7 @@ public final class CharacterBake {
         public float hip = -1.0f;
         public float floor = -1.0f;
         /** Largest texture side kept by the skinned bake; larger ones are halved until they fit. */
-        public int maxTexture = 4096;
+        public int maxTexture = 8192;
     }
 
     @Environment(value=EnvType.CLIENT)

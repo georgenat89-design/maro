@@ -37,7 +37,7 @@ final class VisualPreviewChecks {
             context.waitTicks(12);
             var position=context.computeOnClient(c->c.player.getEntityPos());float yaw=context.computeOnClient(c->c.player.getYaw()),pitch=context.computeOnClient(c->c.player.getPitch());
             var red=read(context.takeScreenshot("maro-visual-preview-panel-red"));
-            context.runOnClient(c->{var gui=(ClickGuiScreen)c.currentScreen;require(gui.visualPreview().bounds()!=null&&gui.visualPreview().lastState()!=null,"Panel did not queue a real player");require(VisualPreviewEffect.frames()>0,"ESP preview did not use its real shader");require(!esp.isEnabled()&&!PlayerESP.previewing(),"Preview enabled world ESP");((ColorSetting)setting(esp,"Color")).set(0xFF2080FF);});
+            context.runOnClient(c->{var gui=(ClickGuiScreen)c.currentScreen;require(gui.visualPreview().bounds()!=null&&gui.visualPreview().lastState()!=null,"Panel did not queue a real player");require(VisualPreviewEffect.frames()>0,"ESP preview did not use its real shader");require(!esp.isEnabled()&&!dev.maro.render.esp.PlayerEspRenderer.active(),"Preview enabled world ESP");((ColorSetting)setting(esp,"Color")).set(0xFF2080FF);});
             context.waitTicks(4);var blue=read(context.takeScreenshot("maro-visual-preview-panel-blue"));
             int changed=0;for(int y=0;y<red.getHeight();y++)for(int x=0;x<red.getWidth();x++){int a=red.getRGB(x,y),b=blue.getRGB(x,y);if((a>>16&255)>(a&255)+70&&(b&255)>(b>>16&255)+70)changed++;}
             require(changed>150,"Editing ESP color did not change the portrait pixels: "+changed);

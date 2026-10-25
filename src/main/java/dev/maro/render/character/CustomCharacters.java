@@ -62,7 +62,7 @@ public final class CustomCharacters {
             String name = file.getFileName().toString();
             name = name.substring(0, name.length() - 4);
             try {
-                String stamp = name + Files.size(file) + Files.getLastModifiedTime(file, new LinkOption[0]).toMillis() + "5";
+                String stamp = name + Files.size(file) + Files.getLastModifiedTime(file, new LinkOption[0]).toMillis() + "5-appearance-2";
                 String id = "custom_" + CustomCharacters.slug(name) + "_" + Integer.toHexString(stamp.hashCode());
                 ids.add(id);
                 out.add(new BakedDesign(id, name, () -> CustomCharacters.open(file, id)));

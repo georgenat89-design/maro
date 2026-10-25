@@ -8,17 +8,13 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
-import org.lwjgl.system.MemoryStack;
-import org.lwjgl.util.tinyfd.TinyFileDialogs;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 public final class CrosshairImageScreen extends Screen {
     private final Screen parent;
     private final CustomCrosshair module;
     private TextFieldWidget path;
-    private boolean choosing;
     private String pickerError = "";
 
     public CrosshairImageScreen(Screen parent, CustomCrosshair module) {
@@ -26,8 +22,9 @@ public final class CrosshairImageScreen extends Screen {
     }
     @Override protected void init() {
         int w = Math.min(420, width - 32), x = (width - w) / 2, y = height / 2;
+        String previousPath=path==null?"":path.getText();
         path = new TextFieldWidget(textRenderer, x, y + 8, w - 78, 20, Text.literal("PNG file path"));
-        path.setMaxLength(32767); addDrawableChild(path); setInitialFocus(path);
+        path.setMaxLength(32767); path.setText(previousPath); addDrawableChild(path); setInitialFocus(path);
         addDrawableChild(ButtonWidget.builder(Text.literal("Browse"), button -> browse()).dimensions(x + w - 72, y + 8, 72, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Import PNG"), button -> {
             try { module.importPng(Path.of(path.getText().strip())); } catch (RuntimeException e) { pickerError = "Choose a PNG file first"; }
@@ -36,18 +33,9 @@ public final class CrosshairImageScreen extends Screen {
         module.loadStoredPng();
     }
     private void browse() {
-        if (choosing || module.pngBusy()) return;
-        choosing = true; pickerError = "";
-        CompletableFuture.supplyAsync(() -> {
-            try (MemoryStack stack = MemoryStack.stackPush()) {
-                return TinyFileDialogs.tinyfd_openFileDialog("Choose a PNG crosshair", module.pngFolder().toString() + java.io.File.separator,
-                    stack.pointers(stack.UTF8("*.png")), "PNG images", false);
-            }
-        }).whenComplete((file, error) -> client.execute(() -> {
-            choosing = false;
-            if (error != null) pickerError = "Paste the PNG file path or drag the file into this window";
-            else if (file != null) { path.setText(file); module.importPng(Path.of(file)); }
-        }));
+        if (module.pngBusy()) return;
+        pickerError = "";
+        client.setScreen(new dev.maro.gui.PngFilePickerScreen(this,Path.of(System.getProperty("user.home")),"Choose a PNG crosshair",file->{path.setText(file.toString());module.importPng(file);},"png"));
     }
     @Override public void onFilesDropped(List<Path> paths) {
         if (!paths.isEmpty()) { path.setText(paths.getFirst().toString()); module.importPng(paths.getFirst()); }
@@ -61,7 +49,7 @@ public final class CrosshairImageScreen extends Screen {
         module.renderPngPreview(ctx, width / 2f, y - 37, 32);
         Fonts.centeredTop(ctx, "Browse, paste a path, or drag a PNG here", width / 2, y - 5, width - 24, 0xFFADB5C7);
         super.render(ctx, mx, my, delta);
-        String status = !pickerError.isEmpty() ? pickerError : choosing ? "Choosing a file…" : module.pngStatus();
+        String status = !pickerError.isEmpty() ? pickerError : module.pngStatus();
         Fonts.centeredTop(ctx, Fonts.trim(status, w, false, .9f), width / 2, y + 63, width - 24, 0xFFADB5C7);
         Fonts.centeredTop(ctx, Fonts.trim("Transparent PNGs work best. Original colors are preserved.", w, false, .9f), width / 2, y + 77, width - 24, 0xFF7C8599);
     }

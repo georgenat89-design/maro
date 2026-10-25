@@ -45,6 +45,8 @@ final class CharacterSkinChecks {
     }
 
     static void run() {
+        dev.maro.render.character.gltf.MaterialAppearanceChecks.run();
+        dev.maro.render.character.kit.SkinImageChecks.run();
         List<String> report = new ArrayList<>();
         long start = System.nanoTime();
         Path dir = Path.of(System.getProperty("maro.gametest.projectDir", "."), "src", "main", "resources", "assets", "maro", "characters");
@@ -178,10 +180,10 @@ final class CharacterSkinChecks {
         float low = Float.POSITIVE_INFINITY;
         for (int v = 0; v < lv.vertices; v++) {
             int o = v * 6;
-            for (int k = 0; k < 6; k++) require(Float.isFinite(buf[o + k]), what + ": vertex " + v + " is not finite");
+            for (int k = 0; k < 6; k++) if (!Float.isFinite(buf[o + k])) throw new AssertionError(what + ": vertex " + v + " is not finite");
             float x = buf[o], y = buf[o + 1], z = buf[o + 2];
-            require(Math.abs(x) < height * 1.6f && Math.abs(z) < height * 1.6f && y > -height * 0.8f && y < height * 1.8f,
-                    what + ": vertex " + v + " flew off to (" + x + ", " + y + ", " + z + ")");
+            if (!(Math.abs(x) < height * 1.6f && Math.abs(z) < height * 1.6f && y > -height * 0.8f && y < height * 1.8f))
+                throw new AssertionError(what + ": vertex " + v + " flew off to (" + x + ", " + y + ", " + z + ")");
             low = Math.min(low, y);
         }
         return Math.abs(low);

@@ -20,6 +20,7 @@ public class TextField {
     private String text = "";
     private int cursor;
     private int scrollStart;
+    private boolean selectAll;
     private long lastInput = System.currentTimeMillis();
     private IntPredicate filter = c -> true;
     private Consumer<String> onChange = s -> {
@@ -27,6 +28,7 @@ public class TextField {
     private Runnable onEnter = () -> {
     };
     private boolean counter;
+    private String suffix = "";
 
     public TextField(String placeholder, int maxLength) {
         this.placeholder = placeholder;
@@ -54,6 +56,8 @@ public class TextField {
         return this;
     }
 
+    public TextField suffix(String suffix) { this.suffix = suffix == null ? "" : suffix; return this; }
+
     public String getText() {
         return text;
     }
@@ -62,11 +66,19 @@ public class TextField {
         this.text = text.length() > maxLength ? text.substring(0, maxLength) : text;
         cursor = this.text.length();
         scrollStart = 0;
+        selectAll = false;
         onChange.accept(this.text);
     }
 
     public void clear() {
         setText("");
+    }
+
+    /** Synchronize a control after an external setting change without treating it as typed input. */
+    public void setTextSilently(String text) {
+        var listener = onChange;
+        onChange = s -> {};
+        try { setText(text); } finally { onChange = listener; }
     }
 
     public void render(ClickGuiScreen gui, DrawContext ctx, float x, float y, float w, float h, Icons.Icon icon, String hint) {
@@ -77,8 +89,8 @@ public class TextField {
         float r = Math.min(h / 2f, Theme.radius());
 
         if (f > 0.01f && Theme.glow()) Render2D.shadow(ctx, x, y, w, h, r, 5f, Theme.accent(Math.round(0x40 * f)));
-        Render2D.roundRect(ctx, x, y, w, h, r, ColorUtil.lerp(Theme.INPUT, 0xFF191822, hv * 0.6f));
-        Render2D.roundOutline(ctx, x, y, w, h, r, 1f, ColorUtil.lerp(ColorUtil.lerp(Theme.BORDER, 0xFF3A374B, hv), Theme.accent(0xC0), f));
+        Render2D.roundRect(ctx, x, y, w, h, r, ColorUtil.lerp(Theme.INPUT, Theme.CARD_HOVER, hv * 0.6f));
+        Render2D.roundOutline(ctx, x, y, w, h, r, 1f, ColorUtil.lerp(ColorUtil.lerp(Theme.BORDER, Theme.TEXT_MUTED, hv * .4f), Theme.accent(0xC0), f));
 
         float tx = x + 7;
         if (icon != null) {
@@ -86,6 +98,10 @@ public class TextField {
             tx = x + 19;
         }
         float right = x + w - 6;
+        if (!suffix.isEmpty()) {
+            Fonts.drawRight(ctx, suffix, right, y + h / 2f, Theme.TEXT_MUTED, false, .75f);
+            right -= Fonts.width(suffix, false, .75f) + 4;
+        }
         if (counter) {
             String used = text.length() + "/" + maxLength;
             int tone = text.length() >= maxLength ? Theme.accent() : Theme.TEXT_MUTED;
@@ -95,7 +111,7 @@ public class TextField {
         if (hint != null && text.isEmpty()) {
             float hw = Fonts.width(hint, false, 0.7f) + 8;
             float hx = x + w - hw - 4;
-            Render2D.roundRect(ctx, hx, y + h / 2f - 5, hw, 10, 3, 0xFF22202C);
+            Render2D.roundRect(ctx, hx, y + h / 2f - 5, hw, 10, 3, Theme.CARD);
             Render2D.roundOutline(ctx, hx, y + h / 2f - 5, hw, 10, 3, 1f, Theme.BORDER);
             Fonts.drawCentered(ctx, hint, hx + hw / 2f, y + h / 2f, Theme.TEXT_MUTED, false, 0.7f);
             right = hx - 4;
@@ -111,6 +127,7 @@ public class TextField {
             while (scrollStart < cursor && typedWidth(text.substring(scrollStart, cursor)) > avail) scrollStart++;
             String visible = text.substring(scrollStart);
             visible = clipRight(visible, avail);
+            if (focused && selectAll) Render2D.roundRect(ctx, tx - 1, cy - 5, Math.min(avail, typedWidth(visible)) + 2, 10, 2, Theme.accent(0x48));
             Fonts.beginRaw();
             try {
                 Fonts.drawV(ctx, visible, tx, cy, Theme.TEXT, false, 0.85f);
@@ -126,6 +143,7 @@ public class TextField {
         final float textX = tx;
         gui.hit(x, y, w, h, (button, mx, my) -> {
             gui.focused = this;
+            selectAll = false;
             lastInput = System.currentTimeMillis();
             // place the cursor where the user clicked
             float local = (float) mx - textX;
@@ -155,6 +173,10 @@ public class TextField {
     public boolean keyPressed(int key, int mods) {
         lastInput = System.currentTimeMillis();
         boolean ctrl = (mods & (GLFW.GLFW_MOD_CONTROL | GLFW.GLFW_MOD_SUPER)) != 0;
+        if (selectAll && (key == GLFW.GLFW_KEY_BACKSPACE || key == GLFW.GLFW_KEY_DELETE)) {
+            clear();
+            return true;
+        }
         switch (key) {
             case GLFW.GLFW_KEY_BACKSPACE -> {
                 if (cursor == 0) return true;
@@ -168,10 +190,10 @@ public class TextField {
                 text = text.substring(0, cursor) + text.substring(cursor + 1);
                 onChange.accept(text);
             }
-            case GLFW.GLFW_KEY_LEFT -> cursor = ctrl ? wordStart(cursor) : Math.max(0, cursor - 1);
-            case GLFW.GLFW_KEY_RIGHT -> cursor = ctrl ? wordEnd(cursor) : Math.min(text.length(), cursor + 1);
-            case GLFW.GLFW_KEY_HOME -> cursor = 0;
-            case GLFW.GLFW_KEY_END -> cursor = text.length();
+            case GLFW.GLFW_KEY_LEFT -> { cursor = selectAll ? 0 : ctrl ? wordStart(cursor) : Math.max(0, cursor - 1); selectAll = false; }
+            case GLFW.GLFW_KEY_RIGHT -> { cursor = selectAll ? text.length() : ctrl ? wordEnd(cursor) : Math.min(text.length(), cursor + 1); selectAll = false; }
+            case GLFW.GLFW_KEY_HOME -> { cursor = 0; selectAll = false; }
+            case GLFW.GLFW_KEY_END -> { cursor = text.length(); selectAll = false; }
             case GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> onEnter.run();
             case GLFW.GLFW_KEY_V -> {
                 if (ctrl) insert(MinecraftClient.getInstance().keyboard.getClipboard().replaceAll("[\\r\\n\\t]", ""));
@@ -180,7 +202,7 @@ public class TextField {
                 if (ctrl) MinecraftClient.getInstance().keyboard.setClipboard(text);
             }
             case GLFW.GLFW_KEY_A -> {
-                if (ctrl) cursor = text.length();
+                if (ctrl) { cursor = text.length(); selectAll = !text.isEmpty(); }
             }
             default -> {
                 return false;
@@ -199,6 +221,7 @@ public class TextField {
         StringBuilder ok = new StringBuilder();
         for (char c : s.toCharArray()) if (c >= 32 && c != 127 && filter.test(c)) ok.append(c);
         if (ok.isEmpty()) return;
+        if (selectAll) { text = ""; cursor = 0; scrollStart = 0; selectAll = false; }
         String add = ok.toString();
         int room = maxLength - text.length();
         if (room <= 0) return;

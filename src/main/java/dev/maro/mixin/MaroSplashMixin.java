@@ -28,6 +28,7 @@ public abstract class MaroSplashMixin {
 
     @Inject(method = "render", at = @At("HEAD"), cancellable = true)
     private void maro$render(DrawContext ctx, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+        if (dev.maro.render.capture.CapturePass.active()) return;
         long now = Util.getMeasuringTimeMs();
         if (reloading && reloadStartTime == -1) reloadStartTime = now;
         float elapsed = reloadCompleteTime < 0 ? -1 : (now - reloadCompleteTime) / 550f;

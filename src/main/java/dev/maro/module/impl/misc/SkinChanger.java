@@ -34,6 +34,7 @@ public final class SkinChanger extends Module {
         self.attempted = others.attempted = null; refresh();
     }));
     private long generation, nextTexture;
+    private boolean previewActive;
 
     private record CustomSkin(AssetInfo.TextureAsset body, PlayerSkinType model) { }
     private record Source(String uuid, String url, PlayerSkinType model) { }
@@ -64,6 +65,26 @@ public final class SkinChanger extends Module {
         if (!isEnabled()) return;
         refresh(self, selfPlayer.get().trim()); refresh(others, othersPlayer.get().trim());
     }
+
+    /** The settings portrait may load its own skin without enabling world or hand replacements. */
+    public void preparePreview() {
+        previewActive = true;
+        refresh(self, selfPlayer.get().trim());
+    }
+
+    public SkinTextures previewSkin(SkinTextures original) {
+        return swap(self, original);
+    }
+
+    public void releasePreview() {
+        if (!previewActive) return;
+        previewActive = false;
+        if (!isEnabled()) {
+            generation++;
+            release(self);
+            self.attempted = null;
+        }
+    }
     private void refresh(Slot slot, String username) {
         if (!username.equals(slot.wanted)) {
             slot.wanted = username; slot.attempted = null; slot.changedAt = System.nanoTime(); release(slot);
@@ -91,10 +112,11 @@ public final class SkinChanger extends Module {
             } catch (Exception error) { return CompletableFuture.completedFuture((CustomSkin) null); }
         }).whenCompleteAsync((skin, error) -> {
             slot.loading = false;
-            if (isEnabled() && generation == requestGeneration && username.equals(slot.wanted) && username.equals((slot == self ? selfPlayer : othersPlayer).get().trim()) && skin != null) {
+            boolean wanted = isEnabled() || slot == self && previewActive;
+            if (wanted && generation == requestGeneration && username.equals(slot.wanted) && username.equals((slot == self ? selfPlayer : othersPlayer).get().trim()) && skin != null) {
                 release(slot); slot.skin = skin;
             } else if (skin != null) mc.getTextureManager().destroyTexture(skin.body().texturePath());
-            if (isEnabled() && generation == requestGeneration && username.equals(slot.wanted) && skin == null)
+            if (wanted && generation == requestGeneration && username.equals(slot.wanted) && skin == null)
                 Maro.LOGGER.warn("Skin Changer could not load skin for {}; use Reload Skins to retry", username);
             refresh();
         }, mc);
@@ -131,6 +153,10 @@ public final class SkinChanger extends Module {
         var module = instance;
         if (module == null || !module.isEnabled() || mc.player == null) return original;
         Slot slot = mc.player.getUuid().equals(player) ? module.self : module.others;
+        return swap(slot, original);
+    }
+
+    private static SkinTextures swap(Slot slot, SkinTextures original) {
         if (slot.skin == null) return original;
         if (slot.swaps.size() >= 256) slot.swaps.clear();
         return slot.swaps.computeIfAbsent(original, skin -> new SkinTextures(slot.skin.body(), skin.cape(), skin.elytra(), slot.skin.model(), skin.secure()));

@@ -4,41 +4,30 @@ import dev.maro.gui.render.Fonts;
 import dev.maro.gui.render.Render2D;
 import dev.maro.gui.theme.Theme;
 import dev.maro.module.impl.visuals.CustomModel;
-import dev.maro.render.character.CharacterCache;
 import dev.maro.setting.ButtonSetting;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.render.LightmapTextureManager;
-import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import net.minecraft.text.Text;
-import org.joml.Quaternionf;
-import org.joml.Vector3f;
 
 import java.util.ArrayList;
 import java.util.List;
 
-/** Live queued-entity preview; it never turns, equips or teleports the actual player. */
+/** Character asset browser. All interactive model presentation belongs to the shared Preview tab. */
 public final class CustomModelScreen extends Screen {
     private final Screen parent;
     private final CustomModel module;
-    private boolean other, previewing, dragging;
-    private float angle=-20, scroll, scrollTarget, x,y,w,h,pw;
-    private long frame, playStart;
-    private boolean playing;
-    private dev.maro.render.emote.Emote previewEmote=dev.maro.render.emote.Emote.WAVE;
+    private boolean other;
+    private float scroll, scrollTarget, x,y,w,h,pw;
+    private long frame;
     private final List<Hit> hits=new ArrayList<>();
     private record Hit(float x,float y,float w,float h,Runnable action) {
         boolean contains(double mx,double my) { return mx>=x && mx<x+w && my>=y && my<y+h; }
     }
     public CustomModelScreen(Screen parent, CustomModel module) { super(Text.literal("Custom Model")); this.parent=parent; this.module=module; }
-    public boolean isPreviewing() { return previewing; }
-    public String previewChoice() { return module.selected(other); }
-    public void showAngle(float degrees) { angle=degrees; }
-    public void showOther(boolean value) { other=value; }
-    public int[] previewBounds() {
-        double scale=client.getWindow().getScaleFactor();
-        return new int[]{(int)((x+12)*scale),(int)((y+39)*scale),(int)((x+pw)*scale),(int)((y+h-38)*scale)};
+    public void openUnifiedPreview() {
+        var gui=parent instanceof dev.maro.gui.ClickGuiScreen existing?existing:new dev.maro.gui.ClickGuiScreen();
+        client.setScreen(gui);gui.openModuleOptions(module);gui.selectPreviewTab(true);gui.visualPreview().selectModelTarget(module,other);
     }
     @Override public void render(DrawContext ctx,int mx,int my,float delta) {
         long now=System.nanoTime(); float dt=frame==0?0:Math.min(.05f,(now-frame)/1e9f); frame=now;
@@ -56,12 +45,16 @@ public final class CustomModelScreen extends Screen {
             button(ctx,module.isEnabled()?"Enabled":"Disabled",x+w-140,y+8,74,20,module.isEnabled(),module::toggle,mx,my);
             button(ctx,"Done",x+w-60,y+8,48,20,false,this::close,mx,my);
             Render2D.roundRect(ctx,x+12,y+39,pw-12,h-77,9,0xFF101725,0xFF101725,0xFF22334C,0xFF22334C);
-            drawPreview(ctx);
-            // Idle by default; Play runs the chosen emote on the preview (it never touches the real player).
-            float half=(pw-30)/2;
-            button(ctx,previewEmote.label(),x+18,y+44,half,18,false,()->{previewEmote=dev.maro.render.emote.Emote.values()[(previewEmote.ordinal()+1)%dev.maro.render.emote.Emote.values().length];playStart=System.nanoTime();},mx,my);
-            button(ctx,playing?"Stop":"Play",x+24+half,y+44,half,18,playing,()->{playing=!playing;playStart=System.nanoTime();},mx,my);
-            Fonts.drawCentered(ctx,previewChoice(),x+pw/2+6,y+h-64,Theme.TEXT,true,Math.min(.8f,(pw-20)/Math.max(1,Fonts.width(ctx,previewChoice(),true,1))));
+            Fonts.drawCentered(ctx,other?"OTHER PLAYERS":"YOUR CHARACTER",x+pw/2+6,y+54,Theme.TEXT_MUTED,true,.62f);
+            String choice=module.selected(other);
+            if(h>=240){
+                Fonts.drawCentered(ctx,Fonts.trim(choice,pw-24,true,.9f),x+pw/2+6,y+83,Theme.TEXT,true,.9f);
+                Fonts.drawCentered(ctx,"Browse character assets here.",x+pw/2+6,y+116,Theme.TEXT_DIM,false,.65f);
+                Fonts.drawCentered(ctx,"Inspect the configured player in",x+pw/2+6,y+134,Theme.TEXT_MUTED,false,.61f);
+                Fonts.drawCentered(ctx,"the shared Preview tab.",x+pw/2+6,y+148,Theme.TEXT_MUTED,false,.61f);
+            }
+            button(ctx,"Unified Preview",x+18,Math.max(y+72,y+h-104),pw-30,22,true,this::openUnifiedPreview,mx,my);
+            Fonts.drawCentered(ctx,Fonts.trim(choice,pw-20,true,.8f),x+pw/2+6,y+h-64,Theme.TEXT,true,.8f);
             button(ctx,"-",x+18,y+h-57,22,18,false,()->module.resize(-1),mx,my);
             button(ctx,"Size "+module.sizeLabel(),x+44,y+h-57,pw-76,18,false,module::resetSize,mx,my);
             button(ctx,"+",x+pw-28,y+h-57,22,18,false,()->module.resize(1),mx,my);
@@ -99,40 +92,6 @@ public final class CustomModelScreen extends Screen {
             button(ctx,"Reload GLB",lx+2*(third+4),y+h-26,third,18,false,module::reloadCharacters,mx,my);
         } finally { Fonts.endRaw(); }
     }
-    private void drawPreview(DrawContext ctx) {
-        if(client==null || client.player==null) {
-            Fonts.drawCentered(ctx,"Join a world to preview",x+pw/2,y+h/2,Theme.TEXT_MUTED,false,.7f); return;
-        }
-        previewing=true;
-        PlayerEntityRenderState state;
-        try {
-            state=(PlayerEntityRenderState)client.getEntityRenderDispatcher().getRenderer(client.player)
-                .getAndUpdateRenderState(client.player,client.getRenderTickCounter().getTickProgress(false));
-        } finally { previewing=false; }
-        state.id = Integer.MIN_VALUE; // Preview springs are independent of the real player.
-        state.light=LightmapTextureManager.MAX_LIGHT_COORDINATE; state.shadowPieces.clear(); state.outlineColor=0;
-        state.bodyYaw=180+angle; state.relativeHeadYaw=0; state.pitch=0;
-        state.width/=state.baseScale; state.height/=state.baseScale; state.baseScale=1;
-        state.age=(float)(System.nanoTime()%1_000_000_000_000L/1e9*20);
-        ((dev.maro.render.character.CharacterHolder)state).maro$setMotion(0,0,true);
-        if(state instanceof dev.maro.render.emote.EmoteRenderState emote){
-            float t=(System.nanoTime()-playStart)/1e9f;
-            var e=previewEmote;
-            if(playing&&!e.loops()&&t>e.length()+0.6f)playing=false;
-            if(playing){
-                float blend=e.loops()?Math.min(1,t/.18f):Math.min(1,Math.min(t/.18f,Math.max(0,(e.length()+.3f-t)/.28f)));
-                emote.maro$setEmote(e,e.loops()?t:Math.min(t,e.length()),blend);
-            } else emote.maro$setEmote(null,0,0);
-            dev.maro.render.character.DefaultSkins.wear(state);
-        }
-        var worn=CustomModel.worn(state);
-        float modelHeight=worn==null?2.0f:worn.model.maxY*worn.model.scale*CustomModel.sizeFactor()/16;
-        float size=Math.min((pw-30)/2.5f,(h-112)/(Math.max(2,modelHeight)+.3f));
-        ctx.addEntity(state,size,new Vector3f(0,modelHeight/2,0),new Quaternionf().rotateZ((float)Math.PI).rotateX(.08f),new Quaternionf().rotateX(.08f),
-            Math.round(x+14),Math.round(y+42),Math.round(x+pw-2),Math.round(y+h-78));
-        if(!previewChoice().equals("None") && CustomModel.worn(state)==null)
-            Fonts.drawCentered(ctx,"Preparing model...",x+pw/2+6,y+56,Theme.TEXT_MUTED,false,.7f);
-    }
     private void button(DrawContext ctx,String label,float bx,float by,float bw,float bh,boolean selected,Runnable action,int mx,int my) {
         boolean hover=mx>=bx && mx<bx+bw && my>=by && my<by+bh;
         Render2D.roundRect(ctx,bx,by,bw,bh,5,selected?Theme.accent(0x65):hover?0xFF2B364B:0xFF202A3B);
@@ -142,18 +101,14 @@ public final class CustomModelScreen extends Screen {
     }
     @Override public boolean mouseClicked(Click click,boolean doubled) {
         for(int i=hits.size()-1;i>=0;i--)if(hits.get(i).contains(click.x(),click.y())) {hits.get(i).action.run();return true;}
-        if(click.x()>x+12 && click.x()<x+pw && click.y()>y+39 && click.y()<y+h-78) {dragging=true;return true;}
         return super.mouseClicked(click,doubled);
     }
-    @Override public boolean mouseDragged(Click click,double dx,double dy) { if(dragging){angle+=(float)dx*.8f;return true;}return super.mouseDragged(click,dx,dy); }
-    @Override public boolean mouseReleased(Click click) {dragging=false;return super.mouseReleased(click);}
     @Override public boolean mouseScrolled(double mx,double my,double horizontal,double vertical) {
         if(mx>=x+pw+10 && mx<x+w-12 && my>=y+70 && my<y+h-57) {
             scrollTarget-=(float)vertical*32;return true;
         }
         return super.mouseScrolled(mx,my,horizontal,vertical);
     }
-    @Override public void close() {client.setScreen(parent);if(!module.isEnabled())CharacterCache.clear();}
-    @Override public void removed() { if(!module.isEnabled())CharacterCache.clear(); }
+    @Override public void close() {client.setScreen(parent);}
     @Override public boolean shouldPause() {return false;}
 }

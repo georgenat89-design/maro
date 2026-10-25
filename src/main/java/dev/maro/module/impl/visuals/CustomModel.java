@@ -37,10 +37,10 @@ public final class CustomModel extends Module {
     private CompletableFuture<?> scan;
 
     public CustomModel() {
-        super("Custom Model", "Animated 3D characters, a live wardrobe, and your own GLB models. Visible in your client.", Category.VISUALS);
+        super("Custom Model", "Animated 3D characters, a character asset browser, and your own GLB models. Visible in your client.", Category.VISUALS);
         instance = this;
         self.onChange(v -> prepare()); others.onChange(v -> prepare());
-        add(new ButtonSetting("Wardrobe", "Browse characters with a live preview", "Open", () -> mc.setScreen(new CustomModelScreen(mc.currentScreen, this))));
+        add(new ButtonSetting("Wardrobe", "Browse character assets, then inspect them in the shared Preview tab", "Open", () -> mc.setScreen(new CustomModelScreen(mc.currentScreen, this))));
         add(new ButtonSetting("Characters Folder", "Put GLB files in config/maro/characters", "Open", () -> {
             try { Files.createDirectories(CustomCharacters.folder()); Util.getOperatingSystem().open(CustomCharacters.folder()); }
             catch (java.io.IOException e) { dev.maro.Maro.LOGGER.warn("Could not create character folder", e); }
@@ -82,7 +82,7 @@ public final class CustomModel extends Module {
         if (world != mc.world) { world = mc.world; CharacterMotion.clear(); CharacterCache.releaseTextures(); }
     }
     private void prepare() {
-        if (!isEnabled() && !(mc.currentScreen instanceof CustomModelScreen)) return;
+        if (!isEnabled()) return;
         CharacterCache.listen();
         for (String name : new String[]{self.get(), others.get()}) {
             CharacterDesign design = CharacterCatalog.byName(name);
@@ -99,12 +99,11 @@ public final class CustomModel extends Module {
         motion(entity, state, holder.maro$motion());
         CustomModel m = instance;
         if (m == null || state.spectator || mc.player == null) return;
-        boolean preview = mc.currentScreen instanceof CustomModelScreen screen && screen.isPreviewing();
         String name;
         if (entity == mc.player) {
-            if (!m.isEnabled() && !preview) return;
-            if (!preview && !mc.gameRenderer.getCamera().isThirdPerson() && mc.currentScreen == null) return;
-            name = preview ? ((CustomModelScreen)mc.currentScreen).previewChoice() : m.self.get();
+            if (!m.isEnabled()) return;
+            if (!mc.gameRenderer.getCamera().isThirdPerson() && mc.currentScreen == null) return;
+            name = m.self.get();
         } else {
             if (!m.isEnabled() || !(entity instanceof PlayerEntity player)) return;
             if (m.targets.is("Friends") && !FriendManager.isFriend(player.getGameProfile().name())) return;

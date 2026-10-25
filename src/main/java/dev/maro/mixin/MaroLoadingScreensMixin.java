@@ -21,6 +21,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class MaroLoadingScreensMixin {
     @Inject(method = "renderWithTooltip", at = @At("HEAD"), cancellable = true)
     private void maro$connection(DrawContext ctx, int mx, int my, float delta, CallbackInfo ci) {
+        if (dev.maro.render.capture.CapturePass.active()) return;
         Screen screen = (Screen)(Object)this;
         if (dev.maro.gui.render.MaroFontWidgets.clientScreen() && !dev.maro.gui.MaroHomeScreen.embeddedRendering()) {
             dev.maro.gui.render.Render2D.setAlpha(1);

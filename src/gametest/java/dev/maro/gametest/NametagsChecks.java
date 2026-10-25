@@ -117,15 +117,16 @@ final class NametagsChecks {
             context.runOnClient(c -> ((BooleanSetting) setting(tags, "Enchants")).set(true));
             selfDistance(context, tags, fake);
 
-            // Lying flat (as when flying with an elytra or swimming), the tag stays over their head, not on their body.
+            // The fallback follows the current pose; rendered custom heads use their own world anchor.
             context.runOnClient(c -> {
                 double standing = tags.tagHeight(fake);
                 fake.setPose(net.minecraft.entity.EntityPose.SWIMMING);
                 require(fake.getHeight() < 1, "The fake player did not lie flat: " + fake.getHeight());
-                require(Math.abs(tags.tagHeight(fake) - standing) < 0.01, "Lying flat moved the tag down onto the body: "
-                        + tags.tagHeight(fake) + " instead of " + standing);
+                require(tags.tagHeight(fake) > fake.getHeight() + .2 && tags.tagHeight(fake) < fake.getHeight() + .7,
+                        "Lying-flat fallback is not above the posed body: " + tags.tagHeight(fake));
                 require(!tags.describe(fake).contains("0ms"), "A ping the server does not give reads 0ms: " + tags.describe(fake));
                 fake.setPose(net.minecraft.entity.EntityPose.STANDING);
+                require(Math.abs(tags.tagHeight(fake) - standing) < .01, "Standing did not restore the fallback tag height");
             });
 
             // A popped totem counts.

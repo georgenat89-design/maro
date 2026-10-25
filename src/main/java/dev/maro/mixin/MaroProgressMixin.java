@@ -17,6 +17,7 @@ public abstract class MaroProgressMixin {
     @Shadow private boolean done;
     @Inject(method = "render", at = @At("HEAD"), cancellable = true)
     private void maro$render(DrawContext ctx, int mx, int my, float delta, CallbackInfo ci) {
+        if (dev.maro.render.capture.CapturePass.active()) return;
         if (done) return; // Vanilla retains its close-after-completion behavior.
         BootFlow.draw(ctx, ctx.getScaledWindowWidth(), ctx.getScaledWindowHeight(),
                 progress > 0 ? Math.min(1, progress / 100f) : -1, title == null ? "Preparing your world" : title.getString());

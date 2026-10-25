@@ -28,7 +28,6 @@ public final class ModuleManager {
         register(new dev.maro.anubis.inspect.WeaponInspectModule());
         register(new dev.maro.module.impl.player.AutoTool());
         register(new dev.maro.module.impl.player.AutoReplenish());
-        register(new dev.maro.module.impl.movement.TridentBoost());
         register(new dev.maro.module.impl.player.SpeedMine());
         register(new dev.maro.module.impl.player.BreakDelay());
         register(new dev.maro.module.impl.movement.Flight());
@@ -81,8 +80,6 @@ public final class ModuleManager {
         register(new dev.maro.module.impl.visuals.Geeked());
         register(new dev.maro.module.impl.misc.OrderDropper());
         register(new dev.maro.module.impl.movement.CoordsFly());
-        register(new dev.maro.module.impl.movement.AirStuck());
-        register(new dev.maro.module.impl.movement.NoFall());
         register(new dev.maro.module.impl.movement.Vehicles());
         register(new dev.maro.module.impl.visuals.SpawnerNotifier());
         register(new dev.maro.module.impl.visuals.TexturePacks());

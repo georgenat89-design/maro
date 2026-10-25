@@ -1024,14 +1024,7 @@ public final class SkinBake {
         }
 
         private int imageSource(int m) {
-            if (m < 0) return -1;
-            JsonObject mat = GltfFile.array(file.json, "materials").get(m).getAsJsonObject();
-            JsonObject tex = GltfFile.object(GltfFile.object(mat, "pbrMetallicRoughness"), "baseColorTexture");
-            if (!tex.has("index")) return -1;
-            JsonArray textures = GltfFile.array(file.json, "textures");
-            int t = tex.get("index").getAsInt();
-            if (t < 0 || t >= textures.size()) return -1;
-            return GltfFile.integer(textures.get(t).getAsJsonObject(), "source", -1);
+            return m < 0 ? -1 : file.baseColorSource(m);
         }
 
         // ---- levels of detail

@@ -11,8 +11,7 @@ import dev.maro.mixin.DrawContextAccessor;
 public final class CameraPreview {
     private CameraPreview(){}
     private static double number(Module m,String key,double fallback){
-        for(var setting:m.getSettings())if(setting.getName().replace("-","").replace(" ","").equalsIgnoreCase(key))try{return setting.toJson().getAsDouble();}catch(RuntimeException ignored){}
-        return fallback;
+        return EffectSamples.number(m,key,fallback);
     }
     public static float configuredFov(Module m){
         float base=MinecraftClient.getInstance().options.getFov().getValue();

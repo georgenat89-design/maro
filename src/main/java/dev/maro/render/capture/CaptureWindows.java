@@ -19,6 +19,9 @@ final class CaptureWindows {
         boolean GetClientRect(Pointer window,Rect rectangle);
         boolean ClientToScreen(Pointer window,Point point);
     }
+    private interface Desktop extends StdCallLibrary { int DwmIsCompositionEnabled(IntByReference enabled); }
+    @Structure.FieldOrder({"size","major","minor","build","platform","servicePack"})
+    public static final class Version extends Structure {public int size,major,minor,build,platform;public byte[] servicePack=new byte[256];}
     @Structure.FieldOrder({"left","top","right","bottom"})
     public static final class Rect extends Structure {public int left,top,right,bottom;}
     @Structure.FieldOrder({"x","y"})
@@ -26,8 +29,14 @@ final class CaptureWindows {
     record Area(int x,int y,int width,int height) { }
     private static final Rect CLIENT=new Rect();
     private static final Point ORIGIN=new Point();
-    private static final class Api {static final User USER=Native.load("user32",User.class);}
-    static boolean supported(){return Platform.get()==Platform.WINDOWS;}
+    private static final class Api {static final User USER=Native.load("user32",User.class);static final Desktop DESKTOP=Native.load("dwmapi",Desktop.class);}
+    static boolean supported(){
+        if(Platform.get()!=Platform.WINDOWS)return false;
+        var version=new Version();version.size=version.size();version.write();
+        if(com.sun.jna.NativeLibrary.getInstance("ntdll").getFunction("RtlGetVersion").invokeInt(new Object[]{version.getPointer()})!=0)return false;
+        version.read();var composed=new IntByReference();
+        return (version.major>10||version.major==10&&version.build>=19041)&&Api.DESKTOP.DwmIsCompositionEnabled(composed)==0&&composed.getValue()!=0;
+    }
     private static Pointer handle(long window){return new Pointer(GLFWNativeWin32.glfwGetWin32Window(window));}
     static boolean prepare(long layer,long main){
         if(!supported())return false;var hwnd=handle(layer);var owner=handle(main);

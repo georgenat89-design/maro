@@ -21,6 +21,11 @@ public abstract class AcrobaticsMixin {
         at = @At("TAIL")
     )
     private void maro$acrobatics(PlayerEntityRenderState state, MatrixStack matrices, float bodyYaw, float baseHeight, CallbackInfo ci) {
+        var preview=dev.maro.gui.render.PlayerPreviewData.of(state);
+        if(preview!=null&&preview.maro$previewModule() instanceof Acrobatics acrobatics){
+            if(preview.maro$previewAnimated())acrobatics.previewTransform(matrices,state.height,preview.maro$previewSeconds());
+            return;
+        }
         Acrobatics.transform(state.id, matrices, state.height, MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(true));
     }
 }

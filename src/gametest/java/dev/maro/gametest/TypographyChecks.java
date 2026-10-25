@@ -97,23 +97,8 @@ final class TypographyChecks {
             context.setScreen(() -> null);
             System.out.println("[typography] Module editor tour complete: " + modules);
             if (!Boolean.getBoolean("maro.gametest.typographyTourOnly")) {
-            BetterLooksChecks.run(context);
-            BetterTexturesChecks.run(context);
-            KeyboardStrokesChecks.run(context);
-            HudReadabilityChecks.run(context);
-            SpotifyLyricsChecks.run(context);
-            SpotifyVolumeChecks.run(context);
-            SpotifyPhoneChecks.run(context);
-            NametagsChecks.run(context);
-            ArmorHudChecks.run(context,world);
-            SkinAccessoriesChecks.run(context);
-            CrosshairChecks.run(context);
-            CrosshairPngChecks.run(context);
-            SkyChecks.run(context,world);
-            TotemChecks.run(context,world);
-            TexturePacksChecks.run(context);
-            }
-            ScreenGuiChecks.run(context);
+                runHud(context, world);
+            } else ScreenGuiChecks.run(context);
             RenderFaultChecks.assertClean();
             System.out.println("[typography] PASS: uppercase defaults, AA coverage, nested clipping, input/caret, scales 2/3/4, the window, 10 pages, "+modules+" module editors, all setting sections and Screen GUI"
                     + (Boolean.getBoolean("maro.gametest.typographyTourOnly") ? " (resumed UI tour)" : ", HUD/phone/image/pack screens"));
@@ -121,6 +106,28 @@ final class TypographyChecks {
             context.runOnClient(c -> {c.options.getGuiScale().setValue(gui);c.onResolutionChanged();c.setScreen(null);});
         }
     }
+    /** Independently runnable HUD half, so a failure can resume without repeating every editor. */
+    static void runHud(ClientGameTestContext context, TestSingleplayerContext world) {
+        BetterLooksChecks.run(context);
+        BetterTexturesChecks.run(context);
+        KeyboardStrokesChecks.run(context);
+        HudReadabilityChecks.run(context);
+        SpotifyLyricsChecks.run(context);
+        SpotifyVolumeChecks.run(context);
+        SpotifyPhoneChecks.run(context);
+        NametagsChecks.run(context);
+        ArmorHudChecks.run(context,world);
+        SkinAccessoriesChecks.run(context);
+        CrosshairChecks.run(context);
+        CrosshairPngChecks.run(context);
+        SkyChecks.run(context,world);
+        TotemChecks.run(context,world);
+        TexturePacksChecks.run(context);
+        ScreenGuiChecks.run(context);
+        RenderFaultChecks.assertClean();
+        System.out.println("[typography-huds] PASS: appearance, keyboard, HUD/phone, nametags, armor, cosmetics, crosshairs, sky, totems, packs and Screen GUI");
+    }
+
     private static final class Probe extends Screen {
         Probe(){super(Text.literal("Smooth uppercase text"));}
         @Override public boolean shouldPause(){return false;}

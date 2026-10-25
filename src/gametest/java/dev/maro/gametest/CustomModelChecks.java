@@ -202,11 +202,11 @@ final class CustomModelChecks {
                 }
                 c.options.getGuiScale().setValue(2);c.onResolutionChanged();
                 m.select(false,"None");c.setScreen(new CustomModelScreen(null,m));
-                ((CustomModelScreen)c.currentScreen).showAngle(0);
+                UnifiedPreviewTestView.angle(c,0);
             });
             context.waitTicks(5);
             var plain=read(context.takeScreenshot("maro-character-vanilla"));
-            int[] area=context.computeOnClient(c->((CustomModelScreen)c.currentScreen).previewBounds());
+            int[] area=context.computeOnClient(c->UnifiedPreviewTestView.bounds(c));
             require(m.choices().size()==31,"Expected None and 30 characters");
             require(ModuleManager.getByName("Auto Trident")==null,"Auto Trident remains registered");
             for(String removed:java.util.List.of("Sakura","Luna","Mika","Aoi","Miku"))
@@ -220,17 +220,18 @@ final class CustomModelChecks {
                 int changed=difference(plain,shot,area);
                 require(changed>600,"Model not visibly rendered: "+name+" ("+changed+" pixels)");
                 require(!m.isEnabled(),"Wardrobe preview enabled module");
-                context.runOnClient(c->((CustomModelScreen)c.currentScreen).showAngle(70));
+                context.runOnClient(c->UnifiedPreviewTestView.angle(c,70));
                 context.waitTicks(2);
                 context.takeScreenshot("maro-character-"+CharacterCatalog.byName(name).id()+"-profile");
                 if(CharacterCatalog.byName(name) instanceof dev.maro.render.character.designs.PortraitCharacter) {
-                    context.runOnClient(c->((CustomModelScreen)c.currentScreen).showAngle(180));
+                    context.runOnClient(c->UnifiedPreviewTestView.angle(c,180));
                     context.waitTicks(2);context.takeScreenshot("maro-character-"+CharacterCatalog.byName(name).id()+"-back");
                 }
-                context.runOnClient(c->((CustomModelScreen)c.currentScreen).showAngle(0));
+                context.runOnClient(c->UnifiedPreviewTestView.angle(c,0));
                 System.out.println("[custom-model] "+name+": "+changed+" changed pixels");
             }
             wardrobeLayout(context,m);
+            context.runOnClient(c->UnifiedPreviewTestView.open(c,m));
             context.runOnClient(c->((ModeSetting)setting(m,"Detail")).set("Low"));
             for(String name:m.choices()) {
                 if(name.equals("None") || name.equals("CJ") || name.equals("Neighbor"))continue;
@@ -251,10 +252,10 @@ final class CustomModelChecks {
             context.runOnClient(c->geometry(m.ready("Neon Robot").model));context.waitTicks(3);context.takeScreenshot("maro-character-high-detail");
             context.runOnClient(c->{
                 ((ModeSetting)setting(m,"Detail")).set("Medium");c.options.getGuiScale().setValue(4);c.onResolutionChanged();
-                ((CustomModelScreen)c.currentScreen).showOther(true);m.select(true,"Astronaut");
+                UnifiedPreviewTestView.other(c,true);m.select(true,"Astronaut");
             });loaded(context,m,"Astronaut");context.waitTicks(3);context.takeScreenshot("maro-character-small-other-preview");
             context.runOnClient(c->{
-                c.options.getGuiScale().setValue(2);c.onResolutionChanged();((CustomModelScreen)c.currentScreen).showOther(false);
+                c.options.getGuiScale().setValue(2);c.onResolutionChanged();UnifiedPreviewTestView.other(c,false);
             });
             context.runOnClient(c->{
                 m.setEnabled(true);m.select(true,"Frog");((ModeSetting)setting(m,"Other Players")).set("Everyone");

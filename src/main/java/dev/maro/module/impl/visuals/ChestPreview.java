@@ -23,6 +23,16 @@ import java.util.*;
 /** Passive multiplayer snapshots, plus thread-safe local-world reads on an integrated server. */
 public final class ChestPreview extends Module {
     public record Snapshot(List<ItemStack> items,long capturedAt,boolean local){ }
+    private static final Snapshot PREVIEW = sampleContents();
+    private static Snapshot sampleContents(){
+        var items=new ArrayList<ItemStack>(java.util.Collections.nCopies(27,ItemStack.EMPTY));
+        items.set(0,new ItemStack(net.minecraft.item.Items.DIAMOND,12));
+        items.set(3,new ItemStack(net.minecraft.item.Items.OAK_LOG,32));
+        items.set(9,new ItemStack(net.minecraft.item.Items.IRON_INGOT,24));
+        items.set(14,new ItemStack(net.minecraft.item.Items.GOLDEN_APPLE,3));
+        items.set(22,new ItemStack(net.minecraft.item.Items.DIAMOND_PICKAXE));
+        return new Snapshot(List.copyOf(items),0,false);
+    }
     private record Key(BlockPos pos,boolean ender){ }
     private final BooleanSetting localWorld=add(new BooleanSetting("Live Singleplayer","Read existing container items from your local world before opening it",true));
     private final BooleanSetting holdSneak=add(new BooleanSetting("Hold Sneak","Only show the preview while holding your sneak key",false));
@@ -103,18 +113,30 @@ public final class ChestPreview extends Module {
         float factor=Math.min(scale.getFloat()/100,Math.min((ctx.getScaledWindowWidth()-16)/186f,(ctx.getScaledWindowHeight()-16)/160f));
         int rows=snapshot==null?0:(snapshot.items.size()+8)/9;float w=186,h=snapshot==null?60:43+rows*18;
         float x=Math.min(ctx.getScaledWindowWidth()-w*factor-8,ctx.getScaledWindowWidth()/2f+22),y=Math.max(8,Math.min(ctx.getScaledWindowHeight()-h*factor-8,ctx.getScaledWindowHeight()/2f-h*factor/2));
+        drawCard(ctx,name,snapshot,x,y,factor,null);
+    }
+    /** Shared card renderer with immutable local examples; no chest lookup, request or saved entry. */
+    public void renderPreview(DrawContext ctx,float x,float y,float width,float height){
+        float w=186,h=97;
+        float factor=Math.min(width/(w*1.4f),height/(h*1.4f))*scale.getFloat()/100f;
+        drawCard(ctx,"Chest",PREVIEW,x+(width-w*factor)/2,y+(height-h*factor)/2,factor,"Sample contents");
+    }
+    private void drawCard(DrawContext ctx,String name,Snapshot snapshot,float x,float y,float factor,String label){
+        int rows=snapshot==null?0:(snapshot.items.size()+8)/9;
+        float w=186,h=snapshot==null?60:43+rows*18;
         ctx.getMatrices().pushMatrix();ctx.getMatrices().translate(x,y);ctx.getMatrices().scale(factor,factor);
+        try {
         Render2D.shadow(ctx,0,2,w,h,7,12,0x70000000);Render2D.roundRect(ctx,0,0,w,h,7,0xEE10171F);Render2D.roundOutline(ctx,0,0,w,h,7,1,Theme.accent(0x70));
         Fonts.draw(ctx,name+" preview",10,9,Theme.TEXT,true,.8f);
         if(snapshot==null){Fonts.draw(ctx,"Contents unknown",10,28,Theme.TEXT_DIM,false,.75f);Fonts.draw(ctx,"Open once to save a preview",10,43,Theme.TEXT_MUTED,false,.64f);}
         else{
             long seconds=Math.max(0,(System.nanoTime()-snapshot.capturedAt)/1_000_000_000L);
-            Fonts.draw(ctx,snapshot.local?"Local world":"Saved "+(seconds<60?seconds+"s":seconds/60+"m")+" ago",10,24,Theme.TEXT_MUTED,false,.64f);
+            Fonts.draw(ctx,label!=null?label:snapshot.local?"Local world":"Saved "+(seconds<60?seconds+"s":seconds/60+"m")+" ago",10,24,Theme.TEXT_MUTED,false,.64f);
             for(int i=0;i<rows*9;i++){
                 int ix=12+i%9*18,iy=37+i/9*18;Render2D.roundRect(ctx,ix-1,iy-1,17,17,2,0xFF202C38);
                 if(i<snapshot.items.size()){var item=snapshot.items.get(i);if(!item.isEmpty()){ctx.drawItem(item,ix,iy);ctx.drawStackOverlay(mc.textRenderer,item,ix,iy);}}
             }
         }
-        ctx.getMatrices().popMatrix();
+        } finally {ctx.getMatrices().popMatrix();}
     }
 }

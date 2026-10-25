@@ -13,11 +13,10 @@ import net.minecraft.item.ItemStack;
 /** Isolated style samples. They never scan chunks, emit world effects or enable modules. */
 public final class SubjectPreview {
     private SubjectPreview(){}
-    private static Setting<?> setting(Module m,String name){return m.getSettings().stream().filter(s->s.getName().equals(name)).findFirst().orElseThrow();}
-    private static double number(Module m,String name){return setting(m,name).toJson().getAsDouble();}
-    private static boolean flag(Module m,String name){return setting(m,name).toJson().getAsBoolean();}
-    private static String mode(Module m,String name){return setting(m,name).toJson().getAsString();}
-    private static int color(Module m,String name){return ((ColorSetting)setting(m,name)).get();}
+    private static double number(Module m,String name){return dev.maro.gui.preview.PreviewSettings.number(m,name,0);}
+    private static boolean flag(Module m,String name){return dev.maro.gui.preview.PreviewSettings.flag(m,name,false);}
+    private static String mode(Module m,String name){return dev.maro.gui.preview.PreviewSettings.mode(m,name,"");}
+    private static int color(Module m,String name){return dev.maro.gui.preview.PreviewSettings.color(m,name,-1);}
     public static void blocks(DrawContext ctx,BlockESP module,float x,float y,float w,float h){
         var blocks=module.pickedBlocks();
         if(blocks.isEmpty()){Fonts.drawCentered(ctx,"Choose blocks to preview",x+w/2,y+h/2,Theme.TEXT_MUTED,false,.6f);return;}
@@ -27,7 +26,7 @@ public final class SubjectPreview {
             var block=blocks.get(i);float[] at=Render2D.snap(ctx,x+cell*i+(cell-side)/2,y+(h-side-14)/2);float left=at[0],top=at[1];
             int tint=mode(module,"Color").equals("One Color")?color(module,"ESP Color"):module.colorOf(block);
             if(!mode(module,"Style").equals("Outline"))Render2D.roundRect(ctx,left-2,top-2,side+4,side+4,3,ColorUtil.withAlpha(tint,(int)Math.round(number(module,"Fill Opacity")*2.55)));
-            ctx.getMatrices().pushMatrix();try{ctx.getMatrices().translate(left,top);ctx.getMatrices().scale(side/16,side/16);ctx.drawItem(new ItemStack(block),0,0);}finally{ctx.getMatrices().popMatrix();}
+            ctx.getMatrices().pushMatrix();try{ctx.getMatrices().translate(left,top);ctx.getMatrices().scale(side/16,side/16);ctx.drawItem(EffectSamples.sample(block),0,0);}finally{ctx.getMatrices().popMatrix();}
             ctx.createNewRootLayer();
             if(!mode(module,"Style").equals("Fill"))Render2D.roundOutline(ctx,left-2,top-2,side+4,side+4,3,(float)number(module,"Line Width")*.55f,tint);
             Fonts.drawCentered(ctx,Fonts.trim(block.getName().getString(),cell-6,false,.5f),left+side/2,top+side+10,Theme.TEXT_MUTED,false,.5f);

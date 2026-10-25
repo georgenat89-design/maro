@@ -32,6 +32,7 @@ public class Maro implements ClientModInitializer {
         ModuleManager.init();
         dev.maro.render.esp.Renderer3D.init();
         ConfigManager.init();
+        dev.maro.gui.render.GuiBackground.init();
         net.fabricmc.fabric.api.resource.ResourceManagerHelper.get(net.minecraft.resource.ResourceType.CLIENT_RESOURCES)
             .registerReloadListener(new net.fabricmc.fabric.api.resource.SimpleSynchronousResourceReloadListener(){
                 @Override public Identifier getFabricId(){return Identifier.of(MOD_ID,"menu-landscape");}

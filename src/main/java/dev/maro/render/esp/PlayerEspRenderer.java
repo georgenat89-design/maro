@@ -127,7 +127,7 @@ public final class PlayerEspRenderer {
 
     public static boolean active() {
         PlayerESP m = module();
-        return m != null && (m.isEnabled() || PlayerESP.previewing()) && mc.world != null && mc.player != null;
+        return m != null && dev.maro.render.capture.CleanCapture.localEnabled(m) && mc.world != null && mc.player != null;
     }
 
     // ---- frame ------------------------------------------------------------------------------

@@ -85,6 +85,12 @@ public final class CharacterMotion {
         SkinnedRenderer.clear();
     }
 
+    /** Reset one detached GUI subject without touching the live players' animation state. */
+    public static void forgetPreview(int entityId){
+        if(entityId!=dev.maro.gui.VisualPreview.ENTITY_ID)throw new IllegalArgumentException("Not a preview entity id");
+        STATES.remove(entityId);SkinnedRenderer.forget(entityId);
+    }
+
     @Environment(value=EnvType.CLIENT)
     private static final class State {
         final CharacterModel model;

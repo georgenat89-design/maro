@@ -19,15 +19,11 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.input.KeyInput;
 import net.minecraft.client.input.CharInput;
-import net.minecraft.client.render.LightmapTextureManager;
-import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.text.Text;
-import org.joml.Quaternionf;
-import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -37,10 +33,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Cosmetics: your character turning on the left (Front, Back, Reset; drag to turn it), and on the
- * right a tab for each kind of cosmetic, a list of every choice in it with the current one lit, a
- * size slider for that kind and Apply. Hats come from the Hats module; swords, pickaxes, shovels
- * and tridents are skins over your own items; the rest are the 3D accessories.
+ * Cosmetics asset editor: categories, searchable choices, item icons and fit controls.
+ * Interactive model rendering lives exclusively in the shared Preview tab.
  */
 public final class SkinAccessoriesScreen extends Screen {
     public static final String[] TABS = {"Hat", "Sword", "Pickaxe", "Shovel", "Trident", "Wings", "Head", "Tail", "Halo", "Back", "Shoulders", "Looks", "Colors"};
@@ -51,12 +45,9 @@ public final class SkinAccessoriesScreen extends Screen {
     private final Screen parent;
     private final SkinAccessories module;
     private String tab = "Sword";
-    private float rotation = -25, scroll, scrollTarget;
-    private float pickaxePitch, pickaxeZoom=1;
-    private boolean rotating = true, dragging, sizing;
-    private double dragFromX,dragFromY;
-    private float dragFromPitch;
-    private float dragFromRotation;
+    private float scroll, scrollTarget;
+    private boolean sizing;
+    private String configuredHatChoice;
     private long previousFrame;
     private float frameTime;
     private float previewTop=42;
@@ -86,12 +77,6 @@ public final class SkinAccessoriesScreen extends Screen {
 
     // ---- for tests -------------------------------------------------------------------------------
 
-    public void showAngle(float degrees) {
-        rotation = degrees;
-        pickaxePitch=0;pickaxeZoom=1;
-        rotating = false;
-    }
-
     public void showTab(String name) {
         if(!List.of(TABS).contains(name))throw new IllegalArgumentException("Unknown cosmetic category");
         tab = name;
@@ -106,10 +91,10 @@ public final class SkinAccessoriesScreen extends Screen {
     public double[] categoryPoint(){return new double[]{categoryX+categoryW/2,categoryY+12};}
     public double[] categoryChoicePoint(String name){return new double[]{categoryX+Math.max(132,categoryW)/2,dropY+6+List.of(TABS).indexOf(name)*24-categoryScroll+11};}
 
-    /** The preview's area on screen, in window pixels: {x1, y1, x2, y2}. */
-    public int[] previewBounds() {
-        double s = client == null ? 1 : client.getWindow().getScaleFactor();
-        return new int[] {(int) ((x + 10) * s), (int) ((y + previewTop) * s), (int) ((x + 10 + previewW) * s), (int) ((y + h - 42) * s)};
+    public void openUnifiedPreview() {
+        var gui=parent instanceof dev.maro.gui.ClickGuiScreen existing?existing:new dev.maro.gui.ClickGuiScreen();
+        Module target=tab.equals("Hat")&&hats()!=null?hats():module;
+        client.setScreen(gui);gui.openModuleOptions(target);gui.selectPreviewTab(true);
     }
 
     // ---- what each tab holds ------------------------------------------------------------------------
@@ -151,7 +136,7 @@ public final class SkinAccessoriesScreen extends Screen {
             case "Hat" -> {
                 Module h = hats();
                 var s = runtimeSetting(h, "hat");
-                yield h == null || !h.isEnabled() || s == null ? "None" : pretty(String.valueOf(s.get()));
+                yield configuredHatChoice!=null?configuredHatChoice:h == null || !h.isEnabled() || s == null ? "None" : pretty(String.valueOf(s.get()));
             }
             case "Looks" -> module.preset();
             case "Colors" -> "";
@@ -165,12 +150,13 @@ public final class SkinAccessoriesScreen extends Screen {
                 Module h = hats();
                 if (h == null) return;
                 if (choice.equals("None")) {
+                    configuredHatChoice=choice;
                     h.setEnabled(false);
                     return;
                 }
                 var s = runtimeSetting(h, "hat");
                 if (s != null) s.set(choice.toLowerCase(Locale.ROOT).replace(' ', '_'));
-                h.setEnabled(true);
+                configuredHatChoice=choice;
             }
             case "Looks" -> module.selectPreset(choice);
             default -> ((ModeSetting) setting(tab)).set(choice);
@@ -240,9 +226,7 @@ public final class SkinAccessoriesScreen extends Screen {
         hits.clear();
         long now = System.nanoTime();
         frameTime=previousFrame==0?0:Math.min(.1f,(now-previousFrame)/1e9f);
-        if (previousFrame != 0 && rotating && !dragging) rotation += Math.min(.05f,frameTime) * 22;
         previousFrame = now;
-        rotation %= 360;
         Theme.update();
 
         w = Math.min(760, width - 24);
@@ -272,7 +256,7 @@ public final class SkinAccessoriesScreen extends Screen {
             });
             if (on) Render2D.circle(ctx, tx + 8, by + bh / 2f, 2.4f, Theme.GREEN);
 
-            preview(ctx, mx, my);
+            selectionSummary(ctx, mx, my);
             tabs(ctx, mx, my);
             list(ctx, mx, my);
             footer(ctx, mx, my);
@@ -282,64 +266,24 @@ public final class SkinAccessoriesScreen extends Screen {
         }
     }
 
-    private void preview(DrawContext ctx, int mx, int my) {
-        float px = x + 10, py = y + previewTop, pw = previewW, ph = h - previewTop - 42;
-        Render2D.roundRect(ctx, px, py, pw, ph, 9, 0xFF171C22, 0xFF171C22, 0xFF222A32, 0xFF222A32);
-        Render2D.roundOutline(ctx, px, py, pw, ph, 9, 1, 0x18FFFFFF);
-        Fonts.drawV(ctx,"LIVE PREVIEW",px+12,py+13,Theme.TEXT_MUTED,true,.59f);
-        boolean modelPreview=tab.equals("Pickaxe")&&dev.maro.render.pickaxe.PickaxeModels.contains(current());
-        if(modelPreview){
-            dev.maro.render.pickaxe.PickaxePreview.draw(ctx,current(),module.previewStyle(rotation,pickaxePitch,pickaxeZoom),Math.round(px+6),Math.round(py+25),Math.round(pw-12),Math.round(ph-48));
-            Fonts.drawCentered(ctx,current(),px+pw/2,py+ph-12,Theme.TEXT,true,.76f);
-        }else if (client != null && client.player != null) {
-            var renderer = client.getEntityRenderDispatcher().getRenderer(client.player);
-            var state = (PlayerEntityRenderState) renderer.getAndUpdateRenderState(client.player, client.getRenderTickCounter().getTickProgress(false));
-            state.light = LightmapTextureManager.MAX_LIGHT_COORDINATE;
-            state.shadowPieces.clear();
-            state.outlineColor = 0;
-            state.bodyYaw = 180 + rotation;
-            state.relativeHeadYaw = 0;
-            state.pitch = 0;
-            state.width /= state.baseScale;
-            state.height /= state.baseScale;
-            state.baseScale = 1;
-            dev.maro.render.accessories.CosmeticPreview.hold(state, previewItem(), client.player);
-            float size = Math.min((pw - 12) / (3.4f * Math.max(1, module.wingSize())), (ph - 38) / (2.9f * Math.max(1, module.headSize() * .85f)));
-            ctx.addEntity(state, size, new Vector3f(0, state.height / 2 + .08f, 0),
-                    new Quaternionf().rotateZ((float) Math.PI).rotateX(.10f), new Quaternionf().rotateX(.10f),
-                    Math.round(px + 2), Math.round(py + 24), Math.round(px + pw - 2), Math.round(py + ph - 6));
-        } else {
-            Fonts.drawCentered(ctx, "Join a world to see yourself", px + pw / 2f, py + ph / 2f, Theme.TEXT_MUTED, false, 0.7f);
+    private void selectionSummary(DrawContext ctx,int mx,int my) {
+        float px=x+10,py=y+previewTop,pw=previewW,ph=h-previewTop-42;
+        Render2D.roundGradientV(ctx,px,py,pw,ph,9,0xFF171C29,0xFF111723);
+        Render2D.roundOutline(ctx,px,py,pw,ph,9,.8f,0x505C4978);
+        Fonts.drawV(ctx,"ASSET EDITOR",px+12,py+15,Theme.TEXT_MUTED,true,.62f);
+        String chosen=current();
+        Fonts.drawCentered(ctx,Fonts.trim(tab,pw-24,true,.92f),px+pw/2,py+43,Theme.TEXT,true,.92f);
+        if(ph>=180){
+            Fonts.drawCentered(ctx,Fonts.trim(chosen.isEmpty()?"Palette & motion":chosen,pw-24,true,.76f),px+pw/2,py+70,Theme.TEXT_DIM,true,.76f);
+            Fonts.drawCentered(ctx,"Choices edit your configured look.",px+pw/2,py+104,Theme.TEXT_MUTED,false,.60f);
+            Fonts.drawCentered(ctx,"Inspect it in the shared Preview tab.",px+pw/2,py+120,Theme.TEXT_MUTED,false,.60f);
+            Fonts.drawCentered(ctx,"Saving never enables a module.",px+pw/2,py+142,Theme.TEXT_MUTED,false,.60f);
         }
-        // On a weapon tab, the chosen skin large in the corner, at its Item Size.
-        String chosen = current();
-        ItemStack big = chosen.equals("None") ? null : icon(chosen);
-        if (big != null&&!modelPreview) {
-            float s = Math.min(Math.min(3.4f, pw / 70f) * module.itemSize(), (pw - 24) / 32f);
-            float bx = px + pw - 16 * s - 8, byy = py + ph - 16 * s - 8;
-            Render2D.roundRect(ctx, bx - 4, byy - 4, 16 * s + 8, 16 * s + 8, 8, 0x50000000);
-            var m = ctx.getMatrices();
-            m.pushMatrix();
-            m.translate(bx, byy);
-            m.scale(s, s);
-            ctx.drawItem(big, 0, 0);
-            m.popMatrix();
-            Fonts.drawRight(ctx, Fonts.trim(chosen,pw-16,false,.64f), px + pw - 8, byy - 10, Theme.TEXT_DIM, false, 0.64f);
-        }
-        // Drag across the preview to turn it.
-        hit(px, py, pw, ph, (hx, hy, b) -> {
-            dragging = true;
-            rotating = false;
-            dragFromX = hx;dragFromY=hy;dragFromPitch=pickaxePitch;
-            dragFromRotation = rotation;
-        });
-        float third = (pw - 8) / 3f, by = py + ph + 12;
-        button(ctx, "Front", px, by, third, 24, false, mx, my, () -> showAngle(0));
-        button(ctx, "Back", px + third + 4, by, third, 24, false, mx, my, () -> showAngle(180));
-        button(ctx, "Reset", px + (third + 4) * 2, by, third, 24, false, mx, my, () -> {
-            rotation = -25;pickaxePitch=0;pickaxeZoom=1;
-            rotating = true;
-        });
+        float by=py+ph-30;
+        Render2D.roundRect(ctx,px+10,by,pw-20,22,5,0x342E2444);
+        Render2D.roundOutline(ctx,px+10,by,pw-20,22,5,.8f,0x886F5799);
+        Fonts.drawCentered(ctx,"Preview look",px+pw/2,by+11,0xFFB397FF,true,.73f);
+        hit(px+10,by,pw-20,22,(hx,hy,button)->{if(button==0)openUnifiedPreview();});
     }
 
     private void tabs(DrawContext ctx, int mx, int my) {
@@ -492,12 +436,11 @@ public final class SkinAccessoriesScreen extends Screen {
         }
         float ay = y + h - 30;
         if(tab.equals("Pickaxe")&&dev.maro.render.pickaxe.PickaxeModels.contains(current())){
-            button(ctx,"Swing",listX,ay,48,24,false,mx,my,()->{dev.maro.render.pickaxe.PickaxeMotion.preview(current());module.audio().preview(module);});
+            button(ctx,"Preview",listX,ay,48,24,false,mx,my,this::openUnifiedPreview);
             button(ctx,"Options",listX+52,ay,55,24,false,mx,my,()->{var gui=parent instanceof dev.maro.gui.ClickGuiScreen p?p:new dev.maro.gui.ClickGuiScreen();client.setScreen(gui);gui.openModuleOptions(module);});
         }
-        button(ctx, "Apply look", listX+(tab.equals("Pickaxe")&&dev.maro.render.pickaxe.PickaxeModels.contains(current())?112:0), ay, listW-(tab.equals("Pickaxe")&&dev.maro.render.pickaxe.PickaxeModels.contains(current())?112:0), 24, true, mx, my, () -> {
-            module.setEnabled(true);
-            Sounds.toggle(true);
+        button(ctx, "Save look", listX+(tab.equals("Pickaxe")&&dev.maro.render.pickaxe.PickaxeModels.contains(current())?112:0), ay, listW-(tab.equals("Pickaxe")&&dev.maro.render.pickaxe.PickaxeModels.contains(current())?112:0), 24, true, mx, my, () -> {
+            dev.maro.config.ConfigManager.saveAll();
             close();
         });
     }
@@ -543,11 +486,6 @@ public final class SkinAccessoriesScreen extends Screen {
 
     @Override
     public boolean mouseDragged(Click click, double dx, double dy) {
-        if (dragging) {
-            rotation = dragFromRotation + (float) (click.x() - dragFromX) * 1.6f;
-            pickaxePitch=Math.clamp(dragFromPitch+(float)(click.y()-dragFromY)*.7f,-55,55);
-            return true;
-        }
         if (sizing && size() != null) {
             size().setPercent((click.x() - sliderX) / sliderW);
             return true;
@@ -557,14 +495,12 @@ public final class SkinAccessoriesScreen extends Screen {
 
     @Override
     public boolean mouseReleased(Click click) {
-        dragging = false;
         sizing = false;
         return super.mouseReleased(click);
     }
 
     @Override
     public boolean mouseScrolled(double mx, double my, double horizontal, double vertical) {
-        if(tab.equals("Pickaxe")&&inside(mx,my,x+10,y+previewTop,previewW,h-previewTop-42)){pickaxeZoom=Math.clamp(pickaxeZoom+(float)vertical*.06f,.65f,1.15f);return true;}
         if(categoriesOpen)categoryScroll-=(float)vertical*28;
         else if(inside(mx,my,listX,listY,listW,listH))scrollTarget -= (float) vertical * 36;
         return true;
@@ -588,6 +524,7 @@ public final class SkinAccessoriesScreen extends Screen {
     public void close() {
         if (client != null) client.setScreen(parent);
     }
+
 
     @Override
     public boolean shouldPause() {

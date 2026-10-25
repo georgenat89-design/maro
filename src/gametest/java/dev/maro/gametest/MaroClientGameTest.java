@@ -27,6 +27,51 @@ public class MaroClientGameTest implements FabricClientGameTest {
     }
     @Override
     public void runTest(ClientGameTestContext context) {
+        if(Boolean.getBoolean("maro.gametest.redesignHandPlacementOnly")){
+            // Read-stage assertions must observe startup config before any fixture reset.
+            context.getInput().resizeWindow(1600,900);
+            try(TestSingleplayerContext world=createWorld(context)){
+                world.getClientWorld().waitForChunksRender();context.setScreen(()->null);context.waitTicks(5);
+                RedesignHandPlacementChecks.run(context,world);
+            }RenderFaultChecks.assertClean();return;
+        }
+        if(Boolean.getBoolean("maro.gametest.stationaryScreenGuiOnly")){
+            context.getInput().resizeWindow(1600,900);
+            context.runOnClient(c->{ModuleManager.all().forEach(m->m.setEnabled(false));dev.maro.config.ClientSettings.spatialMenu.set(false);dev.maro.config.ClientSettings.screenGui.set(false);if(ModuleManager.getByName("Example")==null)ModuleManager.register(new ExampleModule());});
+            try(TestSingleplayerContext world=createWorld(context)){
+                world.getClientWorld().waitForChunksRender();context.setScreen(()->null);context.waitTicks(5);
+                StationaryScreenGuiChecks.run(context,world);
+            }RenderFaultChecks.assertClean();return;
+        }
+        if(Boolean.getBoolean("maro.gametest.movementCoordinatesOnly")||Boolean.getBoolean("maro.gametest.playerPreviewOnly")||Boolean.getBoolean("maro.gametest.guiBackgroundOnly")||Boolean.getBoolean("maro.gametest.unifiedPreviewOnly")){
+            context.getInput().resizeWindow(1280,720);
+            context.runOnClient(c->{ModuleManager.all().forEach(m->m.setEnabled(false));dev.maro.config.ClientSettings.spatialMenu.set(false);dev.maro.config.ClientSettings.screenGui.set(false);});
+            try(TestSingleplayerContext world=createWorld(context)){
+                world.getClientWorld().waitForChunksRender();context.setScreen(()->null);context.waitTicks(5);
+                if(Boolean.getBoolean("maro.gametest.movementCoordinatesOnly"))MovementCoordinateChecks.run(context,world);
+                if(Boolean.getBoolean("maro.gametest.playerPreviewOnly")){PlayerPreviewChecks.run(context);VisualPreviewChecks.run(context,world);PreviewRoutingChecks.run(context);}
+                if(Boolean.getBoolean("maro.gametest.guiBackgroundOnly"))GuiBackgroundChecks.run(context);
+                if(Boolean.getBoolean("maro.gametest.unifiedPreviewOnly"))UnifiedPreviewChecks.run(context,world);
+            }RenderFaultChecks.assertClean();return;
+        }
+        if (Boolean.getBoolean("maro.gametest.typographyHudOnly")) {
+            context.getInput().resizeWindow(1280, 720);
+            context.runOnClient(c -> { if (ModuleManager.getByName("Example") == null) ModuleManager.register(new ExampleModule());
+                ModuleManager.all().forEach(m -> m.setEnabled(false));
+                dev.maro.config.ClientSettings.spatialMenu.set(false); dev.maro.config.ClientSettings.screenGui.set(false); });
+            try (TestSingleplayerContext world = createWorld(context)) {
+                world.getClientWorld().waitForChunksRender(); context.setScreen(() -> null); context.waitTicks(12);
+                TypographyChecks.runHud(context, world);
+            }
+            RenderFaultChecks.assertClean();
+            return;
+        }
+        if (Boolean.getBoolean("maro.gametest.renderQualityOnly")) {
+            context.getInput().resizeWindow(1600, 1000);
+            RenderingQualityChecks.run(context);
+            RenderFaultChecks.assertClean();
+            return;
+        }
         if(Boolean.getBoolean("maro.gametest.baseCounterOnly")||Boolean.getBoolean("maro.gametest.baseEspOnly")){context.getInput().resizeWindow(1280,720);try(TestSingleplayerContext world=createWorld(context)){world.getClientWorld().waitForChunksRender();if(Boolean.getBoolean("maro.gametest.baseCounterOnly"))BaseCounterChecks.run(context,world);else BaseEspChecks.run(context,world);}RenderFaultChecks.assertClean();return;}
         // The menu itself: cards, settings panel, previews, the world-placed and floating menus.
         if(Boolean.getBoolean("maro.gametest.menuOnly")){context.getInput().resizeWindow(1280,720);context.runOnClient(c->{if(ModuleManager.getByName("Example")==null)ModuleManager.register(new ExampleModule());ModuleManager.all().forEach(m->m.setEnabled(false));dev.maro.config.ClientSettings.spatialMenu.set(false);dev.maro.config.ClientSettings.screenGui.set(false);});try(TestSingleplayerContext world=createWorld(context)){world.getClientWorld().waitForChunksRender();context.runOnClient(c->c.setScreen(new ClickGuiScreen()));context.waitTicks(12);context.takeScreenshot("maro-01-open");MenuChecks.run(context);context.setScreen(()->null);SpotifyPlaylistsChecks.run(context);VisualPreviewChecks.run(context,world);ScreenGuiChecks.run(context);KeyboardStrokesChecks.run(context);SpatialGuiChecks.run(context);PreviewSharpnessChecks.run(context);}RenderFaultChecks.assertClean();return;}
@@ -258,7 +303,6 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 FakePayChecks.run(context);
                 SpatialGuiChecks.run(context);
                 ScreenGuiChecks.run(context);
-                TridentBoostChecks.run(context, singleplayer);
                 var sky = ModuleManager.get(dev.maro.module.impl.visuals.CustomSky.class);
                 var mode = (dev.maro.setting.ModeSetting) sky.getSettings().stream().filter(s -> s.getName().equals("Sky")).findFirst().orElseThrow();
                 String saved = mode.get();
@@ -312,11 +356,6 @@ public class MaroClientGameTest implements FabricClientGameTest {
                 RenderFaultChecks.assertClean();
                 return;
             }
-            if (Boolean.getBoolean("maro.gametest.tridentBoostOnly")) {
-                TridentBoostChecks.run(context,singleplayer);
-                RenderFaultChecks.assertClean();
-                return;
-            }
             if (Boolean.getBoolean("maro.gametest.featurePortsOnly")) {
                 FeaturePortsChecks.run(context, singleplayer);
                 RenderFaultChecks.assertClean();
@@ -352,10 +391,6 @@ public class MaroClientGameTest implements FabricClientGameTest {
             }
             if (Boolean.getBoolean("maro.gametest.acOffOnly")) {
                 AntiCheatOffChecks.run(context, singleplayer);
-                return;
-            }
-            if (Boolean.getBoolean("maro.gametest.airFallOnly")) {
-                AirFallChecks.run(context, singleplayer);
                 return;
             }
             if (Boolean.getBoolean("maro.gametest.chestTagsOnly")) {
@@ -469,7 +504,6 @@ public class MaroClientGameTest implements FabricClientGameTest {
             GeekedChecks.run(context, singleplayer);
             OrderDropperChecks.run(context, singleplayer);
             CoordsFlyChecks.run(context, singleplayer);
-            AirFallChecks.run(context, singleplayer);
             InventoryHiderChecks.run(context, singleplayer);
             ArmorHudChecks.run(context, singleplayer);
             VehiclesChecks.run(context, singleplayer);
