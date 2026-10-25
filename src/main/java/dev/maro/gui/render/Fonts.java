@@ -29,7 +29,7 @@ public final class Fonts {
      * instead of being resampled, which keeps them sharp.
      */
     private static final int MAX_OVERSAMPLE = 6;
-    private static final String[][] FAMILIES = {{"rubik_medium", "rubik_bold"}, {"inter_regular", "inter_semibold"}, {"sora_semibold", "sora_bold"}};
+    private static final String[][] FAMILIES = {{"rubik_medium", "rubik_bold"}, {"inter_regular", "inter_semibold"}, {"sora_semibold", "sora_bold"}, {"barlow_semibold", "barlow_bold"}};
     private static final Style[][] REGULAR = new Style[FAMILIES.length][MAX_OVERSAMPLE + 1];
     private static final Style[][] BOLD = new Style[FAMILIES.length][MAX_OVERSAMPLE + 1];
     private static final Style VANILLA_BOLD = Style.EMPTY.withBold(true);
@@ -43,10 +43,14 @@ public final class Fonts {
         }
     }
 
-    /** The chosen family: 0 Rubik, 1 Inter, 2 Sora. */
+    /** Shared family indices: Rubik, Inter, Sora, Barlow Condensed. */
     private static int family() {
-        return ClientSettings.fontFace.is("Sora") ? 2 : ClientSettings.fontFace.is("Inter") ? 1 : 0;
+        return familyIndex();
     }
+    public static int familyIndex(){return ClientSettings.fontFace.is("Barlow Condensed")?3:ClientSettings.fontFace.is("Sora")?2:ClientSettings.fontFace.is("Inter")?1:0;}
+    static String fontFile(int family,boolean bold){return FAMILIES[Math.clamp(family,0,FAMILIES.length-1)][bold?1:0]+".ttf";}
+    /** The same effective face/weight for native mesh and raster labels. */
+    public static String fontFile(boolean bold){return fontFile(familyIndex(),weight(bold));}
 
     private Fonts() {
     }

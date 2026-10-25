@@ -25,7 +25,7 @@ import java.util.Map;
 
 /** An independent settings editor with fixed header/footer and its own clipped scroll view. */
 final class SettingsPanel {
-    static final float WIDTH=470,PREVIEW_WIDTH=190;
+    static final float WIDTH=398,PREVIEW_WIDTH=170;
     private final ClickGuiScreen gui;
     private final SettingsList list=new SettingsList();
     private final Scroll scroll=new Scroll();

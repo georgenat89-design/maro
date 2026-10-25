@@ -2,7 +2,7 @@ package dev.maro.gui.hud;
 
 import dev.maro.config.ConfigManager;
 import dev.maro.gui.render.Fonts;
-import dev.maro.gui.render.Logo;
+import dev.maro.gui.render.MaroWordmark;
 import dev.maro.gui.render.Render2D;
 import dev.maro.gui.theme.Theme;
 import dev.maro.module.impl.visuals.TexturePacks;
@@ -62,8 +62,9 @@ public final class GameplayTexturesScreen extends Screen {
         }finally{Fonts.setMeasureScale(1);Fonts.endRaw();c.getMatrices().popMatrix();}
     }
     private void sidebar(DrawContext c){
-        Render2D.roundRect(c,9,9,161,H-18,10,0xFF171A20);Logo.mark(c,32,32,24,0);
-        text(c,"MARO",52,31,.92f,true,INK);text(c,"MAKE IT YOURS",23,67,.55f,true,0xFF727D8E);
+        Render2D.roundRect(c,9,9,161,H-18,10,0xFF171A20);
+        MaroWordmark.draw(c,23,22,18,INK,MaroWordmark.Style.THEMED,false);
+        text(c,"MAKE IT YOURS",23,67,.55f,true,0xFF727D8E);
         Render2D.roundRect(c,19,83,141,32,7,0xFF263136);icon(c,30,99,0,TEAL);text(c,"Overview",48,99,.75f,true,TEAL);
         nav(c,"PacksMC",134,0,()->client.setScreen(new PacksMcScreen(this,module)));
         nav(c,"Modrinth",172,1,()->client.setScreen(new BetterTexturesScreen(this,module.modrinth())));

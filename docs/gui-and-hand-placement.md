@@ -6,8 +6,9 @@ Module selection, favorite stars, and enabled switches have separate controls.
 The profile selector loads saved local configurations; Manage configs opens the
 existing configuration page. Supported modules retain the shared preview dock.
 
-Inter Regular 400 and SemiBold 600 are bundled with SIL OFL 1.1 licensing. Menus
-default to natural casing. The smooth renderer caches text at its physical
+Version 1.0.5 introduced Inter Regular/SemiBold and natural casing. Version 1.0.6
+uses the requested bold condensed font and connected sidebar; see
+`branding-font-sidebar.md`. The smooth renderer caches text at its physical
 raster size, measures with the same font, and supplies platform fallback for
 unsupported code points; native font providers retain Minecraft fallback.
 Theme, font, and size remain configurable. Presentation revision 6 adopts the

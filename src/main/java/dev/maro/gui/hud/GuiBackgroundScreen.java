@@ -4,6 +4,7 @@ import dev.maro.config.ClientSettings;
 import dev.maro.config.ConfigManager;
 import dev.maro.gui.render.Fonts;
 import dev.maro.gui.render.GuiBackground;
+import dev.maro.gui.render.MaroWordmark;
 import dev.maro.gui.render.Render2D;
 import dev.maro.gui.theme.Theme;
 import dev.maro.setting.ColorSetting;
@@ -124,7 +125,7 @@ public final class GuiBackgroundScreen extends Screen {
             float panelX=x+w*.17f,panelY=y+h*.19f,panelW=w*.65f,panelH=h*.63f;
             Render2D.roundRect(ctx,panelX,panelY,panelW,panelH,7,0xEB0B1321);
             Render2D.rect(ctx,panelX+69,panelY,1,panelH,0x50465B76);
-            Fonts.drawV(ctx,"MARO",panelX+12,panelY+20,Theme.accent(),true,.76f);
+            MaroWordmark.draw(ctx,panelX+12,panelY+15,9,Theme.accent(),MaroWordmark.Style.THEMED,false);
             for(int i=0;i<4;i++)Render2D.roundRect(ctx,panelX+10,panelY+39+i*18,49,11,3,i==1?Theme.accent(65):0x152D456A);
             Fonts.drawV(ctx,"Your client",panelX+82,panelY+20,Theme.TEXT,true,.84f);
             for(int i=0;i<3;i++){

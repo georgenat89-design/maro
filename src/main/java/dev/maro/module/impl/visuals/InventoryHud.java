@@ -265,7 +265,7 @@ public class InventoryHud extends Module implements HudElement {
         }
 
         for (Slot slot : layout) if (!slot.stack().isEmpty()) ctx.drawItem(slot.stack(), slot.x() + 1, slot.y() + 1);
-        for (Slot slot : layout) if (!slot.stack().isEmpty()) ctx.drawStackOverlay(mc.textRenderer, slot.stack(), slot.x() + 1, slot.y() + 1);
+        for (Slot slot : layout) if (!slot.stack().isEmpty()) dev.maro.gui.render.OwnedHudText.stackOverlay(ctx,mc.textRenderer,slot.stack(),slot.x()+1,slot.y()+1);
 
         matrices.popMatrix();
 

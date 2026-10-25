@@ -206,7 +206,7 @@ public class RegionMap extends Module {
         .name("number-font")
         .description("Rounded and Rounded Bold use normal-width digits. Condensed fits more text in narrow cells.")
         .defaultValue(RegionMapRaster.NumberFont.RoundedBold)
-        .visible(numbers::get)
+        .visible(() -> numbers.get()&&!dev.maro.config.ClientSettings.unifiedTypography.get())
         .build()
     );
 
@@ -221,7 +221,7 @@ public class RegionMap extends Module {
     );
     private final Setting<Boolean> compactNumberFit = sgContent.add(new BoolSetting.Builder()
         .name("compact-number-fit").description("Use narrower digits only when a small shard would otherwise force its number to become tiny.")
-        .defaultValue(true).visible(numbers::get).build());
+        .defaultValue(true).visible(() -> numbers.get()&&!dev.maro.config.ClientSettings.unifiedTypography.get()).build());
 
     private final Setting<Boolean> fitNumbers = sgContent.add(new BoolSetting.Builder()
         .name("fit-numbers")
@@ -437,6 +437,7 @@ public class RegionMap extends Module {
     private int rasterSize;
     private boolean rasterNumbers;
     private RegionMapRaster.NumberFont rasterFont;
+    private String rasterClientFont;
     private double rasterNumberSize;
     private boolean rasterFitNumbers;
     private boolean rasterCompactNumberFit;
@@ -1057,6 +1058,7 @@ public class RegionMap extends Module {
     private void updateGridTexture(double unit, Color[] colors, Color ink, boolean showNumbers, int spot) {
         int size = Math.max(1, Math.min(4096, (int) Math.round(GRID * unit)));
         RegionMapRaster.NumberFont chosenFont = numberFont.get();
+        String clientFont=dev.maro.config.ClientSettings.unifiedTypography.get()?dev.maro.gui.render.Fonts.fontFile(true):"";
         double chosenSize = numberSize.get();
         boolean fit = fitNumbers.get();
         boolean compactFit = compactNumberFit.get();
@@ -1082,7 +1084,7 @@ public class RegionMap extends Module {
         if (style == TileStyle.Midnight) dim = 0;
         int rasterSpot = style == TileStyle.Midnight ? -1 : spot;
         if (gridTexture != null && size == rasterSize && showNumbers == rasterNumbers
-            && (!showNumbers || chosenFont == rasterFont && chosenSize == rasterNumberSize && fit == rasterFitNumbers && compactFit == rasterCompactNumberFit)
+            && (!showNumbers || chosenFont == rasterFont && java.util.Objects.equals(clientFont,rasterClientFont) && chosenSize == rasterNumberSize && fit == rasterFitNumbers && compactFit == rasterCompactNumberFit)
             && gloss == rasterGloss && seamless == rasterSeamless && rasterSpot == rasterSpotlight && dim == rasterDim
             && Arrays.equals(fills, rasterFills) && Arrays.equals(inks, rasterInks)) return;
 
@@ -1102,6 +1104,7 @@ public class RegionMap extends Module {
         rasterSize = size;
         rasterNumbers = showNumbers;
         rasterFont = chosenFont;
+        rasterClientFont=clientFont;
         rasterNumberSize = chosenSize;
         rasterFitNumbers = fit;
         rasterCompactNumberFit = compactFit;

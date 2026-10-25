@@ -106,8 +106,8 @@ public class Nametags extends Module {
     private final ColorSetting friendColor = add(new ColorSetting("Friend Color", "Friends' colour", 0xFF3E8E4E));
     private final NumberSetting scale = add(new NumberSetting("Scale", "How big the tags are", 1, 0.5, 3, 0.05).suffix("x"));
     private final BooleanSetting constantSize = add(new BooleanSetting("Constant Size", "Tags stay the same size however far; off, far ones are smaller", true));
-    private final ModeSetting font = add(new ModeSetting("Font", "The client's font, or Minecraft's", "Client", "Client", "Minecraft"));
-    private final BooleanSetting shadow = add(new BooleanSetting("Text Shadow", "A shadow under Minecraft's font", true).visible(() -> font.is("Minecraft")));
+    private final ModeSetting font = add(new ModeSetting("Font", "The client's font, or Minecraft's", "Client", "Client", "Minecraft").visible(() -> !dev.maro.config.ClientSettings.unifiedTypography.get()));
+    private final BooleanSetting shadow = add(new BooleanSetting("Text Shadow", "A shadow under Minecraft's font", true).visible(this::vanillaFont));
 
     private final List<SettingSection> sections = List.of(
             SettingSection.of("Players", self, hideNpcs, range, edgeTags),
@@ -257,7 +257,7 @@ public class Nametags extends Module {
             ItemStack stack = item.getStack();
             String label = stack.getName().getString() + (stack.getCount() > 1 ? " ×" + stack.getCount() : "") + (itemDistance.get() ? "  " + Math.round(dist) + "m" : "");
             float available = Math.max(32, (w - 12) / s - 30);
-            label = font.is("Minecraft") ? mc.textRenderer.trimToWidth(label, (int) available) : Fonts.trim(label, available, true, 1);
+            label = vanillaFont() ? mc.textRenderer.trimToWidth(label, (int) available) : Fonts.trim(label, available, true, 1);
             float width = renderedWidth(ctx, label, true) + 29, height = 22;
             float x = Math.max(width * s / 2 + 3, Math.min(w - width * s / 2 - 3, at[0]));
             float y = Math.max(height * s + 3, at[1]);
@@ -735,7 +735,7 @@ public class Nametags extends Module {
     private static final float CLIENT_SIZE = 0.9f;
 
     private boolean vanillaFont() {
-        return font.is("Minecraft");
+        return !dev.maro.config.ClientSettings.unifiedTypography.get() && font.is("Minecraft");
     }
 
     private float width(String s, boolean bold) {

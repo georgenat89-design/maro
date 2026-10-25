@@ -134,7 +134,7 @@ public final class ChestPreview extends Module {
             Fonts.draw(ctx,label!=null?label:snapshot.local?"Local world":"Saved "+(seconds<60?seconds+"s":seconds/60+"m")+" ago",10,24,Theme.TEXT_MUTED,false,.64f);
             for(int i=0;i<rows*9;i++){
                 int ix=12+i%9*18,iy=37+i/9*18;Render2D.roundRect(ctx,ix-1,iy-1,17,17,2,0xFF202C38);
-                if(i<snapshot.items.size()){var item=snapshot.items.get(i);if(!item.isEmpty()){ctx.drawItem(item,ix,iy);ctx.drawStackOverlay(mc.textRenderer,item,ix,iy);}}
+                if(i<snapshot.items.size()){var item=snapshot.items.get(i);if(!item.isEmpty()){ctx.drawItem(item,ix,iy);dev.maro.gui.render.OwnedHudText.stackOverlay(ctx,mc.textRenderer,item,ix,iy);}}
             }
         }
         } finally {ctx.getMatrices().popMatrix();}

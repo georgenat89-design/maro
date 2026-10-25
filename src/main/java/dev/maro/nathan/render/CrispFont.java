@@ -54,23 +54,19 @@ import dev.maro.nathan.NameeProtectAddon;
  * state left behind to put back.
  */
 public final class CrispFont {
-    private static final CrispFont[][] FAMILIES = {
-        {new CrispFont("rubik_medium.ttf"), new CrispFont("rubik_bold.ttf")},
-        {new CrispFont("inter_semibold.ttf"), new CrispFont("inter_extrabold.ttf")},
-        {new CrispFont("sora_semibold.ttf"), new CrispFont("sora_bold.ttf")}
-    };
-    /** Source-compatible names for the default bold face. */
-    public static final CrispFont POPPINS_MEDIUM = FAMILIES[2][1];
+    private static final Map<String,CrispFont> FACES = new java.util.HashMap<>();
+    /** Source-compatible aliases; current() selects the configured client face. */
+    public static final CrispFont POPPINS_MEDIUM = face("barlow_semibold.ttf");
 
     /** The same, a weight up, for titles. */
-    public static final CrispFont POPPINS_SEMIBOLD = POPPINS_MEDIUM;
+    public static final CrispFont POPPINS_SEMIBOLD = face("barlow_bold.ttf");
 
     /** Native mesh text follows the same font and uppercase weight as the GUI. */
     public static CrispFont current(boolean bold) {
-        int family = dev.maro.config.ClientSettings.fontFace.is("Sora") ? 2
-                : dev.maro.config.ClientSettings.fontFace.is("Inter") ? 1 : 0;
-        return FAMILIES[family][bold || dev.maro.config.ClientSettings.capsText.get() ? 1 : 0];
+        return face(dev.maro.gui.render.Fonts.fontFile(bold));
     }
+    private static CrispFont face(String file){return FACES.computeIfAbsent(file,CrispFont::new);}
+    public String sourceFile(){return file;}
 
     private static final int FIRST = 32;
     private static final int COUNT = 224;

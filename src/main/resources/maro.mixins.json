@@ -19,6 +19,7 @@
     "MaroProgressMixin",
     "MaroTextScissorMixin",
     "MaroTextFieldMixin",
+    "MaroTooltipFontMixin",
     "MaroConnectAccessor",
     "MaroLoadingScreensMixin",
     "MaroLoadingLifecycleMixin",

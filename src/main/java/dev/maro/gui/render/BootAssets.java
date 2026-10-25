@@ -8,10 +8,10 @@ public final class BootAssets {
     private BootAssets() { }
     public static float labelWidth(String text,float size,boolean bold){
         float sample=size<4?32:size;
-        SmoothHudText.beginSentence();try{return SmoothHudText.width(text,bold,sample*.73f/8,1)*size/sample;}finally{SmoothHudText.endSentence();}
+        return SmoothHudText.width(text,bold,sample*.73f/8,1)*size/sample;
     }
     public static void label(DrawContext ctx,String text,float x,float y,float size,int color,boolean bold){
-        SmoothHudText.beginSentence();try{SmoothHudText.draw(ctx,text,x,y,color,bold,size*.73f/8);}finally{SmoothHudText.endSentence();}
+        SmoothHudText.draw(ctx,text,x,y,color,bold,size*.73f/8);
     }
     public static void mark(DrawContext ctx, float x, float y, float size, int color) {
         BootMark.draw(ctx, x, y, size, color);

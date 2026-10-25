@@ -7,6 +7,7 @@ import dev.maro.gui.ClickGuiScreen;
 import dev.maro.gui.notification.Notifications;
 import dev.maro.gui.render.Fonts;
 import dev.maro.gui.render.Icons;
+import dev.maro.gui.render.MaroWordmark;
 import dev.maro.gui.render.Render2D;
 import dev.maro.gui.theme.Theme;
 import dev.maro.gui.widget.SettingsList;
@@ -54,9 +55,9 @@ public class SettingsPage extends Page {
         Render2D.roundGradientH(ctx, x, cy, lw, ch, r, Theme.accent(0x1C), Theme.accent2(0x00));
         Render2D.roundOutline(ctx, x, cy, lw, ch, r, 1f, Theme.BORDER);
         Icons.SETTINGS.draw(ctx, x + 16, cy + 15, 12, Theme.accent(), (System.currentTimeMillis() % 6000) / 6000f * 6f);
-        Fonts.draw(ctx, Maro.NAME, x + 30, cy + 8, Theme.TEXT, true, 1f);
+        MaroWordmark.draw(ctx,x+30,cy+6,10,Theme.TEXT,MaroWordmark.Style.THEMED,true);
         Fonts.draw(ctx, "v" + Maro.VERSION + "  •  Fabric " + mcVersion + "  •  Config: " + ConfigManager.getCurrent(),
-                x + 30, cy + 19, Theme.TEXT_MUTED, false, 0.7f);
+                x + 30, cy + 22, Theme.TEXT_MUTED, false, 0.7f);
 
         float bx = x + 10, by = cy + 33, bh = 16;
         bx += Widgets.button(gui, ctx, "save", bx, by, 0, bh, "Save Now", Widgets.Style.PRIMARY, Icons.CHECK, () -> {

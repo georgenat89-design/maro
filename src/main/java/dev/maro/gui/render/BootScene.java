@@ -18,8 +18,7 @@ public final class BootScene {
         try{
             background(ctx,w,h,time());
             float s=scale(w,h);m.translate((w-960*s)/2,(h-540*s)/2);m.scale(s,s);
-            BootAssets.mark(ctx,451,140,58,WHITE);
-            BootAssets.label(ctx,"maro.gg",480-BootAssets.labelWidth("maro.gg",25,true)/2,218,25,WHITE,true);
+            MaroWordmark.centered(ctx,480,170,48,WHITE,MaroWordmark.Style.BLUE,true);
             String message=status==null||status.isBlank()?"Getting things ready":status;
             float size=Math.min(14,380/Math.max(1,BootAssets.labelWidth(message,1,false)));
             ctx.createNewRootLayer();

@@ -87,6 +87,7 @@ tasks.register('runProductionClientGameTest', net.fabricmc.loom.task.prod.Client
     jvmArgs.add("-Dmaro.gametest.typographyHudOnly=" + providers.gradleProperty("typographyHudOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.typographyOnly=" + providers.gradleProperty("typographyTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.menuPolishOnly=" + providers.gradleProperty("menuPolishTestOnly").getOrElse("false"))
+    jvmArgs.add("-Dmaro.gametest.wordmarkOnly=" + providers.gradleProperty("wordmarkTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.startupOnly=" + providers.gradleProperty("startupTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.chunkPulseOnly=" + providers.gradleProperty("chunkPulseTestOnly").getOrElse("false"))
     jvmArgs.add("-Dmaro.gametest.accountsOnly=" + providers.gradleProperty("accountsTestOnly").getOrElse("false"))

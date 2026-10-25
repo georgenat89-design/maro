@@ -74,7 +74,9 @@ final class MenuChecks {
         settle(context);
         require(context.computeOnClient(c -> screen(c).settingsModule() == example), "Left clicking a module did not open its settings");
         float[] shifted = context.computeOnClient(c -> screen(c).modulePlace(example));
-        require(shifted != null && shifted[0] < moved[0] - 50, "The window did not move aside for the settings panel");
+        require(shifted != null && Math.abs(shifted[0] - moved[0]) < .1f && Math.abs(shifted[1] - moved[1]) < .1f,
+                "Selecting a module moved the fixed browser rows");
+        context.runOnClient(c -> {var gui=screen(c);var browser=gui.mainWindowBounds();var settings=gui.settingsBounds();var sidebar=gui.sidebarBounds();require(settings!=null&&sidebar!=null&&sidebar[0]+sidebar[2]<browser[0]&&browser[0]+browser[2]<settings[0]&&Math.abs(browser[1]-settings[1])<.1f&&Math.abs(browser[3]-settings[3])<.1f,"Module selection detached/overlapped the sidebar, browser or right settings pane");});
         context.takeScreenshot("maro-menu-settings");
 
         // A mode setting's list opens beside its row; Escape closes the list first, then the panel.

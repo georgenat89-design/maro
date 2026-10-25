@@ -1,5 +1,36 @@
 # Current Maro handoff
 
+## Local 1.0.6 branding, font and connected sidebar
+
+- The user supplied a heavy condensed uppercase font reference. Exact source is
+  unconfirmed; use bundled Barlow Condensed SemiBold 600/Bold 700 v1.408 under
+  SIL OFL 1.1. Shared typography covers all Maro-owned text with measured glyphs,
+  Unicode fallback and cached native raster sizes. Caps Text defaults on; literal
+  input values and the proper-case brand retain their data. Presentation revision
+  7 adopts the new defaults once and preserves saved module values/font choices.
+- MaroWordmark uses the existing custom M plus only "aro", with measured capital
+  height, baseline and spacing. Seven full-brand placements share the renderer.
+  Keep existing purple/blue/contour identities and the complete-word hover.
+- Category navigation is inside the connected left edge of the same container,
+  with icons, hover/selection, accent marker, separate utilities and independent
+  navigation scroll. Main browser/settings keep their independent scrolling.
+  Flat height adapts 480..640; Screen GUI remains a stationary 1080x640 canvas.
+- Six final gates passed: native font/wordmark/sidebar at effective GUI scales
+  2/3/4 and 960x540, the same suite with six installed companion mods, hand editor,
+  all 38 unified previews, stationary world GUI, and normal build/remapped tests.
+  Actual input, pixels, wordmark ink, Caps/raw values, navigation, saved settings,
+  resource lifecycle and the existing world anchor regressions passed.
+- Normal JAR SHA256:
+  `7e87871d553fcd39ed4db84294de1267b410133b0669f77bf27b37807a0e6e0a`,
+  42,423,497 bytes. All 12 character assets match 1.0.5; test probes and retired
+  modules are absent. Report, validation and native PNGs are in co/outputs.
+  See docs/branding-font-sidebar.md. Existing fullscreen-transition blit debug
+  messages persist; settled rendering passes. OS capture remains unverified.
+- Continue on codex/smooth-rendering. Push the verified source before installing,
+  per the user's established request. Install with co/work/install-maro-1.0.6.ps1
+  only while Minecraft is closed; otherwise stage and await the user closing it.
+  Never terminate the game. Keep one Maro JAR and back up outside mods.
+
 ## Local 1.0.5 GUI and hand placement update
 
 - The db199e9d request, repeated identically in fd06785d, supersedes the prior design
@@ -26,9 +57,10 @@
   `6381a118fb04efc50593275b68518f248c3eef43d088b94c44b4af30e5480d3b`,
   42,299,908 bytes. All 12 character assets match 1.0.4; test probes and retired
   modules are absent. Report, six-gate manifest and native PNGs are in co/outputs.
-- User requested pushing this release before installation. Source belongs on
-  `codex/smooth-rendering`. 1.0.5 is staged in the Modrinth profile's maro-updates;
-  Minecraft was still running with 1.0.4 at the last check. Recheck after push.
+- Source was pushed as cef03ba2395344105cf8cb152c8ac62f8504edb8 on
+  `codex/smooth-rendering`. The user closed Minecraft; 1.0.5 was installed as the
+  only active Maro JAR. Previous 1.0.4 is checksum-verified outside mods in
+  maro-backups/client-1.0.5-961d5bc0. The installation receipt is in co/outputs.
   `co/work/install-maro-1.0.5.ps1` validates the release, backs up outside mods,
   installs only when the game is closed, and writes an installation receipt.
   Never terminate Minecraft to replace its loaded JAR.

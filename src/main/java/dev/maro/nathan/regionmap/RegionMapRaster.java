@@ -37,6 +37,7 @@ public final class RegionMapRaster {
     }
 
     private static final Font[] FONTS = new Font[NumberFont.values().length];
+    private static final java.util.Map<String,Font> CLIENT_FONTS=new java.util.HashMap<>();
 
     public record Rendered(BufferedImage image, int labels) {}
 
@@ -93,7 +94,8 @@ public final class RegionMapRaster {
             double unit = size / GRID_UNITS;
             double pitch = (double) size / RegionGrid.SIDE;
             double gutter = seamless ? 0 : GUTTER_UNITS * unit;
-            Font font = numbers ? font(numberFont) : null;
+            boolean unified=dev.maro.config.ClientSettings.unifiedTypography.get();
+            Font font = numbers ? (unified?clientFont():font(numberFont)) : null;
             double capRatio = numbers
                 ? font.deriveFont(100f).createGlyphVector(graphics.getFontRenderContext(), "0").getVisualBounds().getHeight() / 100
                 : 1;
@@ -177,7 +179,7 @@ public final class RegionMapRaster {
                     // Two digits in a narrow shard can otherwise shrink to only
                     // a few pixels high. Use the narrower cut only when it lets
                     // that label be taller; ordinary cells keep the chosen font.
-                    if (compactNumberFit && fitNumbers && label.length() > 1 && numberFont != NumberFont.Condensed
+                    if (!unified && compactNumberFit && fitNumbers && label.length() > 1 && numberFont != NumberFont.Condensed
                         && bounds.height < availableHeight - 1) {
                         Font narrow = font(NumberFont.Condensed);
                         double ratio = narrow.deriveFont(100f).createGlyphVector(graphics.getFontRenderContext(), "0").getVisualBounds().getHeight() / 100;
@@ -263,5 +265,15 @@ public final class RegionMapRaster {
         } catch (Exception exception) {
             throw new IllegalStateException("Could not load Region Map number font", exception);
         }
+    }
+
+    private static Font clientFont(){
+        String file=dev.maro.gui.render.Fonts.fontFile(true);
+        return CLIENT_FONTS.computeIfAbsent(file,key->{
+            try(InputStream stream=RegionMapRaster.class.getResourceAsStream("/assets/maro/font/"+key)){
+                if(stream==null)throw new IllegalStateException("Client font is missing: "+key);
+                return Font.createFont(Font.TRUETYPE_FONT,stream);
+            }catch(Exception exception){throw new IllegalStateException("Could not load Region Map client font",exception);}
+        });
     }
 }

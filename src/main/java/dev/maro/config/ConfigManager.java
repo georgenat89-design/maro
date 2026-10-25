@@ -77,7 +77,7 @@ public final class ConfigManager {
         root.add("friends", friends);
         root.addProperty("config", current);
         root.addProperty("spatialMenu", true);
-        root.addProperty("lookRevision", 6);
+        root.addProperty("lookRevision", 7);
         root.addProperty("version", CLIENT_VERSION);
         write(CLIENT_FILE, root);
     }
@@ -157,6 +157,12 @@ public final class ConfigManager {
             ClientSettings.gradient.set(false);
             ClientSettings.glow.set(false);
             ClientSettings.contourLines.set(false);
+        }
+        if (!root.has("lookRevision") || root.get("lookRevision").getAsInt() < 7) {
+            ClientSettings.fontFace.set("Barlow Condensed");
+            ClientSettings.customFont.set(true);
+            ClientSettings.unifiedTypography.set(true);
+            ClientSettings.capsText.set(true);
         }
 
     }

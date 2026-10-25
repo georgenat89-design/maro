@@ -1,3 +1,11 @@
+Barlow Condensed interface font
+-------------------------------
+Copyright 2017 The Barlow Project Authors (https://github.com/jpt/barlow).
+Unmodified Barlow Condensed SemiBold (600) and Bold (700), version 1.408, are
+bundled from https://github.com/google/fonts/tree/main/ofl/barlowcondensed
+under SIL OFL 1.1, retained in LICENSES/BarlowCondensed-OFL.txt and the JAR.
+Letterforms are measured/rasterized directly; no horizontal compression is used.
+
 Inter interface font
 -------------------
 Copyright 2016, 2020 The Inter Project Authors (https://github.com/rsms/inter).

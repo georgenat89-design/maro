@@ -1,6 +1,8 @@
 package dev.maro.nathan.mixin;
 
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import org.objectweb.asm.Opcodes;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -26,6 +28,14 @@ import net.minecraft.client.gui.hud.InGameHud;
  */
 @Mixin(InGameHud.class)
 public class FakeXpLevelMixin {
+    @WrapOperation(method="renderMainHud(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/client/render/RenderTickCounter;)V",
+        at=@At(value="INVOKE",target="Lnet/minecraft/client/gui/hud/bar/Bar;drawExperienceLevel(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/client/font/TextRenderer;I)V"))
+    private void maro$clientLevel(net.minecraft.client.gui.DrawContext context,net.minecraft.client.font.TextRenderer renderer,int level,Operation<Void> original){
+        var module=dev.maro.module.ModuleManager.get(FakeXp.class);
+        if(dev.maro.gui.render.OwnedHudText.enabled()&&module!=null&&module.isEnabled())
+            dev.maro.gui.render.OwnedHudText.experienceLevel(context,level,context.getScaledWindowWidth()/2f,context.getScaledWindowHeight()-35);
+        else original.call(context,renderer,level);
+    }
     @ModifyExpressionValue(
         method = "renderMainHud(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/client/render/RenderTickCounter;)V",
         at = @At(

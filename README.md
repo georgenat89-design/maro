@@ -4,6 +4,11 @@ A **Fabric 1.21.11 / Java 21** client with a smooth, modern ClickGUI and the 20 
 
 Open the menu in-game with **Right Shift** (you can change this in *Settings*).
 
+The **1.0.6** update adds a connected left category sidebar, centralized Barlow
+Condensed typography with bold uppercase labels, and one cohesive wordmark whose
+custom M forms the first letter of Maro. Module font preferences remain saved
+behind the global font override. See [branding, font and sidebar](docs/branding-font-sidebar.md).
+
 The local **1.0.2** update makes Free Cam faster: 96 blocks per second by default,
 with an effective 0.5–4096 speed range, normalized diagonal movement and clean camera
 restoration. **No Fall is removed**. **Coords Fly** adds labeled Position and Nether
@@ -21,10 +26,11 @@ The local 1.0.1 update improves icon/text smoothing and centering, restores the
 custom models' original texture quality, and removes Trident Boost and Air Stuck.
 See [rendering and model appearance](docs/rendering-quality.md).
 
-The menu is one window. The sidebar has the search, the categories with their module counts,
-and the Settings, Configs, Theme and Socials pages. Each category shows its modules as cards
+The menu is one window. Its connected left sidebar contains the categories and
+the Settings, Configs, Theme and Socials pages. Search sits above the module browser,
+with quiet module/enabled counts below it. Each category shows its modules as cards
 with an icon, a star and a switch; **All**, **Enabled** and **Starred** filter them.
-**Left-click** a card to open its settings in a panel that slides out on the right, and
+**Left-click** a card to open its settings in the independent panel on the right, and
 **right-click** it (or click its switch) to turn it on or off. Settings are grouped into
 cards. An explicit capability list gives **Custom Model, Cosmetics, Skin Changer,
 Emotes and Player ESP** a live player preview on the left of their settings, using

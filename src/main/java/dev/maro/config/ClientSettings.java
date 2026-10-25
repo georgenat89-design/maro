@@ -35,9 +35,10 @@ public final class ClientSettings {
     public static final BooleanSetting screenGui = INTERFACE.add(new BooleanSetting("Screen GUI", "Place the menu in the world. Walk and look normally; aim your crosshair and click to configure it", false));
     public static final NumberSetting screenDistance = INTERFACE.add(new NumberSetting("Screen Distance", "How far in front of you the menu appears when opened", 3, 1.5, 6, .25).suffix("m").visible(screenGui::get));
     public static final BooleanSetting customFont = INTERFACE.add(new BooleanSetting("Custom Font", "Use a smooth font instead of the Minecraft font", true));
-    public static final ModeSetting fontFace = INTERFACE.add(new ModeSetting("Font", "Inter is a clean proportional sans-serif; Rubik is rounded and Sora is wider",
-            "Inter", "Sora", "Rubik", "Inter").visible(customFont::get));
-    public static final BooleanSetting capsText = INTERFACE.add(new BooleanSetting("Caps Text", "Bold uppercase text across menus and HUDs", false));
+    public static final ModeSetting fontFace = INTERFACE.add(new ModeSetting("Font", "Barlow Condensed uses genuine narrow letterforms with strong weights",
+            "Barlow Condensed", "Barlow Condensed", "Sora", "Rubik", "Inter").visible(customFont::get));
+    public static final BooleanSetting unifiedTypography = INTERFACE.add(new BooleanSetting("Use Client Font Everywhere", "Use this client font for Maro text, including module-specific labels; turn off to use saved per-module fonts", true).visible(customFont::get));
+    public static final BooleanSetting capsText = INTERFACE.add(new BooleanSetting("Caps Text", "Bold uppercase text across menus and HUDs", true));
     public static final NumberSetting animSpeed = INTERFACE.add(new NumberSetting("Animation Speed", "How fast menu animations play", 1.0, 0.3, 3.0, 0.1).suffix("x"));
     public static final BooleanSetting backgroundDim = INTERFACE.add(new BooleanSetting("Background Dim", "Darken the game behind the menu", false));
     public static final NumberSetting dimAmount = INTERFACE.add(new NumberSetting("Dim Strength", "How dark the game behind the menu gets", 55, 0, 100, 1).suffix("%")

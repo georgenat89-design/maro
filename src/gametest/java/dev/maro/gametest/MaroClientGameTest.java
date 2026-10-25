@@ -27,6 +27,7 @@ public class MaroClientGameTest implements FabricClientGameTest {
     }
     @Override
     public void runTest(ClientGameTestContext context) {
+        if(Boolean.getBoolean("maro.gametest.wordmarkOnly")){context.getInput().resizeWindow(1920,1080);MenuBrandingChecks.wordmark(context);RenderFaultChecks.assertClean();return;}
         if(Boolean.getBoolean("maro.gametest.redesignHandPlacementOnly")){
             // Read-stage assertions must observe startup config before any fixture reset.
             context.getInput().resizeWindow(1600,900);

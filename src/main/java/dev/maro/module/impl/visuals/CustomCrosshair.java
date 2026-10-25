@@ -44,7 +44,7 @@ public final class CustomCrosshair extends Module {
     private final NumberSetting textSize = add(new NumberSetting("Text Size", "Height of the letters in GUI pixels", 9, 4, 40, 0.5)
         .visible(this::textMode));
     private final ModeSetting textFont = add(new ModeSetting("Font", "Minecraft can also show symbols like hearts and stars; Clean is the menu font",
-        "Minecraft", "Minecraft", "Clean").visible(this::textMode));
+        "Minecraft", "Minecraft", "Clean").visible(() -> textMode()&&!dev.maro.config.ClientSettings.unifiedTypography.get()));
     private final BooleanSetting textShadow = add(new BooleanSetting("Text Shadow", "A drop shadow under the text", false)
         .visible(this::textMode));
     private final NumberSetting size = add(new NumberSetting("Size", "Arm length or ring radius in GUI pixels", 5, 2, 24, 0.5));
@@ -239,7 +239,7 @@ public final class CustomCrosshair extends Module {
         ctx.getMatrices().pushMatrix();
         try {
             ctx.getMatrices().translate(dx, dy);
-            if (textFont.is("Clean")) {
+            if (dev.maro.config.ClientSettings.unifiedTypography.get() || textFont.is("Clean")) {
                 Fonts.beginRaw(); // keep the casing as typed
                 try {
                     Fonts.drawCentered(ctx, s, 0, 0, color, false, height / 7f);

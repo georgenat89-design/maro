@@ -65,17 +65,16 @@ public final class MaroTitleStyle {
         try{
             MenuLandscape.draw(ctx,w,h);ctx.createNewRootLayer();float s=titleScale(w,h);m.translate((w-960*s)/2,(h-540*s)/2);m.scale(s,s);
             if(browsing()){
-                MenuBrand.draw(ctx,48,110,34,0);MenuTypography.label(ctx,"MARO.GG",94,120,18,0xFFEDF1F6,true);
+                MaroWordmark.draw(ctx,48,110,24,0xFFEDF1F6,MaroWordmark.Style.CONTOUR,true);
                 MenuTypography.label(ctx,"Minecraft, with your settings.",49,159,12,0xFF7C8798,false);
                 Render2D.rect(ctx,48,190,240,.7f,0xFF282E39);
             }else{
                 var client=net.minecraft.client.MinecraftClient.getInstance();
                 float px=(float)(client.mouse.getX()*w/client.getWindow().getWidth()),py=(float)(client.mouse.getY()*h/client.getWindow().getHeight());
                 float canvasX=(px-(w-960*s)/2)/s,canvasY=(py-(h-540*s)/2)/s;
-                float hover=brandHover.update(canvasX>=440&&canvasX<=520&&canvasY>=90&&canvasY<=210?1:0);
-                MenuBrand.draw(ctx,451,98,58,hover);ctx.createNewRootLayer();
-                String brand="MARO.GG";float font=18;
-                MenuTypography.label(ctx,brand,480-MenuTypography.labelWidth(brand,font,true)/2,177,font,0xFFF2F6FD,true);
+                float wordWidth=MaroWordmark.width(ctx,52,MaroWordmark.Style.CONTOUR,true);
+                float hover=brandHover.update(canvasX>=480-wordWidth/2&&canvasX<=480+wordWidth/2&&canvasY>=98&&canvasY<=170?1:0);
+                MaroWordmark.draw(ctx,480-wordWidth/2,98,52,0xFFF2F6FD,MaroWordmark.Style.CONTOUR,true,hover);
 
             }
             String user=dev.maro.module.impl.misc.NameProtect.mask(net.minecraft.client.MinecraftClient.getInstance().getSession().getUsername());
