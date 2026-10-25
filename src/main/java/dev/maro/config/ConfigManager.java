@@ -77,7 +77,7 @@ public final class ConfigManager {
         root.add("friends", friends);
         root.addProperty("config", current);
         root.addProperty("spatialMenu", true);
-        root.addProperty("lookRevision", 7);
+        root.addProperty("lookRevision", 8);
         root.addProperty("version", CLIENT_VERSION);
         write(CLIENT_FILE, root);
     }
@@ -164,6 +164,9 @@ public final class ConfigManager {
             ClientSettings.unifiedTypography.set(true);
             ClientSettings.capsText.set(true);
         }
+        // Raise only the prior default once; keep deliberate text-size choices.
+        if ((!root.has("lookRevision") || root.get("lookRevision").getAsInt() < 8)
+                && ClientSettings.menuTextSize.getInt() == 100) ClientSettings.menuTextSize.reset();
 
     }
 

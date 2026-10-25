@@ -5,7 +5,7 @@ import net.minecraft.client.gui.DrawContext;
 /** The existing custom M is a capital glyph, followed by literal lowercase "aro". */
 public final class MaroWordmark {
     public enum Style {
-        THEMED(8,12,112,104), BLUE(8,12,112,104), CONTOUR(2,1,124,126);
+        THEMED(8,12,112,104), BLUE(8,12,112,104), CONTOUR(8,12,112,104);
         final float left,top,width,height;
         Style(float left,float top,float width,float height){this.left=left;this.top=top;this.width=width;this.height=height;}
     }
@@ -18,7 +18,8 @@ public final class MaroWordmark {
         float size=Math.max(.1f,capHeight)/8;
         var text=SmoothHudText.brandMetrics(ctx,domain?"aro.gg":"aro",size);
         float markSize=text.capHeight()*128/style.height,markWidth=text.capHeight()*style.width/style.height;
-        float gap=text.capHeight()*.04f;
+        // Keep a visible letter gap after the custom stem, even with condensed text.
+        float gap=text.capHeight()*.14f;
         return new Layout(text,size,markSize,markWidth,gap,markWidth+gap+text.width(),
                 Math.max(text.capHeight(),text.top()+text.height()));
     }

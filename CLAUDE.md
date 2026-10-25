@@ -1,5 +1,30 @@
 # Current Maro handoff
 
+## Local 1.0.7 wordmark spacing and text readability
+
+- Title branding now uses the existing clean vector M in its blue gradient,
+  replacing only the title's older textured mark. Its visible bounds match
+  sidebar/loading geometry. The complete name still hovers and centers together.
+- Shared M-to-a visible spacing is 0.14 capital height instead of 0.04, keeping
+  the name cohesive while separating the stems. Existing colors remain intact.
+- Menu Text Size defaults to 110%. Presentation revision 8 migrates only the old
+  100% default once; custom values and subsequent choices persist. The existing
+  shared glyph measurements, clipping and wrapping handle the larger labels.
+- Native wordmark/sidebar checks passed at scales 2/3/4 and 960x540, including
+  separate M pixels, actual letter gap, cap/baseline alignment, whole-word hover,
+  larger measured menu text and real control input. Hand-editor regression and
+  normal build passed too. Existing fullscreen-transition blit diagnostics can
+  occur in the editor tests; settled checks pass. OS capture remains unverified.
+- Normal JAR SHA256 is
+  `e8710a5b26538fd96ce5df6cee2ee807784a2ad64af2a5776365a6060876bd82`,
+  42,423,106 bytes. Byte audit against 1.0.6 permits only five affected production
+  classes and fabric.mod.json to differ; all assets are unchanged. No test probes
+  or retired modules are bundled. Report/validation/native PNGs are in co/outputs.
+- Push verified source before installation. Use co/work/install-maro-1.0.7.ps1,
+  which validates all three gates, stages the normal JAR and installs only when
+  Minecraft is closed. Never terminate the game. Keep one active Maro JAR and
+  verify backups outside mods. Recheck the installation receipt for current state.
+
 ## Local 1.0.6 branding, font and connected sidebar
 
 - The user supplied a heavy condensed uppercase font reference. Exact source is
@@ -30,6 +55,9 @@
   per the user's established request. Install with co/work/install-maro-1.0.6.ps1
   only while Minecraft is closed; otherwise stage and await the user closing it.
   Never terminate the game. Keep one Maro JAR and back up outside mods.
+- Source was pushed as 29418430a7cb4277d91dd344e0736165b6bfdab5. Version 1.0.6
+  was installed as the only active Maro JAR; previous 1.0.5 was independently
+  verified outside mods in maro-backups/client-1.0.6-4bc24ba1.
 
 ## Local 1.0.5 GUI and hand placement update
 

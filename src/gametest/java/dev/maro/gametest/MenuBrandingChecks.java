@@ -34,6 +34,7 @@ import org.lwjgl.glfw.GLFW;
 public final class MenuBrandingChecks {
     private static void require(boolean ok,String why){if(!ok)throw new AssertionError(why);}
     private record WordmarkInk(double x,double y,double width,double height,double capHeight,long sequence){ }
+    private record WordmarkPixels(int markTop,int markBottom,int textBottom,int gap){ }
     private static volatile WordmarkInk wordmarkInk;
     private static long wordmarkSequence;
     /** Observe the actual production call and transform, rather than reconstructing its layout. */
@@ -46,11 +47,40 @@ public final class MenuBrandingChecks {
         }
         wordmarkInk=new WordmarkInk(x0,y0,x1-x0,y1-y0,bounds.capHeight()*Math.hypot(m.m00(),m.m01())*pixels,++wordmarkSequence);
     }
-    private static void measuredWordmark(ClientGameTestContext context,java.nio.file.Path path,String phase){
+    private static WordmarkPixels measuredWordmark(ClientGameTestContext context,java.nio.file.Path path,String phase){
         var mark=wordmarkInk;require(mark!=null,"No shared wordmark was submitted in "+phase);
         try{var image=ImageIO.read(path.toFile());require(mark.x()>1&&mark.y()>1&&mark.x()+mark.width()<image.getWidth()-1&&mark.y()+mark.height()<image.getHeight()-1,"Shared wordmark clipped viewport in "+phase+": "+mark);require(mark.width()>mark.capHeight()*1.6&&mark.height()>=mark.capHeight()*.98&&mark.capHeight()>12,"Invalid native cap/wordmark geometry in "+phase+": "+mark);
-            int ink=0;for(int y=Math.max(0,(int)Math.floor(mark.y()));y<Math.min(image.getHeight(),Math.ceil(mark.y()+mark.height()));y++)for(int x=Math.max(0,(int)Math.floor(mark.x()));x<Math.min(image.getWidth(),Math.ceil(mark.x()+mark.width()));x++){int rgb=image.getRGB(x,y);if(Math.max(rgb>>16&255,Math.max(rgb>>8&255,rgb&255))>160)ink++;}require(ink>80,"Actual shared wordmark pixels missing in "+phase+": "+ink);System.out.println("[wordmark] "+phase+" ink="+ink+" geometry="+mark);
+            int ink=0;for(int y=Math.max(0,(int)Math.floor(mark.y()));y<Math.min(image.getHeight(),Math.ceil(mark.y()+mark.height()));y++)for(int x=Math.max(0,(int)Math.floor(mark.x()));x<Math.min(image.getWidth(),Math.ceil(mark.x()+mark.width()));x++){int rgb=image.getRGB(x,y);if(Math.max(rgb>>16&255,Math.max(rgb>>8&255,rgb&255))>160)ink++;}require(ink>80,"Actual shared wordmark pixels missing in "+phase+": "+ink);
+            // Inspect the colored capital separately: white aro.gg must not hide a missing M.
+            int colored=0,mTop=image.getHeight(),mBottom=-1,mRight=-1,aLeft=image.getWidth(),aBottom=-1;
+            double cap=mark.capHeight();int top=Math.max(0,(int)Math.floor(mark.y()-2)),bottom=Math.min(image.getHeight(),(int)Math.ceil(mark.y()+cap+3));
+            for(int y=top;y<bottom;y++)for(int x=Math.max(0,(int)Math.floor(mark.x()-2));x<Math.min(image.getWidth(),Math.ceil(mark.x()+cap*1.12));x++){
+                int rgb=image.getRGB(x,y),r=rgb>>16&255,g=rgb>>8&255,b=rgb&255;
+                if(b>145&&b>r+18&&b>g+6){colored++;mTop=Math.min(mTop,y);mBottom=Math.max(mBottom,y);mRight=Math.max(mRight,x);}
+            }
+            // The first lowercase glyph shares the capital's baseline, with a visible ink gap.
+            for(int x=Math.max(0,(int)Math.floor(mark.x()+cap*1.12));x<Math.min(image.getWidth(),Math.ceil(mark.x()+cap*1.85));x++){
+                int column=0,columnBottom=-1;for(int y=top;y<bottom;y++){int rgb=image.getRGB(x,y),r=rgb>>16&255,g=rgb>>8&255,b=rgb&255;if(Math.min(r,Math.min(g,b))>185&&Math.max(r,Math.max(g,b))-Math.min(r,Math.min(g,b))<30){column++;columnBottom=y;}}
+                if(column>=Math.max(2,cap*.04)){aLeft=Math.min(aLeft,x);aBottom=Math.max(aBottom,columnBottom);}
+            }
+            double tolerance=Math.max(3,cap*.04);int gap=aLeft-mRight-1;
+            require(colored>cap*cap*.15&&mBottom-mTop>cap*.88,"Actual colored M missing/incomplete in "+phase+": "+colored);
+            require(Math.abs(mTop-mark.y())<=tolerance&&Math.abs(mBottom+1-mark.y()-cap)<=tolerance&&Math.abs(aBottom-mBottom)<=tolerance,"M and first letter lost cap/baseline alignment in "+phase);
+            require(aBottom>=0&&gap>=Math.max(1,cap*.065-1)&&gap<=cap*.25+2,"M-to-aro ink gap is cramped/detached in "+phase+": "+gap+" at cap "+cap);
+            System.out.println("[wordmark] "+phase+" ink="+ink+" M="+colored+" gap="+gap+" geometry="+mark);
+            return new WordmarkPixels(mTop,mBottom,aBottom,gap);
         }catch(java.io.IOException error){throw new AssertionError(error);}
+    }
+    private static void titleHover(ClientGameTestContext context,int scale,WordmarkPixels before){
+        var baseline=wordmarkInk;double pixels=context.computeOnClient(c->c.getWindow().getScaleFactor());
+        pointer(context,(baseline.x()+baseline.width()/2)/pixels,(baseline.y()+baseline.capHeight()/2)/pixels);context.waitTicks(14);
+        var after=measuredWordmark(context,context.takeScreenshot("maro-wordmark-title-hover-scale-"+scale),"title hover scale "+scale);var hovered=wordmarkInk;
+        double lift=hovered.y()-baseline.y();require(lift<-.25&&lift>-baseline.capHeight()*.1&&Math.abs(hovered.x()-baseline.x())<.1&&Math.abs(hovered.width()-baseline.width())<.1,"Title hover moved/resized the wordmark inconsistently at "+scale);
+        require(Math.abs(after.markTop()-before.markTop()-lift)<=2&&Math.abs(after.textBottom()-before.textBottom()-lift)<=2&&Math.abs(after.gap()-before.gap())<=1,"Title hover detached M from aro.gg at "+scale);
+        pointer(context,8,8);context.waitTicks(14);
+    }
+    private static void menuSize(ClientGameTestContext context){
+        context.runOnClient(c->{Fonts.beginMenu();try{ClientSettings.menuTextSize.set(100d);float width=Fonts.width("Configure your client",false,1),height=Fonts.height(1);ClientSettings.menuTextSize.set(110d);require(Fonts.width("Configure your client",false,1)>width*1.05&&Fonts.height(1)>height*1.09,"110% menu text did not increase shared draw measurements");}finally{ClientSettings.menuTextSize.set(110d);Fonts.endMenu();}});
     }
     private static final class WordmarkReload implements ResourceReload{
         final CompletableFuture<Void> done=new CompletableFuture<>();
@@ -88,17 +118,18 @@ public final class MenuBrandingChecks {
     /** Focused native evidence for shared branding, typography and sidebar; no world or networking. */
     static void wordmark(ClientGameTestContext context){
         int originalScale=context.computeOnClient(c->c.options.getGuiScale().getValue());
-        String font=ClientSettings.fontFace.get();boolean caps=ClientSettings.capsText.get(),custom=ClientSettings.customFont.get(),unified=ClientSettings.unifiedTypography.get(),screenGui=ClientSettings.screenGui.get(),spatial=ClientSettings.spatialMenu.get();double size=ClientSettings.guiSize.get();var serialized=new IdentityHashMap<Setting<?>,com.google.gson.JsonElement>();
+        String font=ClientSettings.fontFace.get();boolean caps=ClientSettings.capsText.get(),custom=ClientSettings.customFont.get(),unified=ClientSettings.unifiedTypography.get(),screenGui=ClientSettings.screenGui.get(),spatial=ClientSettings.spatialMenu.get();double size=ClientSettings.guiSize.get(),textSize=ClientSettings.menuTextSize.get();var serialized=new IdentityHashMap<Setting<?>,com.google.gson.JsonElement>();
         try{
             context.runOnClient(c->{ModuleManager.all().forEach(m->m.getSettings().forEach(s->serialized.put(s,s.toJson().deepCopy())));ClientSettings.screenGui.set(false);ClientSettings.spatialMenu.set(false);ClientSettings.guiSize.set(97d);ClientSettings.customFont.set(true);ClientSettings.fontFace.set("Barlow Condensed");ClientSettings.unifiedTypography.set(true);ClientSettings.capsText.set(true);require(Fonts.familyIndex()==3&&dev.maro.nathan.render.CrispFont.current(false).sourceFile().equals(Fonts.fontFile(false))&&dev.maro.nathan.render.CrispFont.current(true).sourceFile().equals("barlow_bold.ttf"),"Shared GUI/native text did not select genuine condensed strong font cuts");});
+            menuSize(context);
             for(int scale:new int[]{2,3,4}){
-                context.runOnClient(c->{wordmarkInk=null;c.options.getGuiScale().setValue(scale);c.onResolutionChanged();c.setScreen(new MaroHomeScreen());require(c.getWindow().getScaleFactor()==scale,"Requested GUI scale "+scale+" was clamped; native scale coverage is incomplete");});context.getInput().setCursorPos(8,8);context.waitTicks(12);measuredWordmark(context,context.takeScreenshot("maro-wordmark-title-scale-"+scale),"title scale "+scale);
+                context.runOnClient(c->{wordmarkInk=null;c.options.getGuiScale().setValue(scale);c.onResolutionChanged();c.setScreen(new MaroHomeScreen());require(c.getWindow().getScaleFactor()==scale,"Requested GUI scale "+scale+" was clamped; native scale coverage is incomplete");});context.getInput().setCursorPos(8,8);context.waitTicks(12);var title=measuredWordmark(context,context.takeScreenshot("maro-wordmark-title-scale-"+scale),"title scale "+scale);titleHover(context,scale,title);
                 context.runOnClient(c->{wordmarkInk=null;c.setScreen(new ClickGuiScreen());gui(c).openPage(Category.VISUALS.ordinal());});context.getInput().setCursorPos(8,8);context.waitTicks(12);sidebarGeometry(context,"scale "+scale);measuredWordmark(context,context.takeScreenshot("maro-wordmark-header-scale-"+scale),"sidebar scale "+scale);if(scale==2)capsInput(context);sidebarInput(context,scale);
                 context.runOnClient(c->{wordmarkInk=null;c.setScreen(new MaroHomeScreen());});var reload=new WordmarkReload();context.runOnClient(c->c.setOverlay(new SplashOverlay(c,reload,result->{},false)));context.waitTicks(12);measuredWordmark(context,context.takeScreenshot("maro-wordmark-loading-scale-"+scale),"loading scale "+scale);context.runOnClient(c->reload.done.complete(null));context.waitTicks(35);require(context.computeOnClient(c->c.getOverlay()==null),"Controlled loading overlay failed to release at scale "+scale);
             }
             context.getInput().resizeWindow(960,540);context.runOnClient(c->{c.options.getGuiScale().setValue(4);c.onResolutionChanged();c.setScreen(new ClickGuiScreen());gui(c).openPage(Category.VISUALS.ordinal());});pointer(context,8,8);context.waitTicks(12);sidebarGeometry(context,"small viewport");sidebarInput(context,4);context.takeScreenshot("maro-sidebar-small-960x540");context.runOnClient(c->{for(var item:serialized.entrySet())require(item.getKey().toJson().equals(item.getValue()),"Global font/sidebar mutated saved module setting "+item.getKey().getName());});
-            System.out.println("[wordmark-sidebar] PASS: literal shared wordmark/title/loading bounds+pixels; actual condensed font cuts; vertical native category/search/hover/independent scrolling; effective GUI scales2/3/4 and small viewport; module settings preserved");
-        }finally{context.runOnClient(c->{c.setOverlay(null);ClientSettings.screenGui.set(screenGui);ClientSettings.spatialMenu.set(spatial);ClientSettings.guiSize.set(size);ClientSettings.customFont.set(custom);ClientSettings.fontFace.set(font);ClientSettings.unifiedTypography.set(unified);ClientSettings.capsText.set(caps);c.options.getGuiScale().setValue(originalScale);c.onResolutionChanged();c.setScreen(new TitleScreen());dev.maro.config.ConfigManager.saveClient();});context.getInput().resizeWindow(1280,720);}
+            System.out.println("[wordmark-sidebar] PASS: colored M/visible letter gap/cap+baseline/title hover; shared title/loading/sidebar bounds+pixels; actual condensed font cuts and 110% menu text; vertical native category/search/hover/independent scrolling; effective GUI scales2/3/4 and small viewport; module settings preserved");
+        }finally{context.runOnClient(c->{c.setOverlay(null);ClientSettings.screenGui.set(screenGui);ClientSettings.spatialMenu.set(spatial);ClientSettings.guiSize.set(size);ClientSettings.menuTextSize.set(textSize);ClientSettings.customFont.set(custom);ClientSettings.fontFace.set(font);ClientSettings.unifiedTypography.set(unified);ClientSettings.capsText.set(caps);c.options.getGuiScale().setValue(originalScale);c.onResolutionChanged();c.setScreen(new TitleScreen());dev.maro.config.ConfigManager.saveClient();});context.getInput().resizeWindow(1280,720);}
     }
     static void run(ClientGameTestContext context){
         int scale=context.computeOnClient(c->c.options.getGuiScale().getValue());String font=ClientSettings.fontFace.get();

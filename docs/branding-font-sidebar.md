@@ -35,6 +35,16 @@ cannot duplicate or rename the brand. Existing purple, blue and contour logo
 treatments remain; the contour hover moves the entire word together. Existing
 `.gg` brand suffixes remain where previously displayed.
 
+Version 1.0.7 uses the same clean vector M on the title and loading screens as
+the sidebar, preserving the title's blue gradient and whole-word hover. It
+replaces only the title's older textured mark; other uses of that asset remain.
+The shared visible M-to-a gap is 0.14 capital height, so condensed lettering
+has breathing room at sidebar, title and footer sizes. The complete measured
+word remains centered with the M aligned to its capital top and baseline.
+Menu Text Size now defaults to 110%, a 10% increase through the existing shared
+measurement and rendering system. Presentation revision 8 upgrades only the old
+100% default once, retaining deliberate custom values and later size choices.
+
 The shared wordmark is used in ClickGUI, title/browsing/loading screens, settings,
 the texture screen and background preview. Icon-only uses, URLs, prose and data
 identifiers retain their existing roles.
@@ -67,3 +77,9 @@ the relevant editor, preview, world-panel and companion-mod regression results.
 OS capture applications require separate verification. Existing fullscreen
 transition driver blit diagnostics can occur in the inherited test environment;
 settled rendering and owned-resource checks are recorded with each build.
+
+The 1.0.7 focused gate additionally measures the colored M independently from
+white lettering, checks the actual first-letter ink gap and baseline, and drives
+title hover at scales 2/3/4. It renders menu controls at 110%, verifies the larger
+shared text measurements and preserves saved module settings. The hand-editor
+regression and normal build passed with the updated default as well.

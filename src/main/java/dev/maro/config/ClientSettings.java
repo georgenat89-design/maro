@@ -31,7 +31,7 @@ public final class ClientSettings {
             "The floating window opens where you left it when that is nearby and in front of you", true).visible(spatialMenu::get));
     public static final NumberSetting guiSize = INTERFACE.add(new NumberSetting("GUI Size", "Size of the menu", 97, 50, 100, 1).suffix("%"));
     public static final BooleanSetting guiFullscreen = INTERFACE.add(new BooleanSetting("Fullscreen View", "Expand the Click GUI across most of your screen", false));
-    public static final NumberSetting menuTextSize = INTERFACE.add(new NumberSetting("Menu Text Size", "Resize the menu's text", 100, 75, 110, 5).suffix("%"));
+    public static final NumberSetting menuTextSize = INTERFACE.add(new NumberSetting("Menu Text Size", "Resize the menu's text", 110, 75, 110, 5).suffix("%"));
     public static final BooleanSetting screenGui = INTERFACE.add(new BooleanSetting("Screen GUI", "Place the menu in the world. Walk and look normally; aim your crosshair and click to configure it", false));
     public static final NumberSetting screenDistance = INTERFACE.add(new NumberSetting("Screen Distance", "How far in front of you the menu appears when opened", 3, 1.5, 6, .25).suffix("m").visible(screenGui::get));
     public static final BooleanSetting customFont = INTERFACE.add(new BooleanSetting("Custom Font", "Use a smooth font instead of the Minecraft font", true));
